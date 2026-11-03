@@ -1,6 +1,6 @@
 {
-  "versionCode": 3,
-  "versionName": "3.0",
+  "versionCode": 4,
+  "versionName": "4.0",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "Gradient glass UI, smoother transitions, and built-in update checker."
+  "releaseNotes": "New developer profile page, polished profile sections, skills, education, interests and project showcase. Stable signing enabled for future in-app updates."
 }
