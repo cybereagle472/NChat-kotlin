@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -465,6 +466,7 @@ private fun ChatRow(chat: Chat, compact: Boolean, showAvatars: Boolean, onChat: 
 private fun ChatDetailScreen(chat: Chat, onBack: () -> Unit, onAction: (String) -> Unit) {
     var message by remember { mutableStateOf("") }
     val messages = remember(chat.id) { mutableStateListOf("Hey! How are you?", chat.message, "This is a local UI performance demo.") }
+    val reactions = remember(chat.id) { mutableStateMapOf<Int, String>() }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Green).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹", Modifier.clickable { onBack() }.padding(horizontal = 10.dp), color = Color.White, fontSize = 30.sp)
@@ -475,12 +477,34 @@ private fun ChatDetailScreen(chat: Chat, onBack: () -> Unit, onAction: (String) 
             TextButton(onClick = { onAction("Voice call button works in demo mode.") }) { Text("☎", color = Color.White, fontSize = 19.sp) }
             TextButton(onClick = { onAction("Video call button works in demo mode.") }) { Text("▣", color = Color.White, fontSize = 19.sp) }
         }
+        Text("Tap any message to add 👍. Tap the reaction to remove it.",
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+            color = Muted, fontSize = 11.sp)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(14.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            items(messages) { item ->
+            itemsIndexed(messages) { index, item ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Surface(color = BrightGreen.copy(alpha = .16f), shape = RoundedCornerShape(14.dp)) {
-                        Text(item, Modifier.widthIn(max = 290.dp).padding(12.dp), fontSize = 14.sp)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Surface(
+                            modifier = Modifier.clickable {
+                                if (reactions[index] == "👍") reactions.remove(index)
+                                else reactions[index] = "👍"
+                            },
+                            color = BrightGreen.copy(alpha = .16f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(item, Modifier.widthIn(max = 290.dp).padding(12.dp), fontSize = 14.sp)
+                        }
+                        reactions[index]?.let { reaction ->
+                            Surface(
+                                modifier = Modifier.padding(top = 3.dp).clickable { reactions.remove(index) },
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(50),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BrightGreen.copy(alpha = .5f))
+                            ) {
+                                Text("$reaction  Tap to remove", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), fontSize = 10.sp)
+                            }
+                        }
                     }
                 }
             }
