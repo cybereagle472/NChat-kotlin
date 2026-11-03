@@ -28,10 +28,14 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
-      - name: Compile debug variant (source validation)
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Restore persistent demo signing key
+        run: |
+          echo "${{ '' }}" >/dev/null
+          base64 --decode .github/nchat-demo-keystore.b64 > app/release.keystore
+      - name: Build signed release APK
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
       - name: Prepare stable APK filename
-        run: mkdir -p app/build/outputs/apk/release && cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/nchat-ui-lab.apk
+        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
