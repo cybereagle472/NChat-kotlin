@@ -1,5 +1,6 @@
 package com.nchat.app.data.utils
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -25,16 +26,21 @@ data class UpdateInfo(
 object AutoUpdater {
     private const val VERSION_URL =
         "https://raw.githubusercontent.com/cybereagle472/NChat-kotlin/main/version.json"
+    private const val APK_MIME = "application/vnd.android.package-archive"
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
         val connection = (URL(VERSION_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10000
             readTimeout = 10000
             requestMethod = "GET"
-            setRequestProperty("Cache-Control", "no-cache")
+            setRequestProperty("Cache-Control", "no-cache, no-store")
+            setRequestProperty("Pragma", "no-cache")
             setRequestProperty("User-Agent", "NChat-UI-Lab-Updater")
         }
         try {
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "Update server returned HTTP ${connection.responseCode}."
+            }
             val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             val remoteCode = json.getInt("versionCode")
             if (remoteCode <= BuildConfig.VERSION_CODE) return@withContext null
@@ -51,21 +57,33 @@ object AutoUpdater {
 
     suspend fun downloadUpdate(context: Context, info: UpdateInfo): File = withContext(Dispatchers.IO) {
         val connection = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 30000
+            connectTimeout = 20000
+            readTimeout = 60000
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "NChat-UI-Lab-Updater")
+            setRequestProperty("Accept", "application/vnd.android.package-archive")
         }
         try {
-            val targetDir = File(context.getExternalFilesDir(null), "updates").apply { mkdirs() }
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "APK download failed (HTTP ${connection.responseCode})."
+            }
+            val targetDir = File(context.filesDir, "updates").apply {
+                if (!exists() && !mkdirs()) error("Could not create update folder.")
+            }
             val apk = File(targetDir, "nchat-ui-lab-${info.versionCode}.apk")
+            val temp = File(targetDir, "nchat-ui-lab-${info.versionCode}.part")
             connection.inputStream.use { input ->
-                FileOutputStream(apk).use { output -> input.copyTo(output) }
+                FileOutputStream(temp).use { output -> input.copyTo(output) }
             }
-            if (apk.length() < 100_000L) {
-                apk.delete()
-                error("Downloaded update is incomplete. Please try again.")
+            val validZip = temp.inputStream().use { input ->
+                input.read() == 0x50 && input.read() == 0x4B
             }
+            if (!validZip || temp.length() < 100_000L) {
+                temp.delete()
+                error("Downloaded APK is invalid or incomplete. Please retry.")
+            }
+            if (apk.exists()) apk.delete()
+            check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
             apk
         } finally {
             connection.disconnect()
@@ -73,6 +91,10 @@ object AutoUpdater {
     }
 
     fun installUpdate(context: Context, apk: File): Boolean {
+        check(apk.exists() && apk.length() > 100_000L) {
+            "Update APK is missing. Please download it again."
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
@@ -84,12 +106,17 @@ object AutoUpdater {
             return false
         }
 
-        val uri = FileProvider.getUriForFile(
+        val uri: Uri = FileProvider.getUriForFile(
             context, "${context.packageName}.fileprovider", apk
         )
-        val installIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
+        val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setData(uri)
+            type = APK_MIME
+            clipData = ClipData.newUri(context.contentResolver, "NChat update", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        check(installIntent.resolveActivity(context.packageManager) != null) {
+            "Android package installer is not available on this phone."
         }
         context.startActivity(installIntent)
         return true
