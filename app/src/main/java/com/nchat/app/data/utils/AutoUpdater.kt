@@ -110,8 +110,7 @@ object AutoUpdater {
             context, "${context.packageName}.fileprovider", apk
         )
         val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            setData(uri)
-            type = APK_MIME
+            setDataAndType(uri, APK_MIME)
             clipData = ClipData.newUri(context.contentResolver, "NChat update", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
