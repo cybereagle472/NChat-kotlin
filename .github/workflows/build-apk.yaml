@@ -28,6 +28,8 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+      - name: Compile debug variant (source validation)
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
       - name: Validate signing secrets
         env:
           SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
