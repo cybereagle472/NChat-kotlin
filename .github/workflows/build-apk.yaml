@@ -30,16 +30,19 @@ jobs:
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
       - name: Restore persistent demo signing key
         run: |
-          echo "${{ '' }}" >/dev/null
           base64 --decode .github/nchat-demo-keystore.b64 > app/release.keystore
       - name: Build signed release APK
+        env:
+          KEY_STORE_PASSWORD: NChatDemo2026!
+          KEY_ALIAS: nchat-demo
+          KEY_PASSWORD: NChatDemo2026!
         run: gradle --no-daemon --stacktrace :app:assembleRelease
       - name: Prepare stable APK filename
         run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NChat-UI-Lab-v3-release
+          name: NChat-UI-Lab-v4-release
           path: app/build/outputs/apk/release/nchat-ui-lab.apk
           if-no-files-found: error
           retention-days: 30
