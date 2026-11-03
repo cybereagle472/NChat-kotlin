@@ -6,6 +6,7 @@ plugins {
 android {
     namespace 'com.nchat.app'
     compileSdk 34
+
     defaultConfig {
         applicationId "com.nchat.app"
         minSdk 24
@@ -13,8 +14,23 @@ android {
         versionCode 2
         versionName "2.0-ui-lab"
     }
-    buildFeatures { compose true }
-    composeOptions { kotlinCompilerExtensionVersion '1.5.8' }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.8'
+    }
 }
 
 dependencies {
