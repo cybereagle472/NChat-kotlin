@@ -1,6 +1,6 @@
 {
-  "versionCode": 5,
-  "versionName": "5.0",
+  "versionCode": 6,
+  "versionName": "6.0",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "New interactive message reactions: tap a chat bubble to add a thumbs-up reaction, and tap the reaction to remove it. Includes a small in-chat hint explaining the interaction."
+  "releaseNotes": "Updater reliability fix: validates the downloaded APK, saves it safely, and launches Android's package installer with explicit URI permissions. Message reactions from 5.0 are included."
 }
