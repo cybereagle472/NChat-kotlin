@@ -30,29 +30,8 @@ jobs:
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
       - name: Compile debug variant (source validation)
         run: gradle --no-daemon --stacktrace :app:assembleDebug
-      - name: Generate temporary demo signing key
-        run: |
-          TEMP_PASSWORD="$(openssl rand -hex 24)"
-          keytool -genkeypair -v \
-            -keystore app/release.keystore \
-            -storetype JKS \
-            -alias nchat-demo \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=NChat Demo, OU=Testing, O=CyberEagle, L=Mansehra, ST=KPK, C=PK" \
-            -storepass "$TEMP_PASSWORD" -keypass "$TEMP_PASSWORD"
-          {
-            echo "KEY_STORE_PASSWORD=$TEMP_PASSWORD"
-            echo "KEY_ALIAS=nchat-demo"
-            echo "KEY_PASSWORD=$TEMP_PASSWORD"
-          } >> "$GITHUB_ENV"
-      - name: Build signed release APK
-        env:
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle --no-daemon --stacktrace :app:assembleRelease
       - name: Prepare stable APK filename
-        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
+        run: mkdir -p app/build/outputs/apk/release && cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
