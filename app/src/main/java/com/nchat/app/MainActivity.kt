@@ -160,13 +160,13 @@ private fun FilterChips(filter: Int, onFilter: (Int) -> Unit) {
 }
 
 @Composable
-private fun ChatList(chats: List<Chat>, compact: Boolean, showAvatars: Boolean, showDividers: Boolean, onChat: (Chat) -> Unit) {
+private fun ColumnScope.ChatList(chats: List<Chat>, compact: Boolean, showAvatars: Boolean, showDividers: Boolean, onChat: (Chat) -> Unit) {
     val listState = rememberLazyListState()
     LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
         contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)) {
         items(items = chats, key = { it.id }, contentType = { "chat-row" }) { chat ->
             ChatRow(chat, compact, showAvatars, onChat)
-            if (showDividers) HorizontalDivider(
+            if (showDividers) Divider(
                 Modifier.padding(start = if (showAvatars) 78.dp else 14.dp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .07f), thickness = .6.dp)
         }
