@@ -51,11 +51,13 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Prepare stable APK filename
+        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: NChat-UI-Lab-v3-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/nchat-ui-lab.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish latest release asset
@@ -64,6 +66,6 @@ jobs:
           tag_name: nchat-build-${{ github.run_number }}
           name: NChat UI Lab build ${{ github.run_number }}
           body: "Gradient glass UI, smooth transitions, and built-in updater."
-          files: app/build/outputs/apk/release/app-release.apk
+          files: app/build/outputs/apk/release/nchat-ui-lab.apk
           make_latest: true
           fail_on_unmatched_files: true
