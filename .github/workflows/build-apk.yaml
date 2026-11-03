@@ -59,8 +59,8 @@ jobs:
       - name: Publish latest release asset
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.event.repository.updated_at || '3.0' }}
-          name: NChat UI Lab 3.0
+          tag_name: nchat-build-${{ github.run_number }}
+          name: NChat UI Lab build ${{ github.run_number }}
           body: "Gradient glass UI, smooth transitions, and built-in updater."
           files: app/build/outputs/apk/release/app-release.apk
           make_latest: true
