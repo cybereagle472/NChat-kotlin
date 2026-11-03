@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -29,6 +33,10 @@ import androidx.compose.ui.unit.sp
 import com.nchat.app.data.Chat
 import com.nchat.app.data.MockData
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
+import com.nchat.app.data.utils.AutoUpdater
+import com.nchat.app.data.utils.UpdateInfo
+import kotlinx.coroutines.launch
 
 private val Green = Color(0xFF087E68)
 private val BrightGreen = Color(0xFF20C997)
@@ -54,6 +62,21 @@ private fun NChatApp() {
     var showAvatars by remember { mutableStateOf(true) }
     var showDividers by remember { mutableStateOf(true) }
     var notice by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateBusy by remember { mutableStateOf(false) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try {
+            updateInfo = AutoUpdater.checkForUpdate()
+            if (updateInfo != null) showUpdateDialog = true
+        } catch (_: Exception) {
+            // Update checks are optional; the app remains usable offline.
+        }
+    }
 
     val chats = remember(dataSize) { MockData.generate(dataSize) }
     val filtered = remember(chats, query, filter) {
@@ -94,7 +117,12 @@ private fun NChatApp() {
                 }
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(
+                    if (dark) listOf(Color(0xFF101B20), Color(0xFF172A30), Color(0xFF10231F))
+                    else listOf(Color(0xFFF0F8F5), Color(0xFFE5F2EE), Color(0xFFF7FAF9))
+                ))
+                .padding(padding)) {
                 when {
                     selectedChat != null -> ChatDetailScreen(selectedChat!!, { selectedChat = null }, { notice = it })
                     showLab -> PerformanceLabScreen(
@@ -103,7 +131,25 @@ private fun NChatApp() {
                         dark, { dark = it }, { showLab = false }
                     )
                     selectedTab == 0 -> {
-                        HomeHeader({ showLab = true }, { dark = !dark })
+                        HomeHeader(
+                            { showLab = true },
+                            { dark = !dark },
+                            {
+                                scope.launch {
+                                    checkingUpdate = true
+                                    try {
+                                        updateInfo = AutoUpdater.checkForUpdate()
+                                        if (updateInfo != null) showUpdateDialog = true
+                                        else notice = "You are already using the latest version."
+                                    } catch (e: Exception) {
+                                        notice = "Could not check for updates. Check your internet connection."
+                                    } finally {
+                                        checkingUpdate = false
+                                    }
+                                }
+                            },
+                            checkingUpdate
+                        )
                         SearchField(query, { query = it })
                         FilterChips(filter, { filter = it })
                         ChatList(filtered, compact, showAvatars, showDividers) { selectedChat = it }
@@ -115,21 +161,63 @@ private fun NChatApp() {
                 }
             }
         }
+        if (showUpdateDialog && updateInfo != null) {
+            val available = updateInfo!!
+            AlertDialog(
+                onDismissRequest = { if (!updateBusy) showUpdateDialog = false },
+                title = { Text("NChat update ${available.versionName}") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("A new version is ready.")
+                        Text(available.notes, color = Muted, fontSize = 13.sp)
+                        if (updateBusy) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Text("Downloading update…", fontSize = 12.sp, color = Muted)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = !updateBusy, onClick = {
+                        scope.launch {
+                            updateBusy = true
+                            try {
+                                val apk = AutoUpdater.downloadUpdate(context, available)
+                                val started = AutoUpdater.installUpdate(context, apk)
+                                if (started) showUpdateDialog = false
+                                else notice = "Allow NChat UI Lab to install unknown apps in Android settings, then return and tap Update again."
+                            } catch (e: Exception) {
+                                notice = e.message ?: "Update download failed. Please try again."
+                            } finally {
+                                updateBusy = false
+                            }
+                        }
+                    }) { Text(if (updateBusy) "Please wait" else "Download & install") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !updateBusy, onClick = { showUpdateDialog = false }) { Text("Later") }
+                }
+            )
+        }
         if (notice.isNotBlank()) {
             AlertDialog(onDismissRequest = { notice = "" },
                 confirmButton = { TextButton(onClick = { notice = "" }) { Text("OK") } },
-                title = { Text("Demo interaction") }, text = { Text(notice) })
+                title = { Text("NChat") }, text = { Text(notice) })
         }
     }
 }
 
 @Composable
-private fun HomeHeader(onLab: () -> Unit, onTheme: () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Green).padding(start = 18.dp, end = 10.dp, top = 14.dp, bottom = 12.dp),
+private fun HomeHeader(onLab: () -> Unit, onTheme: () -> Unit, onUpdate: () -> Unit, checkingUpdate: Boolean) {
+    Row(Modifier.fillMaxWidth()
+        .background(Brush.linearGradient(listOf(Color(0xFF075E54), Color(0xFF0E9F79), Color(0xFF20C997))))
+        .padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("nChat", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
             Text("Fast. Simple. Connected.", color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+        }
+        TextButton(onClick = onUpdate, enabled = !checkingUpdate) {
+            Text(if (checkingUpdate) "CHECK…" else "↻ UPDATE", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         TextButton(onClick = onTheme) { Text("◐", color = Color.White, fontSize = 22.sp) }
         TextButton(onClick = onLab) { Text("⚡ LAB", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -140,7 +228,12 @@ private fun HomeHeader(onLab: () -> Unit, onTheme: () -> Unit) {
 private fun SearchField(query: String, onQuery: (String) -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)
-        .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
+        .clip(RoundedCornerShape(16.dp))
+        .background(Brush.linearGradient(listOf(
+            MaterialTheme.colorScheme.surface.copy(alpha = .88f),
+            Color(0xFFB9E8D8).copy(alpha = .35f)
+        )))
+        .border(1.dp, Color.White.copy(alpha = .72f), RoundedCornerShape(16.dp))
         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("⌕", fontSize = 22.sp, color = Muted)
         Spacer(Modifier.width(9.dp))
@@ -177,8 +270,14 @@ private fun ColumnScope.ChatList(chats: List<Chat>, compact: Boolean, showAvatar
 
 @Composable
 private fun ChatRow(chat: Chat, compact: Boolean, showAvatars: Boolean, onChat: (Chat) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChat(chat) }
-        .padding(horizontal = 14.dp, vertical = if (compact) 6.dp else 10.dp),
+    val rowPadding by animateDpAsState(if (compact) 6.dp else 10.dp, label = "chatRowPadding")
+    Row(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 3.dp)
+        .clip(RoundedCornerShape(17.dp))
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = .76f))
+        .border(1.dp, Color.White.copy(alpha = .52f), RoundedCornerShape(17.dp))
+        .clickable { onChat(chat) }
+        .animateContentSize()
+        .padding(horizontal = 14.dp, vertical = rowPadding),
         verticalAlignment = Alignment.CenterVertically) {
         if (showAvatars) {
             Box(Modifier.size(if (compact) 40.dp else 51.dp).clip(CircleShape).background(chat.color),
