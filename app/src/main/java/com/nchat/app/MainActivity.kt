@@ -55,6 +55,7 @@ private fun NChatApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedChat by remember { mutableStateOf<Chat?>(null) }
     var showLab by remember { mutableStateOf(false) }
+    var showDeveloper by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableIntStateOf(0) }
     var dataSize by remember { mutableIntStateOf(500) }
@@ -96,7 +97,7 @@ private fun NChatApp() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                if (selectedChat == null && !showLab) {
+                if (selectedChat == null && !showLab && !showDeveloper) {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         listOf("Chats", "Updates", "Communities", "Calls").forEachIndexed { i, label ->
                             NavigationBarItem(
@@ -110,7 +111,7 @@ private fun NChatApp() {
                 }
             },
             floatingActionButton = {
-                if (selectedChat == null && !showLab && selectedTab == 0) {
+                if (selectedChat == null && !showLab && !showDeveloper && selectedTab == 0) {
                     FloatingActionButton(onClick = { notice = "New chat action is responsive." }, containerColor = BrightGreen) {
                         Text("+", color = Color.White, fontSize = 28.sp)
                     }
@@ -125,6 +126,7 @@ private fun NChatApp() {
                 .padding(padding)) {
                 when {
                     selectedChat != null -> ChatDetailScreen(selectedChat!!, { selectedChat = null }, { notice = it })
+                    showDeveloper -> DeveloperProfileScreen { showDeveloper = false }
                     showLab -> PerformanceLabScreen(
                         dataSize, { dataSize = it }, compact, { compact = it },
                         showAvatars, { showAvatars = it }, showDividers, { showDividers = it },
@@ -133,6 +135,7 @@ private fun NChatApp() {
                     selectedTab == 0 -> {
                         HomeHeader(
                             { showLab = true },
+                            { showDeveloper = true },
                             { dark = !dark },
                             {
                                 scope.launch {
@@ -206,8 +209,158 @@ private fun NChatApp() {
     }
 }
 
+
 @Composable
-private fun HomeHeader(onLab: () -> Unit, onTheme: () -> Unit, onUpdate: () -> Unit, checkingUpdate: Boolean) {
+private fun DeveloperProfileScreen(onBack: () -> Unit) {
+    val ink = Color(0xFF17332D)
+    val mint = Color(0xFFB9F2D9)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Brush.linearGradient(listOf(Color(0xFF063D35), Color(0xFF087E68), Color(0xFF20C997))))
+                    .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 26.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("‹", Modifier.clickable { onBack() }.padding(end = 14.dp), color = Color.White, fontSize = 30.sp)
+                        Text("DEVELOPER PROFILE", color = Color.White.copy(alpha = .82f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(72.dp).clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(Color.White, mint))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("MN", color = Color(0xFF075E54), fontSize = 25.sp, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text("Muhammad Nasir", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            Text("Aspiring Developer • AI Explorer", color = Color.White.copy(alpha = .86f), fontSize = 12.sp)
+                            Text("Mansehra, Pakistan", color = Color.White.copy(alpha = .72f), fontSize = 11.sp)
+                        }
+                    }
+                    Text(
+                        "Curious by nature. Learning by building. Interested in turning practical ideas into useful digital products.",
+                        color = Color.White, fontSize = 14.sp, lineHeight = 21.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ProfileTag("CREATIVE", true)
+                        ProfileTag("TECH-FOCUSED", true)
+                        ProfileTag("ALWAYS LEARNING", true)
+                    }
+                }
+            }
+        }
+        item {
+            ProfileSectionCard("ABOUT", "A practical, self-driven learner with a background in computer studies and IT. Interested in technology that solves real problems, especially mobile apps, AI tools, and web experiences.")
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("SKILLS & TOOLKIT", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Areas I have studied, used, or am actively improving.", color = Muted, fontSize = 12.sp)
+                val groups = listOf(
+                    "Office & productivity" to listOf("MS Office", "Data entry", "English & Urdu typing"),
+                    "Web & digital" to listOf("HTML", "CSS", "Web development", "SEO basics", "WordPress"),
+                    "Programming & AI" to listOf("Python fundamentals", "AI tools", "AI-assisted coding", "Prompting"),
+                    "Creative tools" to listOf("Graphic design basics", "Video editing basics")
+                )
+                groups.forEach { (heading, tags) ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Text(heading, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                tags.take(2).forEach { ProfileTag(it) }
+                            }
+                            if (tags.size > 2) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    tags.drop(2).forEach { ProfileTag(it) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("PROJECTS & EXPERIMENTS", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Ideas and prototypes explored through hands-on learning.", color = Muted, fontSize = 12.sp)
+                ProfileProject("NChat", "A messaging-app concept and UI prototype. Exploring Kotlin, Jetpack Compose, real-time experiences, and app update flows.", "ANDROID • KOTLIN")
+                ProfileProject("Jarvis Assistant", "A personal assistant experiment combining Python, voice output, web information, and AI APIs.", "PYTHON • AI")
+                ProfileProject("EagleX AI", "A lightweight AI chat-app concept focused on a simple interface and text-based model interaction.", "ANDROID • AI")
+                ProfileProject("Zyrafic", "A planned productivity and tools website with an interest in useful content, SEO, and accessible web tools.", "WEB • SEO")
+            }
+        }
+        item {
+            ProfileSectionCard("CURRENT INTERESTS", "AI assistants and agents • Ethical hacking and cybersecurity learning • Android and web app development • APIs and backend systems • UI performance • Automation and productivity tools")
+        }
+        item {
+            ProfileSectionCard("EDUCATION", "FSc Computer Science • 1-year Diploma in Information Technology (DIT). Studied fundamentals including computer applications, web development, databases, Python, and creative software.")
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("MY APPROACH", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                ProfileSectionCard("LEARN → BUILD → IMPROVE", "I prefer practical experiments, clear step-by-step learning, and testing ideas on real devices. My focus is on steady progress and building a stronger technical foundation.")
+                Text("GitHub: github.com/cybereagle472", color = Muted, fontSize = 12.sp)
+                Text("Profile information is a short public-facing introduction. Skills marked as fundamentals or learning areas are not presented as professional certifications.", color = Muted, fontSize = 10.sp, lineHeight = 15.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileTag(label: String, inverted: Boolean = false) {
+    Surface(
+        color = if (inverted) Color.White.copy(alpha = .16f) else BrightGreen.copy(alpha = .12f),
+        shape = RoundedCornerShape(50),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (inverted) Color.White.copy(alpha = .22f) else BrightGreen.copy(alpha = .25f))
+    ) {
+        Text(
+            label, Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = if (inverted) Color.White else Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun ProfileSectionCard(title: String, body: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(body, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, lineHeight = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun ProfileProject(title: String, description: String, category: String) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(category, color = BrightGreen, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(description, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+        }
+    }
+}
+
+@Composable
+private fun HomeHeader(onLab: () -> Unit, onDeveloper: () -> Unit, onTheme: () -> Unit, onUpdate: () -> Unit, checkingUpdate: Boolean) {
     Row(Modifier.fillMaxWidth()
         .background(Brush.linearGradient(listOf(Color(0xFF075E54), Color(0xFF0E9F79), Color(0xFF20C997))))
         .padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 12.dp),
@@ -220,6 +373,7 @@ private fun HomeHeader(onLab: () -> Unit, onTheme: () -> Unit, onUpdate: () -> U
             Text(if (checkingUpdate) "CHECK…" else "↻ UPDATE", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         TextButton(onClick = onTheme) { Text("◐", color = Color.White, fontSize = 22.sp) }
+        TextButton(onClick = onDeveloper) { Text("ME", color = Color.White, fontWeight = FontWeight.Bold) }
         TextButton(onClick = onLab) { Text("⚡ LAB", color = Color.White, fontWeight = FontWeight.Bold) }
     }
 }
