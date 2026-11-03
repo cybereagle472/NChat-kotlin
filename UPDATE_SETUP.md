@@ -15,7 +15,7 @@ Create the keystore. Replace the example password with a strong password and rem
 
 ```sh
 keytool -genkeypair -v -keystore nchat-release.jks -alias nchat -keyalg RSA -keysize 2048 -validity 10000 -storepass 'CHOOSE_A_STRONG_PASSWORD' -keypass 'CHOOSE_A_STRONG_PASSWORD' -dname 'CN=NChat, OU=Mobile, O=CyberEagle, L=Mansehra, ST=KPK, C=PK'
-base64 -w 0 nchat-release.jks
+base64 nchat-release.jks | tr -d '\\n'
 ```
 
 Copy the long base64 output. Keep both the original `nchat-release.jks` file and password in a safe backup. Never commit the keystore or share it publicly.
