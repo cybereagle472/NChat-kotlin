@@ -36,6 +36,10 @@ jobs:
           KEY_STORE_PASSWORD: NChatDemo2026!
           KEY_ALIAS: nchat-demo
           KEY_PASSWORD: NChatDemo2026!
+          # Baked into BuildConfig.NCHAT_API_BASE. Set it as a repository variable (or
+          # secret) to keep the address out of git entirely; when unset the build still
+          # succeeds and the app asks for a server on first launch.
+          NCHAT_API_BASE: ${{ vars.NCHAT_API_BASE || secrets.NCHAT_API_BASE }}
         run: |
           set -o pipefail
           gradle --no-daemon --stacktrace :app:assembleRelease 2>&1 | tee /tmp/gradle-build.log

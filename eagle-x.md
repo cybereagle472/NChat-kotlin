@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.20** (`versionCode 28`)
+- Current version: **1.0.21** (`versionCode 29`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -192,23 +192,47 @@ UI (screens, view models) ──► repository interfaces
                                           └── ApiClient (OkHttp) · NChatSocket (WebSocket)
 ```
 
-### The built-in backend
+### The backend address is configuration, never code
 
-The published APK talks to **`https://nchats-friends.usa66486.workers.dev`** — the same
-Cloudflare Worker the reference app uses (`worker/wrangler.toml` → `PUBLIC_API_URL`,
-`src/lib/apiClient.ts` → `VITE_API_URL`). The Rust server in `server/` is a byte-compatible
-port of that worker, so the two can be swapped at will. The URL is a build constant
-(`NCHAT_API_BASE`, defaulting to the worker, overridable with `-PNCHAT_API_BASE=…`), never a
-literal buried in request code.
+This mirrors the reference exactly. There, `src/lib/apiClient.ts` reads `VITE_API_URL` once
+into `API_BASE`, and every HTTP and WebSocket call funnels through it; the production address
+is injected by the build, not committed in a component. The APK does the same thing:
 
-### Overrides
+```
+nchat.properties / -PNCHAT_API_BASE / $NCHAT_API_BASE / local.properties
+        │  (Gradle, build time — one value)
+        ▼
+BuildConfig.NCHAT_API_BASE
+        ▼
+ServerConfig.effective()   ← Settings ▸ Server (per-install override, a plain preference)
+        ▼
+ApiClient (root + socketRoot) ──► every repository ──► every screen
+```
 
-`ServerConfig.effective()` resolves **Settings ▸ Server** (runtime override, stored in
-`SharedPreferences("nchat_server")`) first, then the baked constant. Clearing the field goes
-back to the built-in worker — never to offline mode. The value is read once at start-up
-(singletons own the sockets), so the dialog says "reopen NChat after saving". Debug builds
-also allow cleartext HTTP (`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be
-used as the server; release builds stay HTTPS-only.
+- **No Kotlin file contains the address.** `grep` for the host in `app/src/main/java` finds
+  nothing; `ApiClient` receives it as a constructor argument and derives `wss://` from the
+  same string.
+- **One committed default:** `nchat.properties` (`apiBase=`), the counterpart of the worker's
+  `PUBLIC_API_URL` in `wrangler.toml`. Build-time precedence is
+  `-PNCHAT_API_BASE` → `$NCHAT_API_BASE` → `local.properties` (`nchat.apiBase`) → that file.
+- **Nothing in git at all is also supported:** blank the value and set `NCHAT_API_BASE` as a
+  repository Actions variable/secret — `.github/workflows/build-apk.yaml` passes it to Gradle,
+  the way the Cloudflare dashboard supplies `VITE_API_URL`.
+- **No address at build time → the app asks for one.** `ServerSetupScreen` runs before the
+  auth stage whenever neither the build nor Settings ▸ Server names a backend, so an
+  unconfigured APK is a "connect your server" screen rather than a broken one.
+- **The server side is symmetrical.** The Rust server builds absolute media URLs from
+  `PUBLIC_API_URL` (env, default `http://localhost:$PORT`) — exactly the worker's variable —
+  and allows cross-origin requests the way the worker's `cors({origin:'*'})` does.
+
+### Runtime override
+
+`ServerConfig.effective()` reads **Settings ▸ Server** first (stored in
+`SharedPreferences("nchat_server")`), then the baked constant. Clearing the field returns to
+the build's address — never to offline mode. The value is read once at start-up (singletons
+own the sockets), so the dialog says "reopen NChat after saving". Debug builds also allow
+cleartext HTTP (`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be the
+server; release builds stay HTTPS-only.
 
 ### Transport rules (`network/`)
 
@@ -368,8 +392,9 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
 | 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
 | 1.0.18 | 26 | | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
-| 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK now talks to `https://nchats-friends.usa66486.workers.dev` out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
+| 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK talks to the configured backend out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
 | 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
+| 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
 
 
 ---

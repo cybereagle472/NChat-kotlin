@@ -1,6 +1,6 @@
 {
-  "versionCode": 28,
-  "versionName": "1.0.20",
+  "versionCode": 29,
+  "versionName": "1.0.21",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.20 — photos and clips now show up in the conversation. Uploaded images render in their bubbles and open full-screen, video bubbles show their poster frame, and profile photos you upload (and everyone else's) appear in the chat list, the chat header and your profile. Everything is fetched from the backend you are already connected to."
+  "releaseNotes": "NChat 1.0.21 — the backend address is no longer written into the app's code. It is supplied when the build is made (the same way the web app takes VITE_API_URL) and read once at start-up, so every request and the live socket still share a single source. If a build is made without an address, NChat now shows a \"Connect NChat\" screen and stores what you type, instead of failing quietly."
 }

@@ -55,8 +55,10 @@ the client keeps a local cache and updates optimistically.
    `RemoteStatusRepository`, `RemoteCallRepository`, `RemotePreferencesRepository`. The
    in-memory twins and their seed data were deleted in 1.0.19. `ServiceLocator` builds every
    repository against `ServerConfig.effective()` — Settings ▸ Server, else the built-in
-   `BuildConfig.NCHAT_API_BASE` (`https://nchats-friends.usa66486.workers.dev`, the same
-   Worker the reference app deploys). There is no offline mode.
+   `BuildConfig.NCHAT_API_BASE`, which Gradle fills from `nchat.properties` (or
+   `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties`) — the same "address lives in
+   config, never in code" rule the reference follows with `VITE_API_URL`. There is no offline
+   mode.
 4. **Optimistic send — done.** A message appears in the list with `DeliveryState.Sending`
    immediately, flips to `Sent` on ack, `Read` on the receipt event. Local write
    first, network second — the tap-to-bubble latency stays under one frame.
