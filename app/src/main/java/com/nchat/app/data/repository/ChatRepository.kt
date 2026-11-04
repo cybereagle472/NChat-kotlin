@@ -7,6 +7,7 @@ import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
+import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
 import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.data.model.UserProfile
@@ -27,8 +28,15 @@ import java.util.concurrent.atomic.AtomicLong
 interface ChatRepository {
     val chats: StateFlow<List<Chat>>
     fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>>
-    fun sendMessage(chatId: String, text: String)
+    fun sendMessage(
+        chatId: String,
+        text: String,
+        replyAuthor: String? = null,
+        replyText: String? = null
+    )
+    fun sendAttachment(chatId: String, kind: MessageKind, label: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
+    fun deleteMessage(chatId: String, messageId: String)
     fun markRead(chatId: String)
 }
 
@@ -56,7 +64,12 @@ class InMemoryChatRepository(
             }.asStateFlow()
         }
 
-    override fun sendMessage(chatId: String, text: String) {
+    override fun sendMessage(
+        chatId: String,
+        text: String,
+        replyAuthor: String?,
+        replyText: String?
+    ) {
         val body = text.trim()
         if (body.isEmpty()) return
         val stream = conversations[chatId] ?: return
@@ -72,10 +85,33 @@ class InMemoryChatRepository(
                 text = body,
                 timestamp = System.currentTimeMillis(),
                 isMine = true,
-                state = DeliveryState.Sending
+                state = DeliveryState.Sending,
+                replyAuthor = replyAuthor,
+                replyText = replyText
             )
         }
         updatePreview(chatId, body, DeliveryState.Sending)
+        advanceState(chatId, messageId)
+    }
+
+    override fun sendAttachment(chatId: String, kind: MessageKind, label: String) {
+        val stream = conversations[chatId] ?: return
+        val messageId = "local-${messageIds.incrementAndGet()}"
+        stream.update { current ->
+            current + Message(
+                id = messageId,
+                chatId = chatId,
+                authorId = "me",
+                authorName = profile.fullName,
+                text = label,
+                timestamp = System.currentTimeMillis(),
+                isMine = true,
+                kind = kind,
+                state = DeliveryState.Sending,
+                fileName = if (kind == MessageKind.Document) "document.pdf" else null
+            )
+        }
+        updatePreview(chatId, label, DeliveryState.Sending)
         advanceState(chatId, messageId)
     }
 
@@ -106,6 +142,28 @@ class InMemoryChatRepository(
         stream.update { messages ->
             messages.map { message ->
                 if (message.id != messageId) message else message.copy(reactions = message.reactions.toggled(emoji))
+            }
+        }
+    }
+
+    override fun deleteMessage(chatId: String, messageId: String) {
+        val stream = conversations[chatId] ?: return
+        stream.update { messages -> messages.filterNot { it.id == messageId } }
+        val remaining = stream.value.lastOrNull()
+        _chats.update { chats ->
+            chats.map { chat ->
+                if (chat.id != chatId) {
+                    chat
+                } else {
+                    chat.copy(
+                        lastMessage = remaining?.text ?: "No messages yet",
+                        lastMessageAt = remaining?.timestamp ?: chat.lastMessageAt,
+                        lastMessageMine = remaining?.isMine ?: false,
+                        lastMessageKind = remaining?.kind ?: MessageKind.Text,
+                        lastMessageState = remaining?.state,
+                        isTyping = false
+                    )
+                }
             }
         }
     }

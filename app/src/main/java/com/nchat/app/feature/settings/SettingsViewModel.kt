@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 data class UpdateUiState(
     val checking: Boolean = false,
     val installing: Boolean = false,
+    /** 0f..1f download progress, or null while the size is still unknown. */
+    val progress: Float? = null,
     val info: UpdateInfo? = null,
     val dialogVisible: Boolean = false,
     val notice: String? = null
@@ -54,30 +56,34 @@ class SettingsViewModel : ViewModel() {
         val info = _state.value.info ?: return
         if (_state.value.installing) return
         viewModelScope.launch {
-            _state.update { it.copy(installing = true, notice = null) }
+            _state.update { it.copy(installing = true, progress = 0f, notice = null) }
             try {
-                val apk = AutoUpdater.downloadUpdate(context, info)
+                val apk = AutoUpdater.downloadUpdate(context, info) { fraction ->
+                    _state.update { it.copy(progress = fraction) }
+                }
                 when (val result = AutoUpdater.installUpdate(context, apk)) {
                     is InstallResult.Launched -> _state.update {
-                        it.copy(installing = false, dialogVisible = false, notice = null)
+                        it.copy(installing = false, progress = null, dialogVisible = false, notice = null)
                     }
 
                     is InstallResult.NeedsPermission -> _state.update {
                         it.copy(
                             installing = false,
+                            progress = null,
                             dialogVisible = false,
                             notice = "Allow NChat to install unknown apps, then tap Check for updates again."
                         )
                     }
 
                     is InstallResult.Failed -> _state.update {
-                        it.copy(installing = false, dialogVisible = false, notice = result.message)
+                        it.copy(installing = false, progress = null, dialogVisible = false, notice = result.message)
                     }
                 }
             } catch (error: Exception) {
                 _state.update {
                     it.copy(
                         installing = false,
+                        progress = null,
                         dialogVisible = false,
                         notice = error.message ?: "Update failed. Please try again."
                     )
@@ -86,6 +92,7 @@ class SettingsViewModel : ViewModel() {
                 _state.update {
                     it.copy(
                         installing = false,
+                        progress = null,
                         dialogVisible = false,
                         notice = "Update failed. Please restart NChat and try again."
                     )
