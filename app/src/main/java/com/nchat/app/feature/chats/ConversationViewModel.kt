@@ -124,6 +124,17 @@ class ConversationViewModel(
         repository.sendVoice(chatId, durationLabel)
     }
 
+    /** A real attachment: the bytes are uploaded, then the message points at them. */
+    fun onSendMedia(kind: MessageKind, file: PickedFile) {
+        repository.sendMedia(
+            chatId = chatId,
+            kind = kind,
+            fileName = file.name,
+            mimeType = file.mimeType,
+            bytes = file.bytes
+        )
+    }
+
     fun onSendAttachment(kind: MessageKind) {
         repository.sendAttachment(
             chatId = chatId,

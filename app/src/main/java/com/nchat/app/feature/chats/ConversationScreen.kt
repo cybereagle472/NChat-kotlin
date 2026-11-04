@@ -112,6 +112,9 @@ import com.nchat.app.core.util.readPickedFile
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.ServiceLocator
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
@@ -475,6 +478,30 @@ fun ConversationScreen(
         }
 
         callKind?.let { kind ->
+            // A 1:1 call is a real server-side record: it is opened when the overlay appears
+            // and closed with the elapsed time when the user hangs up, so History (and the
+            // other side's `call:incoming`) reflect a call that actually happened.
+            if (chat?.isGroup != true && group == null) {
+                LaunchedEffect(kind) {
+                    val startedAt = System.currentTimeMillis()
+                    val callId = ServiceLocator.callRepository.placeCall(
+                        personId = chatId,
+                        video = kind == CallKind.Video
+                    )
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        callId?.let { id ->
+                            val seconds = ((System.currentTimeMillis() - startedAt) / 1000)
+                                .coerceAtLeast(0)
+                            withContext(NonCancellable) {
+                                ServiceLocator.callRepository.finishCall(id, seconds)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Group chats ring the whole roster in the group-call surface; 1:1 keeps the
             // simpler call overlay.
             if (chat?.isGroup == true || group != null) {
