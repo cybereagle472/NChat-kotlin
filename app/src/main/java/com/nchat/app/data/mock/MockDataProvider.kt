@@ -353,13 +353,57 @@ object MockDataProvider {
     fun calls(): List<CallRecord> {
         val base = now()
         return listOf(
-            CallRecord("c1", "Areeb Khan", isVideo = false, isOutgoing = false, missed = true, timestamp = base - 25 * MINUTE),
-            CallRecord("c2", "Zain Ahmed", isVideo = true, isOutgoing = true, missed = false, timestamp = base - 2 * HOUR, durationLabel = "12:08"),
-            CallRecord("c3", "NChat Design Team", isVideo = true, isOutgoing = true, missed = false, timestamp = base - 5 * HOUR, durationLabel = "48:31", isGroup = true),
-            CallRecord("c4", "Ayesha Noor", isVideo = false, isOutgoing = false, missed = true, timestamp = base - 8 * HOUR),
-            CallRecord("c5", "Usman Tariq", isVideo = false, isOutgoing = false, missed = true, timestamp = base - 1 * DAY),
-            CallRecord("c6", "Hamza Ali", isVideo = false, isOutgoing = false, missed = false, timestamp = base - 1 * DAY - 6 * HOUR, durationLabel = "03:47"),
-            CallRecord("c7", "Sara Malik", isVideo = true, isOutgoing = true, missed = false, timestamp = base - 3 * DAY, durationLabel = "21:15")
+            CallRecord(
+                "c1", "Areeb Khan", personId = "areeb",
+                isVideo = false, isOutgoing = false, missed = true,
+                timestamp = base - 25 * MINUTE
+            ),
+            CallRecord(
+                "c2", "Zain Ahmed", personId = "zain",
+                isVideo = true, isOutgoing = true, missed = false,
+                timestamp = base - 2 * HOUR, durationLabel = "12:08"
+            ),
+            CallRecord(
+                "c3", "NChat Design Team", personId = "design-team",
+                isVideo = true, isOutgoing = true, missed = false,
+                timestamp = base - 5 * HOUR, durationLabel = "48:31", isGroup = true
+            ),
+            CallRecord(
+                "c4", "Ayesha Noor", personId = "ayesha",
+                isVideo = false, isOutgoing = false, missed = true,
+                timestamp = base - 8 * HOUR
+            ),
+            CallRecord(
+                "c5", "Usman Tariq", personId = "usman-tariq",
+                isVideo = false, isOutgoing = false, missed = true,
+                timestamp = base - 1 * DAY
+            ),
+            CallRecord(
+                "c6", "Hamza Ali", personId = "hamza-ali",
+                isVideo = false, isOutgoing = false, missed = false,
+                timestamp = base - 1 * DAY - 6 * HOUR, durationLabel = "03:47"
+            ),
+            CallRecord(
+                "c7", "Sara Malik", personId = "sara-malik",
+                isVideo = true, isOutgoing = true, missed = false,
+                timestamp = base - 3 * DAY, durationLabel = "21:15"
+            ),
+            CallRecord(
+                "c8", "Maryam Sheikh", personId = "maryam",
+                isVideo = false, isOutgoing = true, missed = false,
+                timestamp = base - 4 * DAY, durationLabel = "07:22"
+            ),
+            CallRecord(
+                "c9", "Bilal Shah", personId = "bilal",
+                isVideo = true, isOutgoing = false, missed = true,
+                timestamp = base - 6 * DAY
+            ),
+            CallRecord(
+                "c10", "Fatima Malik", personId = "fatima",
+                isVideo = false, isOutgoing = false, missed = false,
+                timestamp = base - 9 * DAY, durationLabel = "01:12"
+            )
         )
     }
+
 }

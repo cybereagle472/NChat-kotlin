@@ -93,6 +93,7 @@ data class Friend(
 data class CallRecord(
     val id: String,
     val name: String,
+    val personId: String = name.lowercase().replace(" ", "-"),
     val isVideo: Boolean,
     val isOutgoing: Boolean,
     val missed: Boolean,
