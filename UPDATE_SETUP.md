@@ -1,4 +1,4 @@
-# NChat UI Lab: one-time update signing setup
+# NChat: one-time update signing setup
 
 Android only accepts an in-place APK update when the signing certificate matches the installed app. Keep the release keystore backed up permanently.
 
@@ -31,6 +31,6 @@ Open the repository on GitHub, then Settings -> Secrets and variables -> Actions
 
 ## 3. Build and install the first signed release
 
-After adding all four secrets, open Actions -> Build NChat UI Lab APK -> Run workflow. Download the generated release APK artifact or the GitHub Release asset and install it. You can uninstall the older unsigned/debug build first as planned.
+After adding all four secrets, open Actions -> Build NChat APK -> Run workflow. Download the generated release APK artifact or the GitHub Release asset and install it. You can uninstall the older unsigned/debug build first as planned.
 
 Future releases must keep the same keystore and increase both `versionCode` in `app/build.gradle` and `versionCode` in `version.json`. The app checks the version manifest at launch and offers the APK update; Android still asks you to confirm installation.

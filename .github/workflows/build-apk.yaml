@@ -1,8 +1,8 @@
-name: Build NChat UI Lab APK
+name: Build NChat APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
   workflow_dispatch:
 
 permissions:
@@ -42,16 +42,17 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NChat-UI-Lab-v4-release
+          name: NChat-release
           path: app/build/outputs/apk/release/nchat-ui-lab.apk
           if-no-files-found: error
           retention-days: 30
       - name: Publish latest release asset
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nchat-build-${{ github.run_number }}
-          name: NChat UI Lab build ${{ github.run_number }}
-          body: "Gradient glass UI, smooth transitions, and built-in updater."
+          name: NChat build ${{ github.run_number }}
+          body: "Kotlin + Compose client: rebuilt design system, navigation, chat list and conversation UI."
           files: app/build/outputs/apk/release/nchat-ui-lab.apk
           make_latest: true
           fail_on_unmatched_files: true
