@@ -10,6 +10,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use rusqlite::{params, OptionalExtension};
+use tokio::io::AsyncReadExt;
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
@@ -79,6 +80,17 @@ pub async fn upload(
             match field.chunk().await {
                 Ok(Some(chunk)) => {
                     use tokio::io::AsyncWriteExt;
+                    if size + chunk.len() as i64 > state.max_upload_bytes as i64 {
+                        drop(sink);
+                        let _ = tokio::fs::remove_file(&path).await;
+                        return Err(ApiError::new(
+                            StatusCode::PAYLOAD_TOO_LARGE,
+                            format!(
+                                "file is too large (limit is {} MB)",
+                                state.max_upload_bytes / (1024 * 1024)
+                            ),
+                        ));
+                    }
                     if let Err(error) = sink.write_all(&chunk).await {
                         drop(sink);
                         let _ = tokio::fs::remove_file(&path).await;
@@ -163,12 +175,54 @@ fn is_plain_extension(extension: &str) -> bool {
         && !extension.contains("..")
 }
 
+use std::path::{Component, Path as FsPath, PathBuf};
+
+/// Rejects keys that could escape the media directory.
+///
+/// `R2.get(key)` treats the key as an opaque name, but here it is a path on
+/// disk — so `..`, absolute paths and backslashes must never reach `join`.
+fn safe_media_path(media_dir: &FsPath, key: &str) -> Option<PathBuf> {
+    if key.is_empty() || key.contains('\0') || key.contains('\\') {
+        return None;
+    }
+    let candidate = FsPath::new(key);
+    if candidate.is_absolute() {
+        return None;
+    }
+    for component in candidate.components() {
+        match component {
+            Component::Normal(_) => {}
+            // `.`, `..`, a root or a Windows prefix: refuse the whole request.
+            _ => return None,
+        }
+    }
+    let path = media_dir.join(candidate);
+    path.starts_with(media_dir).then_some(path)
+}
+
 /// `GET /media/file/*key` — public read with byte-range support (HTTP 206).
+///
+/// The body is streamed from disk: a 200 MB video used to be read into memory
+/// for every request, which is a one-line denial of service on a small VPS.
 pub async fn file(
     State(state): State<AppState>,
     Path(key): Path<String>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
+    let Some(path) = safe_media_path(&state.media_dir, &key) else {
+        return Err(ApiError::not_found("Not found"));
+    };
+
+    let mut handle = match tokio::fs::File::open(&path).await {
+        Ok(handle) => handle,
+        Err(_) => return Err(ApiError::not_found("Not found")),
+    };
+
+    let total = match handle.metadata().await {
+        Ok(metadata) => metadata.len(),
+        Err(_) => return Err(ApiError::not_found("Not found")),
+    };
+
     let row: Option<String> = state.db.with(|conn| {
         conn.query_row(
             "SELECT mime_type FROM media_attachments WHERE file_path = ?",
@@ -177,15 +231,7 @@ pub async fn file(
         )
         .optional()
     })?;
-
-    let path = state.media_dir.join(&key);
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) => return Err(ApiError::not_found("Not found")),
-    };
-
     let mime = row.unwrap_or_else(|| "application/octet-stream".to_string());
-    let total = bytes.len();
 
     // `Range: bytes=start-end` → 206 with Content-Range, like R2 does.
     let range = headers
@@ -194,10 +240,10 @@ pub async fn file(
         .and_then(|value| value.strip_prefix("bytes=").map(str::to_string))
         .and_then(|spec| {
             let (start, end) = spec.split_once('-')?;
-            let start: usize = start.trim().parse().ok()?;
-            let end: usize = match end.trim() {
+            let start: u64 = start.trim().parse().ok()?;
+            let end: u64 = match end.trim() {
                 "" => total.saturating_sub(1),
-                value => value.parse::<usize>().ok()?,
+                value => value.parse::<u64>().ok()?,
             };
             if start > end || start >= total {
                 return None;
@@ -205,31 +251,40 @@ pub async fn file(
             Some((start, end.min(total.saturating_sub(1))))
         });
 
+    let (status, offset, length) = match range {
+        Some((start, end)) => (StatusCode::PARTIAL_CONTENT, start, end - start + 1),
+        None => (StatusCode::OK, 0, total),
+    };
+
     let mut builder = Response::builder()
         .header(header::CONTENT_TYPE, mime)
         .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, length)
         .header(
             header::CACHE_CONTROL,
             "public, max-age=31536000, immutable",
-        );
-    builder = builder.header(header::ETAG, HeaderValue::from_str(&format!("\"{total}\"")).unwrap_or(HeaderValue::from_static("\"0\"")));
-
-    match range {
-        Some((start, end)) => {
-            let slice = bytes[start..=end].to_vec();
-            let length = slice.len();
-            builder
-                .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
-                .status(StatusCode::PARTIAL_CONTENT)
-                .body(Body::from(slice))
-                .map(|response| response.set_content_length(length))
-                .map_err(|error| ApiError::internal(format!("could not build response: {error}")))
-        }
-        None => builder
-            .status(StatusCode::OK)
-            .body(Body::from(bytes))
-            .map_err(|error| ApiError::internal(format!("could not build response: {error}"))),
+        )
+        .header(header::ETAG, format!("{:?}", total.to_string()))
+        .status(status);
+    if let Some((start, end)) = range {
+        builder = builder.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
     }
+
+    if offset > 0 {
+        use tokio::io::AsyncSeekExt;
+        if handle
+            .seek(std::io::SeekFrom::Start(offset))
+            .await
+            .is_err()
+        {
+            return Err(ApiError::internal("could not read the stored file"));
+        }
+    }
+
+    let stream = tokio_util::io::ReaderStream::new(handle.take(length));
+    builder
+        .body(Body::from_stream(stream))
+        .map_err(|error| ApiError::internal(format!("could not build response: {error}")))
 }
 
 /// `DELETE /media/file/*key` — uploader only.
@@ -239,6 +294,10 @@ pub async fn delete(
     Path(key): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
+
+    let Some(path) = safe_media_path(&state.media_dir, &key) else {
+        return Err(ApiError::not_found("Not found"));
+    };
 
     let owned: Option<String> = state.db.with(|conn| {
         conn.query_row(
@@ -252,7 +311,7 @@ pub async fn delete(
         return Err(ApiError::not_found("Not found"));
     }
 
-    let _ = std::fs::remove_file(state.media_dir.join(&key));
+    let _ = std::fs::remove_file(path);
     state.db.with(|conn| {
         conn.execute(
             "DELETE FROM media_attachments WHERE file_path = ?",
@@ -284,4 +343,33 @@ impl SetContentLength for Response {
 #[allow(dead_code)]
 fn _assert_into_response(response: Response) -> Response {
     response.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_paths_cannot_escape_the_media_dir() {
+        let dir = FsPath::new("/srv/nchat/media");
+
+        // Nested keys are normal: `<user id>/<uuid>.<ext>`.
+        assert!(safe_media_path(dir, "user-1/abc.png").is_some());
+        assert!(safe_media_path(dir, "user-1/abc").is_some());
+
+        // Everything that could walk out of the directory is refused.
+        assert!(safe_media_path(dir, "../secret.txt").is_none());
+        assert!(safe_media_path(dir, "user-1/../../etc/passwd").is_none());
+        assert!(safe_media_path(dir, "/etc/passwd").is_none());
+        assert!(safe_media_path(dir, "user-1/..").is_none());
+        assert!(safe_media_path(dir, "").is_none());
+        assert!(safe_media_path(dir, ".").is_none());
+    }
+
+    #[test]
+    fn resolved_path_stays_under_the_root() {
+        let dir = FsPath::new("/srv/nchat/media");
+        let path = safe_media_path(dir, "user-1/abc.png").expect("in-root key");
+        assert!(path.starts_with(dir));
+    }
 }

@@ -19,6 +19,8 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 base64 = "0.22"
 rand = "0.8"
 futures-util = "0.3"
+# Streams media off disk instead of buffering whole files in RAM.
+tokio-util = { version = "0.7", features = ["io"] }
 # TURN credentials are minted by calling Cloudflare Realtime (see routes/calls.rs).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }

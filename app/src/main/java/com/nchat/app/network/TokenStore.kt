@@ -1,104 +1,102 @@
 package com.nchat.app.network
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Where the Rust backend's tokens and the signed-in identity live.
+ * Where the backend's tokens and the signed-in identity live.
+ *
+ * Values are AES-256-GCM encrypted under an Android Keystore key (see [SecurePrefs]), because
+ * a refresh token is a 30-day bearer credential: plain text in app storage would be worth
+ * stealing on a rooted or backed-up device.
  *
  * The server rotates refresh tokens on every use (single-use `sid`), so the pair has to be
  * written atomically-ish on every refresh — [saveTokens] does exactly that.
  */
 class TokenStore(context: Context) {
 
-    private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = SecurePrefs(context.applicationContext, PREFS)
 
-    private val _signedIn = MutableStateFlow(!prefs.getString(KEY_ACCESS, null).isNullOrEmpty())
+    private val _signedIn = MutableStateFlow(!prefs.getString(KEY_ACCESS).isNullOrEmpty())
     val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
 
     var accessToken: String?
-        get() = prefs.getString(KEY_ACCESS, null)
+        get() = prefs.getString(KEY_ACCESS)
         set(value) {
-            prefs.edit().putString(KEY_ACCESS, value).apply()
+            prefs.putString(KEY_ACCESS, value)
         }
 
     var refreshToken: String?
-        get() = prefs.getString(KEY_REFRESH, null)
+        get() = prefs.getString(KEY_REFRESH)
         set(value) {
-            prefs.edit().putString(KEY_REFRESH, value).apply()
+            prefs.putString(KEY_REFRESH, value)
         }
 
     var userId: String?
-        get() = prefs.getString(KEY_USER_ID, null)
+        get() = prefs.getString(KEY_USER_ID)
         set(value) {
-            prefs.edit().putString(KEY_USER_ID, value).apply()
+            prefs.putString(KEY_USER_ID, value)
         }
 
     var email: String?
-        get() = prefs.getString(KEY_EMAIL, null)
+        get() = prefs.getString(KEY_EMAIL)
         set(value) {
-            prefs.edit().putString(KEY_EMAIL, value).apply()
+            prefs.putString(KEY_EMAIL, value)
         }
 
     var fullName: String?
-        get() = prefs.getString(KEY_FULL_NAME, null)
+        get() = prefs.getString(KEY_FULL_NAME)
         set(value) {
-            prefs.edit().putString(KEY_FULL_NAME, value).apply()
+            prefs.putString(KEY_FULL_NAME, value)
         }
 
     var username: String?
-        get() = prefs.getString(KEY_USERNAME, null)
+        get() = prefs.getString(KEY_USERNAME)
         set(value) {
-            prefs.edit().putString(KEY_USERNAME, value).apply()
+            prefs.putString(KEY_USERNAME, value)
         }
 
     var avatarUrl: String?
-        get() = prefs.getString(KEY_AVATAR, null)
+        get() = prefs.getString(KEY_AVATAR)
         set(value) {
-            prefs.edit().putString(KEY_AVATAR, value).apply()
+            prefs.putString(KEY_AVATAR, value)
         }
 
     /** False until the profile-setup step is finished on this device. */
     var profileComplete: Boolean
-        get() = prefs.getBoolean(KEY_PROFILE_DONE, false)
+        get() = prefs.getBoolean(KEY_PROFILE_DONE)
         set(value) {
-            prefs.edit().putBoolean(KEY_PROFILE_DONE, value).apply()
+            prefs.putBoolean(KEY_PROFILE_DONE, value)
         }
 
     /** The whole token pair from `POST /auth/login`, `/auth/signup` or `/auth/refresh`. */
     fun saveTokens(access: String?, refresh: String?) {
-        prefs.edit()
-            .putString(KEY_ACCESS, access)
-            .putString(KEY_REFRESH, refresh)
-            .apply()
+        prefs.putString(KEY_ACCESS, access)
+        prefs.putString(KEY_REFRESH, refresh)
         _signedIn.value = !access.isNullOrEmpty()
     }
 
     fun saveIdentity(id: String?, email: String?, fullName: String?, username: String?, avatarUrl: String?) {
-        prefs.edit()
-            .putString(KEY_USER_ID, id)
-            .putString(KEY_EMAIL, email)
-            .putString(KEY_FULL_NAME, fullName)
-            .putString(KEY_USERNAME, username)
-            .putString(KEY_AVATAR, avatarUrl)
-            .apply()
+        prefs.putString(KEY_USER_ID, id)
+        prefs.putString(KEY_EMAIL, email)
+        prefs.putString(KEY_FULL_NAME, fullName)
+        prefs.putString(KEY_USERNAME, username)
+        prefs.putString(KEY_AVATAR, avatarUrl)
     }
 
     fun clear() {
-        prefs.edit()
-            .remove(KEY_ACCESS)
-            .remove(KEY_REFRESH)
-            .remove(KEY_USER_ID)
-            .remove(KEY_EMAIL)
-            .remove(KEY_FULL_NAME)
-            .remove(KEY_USERNAME)
-            .remove(KEY_AVATAR)
-            .remove(KEY_PROFILE_DONE)
-            .apply()
+        prefs.remove(
+            KEY_ACCESS,
+            KEY_REFRESH,
+            KEY_USER_ID,
+            KEY_EMAIL,
+            KEY_FULL_NAME,
+            KEY_USERNAME,
+            KEY_AVATAR,
+            KEY_PROFILE_DONE
+        )
         _signedIn.value = false
     }
 

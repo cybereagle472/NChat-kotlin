@@ -13,6 +13,7 @@ pub mod models;
 pub mod password;
 pub mod presence;
 pub mod privacy;
+pub mod ratelimit;
 pub mod realtime;
 pub mod routes;
 pub mod util;
@@ -37,6 +38,11 @@ pub struct AppState {
     pub public_api_url: Arc<String>,
     /// Stands in for the R2 bucket binding.
     pub media_dir: Arc<PathBuf>,
+    /// Largest accepted upload; the worker relied on Cloudflare's request cap, a
+    /// self-hosted server must enforce its own (`NCHAT_MAX_UPLOAD_MB`, default 100).
+    pub max_upload_bytes: u64,
+    /// Throttles `/auth/login` and `/auth/signup` (`NCHAT_AUTH_RATE`, default 10 / 5 min).
+    pub auth_limiter: Arc<ratelimit::RateLimiter>,
 }
 
 impl AppState {
@@ -47,6 +53,11 @@ impl AppState {
             secret: Arc::new(secret.into()),
             public_api_url: Arc::new(String::new()),
             media_dir: Arc::new(PathBuf::from("data/media")),
+            max_upload_bytes: 100 * 1024 * 1024,
+            auth_limiter: Arc::new(ratelimit::RateLimiter::new(
+                10,
+                std::time::Duration::from_secs(300),
+            )),
         }
     }
 
@@ -57,6 +68,16 @@ impl AppState {
 
     pub fn with_media_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.media_dir = Arc::new(dir.into());
+        self
+    }
+
+    pub fn with_max_upload(mut self, bytes: u64) -> Self {
+        self.max_upload_bytes = bytes;
+        self
+    }
+
+    pub fn with_auth_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
+        self.auth_limiter = Arc::new(limiter);
         self
     }
 
