@@ -51,7 +51,7 @@ fun StatusScreen(
 ) {
     val extra = NcTheme.extra
     val mine = statuses.firstOrNull { it.isMine }
-    val others = statuses.filterNot { it.isMine }
+    val others = remember(statuses) { statuses.filterNot { it.isMine } }
 
     var viewingIndex by remember { mutableStateOf<Int?>(null) }
     var locallyViewed by remember { mutableStateOf(emptySet<String>()) }

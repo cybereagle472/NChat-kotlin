@@ -49,24 +49,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +102,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.ServiceLocator
@@ -109,6 +114,7 @@ import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ConversationScreen(
@@ -128,7 +134,9 @@ fun ConversationScreen(
     val activeMessageId by viewModel.activeMessageId.collectAsStateWithLifecycle()
     val replyTo by viewModel.replyTo.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
-    val anchors = remember { mutableStateMapOf<String, Rect>() }
+    // Plain HashMap on purpose: bubble bounds are only read when a menu opens, and a
+    // snapshot-backed map would invalidate readers on every layout pass while scrolling.
+    val anchors = remember { HashMap<String, Rect>() }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
     var reactionTargetId by remember { mutableStateOf<String?>(null) }
     var callKind by remember {
@@ -139,6 +147,8 @@ fun ConversationScreen(
     var profileOpen by remember { mutableStateOf(false) }
     var groupInfoOpen by remember { mutableStateOf(false) }
     var forwardingId by remember { mutableStateOf<String?>(null) }
+    var mediaViewer by remember { mutableStateOf<Message?>(null) }
+    var editing by remember { mutableStateOf<Message?>(null) }
     val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
@@ -160,12 +170,28 @@ fun ConversationScreen(
 
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
-    val timeline = remember(messages) { buildTimeline(messages) }
+    val firstUnreadId by viewModel.firstUnreadId.collectAsStateWithLifecycle()
+    val timeline = remember(messages, firstUnreadId) { buildTimeline(messages, firstUnreadId) }
     val typingRow = if (chat?.isTyping == true) 1 else 0
+    val scope = rememberCoroutineScope()
+    // Auto-scroll only when the reader is parked at the bottom, or sent the message
+    // themselves; otherwise new traffic must never yank the viewport away.
+    val atBottom by remember { derivedStateOf { !listState.canScrollForward } }
+    var didInitialScroll by remember { mutableStateOf(false) }
 
     LaunchedEffect(timeline.size, typingRow) {
         val last = timeline.lastIndex + typingRow
-        if (last >= 0) listState.animateScrollToItem(last)
+        if (last < 0) return@LaunchedEffect
+        if (!didInitialScroll) {
+            didInitialScroll = true
+            // Opening a chat with unread messages parks the viewport on the resume marker.
+            val marker = timeline.indexOfFirst { it is TimelineItem.UnreadDivider }
+            listState.scrollToItem(if (marker >= 0) marker else last)
+            return@LaunchedEffect
+        }
+        if (atBottom || messages.lastOrNull()?.isMine == true) {
+            listState.animateScrollToItem(last)
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -190,26 +216,57 @@ fun ConversationScreen(
                 }
             )
 
+            if (timeline.isEmpty()) {
+                EmptyConversation(
+                    title = chatTitle,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = NcSpace.md, vertical = NcSpace.md),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(items = timeline, key = { it.key }) { item ->
+                items(
+                    items = timeline,
+                    key = { it.key },
+                    // Reuse slots per row kind instead of tearing down composables.
+                    contentType = { item ->
+                        when (item) {
+                            is TimelineItem.Separator -> 0
+                            is TimelineItem.UnreadDivider -> 1
+                            is TimelineItem.Bubble -> 2
+                        }
+                    }
+                ) { item ->
                     when (item) {
                         is TimelineItem.Separator -> DateSeparatorPill(label = item.label)
-                        is TimelineItem.Bubble -> Box(
-                            modifier = Modifier.onGloballyPositioned { coordinates ->
-                                anchors[item.message.id] = coordinates.boundsInWindow()
+                        is TimelineItem.UnreadDivider -> UnreadDivider()
+                        is TimelineItem.Bubble -> {
+                            val message = item.message
+                            // Keyed lambdas keep each bubble skippable while the list scrolls.
+                            val onLongPress = remember(message.id) {
+                                { viewModel.onSelectMessage(message.id) }
                             }
-                        ) {
-                            MessageBubble(
-                                message = item.message,
-                                onLongPress = { viewModel.onSelectMessage(item.message.id) },
-                                showAuthor = isGroupChat,
-                                showAvatar = item.showSender
-                            )
+                            val onMediaClick = remember(message.id) {
+                                { mediaViewer = message }
+                            }
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    anchors[message.id] = coordinates.boundsInWindow()
+                                }
+                            ) {
+                                MessageBubble(
+                                    message = message,
+                                    onLongPress = onLongPress,
+                                    onMediaClick = onMediaClick,
+                                    showAuthor = isGroupChat,
+                                    showAvatar = item.showSender
+                                )
+                            }
                         }
                     }
                 }
@@ -247,6 +304,7 @@ fun ConversationScreen(
                     }
                 }
             }
+            }
 
             ComposerBar(
                 text = composerText,
@@ -265,12 +323,34 @@ fun ConversationScreen(
             )
         }
 
+        AnimatedVisibility(
+            visible = !atBottom && timeline.isNotEmpty(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = NcSpace.lg, bottom = 96.dp),
+            enter = fadeIn(tween(140)) + scaleIn(tween(180), initialScale = 0.85f),
+            exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.85f)
+        ) {
+            ScrollToLatestButton(
+                onClick = {
+                    scope.launch {
+                        listState.animateScrollToItem((timeline.lastIndex + typingRow).coerceAtLeast(0))
+                    }
+                }
+            )
+        }
+
     val activeMessage = activeMessageId?.let { id -> messages.firstOrNull { it.id == id } }
     if (activeMessageId != null && activeMessage != null) {
         MessageActionMenu(
             anchor = anchors[activeMessageId],
             showCopy = activeMessage.text.isNotBlank() && !activeMessage.deleted,
             showReply = !activeMessage.deleted,
+            showEdit = canEditMessage(activeMessage),
+            onEdit = {
+                editing = activeMessage
+                viewModel.onSelectMessage(null)
+            },
             onDismiss = { viewModel.onSelectMessage(null) },
             onReact = viewModel::onReaction,
             reactedEmojis = activeMessage.reactions
@@ -285,6 +365,7 @@ fun ConversationScreen(
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
                 viewModel.onSelectMessage(null)
+                NcToaster.show("Message copied")
             },
             onForward = {
                 forwardingId = activeMessage.id
@@ -320,6 +401,9 @@ fun ConversationScreen(
                 onForward = { targets ->
                     viewModel.onForward(messageId, targets)
                     forwardingId = null
+                    NcToaster.show(
+                        if (targets.size == 1) "Forwarded to 1 chat" else "Forwarded to ${targets.size} chats"
+                    )
                 }
             )
         }
@@ -370,10 +454,12 @@ fun ConversationScreen(
             onDeleteForEveryone = {
                 viewModel.onDeleteMessage(doomed.id, forEveryone = true)
                 pendingDelete = null
+                NcToaster.show("Message deleted for everyone")
             },
             onDeleteForMe = {
                 viewModel.onDeleteMessage(doomed.id, forEveryone = false)
                 pendingDelete = null
+                NcToaster.show("Message deleted for you")
             }
         )
     }
@@ -391,6 +477,302 @@ fun ConversationScreen(
                 reactionTargetId = null
             },
             onDismiss = { reactionTargetId = null }
+        )
+    }
+
+    mediaViewer?.let { message ->
+        MediaViewerDialog(message = message, onDismiss = { mediaViewer = null })
+    }
+
+    editing?.let { message ->
+        EditMessageDialog(
+            original = message,
+            onDismiss = { editing = null },
+            onSave = { text ->
+                viewModel.onEditMessage(message.id, text)
+                editing = null
+                NcToaster.show("Message edited")
+            }
+        )
+    }
+}
+
+/** Own text messages can be edited for 15 minutes, matching `MessageActions.tsx`. */
+private fun canEditMessage(message: Message): Boolean =
+    message.isMine &&
+        !message.deleted &&
+        message.kind == MessageKind.Text &&
+        System.currentTimeMillis() - message.timestamp < 15 * 60 * 1000L
+
+/** Full-screen media preview, opened by tapping a photo or video bubble. */
+@Composable
+private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
+    val isVideo = message.kind == MessageKind.Video
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xF20F172A))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = NcSpace.md, vertical = 96.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isVideo) {
+                                Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF1E293B)))
+                            } else {
+                                Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isVideo) Icons.Rounded.PlayArrow else Icons.Rounded.Image,
+                        contentDescription = null,
+                        tint = Color(0xE6FFFFFF),
+                        modifier = Modifier.size(if (isVideo) 56.dp else 44.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = NcSpace.sm, vertical = NcSpace.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x33FFFFFF))
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close preview",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = NcSpace.md)
+                ) {
+                    Text(
+                        text = message.authorName,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = buildString {
+                            append(TimeFormat.clock(message.timestamp))
+                            append(" · ")
+                            append(if (isVideo) "Video" else "Photo")
+                        },
+                        color = Color(0xB3FFFFFF),
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Compose-state edit sheet: prefilled body, Save disabled until something changes. */
+@Composable
+private fun EditMessageDialog(
+    original: Message,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var draft by remember(original.id) { mutableStateOf(original.text) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = NcSpace.xxl)
+                    .fillMaxWidth()
+                    .shadow(20.dp, RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .padding(NcSpace.lg)
+            ) {
+                Text(
+                    text = "Edit message",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E293B)
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = NcSpace.md)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = { if (it.length <= 1_024) draft = it },
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF1E293B)),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = NcSpace.lg),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF64748B),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onDismiss)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                    val canSave = draft.isNotBlank() && draft.trim() != original.text.trim()
+                    Text(
+                        text = "Save",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (canSave) Color(0xFF7C3AED) else Color(0xFFCBD5E1),
+                        modifier = Modifier
+                            .padding(start = NcSpace.sm)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = canSave) { onSave(draft) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Centered "unread messages" marker: where the conversation was left off. */
+@Composable
+private fun UnreadDivider() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Color(0x338B5CF6))
+        )
+        Text(
+            text = "Unread messages",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF7C3AED),
+            modifier = Modifier
+                .padding(horizontal = NcSpace.sm)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0x1F8B5CF6))
+                .padding(horizontal = 10.dp, vertical = 3.dp)
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Color(0x338B5CF6))
+        )
+    }
+}
+
+/** Floating glass pill that returns the reader to the newest message. */
+@Composable
+private fun ScrollToLatestButton(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .size(42.dp)
+            .shadow(6.dp, CircleShape)
+            .clip(CircleShape)
+            .background(Color.White)
+            .border(1.dp, Color(0x140F172A), CircleShape)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.KeyboardArrowDown,
+            contentDescription = "Jump to latest",
+            tint = Color(0xFF7C3AED),
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+/** Prompt shown in a conversation that has no messages yet. */
+@Composable
+private fun EmptyConversation(title: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(horizontal = NcSpace.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(NcTheme.extra.brandGradient)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ChatBubble,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(30.dp)
+            )
+        }
+        Text(
+            text = "Start the conversation",
+            color = Color(0xFF1E293B),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = NcSpace.md)
+        )
+        Text(
+            text = "Say hello to $title",
+            color = Color(0xFF64748B),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp)
         )
     }
 }
@@ -1023,18 +1405,28 @@ private sealed interface TimelineItem {
     data class Bubble(val message: Message, val showSender: Boolean) : TimelineItem {
         override val key: String = message.id
     }
+
+    /** "Resume here" marker inserted before the first message that was unread on open. */
+    data object UnreadDivider : TimelineItem {
+        override val key: String = "unread-divider"
+    }
 }
 
-private fun buildTimeline(messages: List<Message>): List<TimelineItem> {
+private fun buildTimeline(messages: List<Message>, firstUnreadId: String? = null): List<TimelineItem> {
     val timeline = mutableListOf<TimelineItem>()
     var lastLabel: String? = null
     var previousAuthor: String? = null
+    var dividerPlaced = false
     messages.forEach { message ->
         val label = TimeFormat.daySeparator(message.timestamp)
         val newDay = label != lastLabel
         if (newDay) {
             timeline += TimelineItem.Separator(label)
             lastLabel = label
+        }
+        if (!dividerPlaced && firstUnreadId != null && message.id == firstUnreadId) {
+            timeline += TimelineItem.UnreadDivider
+            dividerPlaced = true
         }
         // Avatar only on the first bubble of a sender run (or after a day separator).
         timeline += TimelineItem.Bubble(message, showSender = newDay || previousAuthor != message.authorId)

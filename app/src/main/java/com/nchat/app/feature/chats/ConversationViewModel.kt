@@ -33,11 +33,24 @@ class ConversationViewModel(
     private val _activeMessageId = MutableStateFlow<String?>(null)
     val activeMessageId: StateFlow<String?> = _activeMessageId.asStateFlow()
 
+    /**
+     * First message that was still unread when this conversation opened, captured before
+     * [ChatRepository.markRead] clears the badge. Drives the "resume here" divider.
+     */
+    private val _firstUnreadId = MutableStateFlow<String?>(null)
+    val firstUnreadId: StateFlow<String?> = _firstUnreadId.asStateFlow()
+
     /** The message the composer is currently quoting, if any. */
     private val _replyTo = MutableStateFlow<Message?>(null)
     val replyTo: StateFlow<Message?> = _replyTo.asStateFlow()
 
     init {
+        val unread = repository.chats.value.firstOrNull { it.id == chatId }?.unreadCount ?: 0
+        val history = messages.value
+        if (unread > 0 && history.isNotEmpty()) {
+            val index = (history.size - unread).coerceIn(0, history.lastIndex)
+            _firstUnreadId.value = history[index].id
+        }
         repository.markRead(chatId)
     }
 
@@ -72,6 +85,10 @@ class ConversationViewModel(
 
     fun onSelectMessage(messageId: String?) {
         _activeMessageId.value = messageId
+    }
+
+    fun onEditMessage(messageId: String, text: String) {
+        repository.editMessage(chatId, messageId, text)
     }
 
     fun onDeleteMessage(messageId: String, forEveryone: Boolean) {

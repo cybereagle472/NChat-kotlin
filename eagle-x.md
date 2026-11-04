@@ -144,7 +144,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
 | 1.0.12 | 20 | `nchat-build-98` | Auth screen, profile setup, local session, Log Out. |
 | 1.0.13 | 21 | `nchat-build-101` | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
-| 1.0.14 | 22 | *pending* | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
+| 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
+| 1.0.15 | 23 | *pending* | Conversation depth: resume marker, jump-to-latest, media viewer, message editing, toasts; per-row render layers removed. |
 
 ---
 
@@ -329,7 +330,14 @@ Standing rules:
 - Keep `key`s on list items and hoist `LazyListState` to the tab host so returning to a
   tab restores its scroll offset instead of rebuilding.
 - Rows follow §6.0: single-line text, one weighted flexible child, fixed leading/trailing
-  columns, `heightIn(min = …)`. Whenever a new label is added to a row, ask "what happens at
+  columns, `heightIn(min = …)`.
+- **No per-row `shadow()`.** Each shadowed bubble is its own render layer; a hairline border
+  looks identical at 1dp and costs nothing. Shadows stay on one-off chrome (sheets, pills).
+- **No snapshot-backed maps written from layout.** Bubble bounds live in a plain `HashMap`
+  and are read only when a menu opens; writing them into `mutableStateMapOf` invalidated
+  readers on every layout pass while scrolling.
+- **Scrolling must never re-filter.** Derived lists (`calls.filter`, `friends.filter`, …) are
+  wrapped in `remember(data, key)`. Whenever a new label is added to a row, ask "what happens at
   1.3× font scale on a 360dp screen?" — if the answer is "it wraps", weight the label and
   ellipsize it, never the token beside it.
 
