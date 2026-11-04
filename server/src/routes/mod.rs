@@ -1,9 +1,15 @@
 //! Route table — mirrors `worker/src/index.ts` one-for-one.
 
+pub mod admin;
 pub mod auth;
+pub mod calls;
 pub mod friends;
+pub mod group_calls;
+pub mod groups;
+pub mod media;
 pub mod messages;
 pub mod privacy;
+pub mod status;
 pub mod users;
 
 use axum::body::Bytes;
@@ -53,6 +59,56 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/messages", post(messages::send))
         .route("/privacy", get(privacy::get_settings).patch(privacy::patch_settings))
+        .route("/admin/stats", get(admin::stats))
+        // ---- groups ----
+        .route("/groups/messages/:message_id/delete-for-me", post(groups::delete_message_for_me))
+        .route("/groups/messages/:message_id/delete-for-everyone", post(groups::delete_message_for_everyone))
+        .route("/groups/messages/:message_id/reaction", post(groups::react_message))
+        .route("/groups", get(groups::list).post(groups::create))
+        .route(
+            "/groups/:id",
+            get(groups::one).patch(groups::update).delete(groups::delete),
+        )
+        .route("/groups/:id/members", get(groups::members).post(groups::add_members))
+        .route(
+            "/groups/:id/members/:user_id",
+            axum::routing::delete(groups::remove_member).patch(groups::set_role),
+        )
+        .route("/groups/:id/leave", post(groups::leave))
+        .route("/groups/:id/mute", patch(groups::mute))
+        .route("/groups/:id/messages", get(groups::messages).post(groups::send_message))
+        .route("/groups/:id/typing", post(groups::typing))
+        .route("/groups/:id/recording", post(groups::recording))
+        .route("/groups/:id/read", post(groups::mark_read))
+        // ---- status / stories ----
+        .route("/status/mine", get(status::mine))
+        .route("/status/feed", get(status::feed))
+        .route("/status/muted", get(status::muted))
+        .route("/status/mute", post(status::mute))
+        .route("/status/mute/:muted_user_id", axum::routing::delete(status::unmute))
+        .route("/status/:id/view", post(status::view))
+        .route("/status/:id/views", get(status::views))
+        .route("/status/:id", axum::routing::delete(status::delete))
+        .route("/status", post(status::create))
+        // ---- 1:1 calls ----
+        .route("/calls/turn-credentials", get(calls::turn_credentials))
+        .route("/calls/history", get(calls::history))
+        .route("/calls/:id/signal", post(calls::signal))
+        .route("/calls/:id/answer", post(calls::answer))
+        .route("/calls/:id/end", post(calls::end))
+        .route("/calls", post(calls::create))
+        // ---- group calls ----
+        .route("/group-calls", post(group_calls::start))
+        .route("/group-calls/:id/join", post(group_calls::join))
+        .route("/group-calls/:id/signal", post(group_calls::signal))
+        .route("/group-calls/:id/decline", post(group_calls::decline))
+        .route("/group-calls/:id/leave", post(group_calls::leave))
+        // ---- media ----
+        .route("/media/upload", post(media::upload))
+        .route(
+            "/media/file/*key",
+            get(media::file).delete(media::delete),
+        )
         .route("/realtime/connect", get(realtime::connect))
         .with_state(state)
 }

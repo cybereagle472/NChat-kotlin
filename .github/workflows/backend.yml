@@ -49,7 +49,12 @@ jobs:
         continue-on-error: true
 
       - name: Test
-        run: cargo test 2>&1 | tee ../rust-test.log
+        run: |
+          set -euo pipefail
+          cargo test 2>&1 | tee ../rust-test.log
+          # Guard: a green run must actually have executed tests.
+          grep -q 'test result:' ../rust-test.log
+          grep -q 'test result: ok' ../rust-test.log
 
       - name: Upload logs
         if: failure()
