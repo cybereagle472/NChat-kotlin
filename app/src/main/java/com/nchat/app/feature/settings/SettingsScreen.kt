@@ -277,15 +277,28 @@ fun SettingsScreen(
                 }
 
                 item(key = "footer") {
-                    Text(
-                        text = "NChat v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
-                        fontSize = 12.sp,
-                        color = NcTheme.extra.textMuted,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = NcSpace.lg, bottom = NcSpace.xxl),
-                        textAlign = TextAlign.Center
-                    )
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "NChat v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
+                            fontSize = 12.sp,
+                            color = NcTheme.extra.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                        // Read-only, straight from BuildConfig: this is how you check that the
+                        // build actually received the address it was compiled with.
+                        Text(
+                            text = "Server: ${builtInServer()}",
+                            fontSize = 11.sp,
+                            color = NcTheme.extra.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
@@ -614,3 +627,15 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 /** Which pane of Settings is showing. */
 private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked }
 
+
+/**
+ * The host this APK was compiled against, with the scheme stripped so it reads like a name.
+ *
+ * It is a label, not a setting — there is no way to change it from the UI (the address is
+ * baked in at build time). It exists so "did the build get my address?" has a visual answer.
+ */
+private fun builtInServer(): String =
+    ServiceLocator.serverUrl
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .ifEmpty { "not set in this build" }
