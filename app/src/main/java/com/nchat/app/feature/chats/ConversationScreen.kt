@@ -127,76 +127,77 @@ fun ConversationScreen(
         if (last >= 0) listState.animateScrollToItem(last)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Brush.linearGradient(NcTheme.extra.bodyGradient))
-    ) {
-        ConversationHeader(
-            chatTitle = chatTitle,
-            chat = chat,
-            onBack = onBack,
-            onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio }
-        )
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = NcSpace.md, vertical = NcSpace.md),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.linearGradient(NcTheme.extra.bodyGradient))
         ) {
-            items(items = timeline, key = { it.key }) { item ->
-                when (item) {
-                    is TimelineItem.Separator -> DateSeparatorPill(label = item.label)
-                    is TimelineItem.Bubble -> Box(
-                       modifier = Modifier.onGloballyPositioned { coordinates ->
-                            anchors[item.message.id] = coordinates.boundsInWindow()
-                        }
-                    ) {
-                        MessageBubble(
-                            message = item.message,
-                            onLongPress = { viewModel.onSelectMessage(item.message.id) }
-                        )
-                    }
-                }
-            }
-            if (chat?.isTyping == true) {
-                item(key = "typing") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .shadow(1.dp, RoundedCornerShape(16.dp))
-                                .clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp))
-                                .background(Color.White)
-                                .padding(horizontal = 14.dp, vertical = 12.dp)
-                        ) {
-                            NcTypingDots()
-                        }
-                    }
-                }
-            }
-        }
+            ConversationHeader(
+                chatTitle = chatTitle,
+                chat = chat,
+                onBack = onBack,
+                onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio }
+            )
 
-        ComposerBar(
-            text = composerText,
-            replyTo = replyTo,
-            onTextChange = viewModel::onComposerChange,
-            onSend = {
-                viewModel.onSend()
-                keyboard?.hide()
-            },
-            onCancelReply = viewModel::onCancelReply,
-            onSendAttachment = { kind ->
-                viewModel.onSendAttachment(kind)
-                keyboard?.hide()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = NcSpace.md, vertical = NcSpace.md),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(items = timeline, key = { it.key }) { item ->
+                    when (item) {
+                        is TimelineItem.Separator -> DateSeparatorPill(label = item.label)
+                        is TimelineItem.Bubble -> Box(
+                            modifier = Modifier.onGloballyPositioned { coordinates ->
+                                anchors[item.message.id] = coordinates.boundsInWindow()
+                            }
+                        ) {
+                            MessageBubble(
+                                message = item.message,
+                                onLongPress = { viewModel.onSelectMessage(item.message.id) }
+                            )
+                        }
+                    }
+                }
+                if (chat?.isTyping == true) {
+                    item(key = "typing") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .shadow(1.dp, RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp))
+                                    .background(Color.White)
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                NcTypingDots()
+                            }
+                        }
+                    }
+                }
             }
-        )
-    }
+
+            ComposerBar(
+                text = composerText,
+                replyTo = replyTo,
+                onTextChange = viewModel::onComposerChange,
+                onSend = {
+                    viewModel.onSend()
+                    keyboard?.hide()
+                },
+                onCancelReply = viewModel::onCancelReply,
+                onSendAttachment = { kind ->
+                    viewModel.onSendAttachment(kind)
+                    keyboard?.hide()
+                }
+            )
+        }
 
     val activeMessage = activeMessageId?.let { id -> messages.firstOrNull { it.id == id } }
     if (activeMessageId != null && activeMessage != null) {
@@ -218,13 +219,14 @@ fun ConversationScreen(
         )
     }
 
-    callKind?.let { kind ->
-        CallOverlay(
-            name = chatTitle,
-            emoji = chat?.avatarEmoji,
-            isVideo = kind == CallKind.Video,
-            onClose = { callKind = null }
-        )
+        callKind?.let { kind ->
+            CallOverlay(
+                name = chatTitle,
+                emoji = chat?.avatarEmoji,
+                isVideo = kind == CallKind.Video,
+                onClose = { callKind = null }
+            )
+        }
     }
 
     pendingDelete?.let { doomed ->
