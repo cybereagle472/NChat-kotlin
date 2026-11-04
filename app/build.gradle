@@ -4,27 +4,6 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
-/** Backend address for this build — see nchat.properties for the precedence rules. */
-def resolveApiBase(project, rootProject) {
-    def fromProperties = { File file, String key ->
-        if (file == null || !file.exists()) return null
-        def props = new Properties()
-        file.withInputStream { props.load(it) }
-        return props.getProperty(key)?.trim() ?: null
-    }
-
-    def candidates = [
-        project.findProperty("NCHAT_API_BASE"),
-        System.getenv("NCHAT_API_BASE"),
-        fromProperties(rootProject.file("local.properties"), "nchat.apiBase"),
-        fromProperties(rootProject.file("nchat.properties"), "apiBase"),
-    ]
-    def value = candidates.find { it != null && !it.toString().trim().isEmpty() }
-    return value == null ? "" : value.toString().trim().replaceAll("/+$", "")
-}
-
-
-
 android {
     namespace 'com.nchat.app'
     compileSdk 34
@@ -42,11 +21,24 @@ android {
         // > empty (the app then asks for an address on first launch). No Kotlin source knows
         // the address: ServerConfig.effective() -> ApiClient is the single choke point, the
         // Android counterpart of the web client's VITE_API_URL -> API_BASE.
-        def apiBase = resolveApiBase(project, rootProject)
+        def apiBase = (project.findProperty("NCHAT_API_BASE")
+                ?: System.getenv("NCHAT_API_BASE")
+                ?: "")
+        if (apiBase.toString().trim().isEmpty()) {
+            ["local.properties": "nchat.apiBase", "nchat.properties": "apiBase"].each { name, key ->
+                def file = rootProject.file(name)
+                if (apiBase.toString().trim().isEmpty() && file.exists()) {
+                    def props = new Properties()
+                    file.withInputStream { stream -> props.load(stream) }
+                    apiBase = props.getProperty(key, "")
+                }
+            }
+        }
+        apiBase = apiBase.toString().trim().replaceAll('/+$', '')
         if (apiBase.isEmpty()) {
             logger.lifecycle("NCHAT_API_BASE is not set: this APK will ask for a server address on first launch.")
         } else {
-            logger.lifecycle("NCHAT_API_BASE resolved from config (host hidden from logs)")
+            logger.lifecycle("NCHAT_API_BASE resolved from build configuration")
         }
         buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\""
     }
