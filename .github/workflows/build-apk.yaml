@@ -36,7 +36,19 @@ jobs:
           KEY_STORE_PASSWORD: NChatDemo2026!
           KEY_ALIAS: nchat-demo
           KEY_PASSWORD: NChatDemo2026!
-        run: gradle --no-daemon --stacktrace :app:assembleRelease
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:assembleRelease 2>&1 | tee /tmp/gradle-build.log
+      - name: Capture build log on failure
+        if: failure()
+        run: |
+          mkdir -p .ci
+          { echo "run: $GITHUB_RUN_ID"; tail -n 500 /tmp/gradle-build.log; } > .ci/last-failure.log
+          git config user.name "nchat-ci"
+          git config user.email "ci@nchat.local"
+          git add -f .ci/last-failure.log
+          git commit -m "ci: capture build failure log [skip ci]" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
       - name: Prepare stable APK filename
         run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
