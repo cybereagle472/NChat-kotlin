@@ -250,7 +250,8 @@ mod access {
     use crate::privacy::{are_friends, Visibility};
 
     pub fn can_read(state: &AppState, user_id: &str, key: &str) -> ApiResult<bool> {
-        state.db.with(|conn| {
+        // `Db::with` hands back a `rusqlite::Result`; `?` turns a failed query into a 500.
+        Ok(state.db.with(|conn| {
             let owned: Option<i64> = conn
                 .query_row(
                     "SELECT 1 FROM media_attachments WHERE file_path = ? AND uploader_id = ?",
@@ -339,7 +340,7 @@ mod access {
                 )
                 .optional()?;
             Ok(avatar.is_some())
-        })
+        })?)
     }
 }
 
@@ -593,7 +594,7 @@ mod tests {
         assert!(!verify_link("other", "user-1/abc.png", exp, &signature));
         // Truncated or empty signatures must fail without panicking.
         assert!(!verify_link(secret, "user-1/abc.png", exp, ""));
-        assert!(!verify_link(secret, "user-1/abc.png", exp, &signature.as_bytes()[..8]));
+        assert!(!verify_link(secret, "user-1/abc.png", exp, &signature[..8]));
     }
 
     #[test]
