@@ -1,5 +1,6 @@
 package com.nchat.app.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,12 +42,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +62,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.BuildConfig
-import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcBackdrop
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
@@ -65,6 +69,8 @@ import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.UserProfile
+import com.nchat.app.feature.profile.ProfileAvatar
+import com.nchat.app.feature.profile.ProfileScreen
 import kotlin.math.roundToInt
 
 /**
@@ -81,11 +87,32 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val profile = ServiceLocator.profile
+    val profile by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
+    val avatar by ServiceLocator.profileRepository.avatar.collectAsStateWithLifecycle()
+    var section by remember { mutableStateOf(SettingsPane.Main) }
+    BackHandler(enabled = section == SettingsPane.Profile) { section = SettingsPane.Main }
+
+    if (section == SettingsPane.Profile) {
+        ProfileScreen(
+            profile = profile,
+            avatar = avatar,
+            onBack = { section = SettingsPane.Main },
+            onUpdateName = ServiceLocator.profileRepository::updateName,
+            onUpdateAbout = ServiceLocator.profileRepository::updateAbout,
+            onAvatarChanged = { ServiceLocator.profileRepository.setAvatar(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     NcBackdrop(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            SettingsHeader(profile = profile, onBack = onBack)
+            SettingsHeader(
+                profile = profile,
+                avatar = avatar,
+                onBack = onBack,
+                onOpenProfile = { section = SettingsPane.Profile }
+            )
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -250,7 +277,12 @@ fun SettingsScreen(
 
 /** Gradient header with the round back button and the profile card. */
 @Composable
-private fun SettingsHeader(profile: UserProfile, onBack: () -> Unit) {
+private fun SettingsHeader(
+    profile: UserProfile,
+    avatar: ImageBitmap?,
+    onBack: () -> Unit,
+    onOpenProfile: () -> Unit
+) {
     val extra = NcTheme.extra
     val backInteraction = rememberPressSource()
     val profileInteraction = rememberPressSource()
@@ -314,7 +346,7 @@ private fun SettingsHeader(profile: UserProfile, onBack: () -> Unit) {
                 .clickable(
                     interactionSource = profileInteraction,
                     indication = null,
-                    onClick = {}
+                    onClick = onOpenProfile
                 )
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -326,7 +358,7 @@ private fun SettingsHeader(profile: UserProfile, onBack: () -> Unit) {
                     .clip(CircleShape)
                     .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
             ) {
-                NcAvatar(name = profile.fullName, size = 56.dp)
+                ProfileAvatar(name = profile.fullName, image = avatar, size = 56.dp)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -458,3 +490,6 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
     Cyan(Color(0xFFCFFAFE), Color(0xFF0891B2)),
     Gray(Color(0xFFF3F4F6), Color(0xFF6B7280))
 }
+
+/** Which pane of Settings is showing. */
+private enum class SettingsPane { Main, Profile }

@@ -1,6 +1,6 @@
 {
-  "versionCode": 18,
-  "versionName": "1.0.10",
+  "versionCode": 19,
+  "versionName": "1.0.11",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.10 — group calls. Starting a voice or video call from a group chat now opens the group call screen: the group avatar pulses inside a violet ring while 'Calling everyone in …' runs, then the call switches to the two-column participant grid — your own tile followed by everyone joining, each with a connecting badge until they are in, muted-mic markers and the name pills. The header shows how many people are in the call and a live timer, and the controls cover mute, camera on/off, speaker and the red hang-up, plus a Cancel button while it is still ringing."
+  "releaseNotes": "NChat 1.0.11 — your editable profile. Tapping the profile card at the top of Settings now opens the Profile page: a large avatar with a camera button, the Name and About rows you can edit in place with Save and Cancel, and the read-only Username and Phone rows. Changing the photo opens the real system photo picker and then the Move and Scale cropper from the reference — drag to reposition, pinch or use the slider and +/- buttons to zoom between 100% and 400%, double-tap to snap-zoom, rotate in 90° steps and confirm with the gradient check; the circle you framed is what gets saved. Your new name, bio and photo appear everywhere in the app straight away."
 }

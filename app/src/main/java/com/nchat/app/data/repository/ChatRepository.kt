@@ -52,7 +52,8 @@ interface ChatRepository {
 
 class InMemoryChatRepository(
     private val seed: MockDataProvider = MockDataProvider,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val profileProvider: () -> UserProfile = { MockDataProvider.profile }
 ) : ChatRepository {
 
     private val _chats = MutableStateFlow(seed.chats())
@@ -64,7 +65,7 @@ class InMemoryChatRepository(
     private val conversations = mutableMapOf<String, MutableStateFlow<List<Message>>>()
     private val messageIds = AtomicLong(0L)
 
-    val profile: UserProfile = MockDataProvider.profile
+    val profile: UserProfile get() = profileProvider()
     val statuses: List<StatusUpdate> = MockDataProvider.statuses()
     val friends: List<Friend> = MockDataProvider.friends()
     val calls: List<CallRecord> = MockDataProvider.calls()
