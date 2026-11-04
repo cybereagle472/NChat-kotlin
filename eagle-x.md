@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.23** (`versionCode 31`)
+- Current version: **1.0.24** (`versionCode 32`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -251,6 +251,12 @@ stay HTTPS-only.
   three legacy camelCase keys** the reference emits (`fileName`, `fileSize`, `lastMessage`,
   `unreadCount`, `receiverIds`). Every field is nullable/defaulted: the backend omits nulls,
   and a new server field must never crash an old APK.
+- **`CrashLog`** — `install()` runs first in `NChatApplication.onCreate`; it records the
+  throwable, the app version and the device to `files/last-crash.txt` (plus a copy in
+  `Android/data/com.nchat.app/files/` for a file manager), then lets the platform handler run.
+  `MainActivity` shows the stored report before composing the app. `CrashLog.note(...)` is the
+  same path for failures that are caught on purpose — silence hides bugs, so they are logged
+  and shown but never fatal.
 - **`MediaImages`** — the Coil loader registered by `NChatApplication` (a Coil
   `ImageLoaderFactory`, so every `AsyncImage` inherits it). It adds `Authorization: Bearer …`
   to `/media/` reads **only for our own origin**, renews the session once through
@@ -406,7 +412,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
 | 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
 | 1.0.22 | 30 | *this build* | **Security & privacy pass** (see `SECURITY.md`). Tokens are AES-256-GCM encrypted under an Android Keystore key; the server throttles login/sign-up, caps upload size, confines media keys to the media directory (path-traversal fix), streams media instead of buffering it, and no longer ships a personal admin address in the source. |
-| 1.0.23 | 31 | *this build* | **Photos shrink, previews fly, the list opens instantly, media is private — and the server switcher is gone.** Picked photos are re-encoded to 1600 px / JPEG 85 with EXIF (GPS) stripped and a 320 px thumbnail uploaded alongside; the chat list paints from an on-device cache before the network answers (cleared on sign-out); `/media/file/*` now authorises per caller (uploader, conversation participant, group member, or status audience) and offers signed expiring links via `/media/link`, while the app loads every image with the session token through `MediaImages`. Settings ▸ Server was removed: the address is fixed at build time, bare hosts are normalised to `https://`. |
+| 1.0.24 | 32 | *this build* | **A failure now explains itself.** Any uncaught exception (plus every caught-but-important background failure) is written to `files/last-crash.txt` and to the app's external files dir, and the next launch opens `CrashReportScreen` — selectable text, one-tap *Copy report*, *Delete and start*. The image loader was rebuilt as a standalone OkHttp client fed by lambdas, so a picture that cannot be fetched degrades to a placeholder instead of a process death; `ServiceLocator.appScope` gained a `CoroutineExceptionHandler` for the same reason. |
+| 1.0.23 | 31 | *shipped as build 165* | **Photos shrink, previews fly, the list opens instantly, media is private — and the server switcher is gone.** Picked photos are re-encoded to 1600 px / JPEG 85 with EXIF (GPS) stripped and a 320 px thumbnail uploaded alongside; the chat list paints from an on-device cache before the network answers (cleared on sign-out); `/media/file/*` now authorises per caller (uploader, conversation participant, group member, or status audience) and offers signed expiring links via `/media/link`, while the app loads every image with the session token through `MediaImages`. Settings ▸ Server was removed: the address is fixed at build time, bare hosts are normalised to `https://`. |
 
 
 ---
