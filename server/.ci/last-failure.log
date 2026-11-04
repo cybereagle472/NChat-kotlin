@@ -1,28 +1,28 @@
-# backend failure — run 41813061129
+# backend failure — run 41813176418
 ## where
 /home/runner/work/NChat-kotlin/NChat-kotlin/server
-total 176
-drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 .
-drwxr-xr-x 3 runner runner  4096 Nov  4 10:16 ..
-drwxr-xr-x 2 runner runner  4096 Nov  4 10:16 .ci
-drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 .git
-drwxr-xr-x 3 runner runner  4096 Nov  4 10:16 .github
--rw-r--r-- 1 runner runner   107 Nov  4 10:16 .gitignore
--rw-r--r-- 1 runner runner  5917 Nov  4 10:16 ARCHITECTURE.md
--rw-r--r-- 1 runner runner 21685 Nov  4 10:16 PARITY.md
--rw-r--r-- 1 runner runner  5904 Nov  4 10:16 SECURITY.md
--rw-r--r-- 1 runner runner  1722 Nov  4 10:16 UPDATE_SETUP.md
-drwxr-xr-x 3 runner runner  4096 Nov  4 10:16 app
--rw-r--r-- 1 runner runner   485 Nov  4 10:16 build.gradle
--rw-r--r-- 1 runner runner 39954 Nov  4 10:16 eagle-x.md
--rw-r--r-- 1 runner runner   149 Nov  4 10:16 gradle.properties
--rw-r--r-- 1 runner runner  1346 Nov  4 10:16 nchat.properties
--rw-r--r-- 1 runner runner 12518 Nov  4 10:16 rust-build.log
--rw-r--r-- 1 runner runner 11572 Nov  4 10:16 rust-clippy.log
--rw-r--r-- 1 runner runner 11040 Nov  4 10:16 rust-test.log
-drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
--rw-r--r-- 1 runner runner    15 Nov  4 10:16 settings.gradle
--rw-r--r-- 1 runner runner   654 Nov  4 10:16 version.json
+total 172
+drwxr-xr-x 7 runner runner  4096 Nov  4 10:17 .
+drwxr-xr-x 3 runner runner  4096 Nov  4 10:17 ..
+drwxr-xr-x 2 runner runner  4096 Nov  4 10:17 .ci
+drwxr-xr-x 7 runner runner  4096 Nov  4 10:17 .git
+drwxr-xr-x 3 runner runner  4096 Nov  4 10:17 .github
+-rw-r--r-- 1 runner runner   107 Nov  4 10:17 .gitignore
+-rw-r--r-- 1 runner runner  5917 Nov  4 10:17 ARCHITECTURE.md
+-rw-r--r-- 1 runner runner 21685 Nov  4 10:17 PARITY.md
+-rw-r--r-- 1 runner runner  5904 Nov  4 10:17 SECURITY.md
+-rw-r--r-- 1 runner runner  1722 Nov  4 10:17 UPDATE_SETUP.md
+drwxr-xr-x 3 runner runner  4096 Nov  4 10:17 app
+-rw-r--r-- 1 runner runner   485 Nov  4 10:17 build.gradle
+-rw-r--r-- 1 runner runner 39954 Nov  4 10:17 eagle-x.md
+-rw-r--r-- 1 runner runner   149 Nov  4 10:17 gradle.properties
+-rw-r--r-- 1 runner runner  1346 Nov  4 10:17 nchat.properties
+-rw-r--r-- 1 runner runner 10950 Nov  4 10:17 rust-build.log
+-rw-r--r-- 1 runner runner 10094 Nov  4 10:17 rust-clippy.log
+-rw-r--r-- 1 runner runner  9562 Nov  4 10:17 rust-test.log
+drwxr-xr-x 7 runner runner  4096 Nov  4 10:17 server
+-rw-r--r-- 1 runner runner    15 Nov  4 10:17 settings.gradle
+-rw-r--r-- 1 runner runner   654 Nov  4 10:17 version.json
 ## build
 [1m[92m    Updating[0m crates.io index
 [1m[92m     Locking[0m 215 packages to highest compatible versions
@@ -41,12 +41,12 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
 [1m[92m   Compiling[0m futures-sink v0.3.34
 [1m[92m   Compiling[0m futures-util v0.3.34
 [1m[92m   Compiling[0m tokio-util v0.7.20
-[1m[92m   Compiling[0m tower v0.5.3
 [1m[92m   Compiling[0m hyper-util v0.1.21
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m tokio-tungstenite v0.24.0
 [1m[92m   Compiling[0m multer v3.1.0
 [1m[92m   Compiling[0m axum-core v0.4.5
 [1m[92m   Compiling[0m tower-http v0.6.11
-[1m[92m   Compiling[0m tokio-tungstenite v0.24.0
 [1m[92m   Compiling[0m hyper-rustls v0.27.10
 [1m[92m   Compiling[0m reqwest v0.12.28
 [1m[92m   Compiling[0m axum v0.7.9
@@ -159,34 +159,6 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
 [1m[94m339[0m [1m[94m| [0m        assert!(safe_media_path(dir, "/etc/passwd[92m [0m").is_none());
     [1m[94m|[0m                                                  [92m+[0m
 
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:45
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                             [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:49
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                 [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: prefix `win` is unknown[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:51
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                   [1m[91m^^^[0m [1m[91munknown prefix[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
-[1m[96mhelp[0m: consider inserting whitespace here
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m| [0m        assert!(safe_media_path(dir, "user-1\\..\\win[92m [0m").is_none());
-    [1m[94m|[0m                                                      [92m+[0m
-
 [1m[91merror[0m[1m: prefix `media` is unknown[0m
    [1m[94m--> [0msrc/routes/media.rs:347:41
     [1m[94m|[0m
@@ -234,9 +206,8 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
     [1m[94m|[0m [1m[91m|__^[0m
 
 [1mFor more information about this error, try `rustc --explain E0765`.[0m
-[1m[91merror[0m: could not compile `nchat-server` (lib test) due to 16 previous errors
+[1m[91merror[0m: could not compile `nchat-server` (lib) due to 13 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `nchat-server` (lib) due to 16 previous errors
 ## test
 [1m[92m   Compiling[0m nchat-server v0.2.0 (/home/runner/work/NChat-kotlin/NChat-kotlin/server)
 [1m[91merror[0m[1m: prefix `file` is unknown[0m
@@ -347,34 +318,6 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
 [1m[94m339[0m [1m[94m| [0m        assert!(safe_media_path(dir, "/etc/passwd[92m [0m").is_none());
     [1m[94m|[0m                                                  [92m+[0m
 
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:45
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                             [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:49
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                 [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: prefix `win` is unknown[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:51
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                   [1m[91m^^^[0m [1m[91munknown prefix[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
-[1m[96mhelp[0m: consider inserting whitespace here
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m| [0m        assert!(safe_media_path(dir, "user-1\\..\\win[92m [0m").is_none());
-    [1m[94m|[0m                                                      [92m+[0m
-
 [1m[91merror[0m[1m: prefix `media` is unknown[0m
    [1m[94m--> [0msrc/routes/media.rs:347:41
     [1m[94m|[0m
@@ -422,10 +365,38 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
     [1m[94m|[0m [1m[91m|__^[0m
 
 [1mFor more information about this error, try `rustc --explain E0765`.[0m
-[1m[91merror[0m: could not compile `nchat-server` (lib test) due to 16 previous errors
+[1m[91merror[0m: could not compile `nchat-server` (lib) due to 13 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `nchat-server` (lib) due to 16 previous errors
+[1m[91merror[0m: could not compile `nchat-server` (lib test) due to 13 previous errors
 ## clippy
+    [1m[94m|[0m
+[1m[94m330[0m [1m[94m|[0m         let dir = Path::new("/srv/nchat/media");
+    [1m[94m|[0m                                         [1m[91m^^^^^[0m [1m[91munknown prefix[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
+[1m[96mhelp[0m: consider inserting whitespace here
+    [1m[94m|[0m
+[1m[94m330[0m [1m[94m| [0m        let dir = Path::new("/srv/nchat/media[92m [0m");
+    [1m[94m|[0m                                              [92m+[0m
+
+[1m[91merror[0m[1m: prefix `png` is unknown[0m
+   [1m[94m--> [0msrc/routes/media.rs:333:50
+    [1m[94m|[0m
+[1m[94m333[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1/abc.png").is_some());
+    [1m[94m|[0m                                                  [1m[91m^^^[0m [1m[91munknown prefix[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
+[1m[96mhelp[0m: consider inserting whitespace here
+    [1m[94m|[0m
+[1m[94m333[0m [1m[94m| [0m        assert!(safe_media_path(dir, "user-1/abc.png[92m [0m").is_some());
+    [1m[94m|[0m                                                     [92m+[0m
+
+[1m[91merror[0m[1m: prefix `abc` is unknown[0m
+   [1m[94m--> [0msrc/routes/media.rs:334:46
+    [1m[94m|[0m
+[1m[94m334[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1/abc").is_some());
+    [1m[94m|[0m                                              [1m[91m^^^[0m [1m[91munknown prefix[0m
+    [1m[94m|[0m
     [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
 [1m[96mhelp[0m: consider inserting whitespace here
     [1m[94m|[0m
@@ -468,34 +439,6 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
 [1m[94m339[0m [1m[94m| [0m        assert!(safe_media_path(dir, "/etc/passwd[92m [0m").is_none());
     [1m[94m|[0m                                                  [92m+[0m
 
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:45
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                             [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: unknown start of token: \[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:49
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                 [1m[91m^^[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: character appears once more
-
-[1m[91merror[0m[1m: prefix `win` is unknown[0m
-   [1m[94m--> [0msrc/routes/media.rs:340:51
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m|[0m         assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
-    [1m[94m|[0m                                                   [1m[91m^^^[0m [1m[91munknown prefix[0m
-    [1m[94m|[0m
-    [1m[94m= [0m[1mnote[0m: prefixed identifiers and literals are reserved since Rust 2021
-[1m[96mhelp[0m: consider inserting whitespace here
-    [1m[94m|[0m
-[1m[94m340[0m [1m[94m| [0m        assert!(safe_media_path(dir, "user-1\\..\\win[92m [0m").is_none());
-    [1m[94m|[0m                                                      [92m+[0m
-
 [1m[91merror[0m[1m: prefix `media` is unknown[0m
    [1m[94m--> [0msrc/routes/media.rs:347:41
     [1m[94m|[0m
@@ -543,6 +486,6 @@ drwxr-xr-x 7 runner runner  4096 Nov  4 10:16 server
     [1m[94m|[0m [1m[91m|__^[0m
 
 [1mFor more information about this error, try `rustc --explain E0765`.[0m
-[1m[91merror[0m: could not compile `nchat-server` (lib test) due to 16 previous errors
+[1m[91merror[0m: could not compile `nchat-server` (lib) due to 13 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `nchat-server` (lib) due to 16 previous errors
+[1m[91merror[0m: could not compile `nchat-server` (lib test) due to 13 previous errors
