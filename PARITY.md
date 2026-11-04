@@ -21,9 +21,11 @@ Legend: **✅ 1:1** · **🟡 partial / simulated** · **❌ missing**
   the reference's ~29,500 (UI + services + Worker), and the 12,929 include none of the
   ~7,400 lines of services/Worker logic.
 
-Feature points reviewed below: **120** → **61 ✅, 12 🟡, 47 ❌**. The 47 missing are concentrated in
-platform-bound features (real calls, media, notifications) and the deeper product surfaces
-(settings panes, status creation, message editing, media viewer).
+Feature points reviewed below: **120** → **67 ✅, 14 🟡, 39 ❌**. Progress: 1.0.15 closed the
+conversation-surface gaps (edit, media viewer, resume marker, jump-to-latest, empty state) and
+1.0.16 added the Privacy, Notifications and Blocked-users panes with persisted state. What is
+left is concentrated in platform-bound features (real calls, media pipeline, notifications,
+push) plus the status composer and group member administration.
 
 | Area | Reference | Android | Verdict |
 |---|---|---|---|
@@ -93,15 +95,15 @@ platform-bound features (real calls, media, notifications) and the deeper produc
 | Day separators (Today / Yesterday / date) | ✅ | |
 | Reactions: quick 6 + full picker + count chips | ✅ | |
 | Long-press menu: reply, copy, forward, delete (me/everyone) | ✅ | |
-| **Edit message** (own text, 15-minute window) | ❌ | `MessageActions.tsx` supports it; no Kotlin counterpart |
+| **Edit message** (own text, 15-minute window) | ✅ | 1.0.15 — sheet + `edited` tag + repo `editMessage` |
 | **Save / bookmark** message | ❌ | reference `Save` action |
-| **Full-screen media viewer** (tap photo/video, swipe, close) | ❌ | `mediaViewer` state in reference |
+| **Full-screen media viewer** (tap photo/video, swipe, close) | 🟡 | 1.0.15 — opens, closes, shows author/type; no bitmap yet (mock media) |
 | **Download / Share media** (FileProvider, share sheet) | ❌ | |
 | **Load earlier messages / pagination** | ❌ | reference loads 50 at a time, group has a button |
-| **Unread "resume here" divider + jump to first unread** | ❌ | reference tracks the resume point |
-| **Scroll-to-bottom affordance** | ❌ | auto-scroll only |
+| **Unread "resume here" divider + jump to first unread** | ✅ | 1.0.15 — marker captured before `markRead`, viewport parks there |
+| **Scroll-to-bottom affordance** | ✅ | 1.0.15 — jump-to-latest pill + smart auto-scroll |
 | **Block user from the chat menu** | ❌ | only reachable from `ProfileView` |
-| **Empty conversation state ("Start the conversation")** | ❌ | reference shows a prompt |
+| **Empty conversation state ("Start the conversation")** | ✅ | 1.0.15 |
 | **Marquee presence line** for long "last seen …" text | ❌ | reference slides it |
 | Typing indicator (contact typing dots) | ✅ | |
 | Composer: attach popup (Photos / Videos / Files), mic↔send morph | ✅ | popup sends a mock message instead of opening a picker |
@@ -202,9 +204,9 @@ platform-bound features (real calls, media, notifications) and the deeper produc
 | Profile pane: name, about, avatar, cropper | ✅ | |
 | Menu sections with pastel icon tiles | ✅ | |
 | **Chats / Appearance / Language / Help / About rows** | ✅ | *also inert in the reference* — 1:1, dead ends in both |
-| **Privacy pane** (last seen, profile photo, read receipts, online status) | ❌ | `privacyService.ts` + Worker `routes/privacy.ts` |
-| **Notifications pane** (messages, calls, preview, sound, vibrate, ringtone) | ❌ | |
-| **Blocked users pane** (list, unblock, "No blocked users") | 🟡 | blocking exists in `ProfileView`, but there is no list |
+| **Privacy pane** (last seen, profile photo, read receipts, online status) | ✅ | 1.0.16 — persisted in SharedPreferences |
+| **Notifications pane** (messages, calls, preview, sound, vibrate, ringtone) | 🟡 | 1.0.16 — five toggles persisted; ringtone row still missing |
+| **Blocked users pane** (list, unblock, "No blocked users") | ✅ | 1.0.16 — shared block state between profile view and settings |
 | **Admin pane** (System info: version, build, users, groups, messages, online) | ❌ | |
 | Update check + install | ✅ | Android-only extra |
 | Log out (clears session) | ✅ | |
@@ -232,7 +234,7 @@ platform-bound features (real calls, media, notifications) and the deeper produc
 | View model: tabs + stack, back handling | ✅ | `NcNavigator` (reference uses a flat `AppView`) |
 | Bottom navigation (reference uses a top-level view switch) | ✅ | Android-specific improvement |
 | Launch stages Auth → ProfileSetup → Home | ✅ | |
-| Toasts / snackbars for events and errors (`sonner`) | ❌ | only modal notices in Settings |
+| Toasts / snackbars for events and errors (`sonner`) | 🟡 | 1.0.16 — `NcToaster` host wired for copy/edit/delete/forward/block |
 | **Offline / online banner, network retry states** | ❌ | |
 | **Push notifications + permission** (service worker, `web-push`) | ❌ | |
 | **Deep link from a notification into a chat** | ❌ | |

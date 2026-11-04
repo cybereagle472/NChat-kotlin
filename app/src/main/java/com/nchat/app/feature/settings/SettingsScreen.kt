@@ -66,6 +66,7 @@ import com.nchat.app.BuildConfig
 import com.nchat.app.core.designsystem.NcBackdrop
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.ServiceLocator
@@ -91,7 +92,53 @@ fun SettingsScreen(
     val profile by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val avatar by ServiceLocator.profileRepository.avatar.collectAsStateWithLifecycle()
     var section by remember { mutableStateOf(SettingsPane.Main) }
-    BackHandler(enabled = section == SettingsPane.Profile) { section = SettingsPane.Main }
+    BackHandler(enabled = section != SettingsPane.Main) { section = SettingsPane.Main }
+
+    val preferences = ServiceLocator.preferencesRepository
+    val privacy by preferences.privacy.collectAsStateWithLifecycle()
+    val notifications by preferences.notifications.collectAsStateWithLifecycle()
+    val blockedNames by ServiceLocator.friendRepository.blockedNames.collectAsStateWithLifecycle()
+
+    when (section) {
+        SettingsPane.Privacy -> {
+            PrivacyPane(
+                settings = privacy,
+                onBack = { section = SettingsPane.Main },
+                onLastSeenChange = { preferences.setLastSeen(privacy.lastSeen.next()) },
+                onProfilePhotoChange = { preferences.setProfilePhoto(privacy.profilePhoto.next()) },
+                onReadReceiptsChange = preferences::setReadReceipts,
+                onOnlineStatusChange = preferences::setOnlineStatus
+            )
+            return
+        }
+
+        SettingsPane.Notifications -> {
+            NotificationsPane(
+                settings = notifications,
+                onBack = { section = SettingsPane.Main },
+                onMessagesChange = preferences::setMessageNotifications,
+                onCallsChange = preferences::setCallNotifications,
+                onPreviewChange = preferences::setShowPreview,
+                onSoundChange = preferences::setSound,
+                onVibrateChange = preferences::setVibrate
+            )
+            return
+        }
+
+        SettingsPane.Blocked -> {
+            BlockedUsersPane(
+                blockedNames = blockedNames.toList().sorted(),
+                onBack = { section = SettingsPane.Main },
+                onUnblock = { name ->
+                    ServiceLocator.friendRepository.unblock(name)
+                    NcToaster.show("$name unblocked")
+                }
+            )
+            return
+        }
+
+        else -> Unit
+    }
 
     if (section == SettingsPane.Profile) {
         ProfileScreen(
@@ -121,10 +168,39 @@ fun SettingsScreen(
             ) {
                 item(key = "account") {
                     SettingsSection {
-                        SettingsMenuItem(MenuTone.Purple, Icons.Rounded.Person, "Account", "Profile, username, email")
-                        SettingsMenuItem(MenuTone.Green, Icons.Rounded.Lock, "Privacy", "Last seen, profile photo")
-                        SettingsMenuItem(MenuTone.Orange, Icons.Rounded.Notifications, "Notifications", "Messages, calls, sounds")
-                        SettingsMenuItem(MenuTone.Red, Icons.Rounded.Block, "Blocked Users", "Manage blocked contacts", last = true)
+                        SettingsMenuItem(
+                            tone = MenuTone.Purple,
+                            icon = Icons.Rounded.Person,
+                            title = "Account",
+                            subtitle = "Profile, username, email",
+                            onClick = { section = SettingsPane.Profile }
+                        )
+                        SettingsMenuItem(
+                            tone = MenuTone.Green,
+                            icon = Icons.Rounded.Lock,
+                            title = "Privacy",
+                            subtitle = "Last seen, profile photo",
+                            onClick = { section = SettingsPane.Privacy }
+                        )
+                        SettingsMenuItem(
+                            tone = MenuTone.Orange,
+                            icon = Icons.Rounded.Notifications,
+                            title = "Notifications",
+                            subtitle = "Messages, calls, sounds",
+                            onClick = { section = SettingsPane.Notifications }
+                        )
+                        SettingsMenuItem(
+                            tone = MenuTone.Red,
+                            icon = Icons.Rounded.Block,
+                            title = "Blocked Users",
+                            subtitle = if (blockedNames.isEmpty()) {
+                                "Manage blocked contacts"
+                            } else {
+                                "${blockedNames.size} blocked"
+                            },
+                            onClick = { section = SettingsPane.Blocked },
+                            last = true
+                        )
                     }
                 }
 
@@ -530,4 +606,4 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 }
 
 /** Which pane of Settings is showing. */
-private enum class SettingsPane { Main, Profile }
+private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked }
