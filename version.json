@@ -1,6 +1,6 @@
 {
-  "versionCode": 21,
-  "versionName": "1.0.13",
+  "versionCode": 22,
+  "versionName": "1.0.14",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.13 — faster tabs and a proper group chat. Switching between Chats, Groups, Status, History and Discover is now instant: the animated backdrop is static, tabs swap without a cross-fade, and lists no longer replay entrance animations every time you open them. Group chats now show who is typing by name (with the three-dot indicator) in the header and above the composer, and incoming group messages carry the sender's avatar on the first bubble of each run. Also ships eagle-x.md, the full project history and design notes."
+  "releaseNotes": "NChat 1.0.14 — a layout sweep. Call history rows are rebuilt: every card now uses the same three-line structure (name, direction + call-type pill, time + duration) with a fixed avatar column and a uniform 76dp minimum height, so a long label or a big system font can no longer squeeze the duration into a vertical stack of digits or stretch a card. The same single-line rules were applied across statuses, friends, groups, members, settings and the call overlays, and every tab now shares the same 12dp gutters and 8dp row gaps, so Chats, Groups, Status, Discover and History line up with each other."
 }

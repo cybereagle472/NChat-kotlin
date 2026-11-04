@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -165,7 +166,10 @@ fun GroupInfoScreen(
                             text = group.name,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = extra.textPrimary
+                            color = extra.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         Box(
                             modifier = Modifier
@@ -391,7 +395,13 @@ private fun MemberRow(name: String, note: String, isFirst: Boolean) {
                 color = extra.textPrimary,
                 maxLines = 1
             )
-            Text(text = note, fontSize = 12.sp, color = extra.textTertiary)
+            Text(
+                text = note,
+                fontSize = 12.sp,
+                color = extra.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -494,6 +504,8 @@ private fun AddMembersDialog(
                             text = friend.name,
                             fontSize = 14.sp,
                             color = extra.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         if (isSelected) {

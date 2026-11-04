@@ -162,7 +162,13 @@ fun GroupCallOverlay(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(text = subtitle, color = Color(0xB3FFFFFF), fontSize = 12.sp)
+                    Text(
+                        text = subtitle,
+                        color = Color(0xB3FFFFFF),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Box(modifier = Modifier.size(40.dp))
             }
@@ -459,7 +465,13 @@ private fun CallTile(
                         .background(Color(0x66000000))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    Text(text = status, color = Color(0xCCFFFFFF), fontSize = 9.sp)
+                    Text(
+                        text = status,
+                        color = Color(0xCCFFFFFF),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }

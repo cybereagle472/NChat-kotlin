@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcAvatar
@@ -213,12 +214,16 @@ fun CreateGroupScreen(
                             text = friend.name,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
-                            color = extra.textPrimary
+                            color = extra.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "@${friend.handle}",
                             fontSize = 12.sp,
-                            color = extra.textTertiary
+                            color = extra.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     SelectionCircle(selected = isSelected)

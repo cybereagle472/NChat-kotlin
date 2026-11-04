@@ -132,8 +132,8 @@ fun DiscoverScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(NcSpace.md),
+            verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
         ) {
             when (tab) {
                 DiscoverTab.Friends -> {
@@ -240,7 +240,9 @@ fun DiscoverScreen(
                                         text = "All Users",
                                         color = Color(0xFF6D28D9),
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -377,7 +379,9 @@ private fun DiscoverHeader(
                             text = entry.label,
                             color = foreground,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         val badge = when (entry) {
                             DiscoverTab.Friends -> friendCount
@@ -504,7 +508,8 @@ private fun FriendCard(
                 text = friend.handle.ifBlank { "@user" },
                 color = Slate500,
                 fontSize = 12.sp,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             PresenceLabel(friend = friend)
         }

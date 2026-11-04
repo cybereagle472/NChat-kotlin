@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcGlassRow
@@ -98,12 +99,16 @@ fun StatusScreen(
                             Text(
                                 text = "My status",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = extra.textSecondary
+                                color = extra.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Tap to add status update",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = extra.textTertiary
+                                color = extra.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -144,19 +149,24 @@ fun StatusScreen(
                             Text(
                                 text = status.authorName,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = extra.textSecondary
+                                color = extra.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = status.caption,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = extra.textTertiary,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Text(
                             text = TimeFormat.shortAgo(status.timestamp),
                             style = MaterialTheme.typography.labelMedium,
-                            color = extra.textMuted
+                            color = extra.textMuted,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
