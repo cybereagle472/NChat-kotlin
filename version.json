@@ -1,6 +1,6 @@
 {
-  "versionCode": 17,
-  "versionName": "1.0.9",
+  "versionCode": 18,
+  "versionName": "1.0.10",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.9 — the full message-actions menu, in chats and groups alike. Long-press a message and the quick reactions now light up the ones you already used, with the smiley button opening the complete 32-emoji Reactions sheet that slides up from the bottom. Delete now asks how you want to remove the message — 'Delete for Everyone' (your own messages, within an hour) leaves the reference tombstone behind, 'Delete for Me' removes it just for you, and Cancel backs out. Reactions you have given are highlighted in violet on the bubbles, and deleted messages can no longer be replied to, copied, forwarded or reacted to."
+  "releaseNotes": "NChat 1.0.10 — group calls. Starting a voice or video call from a group chat now opens the group call screen: the group avatar pulses inside a violet ring while 'Calling everyone in …' runs, then the call switches to the two-column participant grid — your own tile followed by everyone joining, each with a connecting badge until they are in, muted-mic markers and the name pills. The header shows how many people are in the call and a live timer, and the controls cover mute, camera on/off, speaker and the red hang-up, plus a Cancel button while it is still ringing."
 }
