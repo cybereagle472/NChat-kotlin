@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,51 +17,55 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nchat.app.core.designsystem.BubbleShapeMine
+import com.nchat.app.core.designsystem.BubbleShapeTheirs
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.util.TimeFormat
-import com.nchat.app.data.model.AttachmentKind
+import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
+import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
-import com.nchat.app.ui.components.MessageTicks
 
-/** Centered pill that separates messages by day. */
+/** Glass pill that separates messages by day. */
 @Composable
-fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+fun DateSeparatorPill(label: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp
+        Box(
+            modifier = Modifier
+                .shadow(1.dp, RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0x38FFFFFF))
+                .padding(horizontal = 14.dp, vertical = 5.dp)
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = NcTheme.extra.mutedText,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                color = NcTheme.extra.textTertiary
             )
         }
     }
@@ -71,92 +74,111 @@ fun DaySeparator(label: String, modifier: Modifier = Modifier) {
 @Composable
 fun MessageBubble(
     message: Message,
-    showAuthor: Boolean,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (message.systemEvent) {
-        DaySeparator(label = message.text, modifier = modifier)
+        DateSeparatorPill(label = message.text, modifier = modifier)
         return
     }
-
     val extra = NcTheme.extra
-    val bubbleColor = if (message.isMine) extra.outgoingBubble else extra.incomingBubble
-    val textColor = if (message.isMine) extra.outgoingText else extra.incomingText
-    val shape = RoundedCornerShape(
-        topStart = 18.dp,
-        topEnd = 18.dp,
-        bottomEnd = if (message.isMine) 5.dp else 18.dp,
-        bottomStart = if (message.isMine) 18.dp else 5.dp
-    )
+    val mine = message.isMine
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
+        horizontalAlignment = if (mine) Alignment.End else Alignment.Start
     ) {
-        Surface(
-            shape = shape,
-            color = bubbleColor,
-            tonalElevation = if (message.isMine) 0.dp else 1.dp,
+        Column(
             modifier = Modifier
-                .widthIn(max = 296.dp)
-                .combinedClickable(onClick = onLongPress, onLongClick = onLongPress)
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-                if (showAuthor && !message.isMine) {
-                    Text(
-                        text = message.authorName,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-
-                message.replyAuthor?.let { author ->
-                    ReplyQuote(author = author, text = message.replyText.orEmpty())
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                AttachmentContent(message = message, textColor = textColor)
-
-                if (message.attachment == AttachmentKind.Photo) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                if (message.text.isNotBlank() && message.attachment != AttachmentKind.Photo) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = textColor
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = TimeFormat.clock(message.timestamp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = extra.bubbleTime
-                    )
-                    if (message.isMine) {
-                        Spacer(modifier = Modifier.width(3.dp))
-                        MessageTicks(status = message.status, size = 14.dp)
+                .widthIn(max = 300.dp)
+                .shadow(if (mine) 0.dp else 1.dp, if (mine) BubbleShapeMine else BubbleShapeTheirs)
+                .clip(if (mine) BubbleShapeMine else BubbleShapeTheirs)
+                .background(
+                    if (mine) {
+                        Brush.linearGradient(extra.bubbleMineGradient)
+                    } else {
+                        Brush.linearGradient(listOf(extra.bubbleIncoming, extra.bubbleIncoming))
                     }
+                )
+                .combinedClickable(onClick = onLongPress, onLongClick = onLongPress)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            message.replyAuthor?.let { author ->
+                ReplyQuote(
+                    author = author,
+                    text = message.replyText.orEmpty(),
+                    mine = mine
+                )
+            }
+
+            when (message.kind) {
+                MessageKind.Photo -> PhotoContent()
+                MessageKind.Voice -> VoiceContent(
+                    duration = message.durationLabel ?: "00:00",
+                    mine = mine
+                )
+                MessageKind.Document -> DocumentContent(
+                    name = message.fileName ?: "document.pdf",
+                    mine = mine
+                )
+                MessageKind.Location -> LocationContent(mine = mine)
+                MessageKind.Video -> VideoContent(mine = mine)
+                MessageKind.Text -> Unit
+            }
+
+            if (message.kind == MessageKind.Text || message.text.isNotBlank()) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (mine) Color.White else extra.bubbleIncomingText
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = TimeFormat.clock(message.timestamp),
+                    fontSize = 10.sp,
+                    color = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta
+                )
+                if (message.isEdited) {
+                    Text(
+                        text = "edited",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta
+                    )
+                }
+                if (mine) {
+                    Icon(
+                        imageVector = if (message.state == DeliveryState.Read) {
+                            Icons.Rounded.DoneAll
+                        } else {
+                            Icons.Rounded.Check
+                        },
+                        contentDescription = null,
+                        tint = if (message.state == DeliveryState.Read) {
+                            Color(0xFFE0F2FE)
+                        } else {
+                            extra.bubbleMetaOnGradient
+                        },
+                        modifier = Modifier.size(13.dp)
+                    )
                 }
             }
         }
 
         if (message.reactions.isNotEmpty()) {
-            ReactionRow(
+            ReactionsRow(
                 reactions = message.reactions,
-                isMine = message.isMine,
+                mine = mine,
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
@@ -164,32 +186,35 @@ fun MessageBubble(
 }
 
 @Composable
-private fun ReplyQuote(author: String, text: String) {
+private fun ReplyQuote(author: String, text: String, mine: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = 6.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f))
+            .background(
+                if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            )
             .padding(vertical = 4.dp)
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(30.dp)
+                .height(28.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.primary)
+                .background(if (mine) Color.White else MaterialTheme.colorScheme.primary)
         )
         Column(modifier = Modifier.padding(start = 8.dp)) {
             Text(
                 text = author,
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = if (mine) Color.White else MaterialTheme.colorScheme.primary
             )
             Text(
                 text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = NcTheme.extra.mutedText,
+                fontSize = 12.sp,
+                color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.textTertiary,
                 maxLines = 1
             )
         }
@@ -197,39 +222,26 @@ private fun ReplyQuote(author: String, text: String) {
 }
 
 @Composable
-private fun ReactionRow(
-    reactions: List<Reaction>,
-    isMine: Boolean,
-    modifier: Modifier = Modifier
-) {
+private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.padding(horizontal = 2.dp),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         reactions.forEach { reaction ->
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = if (reaction.reactedByMe) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
-                tonalElevation = 1.dp
+            Box(
+                modifier = Modifier
+                    .shadow(1.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .padding(horizontal = 7.dp, vertical = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = reaction.emoji, fontSize = 11.sp)
                     if (reaction.count > 1) {
                         Text(
                             text = reaction.count.toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (reaction.reactedByMe) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                NcTheme.extra.mutedText
-                            },
+                            fontSize = 10.sp,
+                            color = NcTheme.extra.textTertiary,
                             modifier = Modifier.padding(start = 3.dp)
                         )
                     }
@@ -240,77 +252,71 @@ private fun ReactionRow(
 }
 
 @Composable
-private fun AttachmentContent(message: Message, textColor: Color) {
-    when (message.attachment) {
-        AttachmentKind.Photo -> PhotoAttachment(label = message.attachmentLabel)
-        AttachmentKind.Voice -> VoiceAttachment(
-            duration = message.durationLabel ?: "00:00",
-            tint = MaterialTheme.colorScheme.primary
-        )
-        AttachmentKind.Document -> DocumentAttachment(
-            label = message.attachmentLabel ?: "document.pdf",
-            textColor = textColor
-        )
-        AttachmentKind.Location -> LocationAttachment(textColor = textColor)
-        AttachmentKind.Contact -> ContactAttachment(textColor = textColor)
-        AttachmentKind.Video, AttachmentKind.Sticker, AttachmentKind.None -> Unit
-    }
-}
-
-@Composable
-private fun PhotoAttachment(label: String?) {
+private fun PhotoContent() {
     Box(
         modifier = Modifier
-            .width(212.dp)
-            .height(148.dp)
+            .width(210.dp)
+            .height(140.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(Color(0xFF35786A), Color(0xFF7FBFAA))
-                )
-            ),
+            .background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = Icons.Rounded.Image,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.85f),
+            tint = Color(0xE6FFFFFF),
             modifier = Modifier.size(34.dp)
         )
-        if (label != null) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(8.dp)
+    }
+}
+
+@Composable
+private fun VideoContent(mine: Boolean) {
+    Box(
+        modifier = Modifier
+            .width(210.dp)
+            .height(140.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF1E293B)),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color(0x66000000)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = "Play video",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
 }
 
 @Composable
-private fun VoiceAttachment(duration: String, tint: Color) {
+private fun VoiceContent(duration: String, mine: Boolean) {
     Row(
         modifier = Modifier
-            .width(212.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .width(190.dp)
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(32.dp)
                 .clip(CircleShape)
-                .background(tint),
+                .background(if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Rounded.PlayArrow,
                 contentDescription = "Play voice message",
                 tint = Color.White,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
         Row(
@@ -320,103 +326,74 @@ private fun VoiceAttachment(duration: String, tint: Color) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            repeat(26) { index ->
-                val barHeight = (4 + (index * 5) % 13).dp
+            repeat(22) { index ->
+                val barHeight = (4 + (index * 5) % 12).dp
                 Box(
                     modifier = Modifier
                         .width(2.5.dp)
                         .height(barHeight)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(tint.copy(alpha = if (index < 12) 0.95f else 0.4f))
+                        .background(
+                            if (mine) Color(0xCCFFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                        )
                 )
             }
         }
         Text(
             text = duration,
-            style = MaterialTheme.typography.labelSmall,
-            color = NcTheme.extra.bubbleTime
+            fontSize = 10.sp,
+            color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.textMuted
         )
     }
 }
 
 @Composable
-private fun DocumentAttachment(label: String, textColor: Color) {
+private fun DocumentContent(name: String, mine: Boolean) {
     Row(
         modifier = Modifier
-            .width(212.dp)
+            .width(200.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .background(if (mine) Color(0x26FFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Rounded.Description,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(26.dp)
-        )
-        Column(modifier = Modifier.padding(start = 8.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color = textColor,
-                maxLines = 1
-            )
-            Text(
-                text = "PDF document",
-                style = MaterialTheme.typography.labelSmall,
-                color = NcTheme.extra.mutedText
-            )
-        }
-    }
-}
-
-@Composable
-private fun LocationAttachment(textColor: Color) {
-    Row(
-        modifier = Modifier
-            .width(212.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.LocationOn,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = if (mine) Color.White else MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(24.dp)
         )
         Text(
-            text = "Shared live location",
-            style = MaterialTheme.typography.bodySmall,
-            color = textColor,
+            text = name,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (mine) Color.White else NcTheme.extra.bubbleIncomingText,
+            maxLines = 1,
             modifier = Modifier.padding(start = 8.dp)
         )
     }
 }
 
 @Composable
-private fun ContactAttachment(textColor: Color) {
+private fun LocationContent(mine: Boolean) {
     Row(
         modifier = Modifier
-            .width(212.dp)
+            .width(200.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .background(if (mine) Color(0x26FFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Rounded.Person,
+            imageVector = Icons.Rounded.LocationOn,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
+            tint = if (mine) Color.White else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
         )
         Text(
-            text = "Contact card",
-            style = MaterialTheme.typography.bodySmall,
-            color = textColor,
+            text = "Shared live location",
+            fontSize = 12.sp,
+            color = if (mine) Color.White else NcTheme.extra.bubbleIncomingText,
             modifier = Modifier.padding(start = 8.dp)
         )
     }

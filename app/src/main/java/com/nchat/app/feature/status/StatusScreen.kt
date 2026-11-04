@@ -1,0 +1,189 @@
+package com.nchat.app.feature.status
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.nchat.app.core.designsystem.NcAvatar
+import com.nchat.app.core.designsystem.NcSpace
+import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.util.TimeFormat
+import com.nchat.app.data.model.StatusUpdate
+import com.nchat.app.ui.components.NcHeaderAction
+import com.nchat.app.ui.components.NcTabHeader
+
+@Composable
+fun StatusScreen(
+    statuses: List<StatusUpdate>,
+    listState: LazyListState,
+    modifier: Modifier = Modifier
+) {
+    val extra = NcTheme.extra
+    val mine = statuses.firstOrNull { it.isMine }
+    val others = statuses.filterNot { it.isMine }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        NcTabHeader(
+            title = "Status",
+            actions = {
+                NcHeaderAction(Icons.Rounded.CameraAlt, "Camera", onClick = {})
+                NcHeaderAction(Icons.Rounded.Edit, "Text status", onClick = {})
+            }
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(NcSpace.md),
+            verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
+        ) {
+            item(key = "my-status") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(2.dp, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(extra.rowFill)
+                        .border(1.dp, extra.rowBorder, RoundedCornerShape(16.dp))
+                        .clickable { }
+                        .padding(horizontal = 14.dp, vertical = NcSpace.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NcSpace.md)
+                ) {
+                    Box {
+                        NcAvatar(name = mine?.authorName ?: "My status", size = 56.dp)
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                                .border(2.dp, Color.White, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "My status",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = extra.textSecondary
+                        )
+                        Text(
+                            text = "Tap to add status update",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = extra.textTertiary
+                        )
+                    }
+                }
+            }
+
+            item(key = "recent-header") {
+                Text(
+                    text = "Recent updates",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = extra.textTertiary,
+                    modifier = Modifier.padding(start = NcSpace.xs, top = NcSpace.sm)
+                )
+            }
+
+            items(items = others, key = { it.id }) { status ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(2.dp, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(extra.rowFill)
+                        .border(1.dp, extra.rowBorder, RoundedCornerShape(16.dp))
+                        .clickable { }
+                        .padding(horizontal = 14.dp, vertical = NcSpace.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NcSpace.md)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(62.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (status.viewed) {
+                                    Brush.linearGradient(listOf(extra.divider, extra.divider))
+                                } else {
+                                    Brush.linearGradient(extra.brandGradient)
+                                }
+                            )
+                            .padding(3.dp)
+                    ) {
+                        NcAvatar(
+                            name = status.authorName,
+                            emoji = status.avatarEmoji,
+                            size = 56.dp
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = status.authorName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = extra.textSecondary
+                        )
+                        Text(
+                            text = status.caption,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = extra.textTertiary,
+                            maxLines = 1
+                        )
+                    }
+                    Text(
+                        text = TimeFormat.shortAgo(status.timestamp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = extra.textMuted
+                    )
+                }
+            }
+
+            item(key = "status-footer") {
+                Spacer(modifier = Modifier.size(NcSpace.md))
+                Text(
+                    text = "Status updates disappear after 24 hours",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.textMuted
+                )
+            }
+        }
+    }
+}

@@ -22,14 +22,9 @@ class ConversationViewModel(
 
     val messages: StateFlow<List<Message>> = repository.conversation(chatId, chatTitle)
 
-    /** Live chat metadata (presence, typing, group size) for the conversation header. */
     val chat: StateFlow<Chat?> = repository.chats
         .map { chats -> chats.firstOrNull { it.id == chatId } }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = null
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _composerText = MutableStateFlow("")
     val composerText: StateFlow<String> = _composerText.asStateFlow()
@@ -57,18 +52,8 @@ class ConversationViewModel(
     }
 
     fun onReaction(emoji: String) {
-        val messageId = _activeMessageId.value ?: return
-        repository.toggleReaction(chatId, messageId, emoji)
+        _activeMessageId.value?.let { repository.toggleReaction(chatId, it, emoji) }
         _activeMessageId.value = null
-    }
-
-    fun refreshReadState() {
-        repository.markRead(chatId)
-    }
-
-    override fun onCleared() {
-        repository.saveDraft(chatId, _composerText.value)
-        super.onCleared()
     }
 
     companion object {

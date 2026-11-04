@@ -23,15 +23,20 @@ data class UpdateInfo(
     val notes: String
 )
 
+/**
+ * In-app updater. The APK is always signed with the same committed keystore, so a new
+ * build installs straight over the previous one without uninstalling.
+ */
 object AutoUpdater {
+
     private const val VERSION_URL =
         "https://raw.githubusercontent.com/cybereagle472/NChat-kotlin/main/version.json"
     private const val APK_MIME = "application/vnd.android.package-archive"
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
         val connection = (URL(VERSION_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10000
-            readTimeout = 10000
+            connectTimeout = 10_000
+            readTimeout = 10_000
             requestMethod = "GET"
             setRequestProperty("Cache-Control", "no-cache, no-store")
             setRequestProperty("Pragma", "no-cache")
@@ -57,11 +62,11 @@ object AutoUpdater {
 
     suspend fun downloadUpdate(context: Context, info: UpdateInfo): File = withContext(Dispatchers.IO) {
         val connection = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20000
-            readTimeout = 60000
+            connectTimeout = 20_000
+            readTimeout = 60_000
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "NChat-Updater")
-            setRequestProperty("Accept", "application/vnd.android.package-archive")
+            setRequestProperty("Accept", APK_MIME)
         }
         try {
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
@@ -94,7 +99,6 @@ object AutoUpdater {
         check(apk.exists() && apk.length() > 100_000L) {
             "Update APK is missing. Please download it again."
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
@@ -105,9 +109,10 @@ object AutoUpdater {
             context.startActivity(settingsIntent)
             return false
         }
-
         val uri: Uri = FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", apk
+            context,
+            "${context.packageName}.fileprovider",
+            apk
         )
         val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             setDataAndType(uri, APK_MIME)
