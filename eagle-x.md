@@ -147,7 +147,7 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
 | 1.0.15 | 23 | `nchat-build-105` | Conversation depth: resume marker, jump-to-latest, media viewer, message editing, toasts; per-row render layers removed. |
 | 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
-| 1.0.17 | 25 | *pending* | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
+| 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
 
 ---
 
