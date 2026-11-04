@@ -5,9 +5,12 @@ import coil.ImageLoader
 import coil.disk.DiskCache
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import java.util.concurrent.TimeUnit
 
 /**
  * The image loader every photo, video poster and thumbnail goes through.
@@ -25,15 +28,32 @@ import okhttp3.ResponseBody.Companion.toResponseBody
  *
  * Against a deployment that still serves media publicly (the Cloudflare worker, or
  * `NCHAT_MEDIA_PUBLIC=1`) the extra header is simply ignored, so the app works with both.
+ *
+ * The token and the refresh are passed in as lambdas rather than as objects: building the
+ * image loader must not drag in the token store or the API client, so a problem in either
+ * can never stop the app from starting with pictures that simply lack a token.
  */
 object MediaImages {
 
     /** 128 MB of decoded originals/posts on disk — plenty for a phone, capped on purpose. */
     private const val DISK_CACHE_BYTES = 128L * 1024 * 1024
 
-    fun loader(context: Context, api: ApiClient, tokens: TokenStore): ImageLoader {
-        val http = api.http.newBuilder()
-            .addInterceptor(MediaAuthInterceptor(api.root, tokens, api))
+    fun loader(
+        context: Context,
+        rootUrl: String,
+        accessToken: () -> String?,
+        renewSession: suspend () -> String?
+    ): ImageLoader {
+        val http = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(
+                MediaAuthInterceptor(
+                    root = rootUrl.trim().trimEnd('/'),
+                    accessToken = accessToken,
+                    renewSession = renewSession
+                )
+            )
             .build()
 
         return ImageLoader.Builder(context)
@@ -49,42 +69,48 @@ object MediaImages {
 }
 
 /**
- * Adds `Authorization: Bearer …` to media reads, renews the token once on `401`.
+ * Adds `Authorization: Bearer …` to media reads and renews the token once on `401`.
+ *
+ * It never throws: any failure inside the refresh path returns a plain `401` response, which
+ * Coil turns into its normal error placeholder. A picture that cannot load is a picture that
+ * cannot load — it is not a reason to kill the app.
  */
 private class MediaAuthInterceptor(
     private val root: String,
-    private val tokens: TokenStore,
-    private val api: ApiClient
+    private val accessToken: () -> String?,
+    private val renewSession: suspend () -> String?
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
 
-        // Only our own backend, and only file reads: everything else (a GIF host, a
-        // link preview) is left exactly as Coil built it.
-        if (root.isEmpty() || !request.url.toString().startsWith(root) || !isMediaRead(request)) {
-            return chain.proceed(request)
-        }
+        // Only our own backend, and only file reads: everything else (a GIF host, a link
+        // preview) is left exactly as Coil built it.
+        if (!isOurMedia(request)) return chain.proceed(request)
 
-        val token = tokens.accessToken
+        val token = runCatching { accessToken() }.getOrNull()
         val first = chain.proceed(if (token.isNullOrEmpty()) request else request.withToken(token))
         if (first.code != 401) return first
 
-        // The access token expired between the last REST call and this image: renew it
-        // once (runBlocking is fine here — Coil calls us from its own IO dispatcher).
+        // The access token expired between the last REST call and this image: renew it once
+        // (runBlocking is fine here — Coil calls us from its own IO dispatcher).
         first.close()
-        val renewed = runBlocking { api.renewAccessToken() }
+        val renewed = runCatching { runBlocking { renewSession() } }.getOrNull()
             ?: return unauthorized(request)
-        return chain.proceed(request.withToken(renewed))
+        return runCatching { chain.proceed(request.withToken(renewed)) }
+            .getOrElse { unauthorized(request) }
     }
 
-    private fun isMediaRead(request: okhttp3.Request): Boolean =
-        request.method == "GET" && request.url.encodedPath.contains("/media/")
+    private fun isOurMedia(request: Request): Boolean {
+        if (root.isEmpty()) return false
+        if (!request.url.toString().startsWith(root)) return false
+        return request.method == "GET" && request.url.encodedPath.contains("/media/")
+    }
 
-    private fun okhttp3.Request.withToken(token: String) =
+    private fun Request.withToken(token: String): Request =
         newBuilder().header("Authorization", "Bearer $token").build()
 
-    private fun unauthorized(request: okhttp3.Request): Response = Response.Builder()
+    private fun unauthorized(request: Request): Response = Response.Builder()
         .request(request)
         .protocol(Protocol.HTTP_1_1)
         .code(401)

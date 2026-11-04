@@ -25,6 +25,8 @@ import com.nchat.app.network.MediaImages
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
+import com.nchat.app.core.util.CrashLog
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,7 +47,17 @@ import kotlinx.coroutines.launch
 object ServiceLocator {
 
     private var appContext: Context? = null
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Background work that must never take the process down: a socket that fails to open, a
+     * heartbeat, a cache write. Without this handler one throwing coroutine is an
+     * "NChat keeps stopping" with no trace.
+     */
+    private val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            CrashLog.note("background coroutine failed", error)
+        }
+    )
 
     /** Called once from [com.nchat.app.MainActivity] before the UI reads anything. */
     fun init(context: Context) {
@@ -67,7 +79,14 @@ object ServiceLocator {
      * in [com.nchat.app.NChatApplication], so photos carry the session token the backend
      * now requires (see [MediaImages]).
      */
-    val images: ImageLoader by lazy { MediaImages.loader(requireContext(), apiClient, tokens) }
+    val images: ImageLoader by lazy {
+        MediaImages.loader(
+            context = requireContext(),
+            rootUrl = serverUrl,
+            accessToken = { tokens.accessToken },
+            renewSession = { apiClient.renewAccessToken() }
+        )
+    }
 
     /** The backend this build talks to; empty only for a misconfigured build. */
     val serverUrl: String get() = BuildConfig.NCHAT_API_BASE.trim().trimEnd('/')
