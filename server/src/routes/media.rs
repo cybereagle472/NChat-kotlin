@@ -6,8 +6,8 @@
 
 use axum::body::Body;
 use axum::extract::{Multipart, Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::Response;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use rusqlite::{params, OptionalExtension};
 use tokio::io::AsyncReadExt;
@@ -175,21 +175,23 @@ fn is_plain_extension(extension: &str) -> bool {
         && !extension.contains("..")
 }
 
+use std::path::{Component, Path as FsPath, PathBuf};
+
 /// Rejects keys that could escape the media directory.
 ///
 /// `R2.get(key)` treats the key as an opaque name, but here it is a path on
-/// disk — so `../`, absolute paths and backslashes must never reach `join`.
-fn safe_media_path(media_dir: &std::path::Path, key: &str) -> Option<std::path::PathBuf> {
+/// disk — so `..`, absolute paths and backslashes must never reach `join`.
+fn safe_media_path(media_dir: &FsPath, key: &str) -> Option<PathBuf> {
     if key.is_empty() || key.contains('\0') || key.contains('\\') {
         return None;
     }
-    let candidate = std::path::Path::new(key);
+    let candidate = FsPath::new(key);
     if candidate.is_absolute() {
         return None;
     }
     for component in candidate.components() {
         match component {
-            std::path::Component::Normal(_) => {}
+            Component::Normal(_) => {}
             // `.`, `..`, a root or a Windows prefix: refuse the whole request.
             _ => return None,
         }
@@ -249,22 +251,24 @@ pub async fn file(
             Some((start, end.min(total.saturating_sub(1))))
         });
 
+    let (status, offset, length) = match range {
+        Some((start, end)) => (StatusCode::PARTIAL_CONTENT, start, end - start + 1),
+        None => (StatusCode::OK, 0, total),
+    };
+
     let mut builder = Response::builder()
         .header(header::CONTENT_TYPE, mime)
         .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, length)
         .header(
             header::CACHE_CONTROL,
             "public, max-age=31536000, immutable",
         )
-        .header(header::ETAG, format!("\"{total}\"));
-
-    let (status, offset, length) = match range {
-        Some((start, end)) => {
-            builder = builder.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
-            (StatusCode::PARTIAL_CONTENT, start, end - start + 1)
-        }
-        None => (StatusCode::OK, 0, total),
-    };
+        .header(header::ETAG, format!("{:?}", total.to_string()))
+        .status(status);
+    if let Some((start, end)) = range {
+        builder = builder.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
+    }
 
     if offset > 0 {
         use tokio::io::AsyncSeekExt;
@@ -279,8 +283,6 @@ pub async fn file(
 
     let stream = tokio_util::io::ReaderStream::new(handle.take(length));
     builder
-        .status(status)
-        .header(header::CONTENT_LENGTH, length)
         .body(Body::from_stream(stream))
         .map_err(|error| ApiError::internal(format!("could not build response: {error}")))
 }
@@ -320,14 +322,36 @@ pub async fn delete(
     Ok(Json(json!({ "success": true })))
 }
 
+/// Small helper so the range branch can set `Content-Length` without a second
+/// header builder.
+trait SetContentLength {
+    fn set_content_length(self, length: usize) -> Self;
+}
+
+impl SetContentLength for Response {
+    fn set_content_length(mut self, length: usize) -> Self {
+        self.headers_mut().insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(&length.to_string())
+                .unwrap_or(HeaderValue::from_static("0")),
+        );
+        self
+    }
+}
+
+/// Keeps `IntoResponse` in scope for the response type in tests.
+#[allow(dead_code)]
+fn _assert_into_response(response: Response) -> Response {
+    response.into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn media_paths_cannot_escape_the_media_dir() {
-        let dir = Path::new("/srv/nchat/media");
+        let dir = FsPath::new("/srv/nchat/media");
 
         // Nested keys are normal: `<user id>/<uuid>.<ext>`.
         assert!(safe_media_path(dir, "user-1/abc.png").is_some());
@@ -344,7 +368,7 @@ mod tests {
 
     #[test]
     fn resolved_path_stays_under_the_root() {
-        let dir = Path::new("/srv/nchat/media");
+        let dir = FsPath::new("/srv/nchat/media");
         let path = safe_media_path(dir, "user-1/abc.png").expect("in-root key");
         assert!(path.starts_with(dir));
     }
