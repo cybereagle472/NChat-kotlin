@@ -53,7 +53,9 @@ data class Chat(
     val lastMessageState: DeliveryState? = null,
     val unreadCount: Int = 0,
     val isTyping: Boolean = false,
-    val isRecording: Boolean = false
+    val isRecording: Boolean = false,
+    val pinned: Boolean = false,
+    val muted: Boolean = false
 )
 
 /** Status (24h story) entry. */

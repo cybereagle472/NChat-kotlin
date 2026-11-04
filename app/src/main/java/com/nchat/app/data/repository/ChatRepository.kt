@@ -45,6 +45,9 @@ interface ChatRepository {
     fun addMembers(groupId: String, count: Int)
     fun renameGroup(groupId: String, name: String)
     fun leaveGroup(groupId: String)
+    fun setPinned(chatId: String, pinned: Boolean)
+    fun setMuted(chatId: String, muted: Boolean)
+    fun deleteChat(chatId: String)
     fun forwardMessage(targetChatId: String, source: Message)
     fun markRead(chatId: String)
 
@@ -289,6 +292,23 @@ class InMemoryChatRepository(
         _groups.update { groups -> groups.filterNot { it.id == groupId } }
         _chats.update { chats -> chats.filterNot { it.id == groupId } }
         synchronized(conversations) { conversations.remove(groupId) }
+    }
+
+    override fun setPinned(chatId: String, pinned: Boolean) {
+        _chats.update { list ->
+            list.map { chat -> if (chat.id == chatId) chat.copy(pinned = pinned) else chat }
+        }
+    }
+
+    override fun setMuted(chatId: String, muted: Boolean) {
+        _chats.update { list ->
+            list.map { chat -> if (chat.id == chatId) chat.copy(muted = muted) else chat }
+        }
+    }
+
+    override fun deleteChat(chatId: String) {
+        _chats.update { list -> list.filterNot { it.id == chatId } }
+        synchronized(conversations) { conversations.remove(chatId) }
     }
 
     override fun forwardMessage(targetChatId: String, source: Message) {

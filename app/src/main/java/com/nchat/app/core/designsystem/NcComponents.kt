@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.nchat.app.core.designsystem
 
 import androidx.compose.animation.core.RepeatMode
@@ -9,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +78,7 @@ fun NcGlassSurface(
 fun NcGlassRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     shape: Shape = RoundedCornerShape(NcSize.rowRadius),
     fill: Color = NcTheme.extra.rowFill,
     borderColor: Color = NcTheme.extra.rowBorder,
@@ -85,14 +89,21 @@ fun NcGlassRow(
 ) {
     val interaction = rememberPressSource()
     val pressModifier = if (onClick != null) Modifier.pressFeedback(interaction) else Modifier
-    val clickModifier = if (onClick != null) {
-        Modifier.clickable(
+    val clickModifier = when {
+        onClick != null && onLongClick != null -> Modifier.combinedClickable(
+            interactionSource = interaction,
+            indication = null,
+            onLongClick = onLongClick,
+            onClick = onClick
+        )
+
+        onClick != null -> Modifier.clickable(
             interactionSource = interaction,
             indication = null,
             onClick = onClick
         )
-    } else {
-        Modifier
+
+        else -> Modifier
     }
 
     Row(

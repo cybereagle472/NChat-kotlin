@@ -1,6 +1,6 @@
 {
-  "versionCode": 24,
-  "versionName": "1.0.16",
+  "versionCode": 25,
+  "versionName": "1.0.17",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.16 — settings that work. Privacy now opens a real pane: choose who can see your last seen and profile photo (Everyone / My Contacts / Nobody) and switch read receipts and online status on or off. Notifications opens its own pane with message, call, preview, sound and vibrate switches. Blocking is now real state: block someone from their profile and they appear under Blocked Users, where you can unblock them with one tap, and the count shows on the settings row. Every choice is remembered across launches."
+  "releaseNotes": "NChat 1.0.17 — quicker keys and real chat management. Typing is lighter: the composer no longer redraws the conversation, so each keystroke only touches the input field. Long-press any chat for the menu you were missing: pin it to the top, mute its notifications, mark it read, or delete it after a confirmation. Pinned chats sort above the rest with a pin marker, muted ones show a bell-off marker, and every action confirms with a toast."
 }
