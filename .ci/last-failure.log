@@ -1,4 +1,4 @@
-run: 41806873037
+run: 41809037411
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
@@ -11,15 +11,13 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:checkReleaseAarMetadata
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources UP-TO-DATE
-> Task :app:mergeReleaseResources FROM-CACHE
 > Task :app:packageReleaseResources FROM-CACHE
+> Task :app:mergeReleaseResources
 > Task :app:parseReleaseLocalResources FROM-CACHE
 > Task :app:createReleaseCompatibleScreenManifests
 > Task :app:extractDeepLinksRelease FROM-CACHE
-> Task :app:processReleaseMainManifest FROM-CACHE
-> Task :app:processReleaseManifest FROM-CACHE
-> Task :app:processReleaseManifestForPackage FROM-CACHE
-> Task :app:processReleaseResources FROM-CACHE
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
 > Task :app:javaPreCompileRelease FROM-CACHE
 > Task :app:extractProguardFiles
 > Task :app:mergeReleaseJniLibFolders FROM-CACHE
@@ -28,24 +26,28 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
 > Task :app:desugarReleaseFileDependencies FROM-CACHE
-> Task :app:mergeReleaseArtProfile
 > Task :app:checkReleaseDuplicateClasses
+> Task :app:mergeReleaseArtProfile
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseShaders FROM-CACHE
-> Task :app:mergeExtDexRelease FROM-CACHE
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets FROM-CACHE
 > Task :app:compressReleaseAssets FROM-CACHE
-> Task :app:optimizeReleaseResources FROM-CACHE
 > Task :app:collectReleaseDependencies
 > Task :app:sdkReleaseDependencyData
 > Task :app:validateSigningRelease
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
+> Task :app:processReleaseResources
+> Task :app:optimizeReleaseResources
+> Task :app:mergeExtDexRelease
+> Task :app:compileReleaseKotlin
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:742:21 Unresolved reference: groupAvatarUrl
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:496:37 Unresolved reference: fillMaxSize
 
 > Task :app:compileReleaseKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:192:19 Unresolved reference: onSendMedia
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1793784158742.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1793785141988.json
 
 FAILURE: Build failed with an exception.
 
@@ -251,5 +253,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 39s
-32 actionable tasks: 15 executed, 17 from cache
+BUILD FAILED in 53s
+32 actionable tasks: 22 executed, 10 from cache
