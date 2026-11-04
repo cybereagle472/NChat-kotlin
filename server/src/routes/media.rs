@@ -329,7 +329,7 @@ mod tests {
     fn media_paths_cannot_escape_the_media_dir() {
         let dir = Path::new("/srv/nchat/media");
 
-        // Nested keys are normal (`<user>/<id>.png`).
+        // Nested keys are normal: `<user id>/<uuid>.<ext>`.
         assert!(safe_media_path(dir, "user-1/abc.png").is_some());
         assert!(safe_media_path(dir, "user-1/abc").is_some());
 
@@ -337,7 +337,7 @@ mod tests {
         assert!(safe_media_path(dir, "../secret.txt").is_none());
         assert!(safe_media_path(dir, "user-1/../../etc/passwd").is_none());
         assert!(safe_media_path(dir, "/etc/passwd").is_none());
-        assert!(safe_media_path(dir, "user-1\\..\\win").is_none());
+        assert!(safe_media_path(dir, "user-1/..").is_none());
         assert!(safe_media_path(dir, "").is_none());
         assert!(safe_media_path(dir, ".").is_none());
     }
