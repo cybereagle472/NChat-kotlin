@@ -227,6 +227,7 @@ fun StatusViewer(
             NcAvatar(
                 name = current.authorName,
                 emoji = current.avatarEmoji,
+                imageUrl = current.avatarUrl,
                 size = 40.dp,
                 onGradient = true
             )

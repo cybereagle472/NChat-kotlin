@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -143,6 +144,11 @@ fun SettingsScreen(
             return
         }
 
+        SettingsPane.Sync -> {
+            SyncCheckPane(onBack = { section = SettingsPane.Main })
+            return
+        }
+
         else -> Unit
     }
 
@@ -226,6 +232,13 @@ fun SettingsScreen(
                             icon = Icons.Rounded.Info,
                             title = "About",
                             subtitle = "Version ${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}"
+                        )
+                        SettingsMenuItem(
+                            tone = MenuTone.Gray,
+                            icon = Icons.Rounded.Sync,
+                            title = "Sync check",
+                            subtitle = "What the server answers, call by call",
+                            onClick = { section = SettingsPane.Sync }
                         )
                         SettingsMenuItem(
                             tone = MenuTone.Indigo,
@@ -625,7 +638,7 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 }
 
 /** Which pane of Settings is showing. */
-private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked }
+private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Sync }
 
 
 /**

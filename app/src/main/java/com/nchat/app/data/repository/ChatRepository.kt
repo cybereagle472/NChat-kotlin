@@ -13,6 +13,17 @@ import kotlinx.coroutines.flow.StateFlow
 interface ChatRepository {
     val chats: StateFlow<List<Chat>>
     val groups: StateFlow<List<Group>>
+
+    /**
+     * Why the last refresh failed, or null when it worked.
+     *
+     * A failed request and an empty account both produce an empty list; this is what lets the
+     * chat list say "couldn't load chats" instead of quietly showing nothing.
+     */
+    val syncError: StateFlow<String?>
+
+    /** Reloads chats + groups now (used by the retry button). */
+    fun refresh()
     fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>>
     fun sendMessage(
         chatId: String,

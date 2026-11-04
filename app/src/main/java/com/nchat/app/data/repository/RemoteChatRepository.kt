@@ -79,16 +79,28 @@ class RemoteChatRepository(
         refresh()
     }
 
+    private val _syncError = MutableStateFlow<String?>(null)
+    override val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
     /** Reloads the chat list and the groups list from the server. */
-    fun refresh() {
+    override fun refresh() {
         scope.launch { runCatching { reload() } }
     }
 
     // ------------------------------------------------------------- loading
 
     private suspend fun reload() {
-        val direct = runCatching { api.chats().chats }.getOrDefault(emptyList())
-        val groupRows = runCatching { api.groups().groups }.getOrDefault(emptyList())
+        val directResult = runCatching { api.chats().chats }
+        val groupResult = runCatching { api.groups().groups }
+        val direct = directResult.getOrDefault(emptyList())
+        val groupRows = groupResult.getOrDefault(emptyList())
+
+        // Surface the reason instead of an empty screen (Settings ▸ Sync check has the rest).
+        _syncError.value = when {
+            directResult.isFailure -> "Couldn't load your chats — ${directResult.describe()}"
+            groupResult.isFailure -> "Couldn't load your groups — ${groupResult.describe()}"
+            else -> null
+        }
 
         synchronized(conversations) {
             groupIds.clear()
@@ -881,6 +893,15 @@ class RemoteChatRepository(
         if (value.isNullOrBlank()) return 0L
         return synchronized(ISO) {
             runCatching { ISO.parse(value)?.time ?: 0L }.getOrDefault(0L)
+        }
+    }
+
+    /** Human summary of a failed call, for the banner above the list. */
+    private fun Result<*>.describe(): String {
+        val error = exceptionOrNull() ?: return "unknown error"
+        return when (error) {
+            is com.nchat.app.network.ApiException -> "server said ${error.status}: ${error.message}"
+            else -> error.message ?: error.javaClass.simpleName
         }
     }
 

@@ -1,0 +1,92 @@
+package com.nchat.app.core.diagnostics
+
+import com.nchat.app.network.ApiException
+import com.nchat.app.network.NChatApi
+import java.io.IOException
+
+/** One endpoint and what it answered. */
+data class CheckRow(
+    val name: String,
+    val path: String,
+    val ok: Boolean,
+    val detail: String,
+    val millis: Long
+)
+
+/**
+ * Asks every endpoint the app depends on the same question it asks while building a screen —
+ * and reports the answer instead of hiding it.
+ *
+ * Every repository turns a failure into an empty list so a screen never shows a red box; the
+ * cost is that "my chats are gone" and "the request failed" look identical. This runs the
+ * calls one by one and keeps the HTTP status, the server's own error text and the item count,
+ * which is what tells the two apart in one look.
+ */
+object SyncCheck {
+
+    suspend fun run(api: NChatApi): List<CheckRow> {
+        val rows = mutableListOf<CheckRow>()
+
+        suspend fun probe(name: String, path: String, block: suspend () -> String) {
+            val started = System.currentTimeMillis()
+            val detail = try {
+                block()
+            } catch (error: ApiException) {
+                "HTTP ${error.status}: ${error.message}"
+            } catch (error: IOException) {
+                "network: ${error.message ?: error.javaClass.simpleName}"
+            } catch (error: Throwable) {
+                // A decode failure is the interesting one: the server answered, the shape
+                // was not what the client expected.
+                "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+            }
+            val ok = !detail.startsWith("HTTP ") &&
+                !detail.startsWith("network:") &&
+                !detail.contains("Exception")
+            rows += CheckRow(
+                name = name,
+                path = path,
+                ok = ok,
+                detail = detail,
+                millis = System.currentTimeMillis() - started
+            )
+        }
+
+        probe("Account", "/auth/me") {
+            val user = api.me().user ?: return@probe "no user in the answer"
+            "${user.fullName ?: "?"} · ${user.email ?: "?"}"
+        }
+        probe("My profile", "/users/me") {
+            val profile = api.myProfile().profile ?: return@probe "no profile in the answer"
+            "avatar ${if (profile.avatarUrl.isNullOrBlank()) "none" else "set"} · " +
+                "@${profile.username ?: "-"} · id ${profile.id.take(8)}"
+        }
+        probe("Chats", "/messages/chats") {
+            val chats = api.chats().chats
+            "${chats.size} conversations · ${chats.sumOf { it.unreadCount }} unread"
+        }
+        probe("Friends", "/friends") {
+            "${api.friends().friends.size} friends"
+        }
+        probe("Friend requests", "/friends/requests") {
+            "${api.friendRequests().requests.size} incoming"
+        }
+        probe("People (Find)", "/users") {
+            "${api.allUsers().profiles.size} people"
+        }
+        probe("Search (Find)", "/users/search?q=a") {
+            "${api.searchUsers("a").profiles.size} matches for \"a\""
+        }
+        probe("Groups", "/groups") {
+            "${api.groups().groups.size} groups"
+        }
+        probe("Status feed", "/status/feed") {
+            "${api.statusFeed().statuses.size} updates"
+        }
+        probe("Call history", "/calls/history") {
+            "${api.callHistory(limit = 20).history.size} calls"
+        }
+
+        return rows
+    }
+}

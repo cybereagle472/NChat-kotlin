@@ -191,6 +191,7 @@ fun HomeScreen(
                     about = if (shown.isOnline) "Online now" else "Hey there! I am using NChat.",
                     isOnline = shown.isOnline,
                     emoji = null,
+                    imageUrl = shown.avatarUrl,
                     onBack = { profileTarget = null },
                     onMessage = {
                         profileTarget = null

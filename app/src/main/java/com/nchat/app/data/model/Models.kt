@@ -74,6 +74,8 @@ data class StatusUpdate(
     val id: String,
     val authorName: String,
     val avatarEmoji: String? = null,
+    /** Server-hosted profile photo of the author, when they have one. */
+    val avatarUrl: String? = null,
     val caption: String,
     val timestamp: Long,
     val viewed: Boolean,
@@ -102,6 +104,8 @@ data class Friend(
     val name: String,
     val handle: String,
     val isOnline: Boolean,
+    /** Server-hosted profile photo, when the account has one. */
+    val avatarUrl: String? = null,
     val mutualFriends: Int = 0,
     val relation: FriendRelation = FriendRelation.None,
     val lastSeenAt: Long? = null,

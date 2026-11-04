@@ -65,6 +65,8 @@ fun ProfileViewScreen(
     about: String,
     isOnline: Boolean,
     emoji: String?,
+    /** Server-hosted profile photo, when the account has one. */
+    imageUrl: String? = null,
     onBack: () -> Unit,
     onMessage: () -> Unit,
     onCall: (video: Boolean) -> Unit,
@@ -176,7 +178,7 @@ fun ProfileViewScreen(
                     .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                NcAvatar(name = name, emoji = emoji, size = 96.dp)
+                NcAvatar(name = name, emoji = emoji, imageUrl = imageUrl, size = 96.dp)
             }
 
             Text(
