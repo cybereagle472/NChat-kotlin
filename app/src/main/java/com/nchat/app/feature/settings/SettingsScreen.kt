@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Block as BlockIcon
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.HelpOutline
@@ -93,7 +93,7 @@ fun SettingsScreen(
                         SettingsMenuItem(MenuTone.Purple, Icons.Rounded.Person, "Account", "Profile, username, email")
                         SettingsMenuItem(MenuTone.Green, Icons.Rounded.Lock, "Privacy", "Last seen, profile photo")
                         SettingsMenuItem(MenuTone.Orange, Icons.Rounded.Notifications, "Notifications", "Messages, calls, sounds")
-                        SettingsMenuItem(MenuTone.Red, BlockIcon, "Blocked Users", "Manage blocked contacts", last = true)
+                        SettingsMenuItem(MenuTone.Red, Icons.Rounded.Block, "Blocked Users", "Manage blocked contacts", last = true)
                     }
                 }
 
