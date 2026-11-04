@@ -57,16 +57,59 @@ fn get_call(state: &AppState, id: &str) -> ApiResult<Option<CallRow>> {
         })?)
 }
 
-/// TURN credentials are minted by Cloudflare Realtime in the reference. The
-/// endpoint keeps its contract (`{"iceServers": null}` when unconfigured) so the
-/// client falls back to its public STUN/TURN list; wiring `CF_TURN_*` through
-/// here is the next step (see PORTING.md).
+/// Port of `calls.get('/turn-credentials')`.
+///
+/// Cloudflare Realtime mints a short-lived TURN credential set. Anything that
+/// goes wrong (no `CF_TURN_*` configured, upstream rejects, network error) is
+/// answered with `{"iceServers": null}` so the client falls back to its own
+/// public STUN/TURN list — the reference behaves exactly the same way.
 pub async fn turn_credentials(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
     state.current_user(&headers)?;
-    Ok(Json(json!({ "iceServers": Value::Null })))
+    let unconfigured = Json(json!({ "iceServers": Value::Null }));
+
+    let key_id = match std::env::var("CF_TURN_KEY_ID") {
+        Ok(value) if !value.is_empty() => value,
+        _ => return Ok(unconfigured),
+    };
+    let api_token = match std::env::var("CF_TURN_KEY_API_TOKEN") {
+        Ok(value) if !value.is_empty() => value,
+        _ => return Ok(unconfigured),
+    };
+
+    // Comfortably longer than the longest call anyone is likely to have — the
+    // credential only needs to outlive one call, it is never reused.
+    let endpoint = format!(
+        "https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers"
+    );
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Ok(unconfigured),
+    };
+    let response = client
+        .post(&endpoint)
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_token}"))
+        .json(&json!({ "ttl": 7200 }))
+        .send()
+        .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(_) => return Ok(unconfigured),
+    };
+    if !response.status().is_success() {
+        return Ok(unconfigured);
+    }
+    let data = response.json::<Value>().await;
+    let ice_servers = match data {
+        Ok(value) => value.get("iceServers").cloned().unwrap_or(Value::Null),
+        Err(_) => Value::Null,
+    };
+    Ok(Json(json!({ "iceServers": ice_servers })))
 }
 
 pub async fn create(
