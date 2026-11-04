@@ -86,10 +86,10 @@ fun SettingsScreen(
             }
             item(key = "account-rows") {
                 SettingsGroup {
-                    SettingsRow(Icons.Rounded.Person, "Profile", "Name, about and phone number") {}
-                    SettingsRow(Icons.Rounded.Lock, "Privacy", "Last seen, read receipts, blocked") {}
-                    SettingsRow(Icons.Rounded.Notifications, "Notifications", "Messages, groups, calls") {}
-                    SettingsRow(Icons.Rounded.Folder, "Storage and data", "Media auto-download") {}
+                    SettingsRow(Icons.Rounded.Person, "Profile", "Name, about and phone number", onClick = {})
+                    SettingsRow(Icons.Rounded.Lock, "Privacy", "Last seen, read receipts, blocked", onClick = {})
+                    SettingsRow(Icons.Rounded.Notifications, "Notifications", "Messages, groups, calls", onClick = {})
+                    SettingsRow(Icons.Rounded.Folder, "Storage and data", "Media auto-download", onClick = {})
                 }
             }
 
@@ -129,8 +129,8 @@ fun SettingsScreen(
                             }
                         }
                     )
-                    SettingsRow(Icons.Rounded.HelpOutline, "Help centre", "FAQs and troubleshooting") {}
-                    SettingsRow(Icons.Rounded.Info, "About NChat", "Build ${BuildConfig.VERSION_CODE}") {}
+                    SettingsRow(Icons.Rounded.HelpOutline, "Help centre", "FAQs and troubleshooting", onClick = {})
+                    SettingsRow(Icons.Rounded.Info, "About NChat", "Build ${BuildConfig.VERSION_CODE}", onClick = {})
                 }
             }
 
