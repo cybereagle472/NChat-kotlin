@@ -154,6 +154,7 @@ impl GroupMessageRow {
         value
     }
 
+    #[allow(dead_code)] // the client filters `deleted_for`, the API returns rows as-is
     fn deleted_for_ids(&self) -> Vec<String> {
         self.deleted_for
             .as_deref()

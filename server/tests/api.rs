@@ -233,14 +233,33 @@ async fn profiles_and_usernames() {
     assert_eq!(body["profile"]["username"], "ada");
     assert_eq!(body["profile"]["bio"], "computing");
 
+    // The reference excludes the caller, so your *own* username reads as free…
     let (status, body) = app
         .call("GET", "/users/username-available?username=ada", Some(&ada_token), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["available"], true);
+
+    // …while someone else's does not.
+    let (grace_token, _) = app.signup("grace@example.com", "Grace Hopper").await;
+    let (status, _) = app
+        .call(
+            "PATCH",
+            "/users/me",
+            Some(&grace_token),
+            Some(json!({ "username": "grace" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = app
+        .call("GET", "/users/username-available?username=grace", Some(&ada_token), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["available"], false);
 
     let (status, body) = app
-        .call("GET", "/users/username-available?username=grace", Some(&ada_token), None)
+        .call("GET", "/users/username-available?username=nobody", Some(&ada_token), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["available"], true);
