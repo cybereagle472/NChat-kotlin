@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The updater writes to context.filesDir/updates, which is INTERNAL storage.
+  Declaring only <external-files-path> (as the previous build did) made
+  FileProvider.getUriForFile() throw IllegalArgumentException
+  ("Failed to find configured root") the moment the user tapped "Download & install".
+  Both roots are declared now so either location can be shared with the installer.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-files-path name="app_updates" path="updates/" />
+    <files-path name="internal_updates" path="updates/" />
+    <external-files-path name="external_updates" path="updates/" />
+    <cache-path name="update_cache" path="updates/" />
 </paths>
