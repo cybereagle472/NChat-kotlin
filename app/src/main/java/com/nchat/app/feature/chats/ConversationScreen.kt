@@ -107,6 +107,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.util.readPickedFile
 import com.nchat.app.core.designsystem.NcTypingDots
@@ -614,12 +616,23 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (isVideo) Icons.Rounded.PlayArrow else Icons.Rounded.Image,
-                        contentDescription = null,
-                        tint = Color(0xE6FFFFFF),
-                        modifier = Modifier.size(if (isVideo) 56.dp else 44.dp)
-                    )
+                    val source = message.thumbnailUrl ?: message.mediaUrl
+                    if (source != null) {
+                        AsyncImage(
+                            model = source,
+                            contentDescription = if (isVideo) "Video" else "Photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    if (isVideo || source == null) {
+                        Icon(
+                            imageVector = if (isVideo) Icons.Rounded.PlayArrow else Icons.Rounded.Image,
+                            contentDescription = null,
+                            tint = Color(0xE6FFFFFF),
+                            modifier = Modifier.size(if (isVideo) 56.dp else 44.dp)
+                        )
+                    }
                 }
             }
 
@@ -1036,6 +1049,7 @@ private fun ConversationHeader(
         NcAvatar(
             name = chatTitle,
             emoji = chat?.avatarEmoji,
+            imageUrl = chat?.avatarUrl,
             size = 40.dp,
             onGradient = true
         )

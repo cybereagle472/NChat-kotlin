@@ -40,7 +40,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.compose.ui.unit.sp
 
 /** First letter of a contact name, matching the reference avatar treatment. */
@@ -131,6 +133,8 @@ fun NcAvatar(
     modifier: Modifier = Modifier,
     size: Dp = NcSize.rowAvatar,
     emoji: String? = null,
+    /** Server-hosted avatar; falls back to the brand gradient + initial while it loads. */
+    imageUrl: String? = null,
     isOnline: Boolean = false,
     showPresence: Boolean = false,
     onGradient: Boolean = false
@@ -151,7 +155,16 @@ fun NcAvatar(
                 .then(if (onGradient) Modifier.border(2.dp, Color(0x4DFFFFFF), CircleShape) else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            if (emoji != null) {
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(CircleShape)
+                )
+            } else if (emoji != null) {
                 Text(text = emoji, fontSize = (size.value * 0.4f).sp)
             } else {
                 Text(

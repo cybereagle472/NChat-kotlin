@@ -46,7 +46,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.BubbleShapeMine
 import com.nchat.app.core.designsystem.BubbleShapeTheirs
@@ -191,7 +193,11 @@ fun MessageBubble(
             }
 
             when (message.kind) {
-                MessageKind.Photo -> PhotoContent(onClick = onMediaClick, onLongPress = onLongPress)
+                MessageKind.Photo -> PhotoContent(
+                    mediaUrl = message.mediaUrl,
+                    onClick = onMediaClick,
+                    onLongPress = onLongPress
+                )
                 MessageKind.Voice -> VoiceContent(
                     duration = message.durationLabel ?: "00:00",
                     mine = mine
@@ -203,6 +209,8 @@ fun MessageBubble(
                 MessageKind.Location -> LocationContent(mine = mine)
                 MessageKind.Video -> VideoContent(
                     mine = mine,
+                    mediaUrl = message.mediaUrl,
+                    thumbnailUrl = message.thumbnailUrl,
                     onClick = onMediaClick,
                     onLongPress = onLongPress
                 )
@@ -430,14 +438,26 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
 }
 
 @Composable
-private fun PhotoContent(onClick: () -> Unit, onLongPress: () -> Unit) {
+private fun PhotoContent(mediaUrl: String?, onClick: () -> Unit, onLongPress: () -> Unit) {
+    val frame = Modifier
+        .width(210.dp)
+        .height(140.dp)
+        .clip(RoundedCornerShape(12.dp))
+        .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+
+    if (mediaUrl != null) {
+        // The uploaded file itself; the gradient below is only the loading/fallback state.
+        AsyncImage(
+            model = mediaUrl,
+            contentDescription = "Photo",
+            contentScale = ContentScale.Crop,
+            modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))
+        )
+        return
+    }
+
     Box(
-        modifier = Modifier
-            .width(210.dp)
-            .height(140.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -450,7 +470,15 @@ private fun PhotoContent(onClick: () -> Unit, onLongPress: () -> Unit) {
 }
 
 @Composable
-private fun VideoContent(mine: Boolean, onClick: () -> Unit, onLongPress: () -> Unit) {
+private fun VideoContent(
+    @Suppress("UNUSED_PARAMETER") mine: Boolean,
+    mediaUrl: String?,
+    thumbnailUrl: String?,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit
+) {
+    // A real clip shows its poster frame (usually the thumbnail the server stored).
+    val poster = thumbnailUrl ?: mediaUrl
     Box(
         modifier = Modifier
             .width(210.dp)
@@ -460,6 +488,14 @@ private fun VideoContent(mine: Boolean, onClick: () -> Unit, onLongPress: () -> 
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         contentAlignment = Alignment.Center
     ) {
+        if (poster != null) {
+            AsyncImage(
+                model = poster,
+                contentDescription = "Video",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         Box(
             modifier = Modifier
                 .size(40.dp)

@@ -1,6 +1,6 @@
 {
-  "versionCode": 27,
-  "versionName": "1.0.19",
+  "versionCode": 28,
+  "versionName": "1.0.20",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.19 — the published app now uses the real backend by default (no setup needed), and the demo data is gone: no mock chats, friends or statuses anywhere. Photos, videos and documents now actually upload and send, statuses can be created, privacy settings are stored on the server, avatars upload, and calls ring the other person and land in History. Settings ▸ Server still points any install at your own server."
+  "releaseNotes": "NChat 1.0.20 — photos and clips now show up in the conversation. Uploaded images render in their bubbles and open full-screen, video bubbles show their poster frame, and profile photos you upload (and everyone else's) appear in the chat list, the chat header and your profile. Everything is fetched from the backend you are already connected to."
 }
