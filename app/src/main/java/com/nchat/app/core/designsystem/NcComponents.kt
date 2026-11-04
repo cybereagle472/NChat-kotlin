@@ -7,11 +7,15 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -23,9 +27,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,13 +52,59 @@ fun NcGlassSurface(
 ) {
     Box(
         modifier = modifier
-            .shadow(8.dp, shape, ambientColor = NcTheme.extra.glassShadow, spotColor = NcTheme.extra.glassShadow)
             .clip(shape)
             .background(fill)
             .border(1.dp, borderColor, shape)
     ) {
         content()
     }
+}
+
+/**
+ * The list row from the reference `.chat-list-item`: translucent white fill, a
+ * hairline highlight border, and the web `:active { scale(.98) }` press feel.
+ *
+ * Deliberately free of elevation and ripples: on device a shadow layer drawn
+ * under a translucent fill composites as an opaque white plate, and the ripple
+ * overlay smeared bright bands across the glass cards when scrolling.
+ */
+@Composable
+fun NcGlassRow(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(NcSize.rowRadius),
+    fill: Color = NcTheme.extra.rowFill,
+    borderColor: Color = NcTheme.extra.rowBorder,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = NcSpace.md),
+    verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(NcSpace.md),
+    content: @Composable RowScope.() -> Unit
+) {
+    val interaction = rememberPressSource()
+    val pressModifier = if (onClick != null) Modifier.pressFeedback(interaction) else Modifier
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(
+            interactionSource = interaction,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(pressModifier)
+            .clip(shape)
+            .background(fill)
+            .border(1.dp, borderColor, shape)
+            .then(clickModifier)
+            .padding(contentPadding),
+        verticalAlignment = verticalAlignment,
+        horizontalArrangement = horizontalArrangement,
+        content = content
+    )
 }
 
 /**
