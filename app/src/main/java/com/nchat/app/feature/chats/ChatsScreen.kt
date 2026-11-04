@@ -1,5 +1,6 @@
 package com.nchat.app.feature.chats
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -41,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +88,10 @@ fun ChatsScreen(
                 NcHeaderAction(Icons.Rounded.Settings, "Settings", onClick = onOpenSettings)
             }
         )
+
+        state.error?.let { message ->
+            SyncErrorBanner(message = message, onRetry = viewModel::retry)
+        }
 
         if (state.isEmpty) {
             NcGlassEmptyState(
@@ -409,5 +416,35 @@ private fun KindIcon(kind: MessageKind) {
             tint = NcTheme.extra.textMuted,
             modifier = Modifier.size(14.dp)
         )
+    }
+}
+
+/**
+ * One line above the list when the last refresh failed.
+ *
+ * Without it a 401, a timeout and a genuinely empty account all look the same: an empty chat
+ * list. Tapping Retry re-runs the same load that built the screen.
+ */
+@Composable
+private fun SyncErrorBanner(message: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = NcSpace.md, vertical = NcSpace.xs)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFFFFF1F2))
+            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = message,
+            color = Color(0xFFB91C1C),
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onRetry) {
+            Text(text = "Retry", color = Color(0xFFB91C1C), fontSize = 11.sp)
+        }
     }
 }

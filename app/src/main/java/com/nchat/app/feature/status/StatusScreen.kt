@@ -151,6 +151,7 @@ fun StatusScreen(
                             NcAvatar(
                                 name = status.authorName,
                                 emoji = status.avatarEmoji,
+                                imageUrl = status.avatarUrl,
                                 size = 56.dp
                             )
                         }

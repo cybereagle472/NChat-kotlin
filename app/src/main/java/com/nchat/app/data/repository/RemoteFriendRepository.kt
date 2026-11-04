@@ -171,6 +171,7 @@ class RemoteFriendRepository(
     private fun UserDto.toFriend(relation: FriendRelation, requestedAt: Long? = null) = Friend(
         id = id,
         name = displayName(),
+        avatarUrl = avatarUrl,
         handle = username?.takeIf { it.isNotBlank() }?.let { "@$it" }
             ?: email?.substringBefore('@')?.let { "@$it" }
             ?: "",

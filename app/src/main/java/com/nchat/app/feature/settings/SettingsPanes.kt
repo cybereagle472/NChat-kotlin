@@ -27,11 +27,20 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +52,11 @@ import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.designsystem.NcToggle
 import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
+import com.nchat.app.core.diagnostics.CheckRow
+import com.nchat.app.core.diagnostics.SyncCheck
+import com.nchat.app.data.ServiceLocator
+import com.nchat.app.network.ApiLog
+import kotlinx.coroutines.launch
 import com.nchat.app.data.repository.NotificationSettings
 import com.nchat.app.data.repository.PrivacySettings
 
@@ -521,3 +535,185 @@ fun BlockedUsersPane(
 }
 
 private val PaneColorAccent = Color(0xFF7C3AED)
+
+/**
+ * Settings ▸ Sync check.
+ *
+ * Answers "is my data missing, or is the request failing?" without a cable: every endpoint
+ * the screens depend on is called once and shown with the server's own answer, plus the live
+ * request log and the identity the app is signed in as. One tap copies the lot.
+ */
+@Composable
+fun SyncCheckPane(onBack: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var rows by remember { mutableStateOf<List<CheckRow>>(emptyList()) }
+    var running by remember { mutableStateOf(false) }
+
+    fun runNow() {
+        if (running) return
+        running = true
+        scope.launch {
+            rows = runCatching { SyncCheck.run(ServiceLocator.api) }
+                .getOrElse {
+                    listOf(
+                        CheckRow(
+                            name = "Check crashed",
+                            path = "-",
+                            ok = false,
+                            detail = "${it.javaClass.simpleName}: ${it.message}",
+                            millis = 0
+                        )
+                    )
+                }
+            running = false
+        }
+    }
+
+    LaunchedEffect(Unit) { runNow() }
+
+    val tokens = ServiceLocator.tokens
+    val identity = buildString {
+        appendLine("NChat sync report")
+        appendLine("server:  ${ServiceLocator.serverUrl}")
+        appendLine("account: ${tokens.email ?: "not signed in"}")
+        appendLine("user id: ${tokens.userId ?: "-"}")
+        appendLine("name:    ${tokens.fullName ?: "-"}   @${tokens.username ?: "-"}")
+        appendLine()
+        rows.forEach {
+            appendLine("${if (it.ok) "OK  " else "FAIL"} ${it.name} (${it.path}) ${it.millis} ms")
+            appendLine("      ${it.detail}")
+        }
+        appendLine()
+        appendLine("recent requests")
+        appendLine(ApiLog.dump().ifBlank { "(none)" })
+    }
+
+    SettingsPaneScaffold(
+        title = "Sync check",
+        subtitle = "What the server answers",
+        onBack = onBack
+    ) {
+        item(key = "identity") {
+            PaneSection {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = tokens.email ?: "not signed in",
+                        color = PaneTitle,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "id ${tokens.userId?.take(8) ?: "-"} · " +
+                            ServiceLocator.serverUrl.removePrefix("https://").removePrefix("http://"),
+                        color = PaneBody,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        item(key = "actions") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = NcSpace.md, bottom = NcSpace.sm),
+                horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+            ) {
+                PaneButton(
+                    label = if (running) "Checking…" else "Run check",
+                    modifier = Modifier.weight(1f),
+                    onClick = { runNow() }
+                )
+                PaneButton(
+                    label = "Copy report",
+                    modifier = Modifier.weight(1f),
+                    onClick = { clipboard.setText(AnnotatedString(identity)) }
+                )
+            }
+        }
+
+        item(key = "rows") {
+            PaneSection {
+                rows.forEachIndexed { index, row ->
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (row.ok) "OK" else "FAIL",
+                                color = if (row.ok) Color(0xFF16A34A) else Color(0xFFDC2626),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(
+                                text = row.name,
+                                color = PaneTitle,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(text = "${row.millis} ms", color = PaneBody, fontSize = 10.sp)
+                        }
+                        Text(
+                            text = "${row.path} — ${row.detail}",
+                            color = PaneBody,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    if (index != rows.lastIndex) {
+                        HorizontalDivider(color = Color(0x22000000))
+                    }
+                }
+                if (rows.isEmpty()) {
+                    Text(
+                        text = "Checking…",
+                        color = PaneBody,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+            }
+        }
+
+        item(key = "log") {
+            Column(modifier = Modifier.padding(top = NcSpace.md)) {
+                Text(
+                    text = "Recent requests",
+                    color = PaneTitle,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = ApiLog.dump().ifBlank { "(none yet)" },
+                    color = PaneBody,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0x99FFFFFF))
+                        .padding(10.dp)
+                )
+            }
+        }
+    }
+}
+
+/** A small filled pill used for the two actions above. */
+@Composable
+private fun PaneButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val interaction = rememberPressSource()
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF7C3AED))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .pressFeedback(interaction)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(text = label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}

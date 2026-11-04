@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.stateIn
 data class ChatsUiState(
     val query: String = "",
     val chats: List<Chat> = emptyList(),
-    val totalUnread: Int = 0
+    val totalUnread: Int = 0,
+    /** Set when the last refresh failed; the list then explains itself instead of looking empty. */
+    val error: String? = null
 ) {
     val isEmpty: Boolean get() = chats.isEmpty()
 }
@@ -27,7 +29,7 @@ class ChatsViewModel(
     private val query = MutableStateFlow("")
 
     val uiState: StateFlow<ChatsUiState> =
-        combine(repository.chats, query) { chats, currentQuery ->
+        combine(repository.chats, query, repository.syncError) { chats, currentQuery, error ->
             val visible = chats
                 .filter { chat ->
                     currentQuery.isBlank() ||
@@ -39,7 +41,8 @@ class ChatsViewModel(
             ChatsUiState(
                 query = currentQuery,
                 chats = visible,
-                totalUnread = chats.sumOf { it.unreadCount }
+                totalUnread = chats.sumOf { it.unreadCount },
+                error = error
             )
         }.stateIn(
             scope = viewModelScope,
@@ -50,6 +53,8 @@ class ChatsViewModel(
     fun onQueryChange(value: String) {
         query.value = value
     }
+
+    fun retry() = repository.refresh()
 
     fun markRead(chatId: String) = repository.markRead(chatId)
 

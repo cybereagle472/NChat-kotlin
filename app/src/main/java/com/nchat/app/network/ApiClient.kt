@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -165,9 +166,36 @@ class ApiClient(
         access
     }
 
+    /**
+     * Runs the call and records it in [ApiLog].
+     *
+     * The log is what Settings ▸ Sync check prints: without it, a failed request is
+     * indistinguishable from an empty account, because every repository turns a failure into
+     * an empty list on purpose.
+     */
     private suspend fun execute(request: Request): Snapshot = withContext(Dispatchers.IO) {
-        http.newCall(request).execute().use { response ->
-            Snapshot(response.code, response.body?.string().orEmpty())
+        val started = System.currentTimeMillis()
+        val path = request.url.encodedPath + (request.url.encodedQuery?.let { "?$it" }.orEmpty())
+        try {
+            http.newCall(request).execute().use { response ->
+                ApiLog.record(
+                    request.method,
+                    path,
+                    response.code,
+                    System.currentTimeMillis() - started,
+                    null
+                )
+                Snapshot(response.code, response.body?.string().orEmpty())
+            }
+        } catch (error: IOException) {
+            ApiLog.record(
+                request.method,
+                path,
+                null,
+                System.currentTimeMillis() - started,
+                error.message ?: error.javaClass.simpleName
+            )
+            throw error
         }
     }
 

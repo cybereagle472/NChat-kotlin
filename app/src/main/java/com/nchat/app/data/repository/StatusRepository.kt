@@ -85,6 +85,7 @@ class RemoteStatusRepository(
     private fun StatusDto.toModel(authorName: String, isMine: Boolean) = StatusUpdate(
         id = id,
         authorName = authorName,
+        avatarUrl = avatarUrl,
         caption = textContent?.takeIf { it.isNotBlank() }
             ?: caption?.takeIf { it.isNotBlank() }
             ?: when (contentType) {

@@ -489,6 +489,7 @@ fun ConversationScreen(
                 about = if (chat?.isGroup == true) "Group conversation" else "Hey there! I am using NChat.",
                 isOnline = chat?.isOnline == true,
                 emoji = chat?.avatarEmoji,
+                imageUrl = chat?.avatarUrl,
                 onBack = { profileOpen = false },
                 onMessage = { profileOpen = false },
                 onCall = { video ->

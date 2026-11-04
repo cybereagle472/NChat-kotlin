@@ -131,7 +131,8 @@ fun HomeScreen(
                                 id = friend.id,
                                 name = friend.name,
                                 handle = friend.handle,
-                                isOnline = friend.isOnline
+                                isOnline = friend.isOnline,
+                                avatarUrl = friend.avatarUrl
                             )
                         }
                     )
@@ -191,6 +192,7 @@ fun HomeScreen(
                     about = if (shown.isOnline) "Online now" else "Hey there! I am using NChat.",
                     isOnline = shown.isOnline,
                     emoji = null,
+                    imageUrl = shown.avatarUrl,
                     onBack = { profileTarget = null },
                     onMessage = {
                         profileTarget = null
@@ -224,5 +226,6 @@ private data class ProfileTarget(
     val id: String,
     val name: String,
     val handle: String,
-    val isOnline: Boolean
+    val isOnline: Boolean,
+    val avatarUrl: String? = null
 )

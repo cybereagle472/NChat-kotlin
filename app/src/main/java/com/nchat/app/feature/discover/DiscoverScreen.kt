@@ -491,6 +491,7 @@ private fun FriendCard(
     GlassCard(onClick = onOpenProfile) {
         NcAvatar(
             name = friend.name,
+            imageUrl = friend.avatarUrl,
             size = 56.dp,
             isOnline = friend.isOnline,
             showPresence = true
@@ -574,6 +575,7 @@ private fun RequestCard(
         ) {
             NcAvatar(
                 name = friend.name,
+                imageUrl = friend.avatarUrl,
                 size = 48.dp,
                 isOnline = friend.isOnline,
                 showPresence = true
@@ -690,6 +692,7 @@ private fun UserCard(
     GlassCard(onClick = onOpenProfile) {
         NcAvatar(
             name = friend.name,
+            imageUrl = friend.avatarUrl,
             size = 48.dp,
             isOnline = friend.isOnline,
             showPresence = true

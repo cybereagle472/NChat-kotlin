@@ -1,6 +1,6 @@
 {
-  "versionCode": 33,
-  "versionName": "1.0.25",
+  "versionCode": 34,
+  "versionName": "1.0.26",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.25 — fixes the launch crash. Upgrading from an older install could leave one saved setting in the old format, and reading it closed the app immediately; the app now reads every stored value safely whatever format it is in. Nothing to sign in again, no data lost. Also included: the crash screen with a Copy button, compressed photos with thumbnails, an instant chat list, private media, and no in-app server option."
+  "releaseNotes": "NChat 1.0.26 — profile photos now appear everywhere they belong (chats, friends, requests, Find, statuses and the profile viewer). When a load fails the chat list says so and offers Retry instead of looking empty. New Settings ▸ Sync check shows exactly what the server answers for every endpoint, with a Copy button, so a loading problem can be reported in one tap."
 }
