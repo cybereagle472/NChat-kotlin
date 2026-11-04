@@ -128,6 +128,7 @@ fun ConversationScreen(
     val clipboard = LocalClipboardManager.current
     val anchors = remember { mutableStateMapOf<String, Rect>() }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
+    var reactionTargetId by remember { mutableStateOf<String?>(null) }
     var callKind by remember {
         mutableStateOf(
             autoCallVideo?.let { video -> if (video) CallKind.Video else CallKind.Audio }
@@ -240,10 +241,18 @@ fun ConversationScreen(
     if (activeMessageId != null && activeMessage != null) {
         MessageActionMenu(
             anchor = anchors[activeMessageId],
-            showCopy = activeMessage.text.isNotBlank(),
-            showReply = true,
+            showCopy = activeMessage.text.isNotBlank() && !activeMessage.deleted,
+            showReply = !activeMessage.deleted,
             onDismiss = { viewModel.onSelectMessage(null) },
             onReact = viewModel::onReaction,
+            reactedEmojis = activeMessage.reactions
+                .filter { it.reactedByMe }
+                .map { it.emoji }
+                .toSet(),
+            onShowAllReactions = {
+                reactionTargetId = activeMessage.id
+                viewModel.onSelectMessage(null)
+            },
             onReply = viewModel::onReply,
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
@@ -315,49 +324,161 @@ fun ConversationScreen(
 
     pendingDelete?.let { doomed ->
         DeleteMessageDialog(
+            canDeleteForEveryone = canDeleteForEveryone(doomed),
             onDismiss = { pendingDelete = null },
-            onConfirm = {
-                viewModel.onDeleteMessage(doomed.id)
+            onDeleteForEveryone = {
+                viewModel.onDeleteMessage(doomed.id, forEveryone = true)
+                pendingDelete = null
+            },
+            onDeleteForMe = {
+                viewModel.onDeleteMessage(doomed.id, forEveryone = false)
                 pendingDelete = null
             }
         )
     }
+
+    reactionTargetId?.let { targetId ->
+        val target = messages.firstOrNull { it.id == targetId }
+        ReactionPickerSheet(
+            reactedEmojis = target?.reactions
+                ?.filter { it.reactedByMe }
+                ?.map { it.emoji }
+                ?.toSet()
+                .orEmpty(),
+            onReact = { emoji ->
+                viewModel.reactTo(targetId, emoji)
+                reactionTargetId = null
+            },
+            onDismiss = { reactionTargetId = null }
+        )
+    }
 }
 
-/** `DeleteMessageDialog` from the reference: glass card, red icon, two clear choices. */
+/** The reference lets you recall your own message for everyone within an hour. */
+private fun canDeleteForEveryone(message: Message): Boolean =
+    message.isMine &&
+        !message.deleted &&
+        System.currentTimeMillis() - message.timestamp < 60 * 60 * 1000L
+
+/**
+ * `GroupMessageActions` delete confirmation: pick "Delete for Everyone" (own message,
+ * under an hour), "Delete for Me", or back out.
+ */
 @Composable
-private fun DeleteMessageDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(
+private fun DeleteMessageDialog(
+    canDeleteForEveryone: Boolean,
+    onDismiss: () -> Unit,
+    onDeleteForEveryone: () -> Unit,
+    onDeleteForMe: () -> Unit
+) {
+    Dialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Box(
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFFEE2E2)),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 20.dp)
+                    .fillMaxWidth()
+                    .shadow(16.dp, RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .padding(NcSpace.lg),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = null,
-                    tint = Color(0xFFEF4444),
-                    modifier = Modifier.size(24.dp)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFEE2E2)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = null,
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Text(
+                    text = "Delete Message?",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = NcTheme.extra.textSecondary,
+                    modifier = Modifier.padding(top = NcSpace.md)
+                )
+                Text(
+                    text = if (canDeleteForEveryone) {
+                        "Choose how you want to delete this message"
+                    } else {
+                        "This message will be deleted for you only"
+                    },
+                    fontSize = 13.sp,
+                    color = NcTheme.extra.textTertiary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = NcSpace.xs, bottom = NcSpace.lg)
+                )
+
+                if (canDeleteForEveryone) {
+                    DialogButton(
+                        label = "Delete for Everyone",
+                        background = Color(0xFFEF4444),
+                        contentColor = Color.White,
+                        onClick = onDeleteForEveryone
+                    )
+                }
+                DialogButton(
+                    label = "Delete for Me",
+                    background = Color.Transparent,
+                    contentColor = Color(0xFFDC2626),
+                    border = Color(0xFFFECACA),
+                    onClick = onDeleteForMe
+                )
+                DialogButton(
+                    label = "Cancel",
+                    background = Color.Transparent,
+                    contentColor = NcTheme.extra.textSecondary,
+                    border = Color(0xFFE2E8F0),
+                    onClick = onDismiss
                 )
             }
-        },
-        title = { Text("Delete Message?", fontWeight = FontWeight.SemiBold) },
-        text = { Text("This message will be removed from this conversation. This cannot be undone.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Delete", color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = NcTheme.extra.textTertiary) }
-        },
-        containerColor = Color.White,
-        shape = RoundedCornerShape(20.dp)
-    )
+        }
+    }
+}
+
+@Composable
+private fun DialogButton(
+    label: String,
+    background: Color,
+    contentColor: Color,
+    border: Color? = null,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = NcSpace.sm)
+            .height(46.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .then(
+                if (border != null) Modifier.border(1.dp, border, RoundedCornerShape(12.dp)) else Modifier
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = label, color = contentColor, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
 }
 
 @Composable

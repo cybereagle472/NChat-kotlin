@@ -1,6 +1,6 @@
 {
-  "versionCode": 16,
-  "versionName": "1.0.8",
+  "versionCode": 17,
+  "versionName": "1.0.9",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.8 — the full call history. The History tab now opens with the All / Voice / Video / Missed filter pills (the active one snaps white and scales, like the reference) and lists every call with its direction — incoming in green, outgoing in violet, missed in red with a red avatar — plus a Voice or Video pill, the call length, and a timestamp that switches between time of day, Yesterday, weekday and date. Every row carries voice call, video call and message buttons, taps open the caller's profile card, and the list fills in with the staggered slide-up. Calls started from History open (or create) that chat and start ringing immediately; filtered views that end up empty show the reference 'No call history' card."
+  "releaseNotes": "NChat 1.0.9 — the full message-actions menu, in chats and groups alike. Long-press a message and the quick reactions now light up the ones you already used, with the smiley button opening the complete 32-emoji Reactions sheet that slides up from the bottom. Delete now asks how you want to remove the message — 'Delete for Everyone' (your own messages, within an hour) leaves the reference tombstone behind, 'Delete for Me' removes it just for you, and Cancel backs out. Reactions you have given are highlighted in violet on the bubbles, and deleted messages can no longer be replied to, copied, forwarded or reacted to."
 }

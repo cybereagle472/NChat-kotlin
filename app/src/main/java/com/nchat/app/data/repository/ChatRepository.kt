@@ -38,7 +38,7 @@ interface ChatRepository {
     fun sendAttachment(chatId: String, kind: MessageKind, label: String)
     fun sendVoice(chatId: String, durationLabel: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
-    fun deleteMessage(chatId: String, messageId: String)
+    fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean = false)
     fun createGroup(name: String, description: String, memberCount: Int): Group
     fun addMembers(groupId: String, count: Int)
     fun renameGroup(groupId: String, name: String)
@@ -193,27 +193,34 @@ class InMemoryChatRepository(
         }
     }
 
-    override fun deleteMessage(chatId: String, messageId: String) {
+    override fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean) {
         val stream = conversations[chatId] ?: return
-        stream.update { messages -> messages.filterNot { it.id == messageId } }
-        val remaining = stream.value.lastOrNull()
-        _chats.update { chats ->
-            chats.map { chat ->
-                if (chat.id != chatId) {
-                    chat
-                } else {
-                    chat.copy(
-                        lastMessage = remaining?.text ?: "No messages yet",
-                        lastMessageAt = remaining?.timestamp ?: chat.lastMessageAt,
-                        lastMessageMine = remaining?.isMine ?: false,
-                        lastMessageKind = remaining?.kind ?: MessageKind.Text,
-                        lastMessageState = remaining?.state,
-                        isTyping = false
-                    )
+        stream.update { messages ->
+            if (forEveryone) {
+                messages.map { message ->
+                    if (message.id == messageId) message.tombstone() else message
                 }
+            } else {
+                messages.filterNot { it.id == messageId }
             }
         }
     }
+
+    /**
+     * "Delete for everyone" leaves the reference's tombstone behind: the row survives so
+     * the conversation keeps its shape, but the payload is gone.
+     */
+    private fun Message.tombstone(): Message = copy(
+        text = "This message was deleted",
+        kind = MessageKind.Text,
+        reactions = emptyList(),
+        replyAuthor = null,
+        replyText = null,
+        fileName = null,
+        durationLabel = null,
+        forwarded = false,
+        deleted = true
+    )
 
     override fun createGroup(name: String, description: String, memberCount: Int): Group {
         val group = Group(

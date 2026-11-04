@@ -29,7 +29,9 @@ data class Message(
     val replyText: String? = null,
     val isEdited: Boolean = false,
     val forwarded: Boolean = false,
-    val systemEvent: Boolean = false
+    val systemEvent: Boolean = false,
+    /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
+    val deleted: Boolean = false
 )
 
 /** A row in the Chats tab. */
