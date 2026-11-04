@@ -56,6 +56,8 @@ data class NcExtraColors(
     val glassShadow: Color,
     val rowFill: Color,
     val rowBorder: Color,
+    val sectionFill: Color,
+    val sectionBorder: Color,
 
     val textPrimary: Color,
     val textSecondary: Color,
@@ -87,6 +89,8 @@ private val NcLightExtraColors = NcExtraColors(
     glassShadow = Color(0x2E000000),
     rowFill = Color(0xB3FFFFFF),
     rowBorder = Color(0xCCFFFFFF),
+    sectionFill = Color(0xCCFFFFFF),
+    sectionBorder = Color(0xB3FFFFFF),
 
     textPrimary = NcPalette.Slate900,
     textSecondary = NcPalette.Slate700,

@@ -1,6 +1,6 @@
 {
-  "versionCode": 9,
-  "versionName": "1.0.1",
+  "versionCode": 10,
+  "versionName": "1.0.2",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.1 — fixes the in-app update crash. The updater wrote the APK to internal storage while FileProvider only allowed external storage, so tapping \"Download & install\" threw an error that froze the app. The provider paths are fixed, installs now run off the main thread, and every failure is reported instead of crashing. This build also matches the violet glass design of the reference app."
+  "releaseNotes": "NChat 1.0.2 — visual polish round. Chat, status, group and history rows no longer show the bright white band that appeared inside each glass card: the row shadow layer and tap ripple were composited as an opaque plate under the translucent fill, so both were replaced with the exact reference treatment (flat rgba(255,255,255,.7) fill, hairline highlight border, spring press scale). Settings is now the bright light-glass page it should be — the dark night theme that tinted every card grey-olive is gone, the page sits on the violet body gradient again, and the header carries the gradient profile card. Also: softer brand colour for the launcher icon and cheaper draws across all lists for smoother scrolling."
 }
