@@ -47,14 +47,16 @@ the client keeps a local cache and updates optimistically.
    1:1 calls, group calls, media, privacy, admin, realtime fan-out), with the same
    schema, the same JSON and 13 end-to-end flows in `cargo test`. See `eagle-x.md` §3.1
    for the runtime mapping and the behaviours that must not drift.
-2. **Transport layer in the app.** `network/NChatApi.kt` (OkHttp +
-   `kotlinx.serialization`) and `network/NChatSocket.kt` (WebSocket with
-   exponential backoff and a `StateFlow<ConnectionState>`).
-3. **Remote repositories.** `RemoteChatRepository` / `RemoteFriendRepository`
-   implement the same interfaces as the in-memory ones. `ServiceLocator` picks
-   one from `BuildConfig.NCHAT_API_BASE` — empty means "stay offline/mock", so
-   the UI never breaks when no server is configured.
-4. **Optimistic send.** A message appears in the list with `DeliveryState.Sending`
+2. **Transport layer in the app — done.** `network/ApiClient.kt` (OkHttp +
+   `kotlinx.serialization`, refresh-token rotation) and `network/NChatSocket.kt` (WebSocket
+   with exponential backoff and a `StateFlow<ConnectionState>`).
+3. **Remote repositories — done.** `RemoteAuthRepository`, `RemoteProfileRepository`,
+   `RemoteChatRepository`, `RemoteFriendRepository`, `RemoteStatusRepository`,
+   `RemoteCallRepository` implement the same interfaces as the in-memory ones.
+   `ServiceLocator` picks the pair from `ServerConfig` (Settings ▸ Server, else
+   `BuildConfig.NCHAT_API_BASE`) — empty means "stay offline/mock", so the UI never breaks
+   when no server is configured.
+4. **Optimistic send — done.** A message appears in the list with `DeliveryState.Sending`
    immediately, flips to `Sent` on ack, `Read` on the receipt event. Local write
    first, network second — the tap-to-bubble latency stays under one frame.
 5. **Offline queue.** Room (or a plain file journal) holds unsent messages and
