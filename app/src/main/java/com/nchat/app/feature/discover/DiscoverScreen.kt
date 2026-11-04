@@ -33,10 +33,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Sparkles
-import androidx.compose.material.icons.rounded.UserCheck
-import androidx.compose.material.icons.rounded.UserMinus
-import androidx.compose.material.icons.rounded.Users
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.HowToReg
+import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -76,7 +76,7 @@ import com.nchat.app.data.model.FriendRelation
 import kotlinx.coroutines.delay
 
 private enum class DiscoverTab(val label: String, val icon: ImageVector) {
-    Friends("Friends", Icons.Rounded.Users),
+    Friends("Friends", Icons.Rounded.Groups),
     Requests("Requests", Icons.Rounded.PersonAdd),
     Find("Find", Icons.Rounded.Search)
 }
@@ -315,7 +315,7 @@ private fun DiscoverHeader(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Rounded.Sparkles,
+                imageVector = Icons.Rounded.AutoAwesome,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
@@ -734,7 +734,7 @@ private fun UserCard(
         when (friend.relation) {
             FriendRelation.Friend -> ActionPill(
                 label = if (busy) "..." else "Friends",
-                icon = Icons.Rounded.UserCheck,
+                icon = Icons.Rounded.HowToReg,
                 background = SolidColor(Color(0xFFDCFCE7)),
                 foreground = Color(0xFF15803D),
                 onClick = onUnfriendClick
@@ -951,7 +951,7 @@ private fun UnfriendDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.UserMinus,
+                        imageVector = Icons.Rounded.PersonRemove,
                         contentDescription = null,
                         tint = Red500,
                         modifier = Modifier.size(30.dp)
