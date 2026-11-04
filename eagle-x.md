@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.17** (`versionCode 25`, `nchat-build-112`)
+- Current version: **1.0.18** (`versionCode 26`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -180,6 +180,89 @@ only proof of compilation.
 
 ---
 
+## 3.2 How the client reaches it
+
+The app was mock-only until 1.0.18. It now has two data sources and picks one at start-up;
+nothing above the repository layer knows which is active.
+
+```
+UI (screens, view models) ──► repository interfaces
+                                  ├── InMemory* (demo data, always available)
+                                  └── Remote*   (Rust backend)
+                                          └── ApiClient (OkHttp) · NChatSocket (WebSocket)
+```
+
+### Choosing the source
+
+`ServerConfig.effective()` resolves, in order: **Settings ▸ Server** (saved at runtime),
+then `BuildConfig.NCHAT_API_BASE` (baked at build time), then nothing. Nothing means the
+in-memory repositories — that is what the published APK does, so a fresh install works with
+no server and no configuration. A non-empty URL switches every repository in
+`ServiceLocator` to its remote twin. The value is read once, so the dialog says "reopen
+NChat to connect" rather than trying to swap sockets under a running UI.
+
+### Transport rules (`network/`)
+
+- **`ApiClient`** — one OkHttp client, JSON in and out, `ApiException(status, serverMessage)`
+  for every non-2xx (the server's own `error` string is what the UI shows). A `401` triggers
+  one refresh through a mutex (the backend rotates refresh tokens single-use, so parallel
+  refreshes would revoke the session) and then one retry; a failed refresh signs the user out.
+- **`TokenStore`** — access + refresh tokens, user id, name, username, avatar, and the
+  "profile set up" flag, all in `SharedPreferences`. Restoring a session needs no network.
+- **`Dtos.kt`** — snake_case wire types copied from `server/src/models.rs`, **including the
+  three legacy camelCase keys** the reference emits (`fileName`, `fileSize`, `lastMessage`,
+  `unreadCount`, `receiverIds`). Every field is nullable/defaulted: the backend omits nulls,
+  and a new server field must never crash an old APK.
+- **`NChatApi`** — one function per route (paths taken from `server/src/routes/mod.rs`).
+- **`NChatSocket`** — `GET /realtime/connect?room=user:<id>&token=<jwt>`, exponential
+  backoff 1 s → 30 s, `StateFlow<ConnectionState>`, and a `SharedFlow<RealtimeEvent>` of
+  `{"type": …}` frames. One socket carries everything: messages, group traffic, typing,
+  receipts, calls, statuses — because the server fans every event to each member's personal
+  room.
+
+### What each screen reads now
+
+| Screen | Remote source |
+|---|---|
+| Auth | `/auth/check-email`, `/auth/signup`, `/auth/login`, `/auth/logout` |
+| Profile setup / Settings profile | `GET`/`PATCH /users/me` |
+| Chats | `GET /messages/chats` + `GET /groups`, merged and sorted by last activity |
+| Conversation | `/messages/with/:id` or `/groups/:id/messages`; sends, edits, deletes, reactions |
+| Groups | `/groups` with members, roles, mute, leave, add members (real member ids) |
+| Discover | `/friends`, `/friends/requests`, `/friends/sent`, `/users`, `/friends/blocked` merged into one relation-tagged list |
+| Status | `/status/mine` + `/status/feed`, views persisted through `/status/:id/view` |
+| History | `/calls/history` |
+| Settings ▸ Blocked | `/friends/blocked` |
+
+### Behaviour details worth remembering
+
+- **Optimistic sends.** The bubble appears immediately with `DeliveryState.Sending`; the
+  server's row then replaces it (real id, timestamp, `Sent`), and `message:read` flips it to
+  `Read`. A failed send keeps the bubble rather than silently dropping the text.
+- **Unread counts belong to the server.** The client only zeroes the badge it was given;
+  it never recomputes counts locally (which is also why `util::now_iso` had to be monotonic,
+  §3.1).
+- **Typing** is streamed (`/messages/typing`, `/groups/:id/typing`); incoming indicators set
+  `isTyping`/`isRecording` on the chat row. The mock build keeps its local simulation.
+- **Pins and direct-chat mutes stay local** — the reference has no columns for them. Group
+  mute is real (`PATCH /groups/:id/mute`).
+- **Pins/mutes and group member counts** update optimistically, then reconcile from the
+  server reply.
+
+### Still missing on this strand (deliberate, tracked)
+
+1. **Calls do not place real WebRTC calls yet** — the signalling routes and models exist and
+   history is live, but the overlay is still the simulated one; it needs a WebRTC stack,
+   ICE handling and the TURN credentials from `/calls/turn-credentials`.
+2. **Media uploads are not wired into the composer** — `POST /media/upload` is implemented
+   both sides; the attachment sheet still sends a label instead of a file.
+3. **No offline queue** — a send that fails while the socket is down is not retried
+   automatically (ARCHITECTURE step 5).
+4. **Status composer** still cannot create a status from the UI, although
+   `POST /status` is wired in the repository.
+
+---
+
 ## 4. Design system
 
 ### 4.1 Palette (exact — do not approximate)
@@ -243,6 +326,7 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
 | 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
 | 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
+| 1.0.18 | 26 | *this build* | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
 
 ---
 

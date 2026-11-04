@@ -1,6 +1,6 @@
 {
-  "versionCode": 25,
-  "versionName": "1.0.17",
+  "versionCode": 26,
+  "versionName": "1.0.18",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.17 — quicker keys and real chat management. Typing is lighter: the composer no longer redraws the conversation, so each keystroke only touches the input field. Long-press any chat for the menu you were missing: pin it to the top, mute its notifications, mark it read, or delete it after a confirmation. Pinned chats sort above the rest with a pin marker, muted ones show a bell-off marker, and every action confirms with a toast."
+  "releaseNotes": "NChat 1.0.18 — the app can now talk to a real backend. Open Settings ▸ Server and paste the address of a running NChat server (or build the APK with NCHAT_API_BASE) and sign in, chat, create groups, follow statuses and see your call history straight from it — with live updates over one socket, optimistic sends and read receipts. Leave the field empty and everything keeps working on the built-in demo data, exactly as before."
 }

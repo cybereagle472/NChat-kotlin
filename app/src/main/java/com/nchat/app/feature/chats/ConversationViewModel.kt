@@ -56,6 +56,8 @@ class ConversationViewModel(
 
     fun onComposerChange(value: String) {
         _composerText.value = value
+        // Remote builds stream "typing" to the other side; the mock build ignores it.
+        repository.setTyping(chatId, value.isNotEmpty())
     }
 
     fun onSend() {
@@ -70,6 +72,7 @@ class ConversationViewModel(
         )
         _composerText.value = ""
         _replyTo.value = null
+        repository.setTyping(chatId, false)
     }
 
     fun onReply() {
@@ -107,9 +110,9 @@ class ConversationViewModel(
         repository.renameGroup(chatId, name)
     }
 
-    fun onAddMembers(count: Int) {
-        if (count <= 0) return
-        repository.addMembers(chatId, count)
+    fun onAddMembers(memberIds: List<String>) {
+        if (memberIds.isEmpty()) return
+        repository.addMembers(chatId, memberIds)
     }
 
     fun onLeaveGroup() {

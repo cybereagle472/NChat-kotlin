@@ -68,7 +68,7 @@ fun GroupInfoScreen(
     selfName: String,
     onBack: () -> Unit,
     onRename: (String) -> Unit,
-    onAddMembers: (count: Int) -> Unit,
+    onAddMembers: (memberIds: List<String>) -> Unit,
     onLeave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -344,10 +344,10 @@ fun GroupInfoScreen(
         AddMembersDialog(
             candidates = friends.takeLast((friends.size - members.size).coerceAtLeast(0)),
             onDismiss = { pickingMembers = false },
-            onConfirm = { count ->
-                addedCount += count
+            onConfirm = { memberIds ->
+                addedCount += memberIds.size
                 pickingMembers = false
-                onAddMembers(count)
+                onAddMembers(memberIds)
             }
         )
     }
@@ -474,7 +474,7 @@ private fun NameDialog(
 private fun AddMembersDialog(
     candidates: List<Friend>,
     onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit
+    onConfirm: (List<String>) -> Unit
 ) {
     val extra = NcTheme.extra
     var selected by remember { mutableStateOf(emptySet<String>()) }
@@ -523,7 +523,7 @@ private fun AddMembersDialog(
         confirmButton = {
             TextButton(
                 enabled = selected.isNotEmpty(),
-                onClick = { onConfirm(selected.size) }
+                onClick = { onConfirm(selected.toList()) }
             ) {
                 Text("Add (${selected.size})", fontWeight = FontWeight.SemiBold)
             }

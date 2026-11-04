@@ -41,8 +41,8 @@ interface ChatRepository {
     fun editMessage(chatId: String, messageId: String, text: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
     fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean = false)
-    fun createGroup(name: String, description: String, memberCount: Int): Group
-    fun addMembers(groupId: String, count: Int)
+    fun createGroup(name: String, description: String, memberIds: List<String>): Group
+    fun addMembers(groupId: String, memberIds: List<String>)
     fun renameGroup(groupId: String, name: String)
     fun leaveGroup(groupId: String)
     fun setPinned(chatId: String, pinned: Boolean)
@@ -53,6 +53,13 @@ interface ChatRepository {
 
     /** Existing chat for this person, or a fresh one seeded with a greeting. */
     fun openChat(personId: String, title: String, isOnline: Boolean): Chat
+
+    /**
+     * Streams the typing indicator to the other side. The mock build simulates typing
+     * locally and ignores these; the remote build sends them over the socket.
+     */
+    fun setTyping(chatId: String, typing: Boolean) = Unit
+    fun setRecording(chatId: String, recording: Boolean) = Unit
 }
 
 class InMemoryChatRepository(
@@ -244,12 +251,12 @@ class InMemoryChatRepository(
         deleted = true
     )
 
-    override fun createGroup(name: String, description: String, memberCount: Int): Group {
+    override fun createGroup(name: String, description: String, memberIds: List<String>): Group {
         val group = Group(
             id = "group-${messageIds.incrementAndGet()}",
             name = name,
             description = description,
-            memberCount = memberCount + 1,
+            memberCount = memberIds.size + 1,
             avatarEmoji = "👥",
             lastActivity = "Group created",
             lastActivityAt = System.currentTimeMillis()
@@ -267,7 +274,8 @@ class InMemoryChatRepository(
         return group
     }
 
-    override fun addMembers(groupId: String, count: Int) {
+    override fun addMembers(groupId: String, memberIds: List<String>) {
+        val count = memberIds.size
         _groups.update { groups ->
             groups.map { group ->
                 if (group.id == groupId) {

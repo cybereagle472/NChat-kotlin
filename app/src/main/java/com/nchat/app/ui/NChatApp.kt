@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import com.nchat.app.feature.auth.AuthScreen
 import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.settings.SettingsScreen
+import kotlinx.coroutines.delay
 
 /** Where the app is in the reference's launch flow. */
 private enum class LaunchStage { Auth, ProfileSetup, Main }
@@ -43,6 +45,23 @@ fun NChatApp() {
             session == null -> LaunchStage.Auth
             !profileComplete -> LaunchStage.ProfileSetup
             else -> LaunchStage.Main
+        }
+
+        // Backend builds: open the realtime socket once signed in, pull the account, and keep
+        // the presence heartbeat alive while the app is in the foreground. Mock builds skip
+        // all of it, so the offline demo behaves exactly as before.
+        LaunchedEffect(session) {
+            if (session == null) {
+                ServiceLocator.disconnectRealtime()
+                return@LaunchedEffect
+            }
+            if (!ServiceLocator.isRemote) return@LaunchedEffect
+            ServiceLocator.connectRealtime()
+            ServiceLocator.profileRepository.refresh()
+            while (true) {
+                ServiceLocator.reportPresence()
+                delay(60_000)
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {

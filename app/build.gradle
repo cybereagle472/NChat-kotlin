@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
 android {
@@ -11,9 +12,15 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 25
-        versionName "1.0.17"
+        versionCode 26
+        versionName "1.0.18"
         resourceConfigurations += ['en']
+
+        // Empty means "no backend": the app keeps using the in-memory mock repositories, which
+        // is what the released demo APK does. Build with NCHAT_API_BASE=https://host:port to
+        // produce an APK whose repositories talk to the Rust backend in server/.
+        def apiBase = (System.getenv("NCHAT_API_BASE") ?: "").trim()
+        buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\"" 
     }
 
     signingConfigs {
@@ -77,6 +84,8 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }
