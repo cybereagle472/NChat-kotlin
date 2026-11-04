@@ -37,6 +37,8 @@ interface ChatRepository {
     )
     fun sendAttachment(chatId: String, kind: MessageKind, label: String)
     fun sendVoice(chatId: String, durationLabel: String)
+    /** Rewrites the body of my own text message and flags it as edited. */
+    fun editMessage(chatId: String, messageId: String, text: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
     fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean = false)
     fun createGroup(name: String, description: String, memberCount: Int): Group
@@ -183,6 +185,21 @@ class InMemoryChatRepository(
     ) {
         stream.update { messages ->
             messages.map { if (it.id == messageId) it.copy(state = state) else it }
+        }
+    }
+
+    override fun editMessage(chatId: String, messageId: String, text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        val stream = conversations[chatId] ?: return
+        stream.update { messages ->
+            messages.map { message ->
+                if (message.id != messageId || !message.isMine || message.deleted) {
+                    message
+                } else {
+                    message.copy(text = body, isEdited = true)
+                }
+            }
         }
     }
 

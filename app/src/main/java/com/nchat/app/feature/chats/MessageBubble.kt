@@ -110,7 +110,8 @@ fun MessageBubble(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
     showAuthor: Boolean = false,
-    showAvatar: Boolean = false
+    showAvatar: Boolean = false,
+    onMediaClick: () -> Unit = {}
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -160,17 +161,23 @@ fun MessageBubble(
                 modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
             )
         }
+        val bubbleShape = if (mine) BubbleShapeMine else BubbleShapeTheirs
         Column(
             modifier = Modifier
                 .widthIn(max = 300.dp)
-                .shadow(if (mine) 0.dp else 1.dp, if (mine) BubbleShapeMine else BubbleShapeTheirs)
-                .clip(if (mine) BubbleShapeMine else BubbleShapeTheirs)
+                // No shadow: every bubble used to own a render layer, which is the most
+                // expensive thing you can do per row while scrolling a long history. The
+                // incoming hairline gives the same separation for free.
+                .clip(bubbleShape)
                 .background(
                     if (mine) {
                         Brush.linearGradient(extra.bubbleMineGradient)
                     } else {
                         Brush.linearGradient(listOf(extra.bubbleIncoming, extra.bubbleIncoming))
                     }
+                )
+                .then(
+                    if (mine) Modifier else Modifier.border(1.dp, Color(0x120F172A), bubbleShape)
                 )
                 .combinedClickable(onClick = onLongPress, onLongClick = onLongPress)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -184,7 +191,7 @@ fun MessageBubble(
             }
 
             when (message.kind) {
-                MessageKind.Photo -> PhotoContent()
+                MessageKind.Photo -> PhotoContent(onClick = onMediaClick, onLongPress = onLongPress)
                 MessageKind.Voice -> VoiceContent(
                     duration = message.durationLabel ?: "00:00",
                     mine = mine
@@ -194,7 +201,11 @@ fun MessageBubble(
                     mine = mine
                 )
                 MessageKind.Location -> LocationContent(mine = mine)
-                MessageKind.Video -> VideoContent(mine = mine)
+                MessageKind.Video -> VideoContent(
+                    mine = mine,
+                    onClick = onMediaClick,
+                    onLongPress = onLongPress
+                )
                 MessageKind.Text -> Unit
             }
 
@@ -419,13 +430,14 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
 }
 
 @Composable
-private fun PhotoContent() {
+private fun PhotoContent(onClick: () -> Unit, onLongPress: () -> Unit) {
     Box(
         modifier = Modifier
             .width(210.dp)
             .height(140.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))),
+            .background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -438,13 +450,14 @@ private fun PhotoContent() {
 }
 
 @Composable
-private fun VideoContent(mine: Boolean) {
+private fun VideoContent(mine: Boolean, onClick: () -> Unit, onLongPress: () -> Unit) {
     Box(
         modifier = Modifier
             .width(210.dp)
             .height(140.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1E293B)),
+            .background(Color(0xFF1E293B))
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         contentAlignment = Alignment.Center
     ) {
         Box(

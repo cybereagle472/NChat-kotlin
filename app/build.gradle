@@ -11,8 +11,8 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 22
-        versionName "1.0.14"
+        versionCode 23
+        versionName "1.0.15"
         resourceConfigurations += ['en']
     }
 

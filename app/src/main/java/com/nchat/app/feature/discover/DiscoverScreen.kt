@@ -113,10 +113,10 @@ fun DiscoverScreen(
     var confirming by remember { mutableStateOf<Friend?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
 
-    val friendRows = friends.filter { it.relation == FriendRelation.Friend }
-    val requests = friends.filter { it.relation == FriendRelation.Incoming }
-    val suggestions = friends.filter {
-        it.relation == FriendRelation.Outgoing || it.relation == FriendRelation.None
+    val friendRows = remember(friends) { friends.filter { it.relation == FriendRelation.Friend } }
+    val requests = remember(friends) { friends.filter { it.relation == FriendRelation.Incoming } }
+    val suggestions = remember(friends) {
+        friends.filter { it.relation == FriendRelation.Outgoing || it.relation == FriendRelation.None }
     }
 
     Column(modifier = modifier.fillMaxSize()) {

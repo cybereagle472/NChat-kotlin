@@ -11,12 +11,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.NChatTheme
+import com.nchat.app.core.designsystem.NcToastHost
 import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
@@ -41,6 +45,7 @@ fun NChatApp() {
             else -> LaunchStage.Main
         }
 
+        Box(modifier = Modifier.fillMaxSize()) {
         Crossfade(targetState = stage, animationSpec = tween(260), label = "launchStage") { current ->
             when (current) {
                 LaunchStage.Auth -> AuthScreen()
@@ -55,6 +60,14 @@ fun NChatApp() {
 
                 LaunchStage.Main -> HomeRoot()
             }
+        }
+
+        // One host for the whole app: confirmations float above the tab bar.
+        NcToastHost(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 104.dp)
+        )
         }
     }
 }

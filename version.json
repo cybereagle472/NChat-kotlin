@@ -1,6 +1,6 @@
 {
-  "versionCode": 22,
-  "versionName": "1.0.14",
+  "versionCode": 23,
+  "versionName": "1.0.15",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.14 — a layout sweep. Call history rows are rebuilt: every card now uses the same three-line structure (name, direction + call-type pill, time + duration) with a fixed avatar column and a uniform 76dp minimum height, so a long label or a big system font can no longer squeeze the duration into a vertical stack of digits or stretch a card. The same single-line rules were applied across statuses, friends, groups, members, settings and the call overlays, and every tab now shares the same 12dp gutters and 8dp row gaps, so Chats, Groups, Status, Discover and History line up with each other."
+  "releaseNotes": "NChat 1.0.15 — faster and more complete. Scrolling is smoother: bubbles no longer create a render layer each, list rows keep their composition slots, and the conversation, history, discover and status lists stop re-filtering on every frame. Chats now open at the point you left off with an 'Unread messages' marker instead of jumping to the newest, a floating button jumps back to the latest message, and new messages never yank the viewport while you are reading history. New: edit your own messages (with the 'edited' tag), tap a photo or video to open it full screen, an empty-chat prompt, and confirmation toasts for copy, edit, delete and forward."
 }

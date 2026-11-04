@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Forward
 import androidx.compose.material.icons.rounded.Mood
 import androidx.compose.material.icons.rounded.Reply
@@ -80,6 +81,8 @@ fun MessageActionMenu(
     anchor: Rect?,
     showCopy: Boolean,
     showReply: Boolean,
+    showEdit: Boolean = false,
+    onEdit: () -> Unit = {},
     onDismiss: () -> Unit,
     onReact: (String) -> Unit,
     onReply: () -> Unit,
@@ -159,6 +162,9 @@ fun MessageActionMenu(
                         MenuAction(Icons.Rounded.Forward, "Forward", extra.textSecondary, onClick = onForward)
                         if (showCopy) {
                             MenuAction(Icons.Rounded.ContentCopy, "Copy", extra.textSecondary, onClick = onCopy)
+                        }
+                        if (showEdit) {
+                            MenuAction(Icons.Rounded.Edit, "Edit", extra.textSecondary, onClick = onEdit)
                         }
                         MenuAction(
                             icon = Icons.Rounded.Delete,

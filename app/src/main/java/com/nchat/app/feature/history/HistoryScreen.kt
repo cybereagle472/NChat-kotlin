@@ -91,12 +91,14 @@ fun HistoryScreen(
 ) {
     var filter by remember { mutableStateOf(HistoryFilter.All) }
 
-    val visible = calls.filter { call ->
-        when (filter) {
-            HistoryFilter.All -> true
-            HistoryFilter.Missed -> call.missed
-            HistoryFilter.Voice -> !call.isVideo
-            HistoryFilter.Video -> call.isVideo
+    val visible = remember(calls, filter) {
+        calls.filter { call ->
+            when (filter) {
+                HistoryFilter.All -> true
+                HistoryFilter.Missed -> call.missed
+                HistoryFilter.Voice -> !call.isVideo
+                HistoryFilter.Video -> call.isVideo
+            }
         }
     }
 

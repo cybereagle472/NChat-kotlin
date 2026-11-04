@@ -1,17 +1,21 @@
 package com.nchat.app.data.model
 
+import androidx.compose.runtime.Immutable
+
 /** Message payload types, mirroring the icons used in the reference previews. */
 enum class MessageKind { Text, Photo, Video, Voice, Document, Location }
 
 /** Delivery state: single grey tick when sent, double sky tick when read. */
 enum class DeliveryState { Sending, Sent, Read }
 
+@Immutable
 data class Reaction(
     val emoji: String,
     val count: Int,
     val reactedByMe: Boolean = false
 )
 
+@Immutable
 data class Message(
     val id: String,
     val chatId: String,
@@ -35,6 +39,7 @@ data class Message(
 )
 
 /** A row in the Chats tab. */
+@Immutable
 data class Chat(
     val id: String,
     val title: String,
@@ -52,6 +57,7 @@ data class Chat(
 )
 
 /** Status (24h story) entry. */
+@Immutable
 data class StatusUpdate(
     val id: String,
     val authorName: String,
@@ -63,6 +69,7 @@ data class StatusUpdate(
 )
 
 /** Group entry for the Groups tab. */
+@Immutable
 data class Group(
     val id: String,
     val name: String,
@@ -77,6 +84,7 @@ data class Group(
 /** Where a person sits in the friend graph, driving the Discover action buttons. */
 enum class FriendRelation { Friend, Incoming, Outgoing, None }
 
+@Immutable
 data class Friend(
     val id: String,
     val name: String,
@@ -92,6 +100,7 @@ data class Friend(
 }
 
 /** Call log row for the History tab. */
+@Immutable
 data class CallRecord(
     val id: String,
     val name: String,
@@ -104,6 +113,7 @@ data class CallRecord(
     val isGroup: Boolean = false
 )
 
+@Immutable
 data class UserProfile(
     val fullName: String,
     val handle: String,
