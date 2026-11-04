@@ -111,7 +111,9 @@ fun AuthScreen(modifier: Modifier = Modifier) {
             return@LaunchedEffect
         }
         emailStatus = EmailStatus.Checking
-        delay(500)
+        // The reference debounces for half a second; against a real backend the request is
+        // the debounce, so only the mock build keeps the pause.
+        if (!ServiceLocator.isRemote) delay(500)
         emailStatus = if (ServiceLocator.authRepository.isEmailRegistered(trimmed)) {
             EmailStatus.Taken
         } else {
@@ -121,7 +123,7 @@ fun AuthScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(loading) {
         if (!loading) return@LaunchedEffect
-        delay(450)
+        if (!ServiceLocator.isRemote) delay(450)
         val repository = ServiceLocator.authRepository
         val result = if (isLogin) {
             repository.signIn(email, password)

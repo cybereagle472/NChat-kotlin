@@ -20,6 +20,9 @@ interface ProfileRepository {
     fun updateUsername(username: String)
     fun update(fullName: String, username: String, about: String)
     fun setAvatar(image: ImageBitmap?)
+
+    /** Pulls the account from the backend. A no-op for the offline repository. */
+    suspend fun refresh() = Unit
 }
 
 class InMemoryProfileRepository(

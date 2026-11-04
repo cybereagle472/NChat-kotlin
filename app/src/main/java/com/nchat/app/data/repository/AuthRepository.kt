@@ -24,9 +24,13 @@ interface AuthRepository {
     /** False until the profile-setup step has been completed for this account. */
     val profileComplete: StateFlow<Boolean>
 
-    fun signIn(email: String, password: String): AuthResult
-    fun signUp(email: String, password: String): AuthResult
-    fun isEmailRegistered(email: String): Boolean
+    /**
+     * Suspending because the remote implementation is an HTTP round trip. The local one
+     * simply never yields, so both satisfy the same call sites.
+     */
+    suspend fun signIn(email: String, password: String): AuthResult
+    suspend fun signUp(email: String, password: String): AuthResult
+    suspend fun isEmailRegistered(email: String): Boolean
     fun completeProfile()
     fun signOut()
 }
@@ -45,10 +49,10 @@ class LocalAuthRepository(context: Context) : AuthRepository {
     private val _profileComplete = MutableStateFlow(prefs.getBoolean(KEY_PROFILE_DONE, false))
     override val profileComplete: StateFlow<Boolean> = _profileComplete.asStateFlow()
 
-    override fun isEmailRegistered(email: String): Boolean =
+    override suspend fun isEmailRegistered(email: String): Boolean =
         registered.contains(normalize(email))
 
-    override fun signIn(email: String, password: String): AuthResult {
+    override suspend fun signIn(email: String, password: String): AuthResult {
         val key = normalize(email)
         if (!EMAIL_RE.matches(key)) return AuthResult.Failure("Please enter a valid email address")
         if (password.length < 6) return AuthResult.Failure("Password must be at least 6 characters")
@@ -59,7 +63,7 @@ class LocalAuthRepository(context: Context) : AuthRepository {
         return AuthResult.Success
     }
 
-    override fun signUp(email: String, password: String): AuthResult {
+    override suspend fun signUp(email: String, password: String): AuthResult {
         val key = normalize(email)
         if (!EMAIL_RE.matches(key)) return AuthResult.Failure("Please enter a valid email address")
         if (password.length < 6) return AuthResult.Failure("Password must be at least 6 characters")
