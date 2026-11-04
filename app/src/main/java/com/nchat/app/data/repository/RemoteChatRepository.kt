@@ -739,7 +739,7 @@ class RemoteChatRepository(
         id = id,
         title = name,
         avatarEmoji = "👥",
-        avatarUrl = groupAvatarUrl,
+        avatarUrl = avatarUrl,
         isGroup = true,
         lastMessage = lastMessage?.previewText().orEmpty(),
         lastMessageAt = isoMillis(lastMessage?.createdAt ?: createdAt),
