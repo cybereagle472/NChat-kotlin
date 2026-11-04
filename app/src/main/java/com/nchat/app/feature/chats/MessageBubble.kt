@@ -3,6 +3,7 @@
 package com.nchat.app.feature.chats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,6 +95,16 @@ fun MessageBubble(
     }
     val extra = NcTheme.extra
     val mine = message.isMine
+
+    if (message.deleted) {
+        DeletedBubble(
+            message = message,
+            mine = mine,
+            showAuthor = showAuthor,
+            modifier = modifier
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -215,6 +228,61 @@ fun MessageBubble(
     }
 }
 
+/** "Delete for everyone" tombstone: muted bubble, italic label, no actions. */
+@Composable
+private fun DeletedBubble(
+    message: Message,
+    mine: Boolean,
+    showAuthor: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val extra = NcTheme.extra
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalAlignment = if (mine) Alignment.End else Alignment.Start
+    ) {
+        if (showAuthor && !mine) {
+            Text(
+                text = message.authorName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+            )
+        }
+        Row(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .clip(if (mine) BubbleShapeMine else BubbleShapeTheirs)
+                .background(Color(0x140F172A))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Block,
+                contentDescription = null,
+                tint = extra.textMuted,
+                modifier = Modifier.size(13.dp)
+            )
+            Text(
+                text = "This message was deleted",
+                fontSize = 13.sp,
+                fontStyle = FontStyle.Italic,
+                color = extra.textMuted,
+                modifier = Modifier.padding(start = 6.dp)
+            )
+        }
+        Text(
+            text = TimeFormat.clock(message.timestamp),
+            fontSize = 10.sp,
+            color = extra.textMuted,
+            modifier = Modifier.padding(top = 2.dp, end = if (mine) 4.dp else 0.dp, start = if (mine) 0.dp else 4.dp)
+        )
+    }
+}
+
 @Composable
 private fun ReplyQuote(author: String, text: String, mine: Boolean) {
     Row(
@@ -258,11 +326,18 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         reactions.forEach { reaction ->
+            val mineReaction = reaction.reactedByMe
             Box(
                 modifier = Modifier
-                    .shadow(1.dp, CircleShape)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(if (mineReaction) Color(0xFFEDE9FE) else Color.White)
+                    .then(
+                        if (mineReaction) {
+                            Modifier.border(1.dp, Color(0xFFC4B5FD), CircleShape)
+                        } else {
+                            Modifier.shadow(1.dp, CircleShape)
+                        }
+                    )
                     .padding(horizontal = 7.dp, vertical = 2.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -271,7 +346,12 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
                         Text(
                             text = reaction.count.toString(),
                             fontSize = 10.sp,
-                            color = NcTheme.extra.textTertiary,
+                            color = if (mineReaction) {
+                                NcTheme.extra.typing
+                            } else {
+                                NcTheme.extra.textTertiary
+                            },
+                            fontWeight = if (mineReaction) FontWeight.SemiBold else FontWeight.Normal,
                             modifier = Modifier.padding(start = 3.dp)
                         )
                     }

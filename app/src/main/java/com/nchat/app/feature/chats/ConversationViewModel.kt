@@ -74,8 +74,8 @@ class ConversationViewModel(
         _activeMessageId.value = messageId
     }
 
-    fun onDeleteMessage(messageId: String) {
-        repository.deleteMessage(chatId, messageId)
+    fun onDeleteMessage(messageId: String, forEveryone: Boolean) {
+        repository.deleteMessage(chatId, messageId, forEveryone)
         if (_activeMessageId.value == messageId) _activeMessageId.value = null
     }
 
@@ -116,6 +116,11 @@ class ConversationViewModel(
                 MessageKind.Text -> ""
             }
         )
+    }
+
+    /** React from the full-reactions sheet, where the target outlives the context menu. */
+    fun reactTo(messageId: String, emoji: String) {
+        repository.toggleReaction(chatId, messageId, emoji)
     }
 
     fun onReaction(emoji: String) {
