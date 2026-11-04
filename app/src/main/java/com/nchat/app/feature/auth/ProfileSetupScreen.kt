@@ -73,10 +73,6 @@ private val AvatarGradients = listOf(
 )
 
 /** Handles that are already taken in the seeded friend graph. */
-private val TakenUsernames = setOf(
-    "nasir", "areeb", "ayesha", "zain", "maryam", "saad", "daniyal", "iqra", "admin", "nchat"
-)
-
 private val Slate900 = Color(0xFF0F172A)
 private val Slate500 = Color(0xFF64748B)
 private val Slate400 = Color(0xFF94A3B8)
@@ -112,8 +108,9 @@ fun ProfileSetupScreen(
             return@LaunchedEffect
         }
         checkingUsername = true
-        delay(500)
-        usernameAvailable = !TakenUsernames.contains(value)
+        // Debounce while typing, then ask the backend whether the handle is free.
+        delay(350)
+        usernameAvailable = ServiceLocator.profileRepository.isUsernameAvailable(value)
         checkingUsername = false
     }
 

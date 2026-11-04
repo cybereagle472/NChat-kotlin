@@ -8,13 +8,13 @@ import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
 import com.nchat.app.data.repository.ChatRepository
 import com.nchat.app.data.repository.FriendRepository
-import com.nchat.app.data.repository.LocalPreferencesRepository
 import com.nchat.app.data.repository.PreferencesRepository
 import com.nchat.app.data.repository.ProfileRepository
 import com.nchat.app.data.repository.RemoteAuthRepository
 import com.nchat.app.data.repository.RemoteCallRepository
 import com.nchat.app.data.repository.RemoteChatRepository
 import com.nchat.app.data.repository.RemoteFriendRepository
+import com.nchat.app.data.repository.RemotePreferencesRepository
 import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
@@ -103,7 +103,7 @@ object ServiceLocator {
         RemoteCallRepository(api, tokens, socket, appScope)
     }
     val preferencesRepository: PreferencesRepository by lazy {
-        LocalPreferencesRepository(requireContext())
+        RemotePreferencesRepository(requireContext(), api, appScope)
     }
 
     val profile: UserProfile get() = profileRepository.profile.value

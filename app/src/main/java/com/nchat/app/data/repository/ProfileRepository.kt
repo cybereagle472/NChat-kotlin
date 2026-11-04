@@ -17,6 +17,9 @@ interface ProfileRepository {
     fun update(fullName: String, username: String, about: String)
     fun setAvatar(image: ImageBitmap?)
 
-    /** Pulls the account from the backend. A no-op for the offline repository. */
+    /** Pulls the account from the backend. */
     suspend fun refresh() = Unit
+
+    /** `GET /users/username-available` — the live availability check on the setup screen. */
+    suspend fun isUsernameAvailable(username: String): Boolean = true
 }

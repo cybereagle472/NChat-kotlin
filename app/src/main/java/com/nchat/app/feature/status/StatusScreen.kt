@@ -1,6 +1,7 @@
 package com.nchat.app.feature.status
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,8 +21,12 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +53,7 @@ import com.nchat.app.ui.components.NcTabHeader
 fun StatusScreen(
     statuses: List<StatusUpdate>,
     listState: LazyListState,
+    onCreateStatus: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
@@ -55,6 +62,7 @@ fun StatusScreen(
 
     var viewingIndex by remember { mutableStateOf<Int?>(null) }
     var locallyViewed by remember { mutableStateOf(emptySet<String>()) }
+    var composing by remember { mutableStateOf(false) }
     fun openStatus(status: StatusUpdate) {
         viewingIndex = statuses.indexOfFirst { it.id == status.id }.takeIf { it >= 0 }
     }
@@ -64,8 +72,8 @@ fun StatusScreen(
             NcTabHeader(
                 title = "Status",
                 actions = {
-                    NcHeaderAction(Icons.Rounded.CameraAlt, "Camera", onClick = {})
-                    NcHeaderAction(Icons.Rounded.Edit, "Text status", onClick = {})
+                    NcHeaderAction(Icons.Rounded.CameraAlt, "Camera", onClick = { composing = true })
+                    NcHeaderAction(Icons.Rounded.Edit, "Text status", onClick = { composing = true })
                 }
             )
 
@@ -75,7 +83,7 @@ fun StatusScreen(
                 verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
             ) {
                 item(key = "my-status") {
-                    NcGlassRow(onClick = { mine?.let(::openStatus) }) {
+                    NcGlassRow(onClick = { if (mine != null) openStatus(mine) else composing = true }) {
                         Box {
                             NcAvatar(name = mine?.authorName ?: "My status", size = 56.dp)
                             Box(
@@ -84,7 +92,8 @@ fun StatusScreen(
                                     .size(20.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primary)
-                                    .border(2.dp, Color.White, CircleShape),
+                                    .border(2.dp, Color.White, CircleShape)
+                                    .clickable { composing = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -190,5 +199,56 @@ fun StatusScreen(
                 onDismiss = { viewingIndex = null }
             )
         }
+
+        if (composing) {
+            StatusComposerDialog(
+                onDismiss = { composing = false },
+                onCreate = { text ->
+                    composing = false
+                    onCreateStatus(text)
+                }
+            )
+        }
     }
+}
+
+/**
+ * The text status composer: a caption (and nothing else yet — photo/video statuses need the
+ * media upload path). `POST /status` stores it for 24 hours and the server pushes
+ * `status:new` to every contact.
+ */
+@Composable
+private fun StatusComposerDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+    var draft by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New status") },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                placeholder = { Text("What's on your mind?") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF8B5CF6),
+                    unfocusedBorderColor = NcTheme.extra.textMuted.copy(alpha = 0.4f)
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = draft.isNotBlank(),
+                onClick = { onCreate(draft.trim()) }
+            ) {
+                Text("Share", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

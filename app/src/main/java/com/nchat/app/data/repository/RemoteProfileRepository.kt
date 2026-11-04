@@ -43,6 +43,12 @@ class RemoteProfileRepository(
         apply(remote)
     }
 
+    override suspend fun isUsernameAvailable(username: String): Boolean {
+        val value = username.trim().lowercase()
+        if (value.length < 3) return false
+        return runCatching { api.usernameAvailable(value).available }.getOrDefault(false)
+    }
+
     override fun updateName(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
