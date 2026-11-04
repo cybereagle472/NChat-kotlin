@@ -221,7 +221,8 @@ fun ConversationScreen(
                 onSendAttachment = { kind ->
                     viewModel.onSendAttachment(kind)
                     keyboard?.hide()
-                }
+                },
+                onSendVoice = viewModel::onSendVoice
             )
         }
 
