@@ -315,12 +315,25 @@ fun ConversationScreen(
         }
 
         callKind?.let { kind ->
-            CallOverlay(
-                name = chatTitle,
-                emoji = chat?.avatarEmoji,
-                isVideo = kind == CallKind.Video,
-                onClose = { callKind = null }
-            )
+            // Group chats ring the whole roster in the group-call surface; 1:1 keeps the
+            // simpler call overlay.
+            if (chat?.isGroup == true || group != null) {
+                GroupCallOverlay(
+                    title = chatTitle,
+                    emoji = chat?.avatarEmoji,
+                    isVideo = kind == CallKind.Video,
+                    memberCount = group?.memberCount ?: (groupFriends.size + 1),
+                    participants = groupFriends.map { it.name },
+                    onClose = { callKind = null }
+                )
+            } else {
+                CallOverlay(
+                    name = chatTitle,
+                    emoji = chat?.avatarEmoji,
+                    isVideo = kind == CallKind.Video,
+                    onClose = { callKind = null }
+                )
+            }
         }
     }
 
