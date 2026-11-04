@@ -42,7 +42,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -203,8 +202,7 @@ fun ImageCropperScreen(
                             }) {
                                 drawImage(
                                     image = image,
-                                    topLeft = Offset(-image.width / 2f, -image.height / 2f),
-                                    filterQuality = FilterQuality.High
+                                    topLeft = Offset(-image.width / 2f, -image.height / 2f)
                                 )
                             }
                         }
