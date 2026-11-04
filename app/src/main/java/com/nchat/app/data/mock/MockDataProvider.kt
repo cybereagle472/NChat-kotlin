@@ -4,6 +4,7 @@ import com.nchat.app.data.model.CallRecord
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Friend
+import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
@@ -281,14 +282,71 @@ object MockDataProvider {
         )
     }
 
+    /**
+     * The whole friend graph in one list, exactly like the reference `friends`,
+     * `requests` and `suggestions` props: `Friend` rows show on the Friends tab,
+     * `Incoming` rows on Requests, and `Outgoing` / `None` rows in Find.
+     */
     fun friends(): List<Friend> {
+        val base = now()
         return listOf(
-            Friend("areeb", "Areeb Khan", "@areeb", isOnline = true, mutualFriends = 12),
-            Friend("ayesha", "Ayesha Noor", "@ayesha", isOnline = true, mutualFriends = 8, requestIncoming = true),
-            Friend("saad", "Saad Javed", "@saad", isOnline = false, mutualFriends = 5),
-            Friend("maryam", "Maryam", "@maryam", isOnline = true, mutualFriends = 4),
-            Friend("daniyal", "Daniyal Raza", "@daniyal", isOnline = false, mutualFriends = 3),
-            Friend("iqra", "Iqra Bibi", "@iqra", isOnline = false, mutualFriends = 2)
+            Friend(
+                "areeb", "Areeb Khan", "@areeb",
+                isOnline = true, mutualFriends = 12, relation = FriendRelation.Friend
+            ),
+            Friend(
+                "maryam", "Maryam Sheikh", "@maryam",
+                isOnline = true, mutualFriends = 4, relation = FriendRelation.Friend
+            ),
+            Friend(
+                "saad", "Saad Javed", "@saad",
+                isOnline = false, mutualFriends = 5, relation = FriendRelation.Friend,
+                lastSeenAt = base - 2 * HOUR
+            ),
+            Friend(
+                "daniyal", "Daniyal Raza", "@daniyal",
+                isOnline = false, mutualFriends = 3, relation = FriendRelation.Friend,
+                lastSeenAt = base - 26 * HOUR
+            ),
+            Friend(
+                "ayesha", "Ayesha Noor", "@ayesha",
+                isOnline = true, mutualFriends = 8, relation = FriendRelation.Incoming,
+                requestedAt = base - 8 * MINUTE
+            ),
+            Friend(
+                "iqra", "Iqra Bibi", "@iqra",
+                isOnline = false, mutualFriends = 2, relation = FriendRelation.Incoming,
+                lastSeenAt = base - DAY,
+                requestedAt = base - 3 * HOUR
+            ),
+            Friend(
+                "zain", "Zain Ahmed", "@zain",
+                isOnline = true, mutualFriends = 7, relation = FriendRelation.Outgoing,
+                requestedAt = base - 20 * HOUR
+            ),
+            Friend(
+                "hamza", "Hamza Tariq", "@hamza",
+                isOnline = true, mutualFriends = 6
+            ),
+            Friend(
+                "fatima", "Fatima Malik", "@fatima",
+                isOnline = false, mutualFriends = 9,
+                lastSeenAt = base - 5 * HOUR
+            ),
+            Friend(
+                "bilal", "Bilal Shah", "@bilal",
+                isOnline = true, mutualFriends = 1
+            ),
+            Friend(
+                "nimra", "Nimra Aslam", "@nimra",
+                isOnline = false, mutualFriends = 11,
+                lastSeenAt = base - 3 * DAY
+            ),
+            Friend(
+                "usman", "Usman Chaudhry", "@usman",
+                isOnline = false, mutualFriends = 2,
+                lastSeenAt = base - 6 * DAY
+            )
         )
     }
 

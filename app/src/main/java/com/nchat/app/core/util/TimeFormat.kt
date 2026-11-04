@@ -55,6 +55,21 @@ object TimeFormat {
         }
     }
 
+    /** `12/03/2026` style date, used by "Last seen …" labels. */
+    fun dateLabel(timestamp: Long): String = date(timestamp)
+
+    /** `Just now` / `8m ago` / `3h ago` / `2d ago` labels for friend requests. */
+    fun agoLabel(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+        val elapsed = (now - timestamp).coerceAtLeast(0L)
+        return when {
+            elapsed < MINUTE -> "Just now"
+            elapsed < HOUR -> "${elapsed / MINUTE}m ago"
+            elapsed < DAY -> "${elapsed / HOUR}h ago"
+            elapsed < 7 * DAY -> "${elapsed / DAY}d ago"
+            else -> date(timestamp)
+        }
+    }
+
     private fun dayDistance(timestamp: Long, now: Long): Long {
         val target = Calendar.getInstance().apply { timeInMillis = timestamp }
         val reference = Calendar.getInstance().apply { timeInMillis = now }

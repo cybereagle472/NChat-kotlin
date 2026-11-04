@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "1.0.6",
+  "versionCode": 15,
+  "versionName": "1.0.7",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.6 — voice notes and a smarter story viewer. The composer now records real voice messages: hold the mic to record, slide left to cancel, slide up to lock the recording and keep it going hands-free, then pause and resume or send it — identical in one-to-one and group chats. While you record, the reference gradient bar shows a pulsing red dot, a live timer and a moving waveform, and sent voice notes play back in the bubble with a pause/play control, a filling waveform and their duration. Statuses also behave properly now: a tap only moves forward near the right edge, holding pauses the story, and dragging down dismisses the viewer."
+  "releaseNotes": "NChat 1.0.7 — a real Discover tab. Discover now has the reference's three sections: Friends (search, presence, message / voice / video buttons, tap a row for the profile card), Requests (incoming invites with sender, @handle and how long ago they arrived, plus Accept and Decline) and Find (search every person by name or username, with Friend badges and Add, Cancel or Unfriend actions). Unfriending asks for confirmation in the reference dialog, the tab badges show live counts, and every list animates in with the staggered slide-up. Messaging or calling someone from Discover opens (or creates) the chat for them, and calls start straight away."
 }

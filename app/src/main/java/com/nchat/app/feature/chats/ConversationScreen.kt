@@ -100,6 +100,7 @@ import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
+import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.feature.groups.GroupInfoScreen
@@ -113,6 +114,7 @@ fun ConversationScreen(
     chatTitle: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    autoCallVideo: Boolean? = null,
     viewModel: ConversationViewModel = viewModel(
         key = chatId,
         factory = ConversationViewModel.factory(chatId, chatTitle, ServiceLocator.chatRepository)
@@ -126,12 +128,20 @@ fun ConversationScreen(
     val clipboard = LocalClipboardManager.current
     val anchors = remember { mutableStateMapOf<String, Rect>() }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
-    var callKind by remember { mutableStateOf<CallKind?>(null) }
+    var callKind by remember {
+        mutableStateOf(
+            autoCallVideo?.let { video -> if (video) CallKind.Video else CallKind.Audio }
+        )
+    }
     var profileOpen by remember { mutableStateOf(false) }
     var groupInfoOpen by remember { mutableStateOf(false) }
     var forwardingId by remember { mutableStateOf<String?>(null) }
     val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
+    val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
+    val groupFriends = remember(friendGraph) {
+        friendGraph.filter { it.relation == FriendRelation.Friend }
+    }
     val group = groups.firstOrNull { it.id == chatId }
 
     val listState = rememberLazyListState()
@@ -253,7 +263,7 @@ fun ConversationScreen(
         if (groupInfoOpen && group != null) {
             GroupInfoScreen(
                 group = group,
-                friends = ServiceLocator.friends,
+                friends = groupFriends,
                 selfName = ServiceLocator.profile.fullName,
                 onBack = { groupInfoOpen = false },
                 onRename = viewModel::onRenameGroup,
