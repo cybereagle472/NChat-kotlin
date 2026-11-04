@@ -1,6 +1,8 @@
 package com.nchat.app.data.repository
 
+import android.graphics.Bitmap
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
@@ -11,13 +13,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 
 /**
  * The signed-in account against the Rust backend (`GET/PATCH /users/me`).
  *
  * Edits are optimistic: the field changes in the UI immediately and the request follows on
- * [scope]. The avatar stays a local [ImageBitmap] for now — uploading it needs the media
- * route plus a re-encode step, which is the next slice of this work.
+ * [scope]. The avatar is re-encoded to PNG, uploaded through `POST /media/upload`, and its
+ * URL stored on the account with `PATCH /users/me`, so every client sees the same photo.
  */
 class RemoteProfileRepository(
     private val api: NChatApi,
@@ -89,6 +92,20 @@ class RemoteProfileRepository(
 
     override fun setAvatar(image: ImageBitmap?) {
         _avatar.value = image
+        if (image == null) return
+        val bytes = runCatching {
+            ByteArrayOutputStream().use { sink ->
+                image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, sink)
+                sink.toByteArray()
+            }
+        }.getOrNull() ?: return
+
+        scope.launch {
+            val media = runCatching { api.uploadMedia("avatar.png", "image/png", bytes) }.getOrNull()
+                ?: return@launch
+            val remote = runCatching { api.updateMe(avatarUrl = media.url) }.getOrNull()
+            remote?.profile?.let { apply(it) }
+        }
     }
 
     private fun push(fullName: String? = null, username: String? = null, bio: String? = null) {

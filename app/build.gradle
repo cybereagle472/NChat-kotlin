@@ -12,8 +12,8 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 26
-        versionName "1.0.18"
+        versionCode 27
+        versionName "1.0.19"
         resourceConfigurations += ['en']
 
         // The backend this build talks to. The default is the deployed NChat worker — the
