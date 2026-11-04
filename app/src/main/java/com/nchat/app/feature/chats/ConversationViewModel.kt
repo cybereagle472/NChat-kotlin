@@ -110,9 +110,9 @@ class ConversationViewModel(
         repository.renameGroup(chatId, name)
     }
 
-    fun onAddMembers(count: Int) {
-        if (count <= 0) return
-        repository.addMembers(chatId, count)
+    fun onAddMembers(memberIds: List<String>) {
+        if (memberIds.isEmpty()) return
+        repository.addMembers(chatId, memberIds)
     }
 
     fun onLeaveGroup() {
