@@ -6,10 +6,11 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.12** (`versionCode 20`) — next planned: 1.0.13 (`versionCode 21`)
+- Current version: **1.0.17** (`versionCode 25`, `nchat-build-112`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
-  AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34
+  AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
+  (axum + tokio + SQLite, see §3.1)
 - Distribution: signed release APK per push, published as a GitHub Release
 
 ---
@@ -33,7 +34,10 @@ build, and self-updates through a version manifest.
 
 ## 2. Non-goals
 
-- No real backend, no auth server, no push notifications (auth is local-only, see §7).
+- No push notifications.
+- The Rust backend (§3.1) exists and is wire-compatible with the reference worker, but the
+  Android client still runs on mock repositories; wiring the client to it is the next big
+  seam, and until then the APK keeps working with no server at all.
 - No offline database; mock data is regenerated from code on each launch.
 - No tablet/foldable-specific layouts yet.
 - No unit/UI test suite yet — the build gate is compilation plus manual install.
@@ -83,6 +87,83 @@ values. Tab presses replace the tab; pushes stack screens (conversation, group i
 profile view, cropper) inside the tab. Back pops the stack, then leaves the app. There is
 no Navigation-Compose dependency — the stack is a plain `SnapshotStateList` so that tab
 switching stays a single composition swap (see §9).
+
+---
+
+## 3.1 The Rust backend (`server/`) — a line-for-line port of `worker/`
+
+The backend is **Rust**, not Node. That is a standing decision: the reference worker is
+already production code, so the job is translation, never redesign. Every route, field,
+status code, event name and JWT/PBKDF2 format in `server/` was read off
+`cybereagle472/nchat-friends/worker/src/**` and reproduced; where the two could differ,
+the TypeScript wins.
+
+### Runtime mapping (nothing else changed)
+
+| Reference (Cloudflare) | Here (self-hosted) |
+|---|---|
+| Hono router on Workers | axum 0.7 on tokio |
+| D1 (SQLite over HTTP) | `rusqlite` bundled SQLite, `Db::with()` closure per unit of work |
+| D1 migrations `0001`–`0005` | the same SQL folded into `schema.sql` (`include_str!`) + `migrations/` copy |
+| R2 bucket `MEDIA` | `NCHAT_DATA_DIR/media/<user>/<id>.<ext>` on disk |
+| Durable Object per room | `realtime::Hub` (rooms `dm:<a>:<b>` sorted, `group:<id>`, `call:<id>`, `user:<id>`) |
+| `crypto.subtle` PBKDF2 | `pbkdf2` + `sha2` crate, same `"100000:salthex:hashhex"` string |
+| JWT via `jose` | `jwt.rs`, HMAC-SHA256, access 15 min / refresh 30 days + single-use `sid` rotation |
+| `CF_TURN_*` → rtc.live.cloudflare.com | identical upstream call via `reqwest`, `{"iceServers": null}` on any failure |
+
+### Files and what each one is responsible for
+
+| Path | Responsibility (all ported from a named reference file) |
+|---|---|
+| `src/db.rs` | connection, pragmas (WAL, foreign keys, busy timeout), `schema.sql` bootstrap, `with()` helper |
+| `src/jwt.rs` / `src/password.rs` | the exact token and PBKDF2 formats shared with the reference |
+| `src/models.rs` | `profilePublic`, message/group JSON builders, profile masking |
+| `src/privacy.rs` | `getPrivacySettings`, `applyPrivacy`, `applyPrivacyToList`, `are_friends` |
+| `src/presence.rs` | `last_active_at` reads/writes and the online/offline window |
+| `src/realtime.rs` | WebSocket upgrade (`/realtime/connect?room=&token=`), room registry, `publish_to_user` |
+| `src/routes/auth.rs` | check-email, signup, login, refresh (rotation), logout, me |
+| `src/routes/users.rs` | me/patch, username-available, search, one, list, presence |
+| `src/routes/friends.rs` | request/respond/cancel, requests, sent, list, remove, block/unblock/blocked |
+| `src/routes/messages.rs` | with/:otherId (paging), chats, send (idempotent `client_message_id`), edit, delete, delete-for-me, reaction, mark-read, typing, recording |
+| `src/routes/groups.rs` | create/list/get/members/add/remove/leave/role/mute/update/delete + messages, delete-for-me/everyone, reactions, typing, recording, read state |
+| `src/routes/status.rs` | create (24 h TTL), mine, feed, view, views, delete, mute/unmute/muted |
+| `src/routes/calls.rs` | turn-credentials, create, signal, answer, end, history (masked profiles) |
+| `src/routes/group_calls.rs` | start-or-join, join, signal, decline, leave (mesh signalling relay) |
+| `src/routes/media.rs` | upload (streamed to disk, R2 key shape), public read with `Range`→206, uploader-only delete |
+| `src/routes/admin.rs` | `/admin/stats` gated on the admin email (`NCHAT_ADMIN_EMAIL`) |
+
+### Behaviour that must not drift
+
+- snake_case JSON everywhere, same wrappers (`{messages:[]}`, `{chats:[]}`, `{groups:[]}`), same 201/400/403/404/409 choices.
+- Read receipts are **masked per viewer**: another user's `is_read` is forced to `false` when *their* `read_receipts` is off, and other members' `last_read_at` is hidden in groups.
+- Idempotency: `client_message_id` on DM send, `INSERT OR IGNORE` for status views and read-state upserts.
+- Realtime fan-out is per-user (`publish_to_user`) even for group events, exactly like `broadcastToUser` in the reference — the client never joins one room per contact.
+- Media: `<userId>/<newId>.<ext>` key, `accept-ranges: bytes`, `cache-control: public, max-age=31536000, immutable`, 206 + `content-range` on a byte range, foreign delete → 404.
+
+### Verification
+
+`cargo test` runs end-to-end tests through the real router (no mocks): `tests/api.rs`
+(8 flows), `tests/groups_status_calls.rs` (4 flows: groups + read state, statuses/views,
+1:1 call signalling, group calls), `tests/media.rs` (upload → range read → owner-only
+delete). `.github/workflows/backend.yml` is the only gate — fmt, build, clippy, `cargo test`
+with a **zero-test guard**, and on failure it commits `.ci/last-failure.log` so the log can
+be read with `git show`. There is no local `cargo` in the dev sandbox, so a green run is the
+only proof of compilation.
+
+### Configuration
+
+| Env var | Meaning |
+|---|---|
+| `NCHAT_DATA_DIR` | data root (`data/` by default); SQLite file + `media/` live here |
+| `NCHAT_ADMIN_EMAIL` | overrides the `/admin/stats` gate (defaults to the owner's address) |
+| `CF_TURN_KEY_ID`, `CF_TURN_KEY_API_TOKEN` | Cloudflare Realtime TURN; absent → `{"iceServers": null}` |
+| `PUBLIC_API_URL` | base for absolute media URLs (empty → relative keys) |
+
+### Remaining on this strand
+
+1. Wire the Kotlin client (`ServiceLocator`) to the Rust API — the app is still mock-only.
+2. Deployment packaging (binary + systemd/Docker recipe, migrations on boot already handled).
+3. D1-specific corners that only show up under concurrency (single-writer vs. D1's queueing) — verified per test flow so far, nothing known broken.
 
 ---
 
@@ -147,7 +228,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
 | 1.0.15 | 23 | `nchat-build-105` | Conversation depth: resume marker, jump-to-latest, media viewer, message editing, toasts; per-row render layers removed. |
 | 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
-| 1.0.17 | 25 | *pending* | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
+| 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
+| 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
 
 ---
 

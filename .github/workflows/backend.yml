@@ -17,6 +17,9 @@ concurrency:
   group: backend-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Build and test
@@ -49,12 +52,34 @@ jobs:
         continue-on-error: true
 
       - name: Test
-        run: cargo test 2>&1 | tee ../rust-test.log
+        run: |
+          set -euo pipefail
+          cargo test 2>&1 | tee ../rust-test.log
+          # Guard: a green run must actually have executed tests.
+          grep -q 'test result:' ../rust-test.log
+          grep -q 'test result: ok' ../rust-test.log
 
-      - name: Upload logs
+      # The sandbox that drives this repo cannot read Actions logs or artifacts
+      # (blob storage is blocked), so a failing run commits its tail to
+      # .ci/last-failure.log — the same workaround the APK workflow uses.
+      - name: Capture failure log
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-logs
-          path: 'rust-*.log'
-          if-no-files-found: ignore
+        run: |
+          mkdir -p .ci
+          {
+            echo "# backend failure — run $GITHUB_RUN_ID"
+            echo "## where"
+            pwd
+            ls -la .. 2>/dev/null | head -30
+            echo "## build"
+            tail -n 300 ../rust-build.log 2>/dev/null || tail -n 300 rust-build.log 2>/dev/null || true
+            echo "## test"
+            tail -n 400 ../rust-test.log 2>/dev/null || tail -n 400 rust-test.log 2>/dev/null || true
+            echo "## clippy"
+            tail -n 120 ../rust-clippy.log 2>/dev/null || true
+          } > .ci/last-failure.log
+          git config user.name "nchat-ci"
+          git config user.email "ci@nchat.local"
+          git add -f .ci/last-failure.log
+          git commit -m "ci: backend failure log [skip ci]" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true

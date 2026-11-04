@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use nchat_server::store::Store;
-use nchat_server::{build_app, AppState, DEFAULT_TOKEN_TTL_SECS};
+use nchat_server::db::Db;
+use nchat_server::{build_app, AppState};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
@@ -18,26 +18,39 @@ async fn main() {
         .unwrap_or(8080);
 
     let data_dir = std::env::var("NCHAT_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    let db_path = PathBuf::from(data_dir).join("db.json");
+    let db_path = PathBuf::from(&data_dir).join("nchat.sqlite");
+    let media_dir = PathBuf::from(&data_dir).join("media");
 
-    let secret = std::env::var("NCHAT_SECRET")
-        .map(|value| value.into_bytes())
+    // The reference reads JWT_SECRET; accept both names so a deployment can be
+    // migrated without renaming secrets.
+    let secret = std::env::var("JWT_SECRET")
+        .or_else(|_| std::env::var("NCHAT_SECRET"))
         .unwrap_or_else(|_| {
-            tracing::warn!("NCHAT_SECRET is not set — using an ephemeral development key");
-            let generated = uuid::Uuid::new_v4().to_string();
-            generated.into_bytes()
+            tracing::warn!("JWT_SECRET is not set — using an ephemeral development key");
+            uuid::Uuid::new_v4().to_string()
         });
 
-    let ttl = std::env::var("NCHAT_TOKEN_TTL")
+    let public_api_url = std::env::var("PUBLIC_API_URL").unwrap_or_else(|_| {
+        format!("http://localhost:{port}")
+    });
+
+    let pool_size: usize = std::env::var("NCHAT_POOL")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_TOKEN_TTL_SECS);
+        .unwrap_or(8);
 
-    let store = Store::open(Some(db_path.clone()));
-    let (users, chats) = store.counts();
-    tracing::info!(users, chats, path = %db_path.display(), "state loaded");
+    let db = match Db::open(&db_path, pool_size) {
+        Ok(db) => db,
+        Err(error) => {
+            tracing::error!(%error, path = %db_path.display(), "could not open the database");
+            std::process::exit(1);
+        }
+    };
+    tracing::info!(path = %db_path.display(), pool = pool_size, "database ready");
 
-    let state = AppState::new(store, secret, ttl);
+    let state = AppState::new(db, secret)
+        .with_public_url(public_api_url.clone())
+        .with_media_dir(media_dir.clone());
     let app = build_app(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -48,7 +61,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    tracing::info!(%addr, "NChat backend listening");
+    tracing::info!(%addr, public_api_url = %public_api_url, "NChat backend listening");
 
     if let Err(error) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
