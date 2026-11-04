@@ -24,6 +24,9 @@ fn to_hex(bytes: &[u8]) -> String {
     out
 }
 
+// `is_multiple_of()` on integers is newer than this crate's MSRV, so keep the
+// modulo form and silence the (advisory) style lint.
+#[allow(clippy::manual_is_multiple_of)]
 fn from_hex(text: &str) -> Option<Vec<u8>> {
     if text.len() % 2 != 0 {
         return None;

@@ -45,7 +45,7 @@ pub fn get_presence_map(
     let mut map = HashMap::new();
     let mut unique: Vec<&String> = Vec::new();
     for id in user_ids {
-        if !id.is_empty() && !unique.iter().any(|existing| *existing == id) {
+        if !id.is_empty() && !unique.contains(&id) {
             unique.push(id);
         }
     }

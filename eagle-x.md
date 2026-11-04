@@ -140,6 +140,19 @@ the TypeScript wins.
 - Realtime fan-out is per-user (`publish_to_user`) even for group events, exactly like `broadcastToUser` in the reference — the client never joins one room per contact.
 - Media: `<userId>/<newId>.<ext>` key, `accept-ranges: bytes`, `cache-control: public, max-age=31536000, immutable`, 206 + `content-range` on a byte range, foreign delete → 404.
 
+### Deliberate deviations (the only three)
+
+1. **Timestamps are strictly increasing** (`util::now_iso`). Unread counts compare
+   `created_at > last_read_at`, and a fresh group member is compared against `joined_at`, so
+   two writes inside the same millisecond made a just-sent message look already read — a real
+   flake in the worker as well. Same string format, same wall-clock order, +1 ms when needed.
+2. **Realtime rooms live in process memory** (`Hub`), not in Durable Objects. One instance is
+   wire-identical; running several instances would need a shared bus (Redis/NATS) in front of
+   `publish_to_user`.
+3. **Media objects are files** under `NCHAT_DATA_DIR/media`, not R2 objects. Same key shape,
+   same headers, same 206 semantics; a real deployment can mount a bucket or object-store
+   gateway at that path.
+
 ### Verification
 
 `cargo test` runs end-to-end tests through the real router (no mocks): `tests/api.rs`

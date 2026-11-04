@@ -133,7 +133,7 @@ pub fn get_privacy_settings_map(
     let mut map = HashMap::new();
     let mut unique: Vec<&String> = Vec::new();
     for id in user_ids {
-        if !id.is_empty() && !unique.iter().any(|existing| *existing == id) {
+        if !id.is_empty() && !unique.contains(&id) {
             unique.push(id);
         }
     }
@@ -211,7 +211,7 @@ pub fn friend_id_set(
     let mut set = HashSet::new();
     let mut unique: Vec<&String> = Vec::new();
     for id in other_ids {
-        if !id.is_empty() && id != user_id && !unique.iter().any(|existing| *existing == id) {
+        if !id.is_empty() && id != user_id && !unique.contains(&id) {
             unique.push(id);
         }
     }
