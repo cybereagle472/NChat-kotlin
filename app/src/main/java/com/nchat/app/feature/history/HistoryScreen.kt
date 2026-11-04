@@ -116,7 +116,7 @@ fun HistoryScreen(
             } else {
                 items(
                     items = visible,
-                    key = { call.id }
+                    key = { it.id }
                 ) { call ->
                     HistoryRow(
                             call = call,

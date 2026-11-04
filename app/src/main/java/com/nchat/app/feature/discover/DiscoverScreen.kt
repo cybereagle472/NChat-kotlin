@@ -160,7 +160,7 @@ fun DiscoverScreen(
                     } else {
                         items(
                             items = visibleFriends,
-                            key = { "friend-${friend.id}" }
+                            key = { "friend-${it.id}" }
                         ) { friend ->
                             FriendCard(
                                     friend = friend,
@@ -184,7 +184,7 @@ fun DiscoverScreen(
                     } else {
                         items(
                             items = requests,
-                            key = { "request-${friend.id}" }
+                            key = { "request-${it.id}" }
                         ) { friend ->
                             RequestCard(
                                     friend = friend,
@@ -248,7 +248,7 @@ fun DiscoverScreen(
 
                         items(
                             items = visibleUsers,
-                            key = { "user-${friend.id}" }
+                            key = { "user-${it.id}" }
                         ) { friend ->
                             UserCard(
                                     friend = friend,
