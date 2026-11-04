@@ -21,22 +21,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.HowToReg
 import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.HowToReg
-import androidx.compose.material.icons.rounded.PersonRemove
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -158,18 +158,16 @@ fun DiscoverScreen(
                             )
                         }
                     } else {
-                        itemsIndexed(
+                        items(
                             items = visibleFriends,
-                            key = { _, friend -> "friend-${friend.id}" }
-                        ) { index, friend ->
-                            SlideUp(index) {
-                                FriendCard(
+                            key = { "friend-${friend.id}" }
+                        ) { friend ->
+                            FriendCard(
                                     friend = friend,
                                     onOpenProfile = { onViewProfile(friend) },
                                     onMessage = { onMessage(friend) },
-                                    onCall = { video -> onCall(friend, video) }
-                                )
-                            }
+                                onCall = { video -> onCall(friend, video) }
+                            )
                         }
                     }
                 }
@@ -184,12 +182,11 @@ fun DiscoverScreen(
                             )
                         }
                     } else {
-                        itemsIndexed(
+                        items(
                             items = requests,
-                            key = { _, friend -> "request-${friend.id}" }
-                        ) { index, friend ->
-                            SlideUp(index, step = 50) {
-                                RequestCard(
+                            key = { "request-${friend.id}" }
+                        ) { friend ->
+                            RequestCard(
                                     friend = friend,
                                     busy = busyId == friend.id,
                                     onOpenProfile = { onViewProfile(friend) },
@@ -197,12 +194,11 @@ fun DiscoverScreen(
                                         busyId = friend.id
                                         onAcceptRequest(friend.id)
                                     },
-                                    onDecline = {
-                                        busyId = friend.id
-                                        onDeclineRequest(friend.id)
-                                    }
-                                )
-                            }
+                                onDecline = {
+                                    busyId = friend.id
+                                    onDeclineRequest(friend.id)
+                                }
+                            )
                         }
                     }
                 }
@@ -250,12 +246,11 @@ fun DiscoverScreen(
                             }
                         }
 
-                        itemsIndexed(
+                        items(
                             items = visibleUsers,
-                            key = { _, friend -> "user-${friend.id}" }
-                        ) { index, friend ->
-                            SlideUp(index) {
-                                UserCard(
+                            key = { "user-${friend.id}" }
+                        ) { friend ->
+                            UserCard(
                                     friend = friend,
                                     busy = busyId == friend.id,
                                     onOpenProfile = { onViewProfile(friend) },
@@ -267,9 +262,8 @@ fun DiscoverScreen(
                                         busyId = friend.id
                                         onCancelRequest(friend.id)
                                     },
-                                    onUnfriendClick = { confirming = friend }
-                                )
-                            }
+                                onUnfriendClick = { confirming = friend }
+                            )
                         }
                     }
                 }
@@ -870,34 +864,6 @@ private fun EmptyCard(emoji: String, title: String, message: String) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp)
         )
-    }
-}
-
-/** `animate-slide-up` with the reference's per-row 30ms stagger. */
-@Composable
-private fun SlideUp(index: Int, step: Int = 30, content: @Composable () -> Unit) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(index.toLong() * step)
-        visible = true
-    }
-    val alpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(300),
-        label = "slideUpAlpha"
-    )
-    val offset by animateFloatAsState(
-        targetValue = if (visible) 0f else 14f,
-        animationSpec = tween(300),
-        label = "slideUpOffset"
-    )
-    Box(
-        modifier = Modifier.graphicsLayer {
-            this.alpha = alpha
-            translationY = offset.dp.toPx()
-        }
-    ) {
-        content()
     }
 }
 

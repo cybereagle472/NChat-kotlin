@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,6 +57,26 @@ import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
 import kotlinx.coroutines.delay
 
+/** 30dp gradient circle with the sender's initial, shown beside the first bubble of a run. */
+@Composable
+private fun GroupSenderAvatar(name: String) {
+    Box(
+        modifier = Modifier
+            .padding(end = 8.dp)
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(NcTheme.extra.brandGradient)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = name.trim().take(1).uppercase().ifBlank { "?" },
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
 /** Glass pill that separates messages by day. */
 @Composable
 fun DateSeparatorPill(label: String, modifier: Modifier = Modifier) {
@@ -87,7 +108,8 @@ fun MessageBubble(
     message: Message,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
-    showAuthor: Boolean = false
+    showAuthor: Boolean = false,
+    showAvatar: Boolean = false
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -101,15 +123,29 @@ fun MessageBubble(
             message = message,
             mine = mine,
             showAuthor = showAuthor,
+            showAvatar = showAvatar,
             modifier = modifier
         )
         return
     }
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
+    ) {
+        // Group chats prefix an incoming run with the sender's 30dp avatar; later bubbles
+        // in the same run keep a spacer so they stay aligned underneath it.
+        if (!mine && showAuthor) {
+            if (showAvatar) {
+                GroupSenderAvatar(message.authorName)
+            } else {
+                Spacer(modifier = Modifier.size(38.dp))
+            }
+        }
+    Column(
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
     ) {
         if (showAuthor && !mine) {
@@ -226,6 +262,7 @@ fun MessageBubble(
             )
         }
     }
+    }
 }
 
 /** "Delete for everyone" tombstone: muted bubble, italic label, no actions. */
@@ -234,13 +271,27 @@ private fun DeletedBubble(
     message: Message,
     mine: Boolean,
     showAuthor: Boolean,
+    showAvatar: Boolean,
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
+    ) {
+        // Group chats prefix an incoming run with the sender's 30dp avatar; later bubbles
+        // in the same run keep a spacer so they stay aligned underneath it.
+        if (!mine && showAuthor) {
+            if (showAvatar) {
+                GroupSenderAvatar(message.authorName)
+            } else {
+                Spacer(modifier = Modifier.size(38.dp))
+            }
+        }
+    Column(
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
     ) {
         if (showAuthor && !mine) {
@@ -280,6 +331,7 @@ private fun DeletedBubble(
             color = extra.textMuted,
             modifier = Modifier.padding(top = 2.dp, end = if (mine) 4.dp else 0.dp, start = if (mine) 0.dp else 4.dp)
         )
+    }
     }
 }
 

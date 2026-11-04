@@ -1,6 +1,6 @@
 {
-  "versionCode": 20,
-  "versionName": "1.0.12",
+  "versionCode": 21,
+  "versionName": "1.0.13",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.12 — sign in, sign up and onboarding. The app now opens on the reference auth screen: violet gradient with floating circles, the gradient logo card, Welcome Back / Create Account copy, email and password fields with show/hide toggles, live 'email available / taken' checks while signing up, inline error banners and the Sign In / Sign Up switch. Creating an account leads to the one-last-step profile screen — gradient avatar styles, your name, a username with live availability and a 150-character bio — and then straight into the chats. Your session is remembered across launches, and Settings now has a Log Out button that returns you to the sign-in screen."
+  "releaseNotes": "NChat 1.0.13 — faster tabs and a proper group chat. Switching between Chats, Groups, Status, History and Discover is now instant: the animated backdrop is static, tabs swap without a cross-fade, and lists no longer replay entrance animations every time you open them. Group chats now show who is typing by name (with the three-dot indicator) in the header and above the composer, and incoming group messages carry the sender's avatar on the first bubble of each run. Also ships eagle-x.md, the full project history and design notes."
 }
