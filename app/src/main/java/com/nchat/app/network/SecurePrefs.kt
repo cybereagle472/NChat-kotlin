@@ -24,6 +24,12 @@ import javax.crypto.spec.GCMParameterSpec
  * (no prefix) are read as plain text and re-encrypted on the next write, so upgrading does
  * not sign anyone out.
  *
+ * **Two kinds of legacy value are tolerated on read.** An older build stored
+ * `profile_complete` as a real boolean rather than a string, and `getString` on such a key
+ * throws `ClassCastException` — which is a launch crash for anyone upgrading with a session
+ * already on the device (reported from a Tecno KD7 on Android 10, build 32). Reading
+ * therefore goes through [readRaw] and coerces whatever type is found.
+ *
  * If the Keystore is unavailable (a few emulators, some heavily modified ROMs) the store
  * degrades to plain text rather than locking the user out of their own account — the caller
  * sees the same API either way.
@@ -36,10 +42,28 @@ class SecurePrefs(context: Context, name: String) {
     private val key: SecretKey? by lazy { loadOrCreateKey(name) }
 
     fun getString(key: String, default: String? = null): String? {
-        val raw = prefs.getString(key, null) ?: return default
-        if (!raw.startsWith(PREFIX)) return raw // written before encryption existed
-        val plain = decrypt(raw.removePrefix(PREFIX)) ?: return default
-        return plain
+        val raw = readRaw(key) ?: return default
+        val text = when (raw) {
+            is String -> raw
+            // Same key, older type: coerce instead of throwing.
+            is Boolean, is Int, is Long, is Float, is Double -> raw.toString()
+            else -> return default
+        }
+        if (!text.startsWith(PREFIX)) return text // written before encryption existed
+        return decrypt(text.removePrefix(PREFIX)) ?: default
+    }
+
+    /**
+     * The stored value of [key], whatever its type.
+     *
+     * `SharedPreferences.getString` throws `ClassCastException` when the key holds anything
+     * else, and a single mismatched key used to be an unopenable app. Only a genuinely
+     * unreadable store (none of the expected types) falls back to [default].
+     */
+    private fun readRaw(key: String): Any? = try {
+        prefs.getString(key, null)
+    } catch (_: ClassCastException) {
+        runCatching { prefs.all[key] }.getOrNull()
     }
 
     fun putString(key: String, value: String?) {

@@ -65,23 +65,33 @@ class LocalPreferencesRepository(context: Context) : PreferencesRepository {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /**
+     * A stored flag, whatever type it happens to be in.
+     *
+     * `SharedPreferences.getBoolean` throws `ClassCastException` when the key holds another
+     * type, and one such key is enough to make the app unopenable (see `SecurePrefs`). A
+     * missing or unreadable flag falls back to the default instead.
+     */
+    private fun flag(key: String, default: Boolean): Boolean =
+        runCatching { prefs.getBoolean(key, default) }.getOrDefault(default)
+
     private val _privacy = MutableStateFlow(
         PrivacySettings(
             lastSeen = prefs.visibility(KEY_LAST_SEEN, Visibility.Everyone),
             profilePhoto = prefs.visibility(KEY_PROFILE_PHOTO, Visibility.Everyone),
-            readReceipts = prefs.getBoolean(KEY_READ_RECEIPTS, true),
-            onlineStatus = prefs.getBoolean(KEY_ONLINE_STATUS, true)
+            readReceipts = flag(KEY_READ_RECEIPTS, true),
+            onlineStatus = flag(KEY_ONLINE_STATUS, true)
         )
     )
     override val privacy: StateFlow<PrivacySettings> = _privacy.asStateFlow()
 
     private val _notifications = MutableStateFlow(
         NotificationSettings(
-            messages = prefs.getBoolean(KEY_NOTIF_MESSAGES, true),
-            calls = prefs.getBoolean(KEY_NOTIF_CALLS, true),
-            preview = prefs.getBoolean(KEY_NOTIF_PREVIEW, true),
-            sound = prefs.getBoolean(KEY_NOTIF_SOUND, true),
-            vibrate = prefs.getBoolean(KEY_NOTIF_VIBRATE, true)
+            messages = flag(KEY_NOTIF_MESSAGES, true),
+            calls = flag(KEY_NOTIF_CALLS, true),
+            preview = flag(KEY_NOTIF_PREVIEW, true),
+            sound = flag(KEY_NOTIF_SOUND, true),
+            vibrate = flag(KEY_NOTIF_VIBRATE, true)
         )
     )
     override val notifications: StateFlow<NotificationSettings> = _notifications.asStateFlow()

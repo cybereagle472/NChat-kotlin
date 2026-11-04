@@ -49,6 +49,11 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
   Keystore.
 - Values written by builds before 1.0.22 are read as plain text and re-encrypted on the next
   write, so upgrading does not sign anyone out.
+- Values whose **type** changed between builds are read defensively: `SharedPreferences`
+  throws `ClassCastException` when a key holds a boolean but is read as a string, and that is
+  a launch crash (fixed in 1.0.25 after a report from build 32). `SecurePrefs.readRaw` and
+  `LocalPreferencesRepository.flag` coerce or default instead of throwing — an unreadable
+  setting must never cost the user the app.
 - If the Keystore is unavailable (rare emulators / heavily modified ROMs) the store degrades
   to plain text instead of locking the user out; `SecurePrefs.isEncrypted` exposes which
   state is active.
