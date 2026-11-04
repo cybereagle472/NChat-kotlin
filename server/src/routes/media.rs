@@ -28,6 +28,11 @@ fn media_type_from_mime(mime: &str) -> &'static str {
     }
 }
 
+/// Port of `media.post('/upload')`.
+///
+/// The multipart part is streamed straight to disk chunk by chunk (R2's `put`
+/// also never holds the object in memory), so a 200 MB video costs one 64 KB
+/// buffer instead of 200 MB of RSS.
 pub async fn upload(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -35,8 +40,15 @@ pub async fn upload(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
 
-    let mut upload: Option<(String, String, Vec<u8>)> = None; // name, mime, bytes
-    while let Some(field) = multipart
+    struct Stored {
+        key: String,
+        file_name: String,
+        mime: String,
+        size: i64,
+    }
+
+    let mut stored: Option<Stored> = None;
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|error| ApiError::bad_request(format!("invalid multipart body: {error}")))?
@@ -49,38 +61,65 @@ pub async fn upload(
             .content_type()
             .unwrap_or("application/octet-stream")
             .to_string();
-        let bytes = field
-            .bytes()
-            .await
-            .map_err(|error| ApiError::bad_request(format!("could not read the file: {error}")))?;
-        upload = Some((file_name, mime, bytes.to_vec()));
+
+        // `${userId}/${newId()}${ext ? '.' + ext : ''}` — same key shape as R2.
+        let extension = file_name.rsplit_once('.').map(|(_, ext)| ext.to_string());
+        let key = match extension.filter(|ext| !ext.is_empty() && is_plain_extension(ext)) {
+            Some(ext) => format!("{user_id}/{}.{ext}", new_id()),
+            None => format!("{user_id}/{}", new_id()),
+        };
+
+        let path = state.media_dir.join(&key);
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let mut sink = tokio::fs::File::create(&path).await?;
+        let mut size: i64 = 0;
+        loop {
+            match field.chunk().await {
+                Ok(Some(chunk)) => {
+                    use tokio::io::AsyncWriteExt;
+                    if let Err(error) = sink.write_all(&chunk).await {
+                        drop(sink);
+                        let _ = tokio::fs::remove_file(&path).await;
+                        return Err(ApiError::internal(format!(
+                            "could not store the upload: {error}"
+                        )));
+                    }
+                    size += chunk.len() as i64;
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    drop(sink);
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(ApiError::bad_request(format!(
+                        "could not read the file: {error}"
+                    )));
+                }
+            }
+        }
+        {
+            use tokio::io::AsyncWriteExt;
+            sink.flush().await?;
+        }
+
+        stored = Some(Stored {
+            key,
+            file_name,
+            mime,
+            size,
+        });
         break;
     }
 
-    let Some((file_name, mime, bytes)) = upload else {
+    let Some(stored) = stored else {
         return Err(ApiError::bad_request(
             "file is required (multipart/form-data)",
         ));
     };
 
-    let extension = file_name
-        .rsplit_once('.')
-        .map(|(_, ext)| ext.to_string())
-        .filter(|ext| !ext.is_empty() && ext.len() <= 8);
-    let key = match &extension {
-        Some(ext) => format!("{user_id}/{}.{ext}", new_id()),
-        None => format!("{user_id}/{}", new_id()),
-    };
-
-    let path = state.media_dir.join(&key);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, &bytes)?;
-
     let id = new_id();
-    let media_type = media_type_from_mime(&mime);
-    let size = bytes.len() as i64;
+    let media_type = media_type_from_mime(&stored.mime);
 
     state.db.with(|conn| {
         conn.execute(
@@ -90,10 +129,10 @@ pub async fn upload(
             params![
                 id,
                 user_id,
-                key,
-                file_name,
-                size,
-                mime,
+                stored.key,
+                stored.file_name,
+                stored.size,
+                stored.mime,
                 media_type,
                 crate::util::now_iso()
             ],
@@ -101,18 +140,27 @@ pub async fn upload(
         Ok(())
     })?;
 
-    let url = format!("{}/media/file/{}", state.public_api_url, key);
+    let url = format!("{}/media/file/{}", state.public_api_url, stored.key);
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "id": id,
             "url": url,
-            "key": key,
+            "key": stored.key,
             "media_type": media_type,
-            "file_name": file_name,
-            "file_size": size,
+            "file_name": stored.file_name,
+            "file_size": stored.size,
         })),
     ))
+}
+
+/// R2 accepts any extension, but a key is also a path on disk here, so refuse
+/// anything that could escape the media directory.
+fn is_plain_extension(extension: &str) -> bool {
+    extension.len() <= 16
+        && !extension.contains('/')
+        && !extension.contains('\\')
+        && !extension.contains("..")
 }
 
 /// `GET /media/file/*key` — public read with byte-range support (HTTP 206).
