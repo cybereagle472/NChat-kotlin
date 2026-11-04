@@ -14,7 +14,9 @@ import android.provider.OpenableColumns
 data class PickedFile(
     val name: String,
     val mimeType: String,
-    val bytes: ByteArray
+    val bytes: ByteArray,
+    /** Small preview uploaded separately and sent as `thumbnail_url`. */
+    val thumbnail: ByteArray? = null
 ) {
     val size: Long get() = bytes.size.toLong()
 

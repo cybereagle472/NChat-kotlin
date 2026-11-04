@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .route("/group-calls/:id/leave", post(group_calls::leave))
         // ---- media ----
         .route("/media/upload", post(media::upload))
+        .route("/media/link", get(media::link))
         .route(
             "/media/file/*key",
             get(media::file).delete(media::delete),

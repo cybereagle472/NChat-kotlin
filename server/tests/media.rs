@@ -19,12 +19,23 @@ struct TestApp {
     dir: tempfile::TempDir,
 }
 
+/// Private media (the default): a read needs the caller's token or a signed link.
 fn app() -> TestApp {
+    build(false)
+}
+
+/// `NCHAT_MEDIA_PUBLIC=1`: the old "anyone with the URL" bucket behaviour.
+fn public_app() -> TestApp {
+    build(true)
+}
+
+fn build(public: bool) -> TestApp {
     let dir = tempfile::tempdir().expect("temp dir");
     let db = Db::open(dir.path().join("nchat.sqlite"), 2).expect("db");
     let state = AppState::new(db, "test-secret")
         .with_public_url("http://test.local")
-        .with_media_dir(dir.path().join("media"));
+        .with_media_dir(dir.path().join("media"))
+        .with_public_media(public);
     TestApp {
         router: build_app(state),
         dir,
@@ -59,6 +70,19 @@ impl TestApp {
             .to_bytes()
             .to_vec();
         (status, headers, bytes)
+    }
+
+    /// `GET <uri>` with an optional bearer token, no body.
+    async fn read(
+        &self,
+        uri: &str,
+        token: Option<&str>,
+    ) -> (StatusCode, Vec<String>, Vec<u8>) {
+        let mut builder = Request::builder().uri(uri);
+        if let Some(token) = token {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+        self.raw(builder.body(Body::empty()).expect("request")).await
     }
 
     async fn call(
@@ -187,28 +211,37 @@ async fn upload_store_range_read_and_owner_only_delete() {
         "file is required (multipart/form-data)"
     );
 
-    // ---- unauthenticated read is allowed (public bucket parity) ----------
+    // ---- the uploader can read it back ----------------------------------
     let (status, headers, bytes) = app
-        .raw(
-            Request::builder()
-                .uri(format!("/media/file/{key}"))
-                .body(Body::empty())
-                .expect("request"),
-        )
+        .read(&format!("/media/file/{key}"), Some(&ada_token))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(bytes, payload);
     assert!(headers.iter().any(|h| h == "accept-ranges: bytes"));
-    assert!(headers
-        .iter()
-        .any(|h| h == "cache-control: public, max-age=31536000, immutable"));
+    assert!(
+        headers
+            .iter()
+            .any(|h| h == "cache-control: private, max-age=3600"),
+        "private media must not be cacheable by a shared proxy: {headers:?}"
+    );
     assert!(headers.iter().any(|h| h == "content-type: audio/webm"));
+
+    // ---- no token at all → 401 ------------------------------------------
+    let (status, _, _) = app.read(&format!("/media/file/{key}"), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // ---- someone else → 404, so the response never confirms the key -----
+    let (status, _, _) = app
+        .read(&format!("/media/file/{key}"), Some(&grace_token))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     // ---- byte range → 206 + content-range -------------------------------
     let (status, headers, bytes) = app
         .raw(
             Request::builder()
                 .uri(format!("/media/file/{key}"))
+                .header("authorization", format!("Bearer {ada_token}"))
                 .header("range", "bytes=2-5")
                 .body(Body::empty())
                 .expect("request"),
@@ -238,14 +271,7 @@ async fn upload_store_range_read_and_owner_only_delete() {
     assert_eq!(body["success"], true);
     assert!(!app.path(&key).exists(), "object must be gone");
 
-    let (status, _, _) = app
-        .raw(
-            Request::builder()
-                .uri(format!("/media/file/{key}"))
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await;
+    let (status, _, _) = app.read(&format!("/media/file/{key}"), Some(&ada_token)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // ---- unknown key and unsupported extension --------------------------
@@ -255,4 +281,103 @@ async fn upload_store_range_read_and_owner_only_delete() {
     let key = body["key"].as_str().expect("key");
     assert!(key.starts_with(&format!("{ada_id}/")), "key shape {key}");
     assert!(!key.contains('.'), "extension-less name keeps no suffix: {key}");
+}
+
+/// Private media follows the conversation: the two people in a 1:1 chat can
+/// load the photo, a third account cannot even confirm that it exists.
+#[tokio::test]
+async fn conversation_members_can_read_but_strangers_cannot() {
+    let app = app();
+    let (ada_token, _ada_id) = app.signup("ada@example.com", "Ada").await;
+    let (grace_token, grace_id) = app.signup("grace@example.com", "Grace").await;
+    let (bob_token, _bob_id) = app.signup("bob@example.com", "Bob").await;
+
+    let payload = b"jpeg-bytes".to_vec();
+    let (status, body) = app.upload(&ada_token, "photo.jpg", "image/jpeg", &payload).await;
+    assert_eq!(status, StatusCode::CREATED, "upload: {body}");
+    let key = body["key"].as_str().expect("key").to_string();
+    let url = body["url"].as_str().expect("url").to_string();
+
+    // Sending the message is what makes the file readable by the recipient.
+    let (status, body) = app
+        .call(
+            "POST",
+            "/messages",
+            Some(&ada_token),
+            Some(json!({
+                "receiver_id": grace_id,
+                "content": "",
+                "type": "image",
+                "media_url": url,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "send: {body}");
+
+    let (status, _, bytes) = app
+        .read(&format!("/media/file/{key}"), Some(&grace_token))
+        .await;
+    assert_eq!(status, StatusCode::OK, "the recipient must be able to open it");
+    assert_eq!(bytes, payload);
+
+    let (status, _, _) = app
+        .read(&format!("/media/file/{key}"), Some(&bob_token))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "an outsider must learn nothing");
+}
+
+/// `/media/link` mints a URL that works without a token, expires, and cannot be
+/// redirected at another file.
+#[tokio::test]
+async fn signed_links_are_key_bound_and_expire() {
+    let app = app();
+    let (ada_token, _ada_id) = app.signup("ada@example.com", "Ada").await;
+    let (status, body) = app.upload(&ada_token, "clip.mp4", "video/mp4", b"video").await;
+    assert_eq!(status, StatusCode::CREATED, "upload: {body}");
+    let key = body["key"].as_str().expect("key").to_string();
+
+    // A stranger cannot mint a link for a file they cannot read.
+    let (status, _) = app
+        .call("GET", &format!("/media/link?key={key}"), None, None)
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, body) = app
+        .call("GET", &format!("/media/link?key={key}"), Some(&ada_token), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "link: {body}");
+    let url = body["url"].as_str().expect("url").to_string();
+    let expires_in = body["expires_in"].as_i64().expect("expires_in");
+    assert!(expires_in > 0);
+    assert!(url.contains("exp=") && url.contains("sig="), "url: {url}");
+
+    // The signed URL needs no bearer token.
+    let path = url.trim_start_matches("http://test.local").to_string();
+    let (status, _, bytes) = app.read(&path, None).await;
+    assert_eq!(status, StatusCode::OK, "signed read: {url}");
+    assert_eq!(bytes, b"video".to_vec());
+
+    // Pushing the expiry forward invalidates the signature.
+    let exp = body["expires_at"].as_i64().expect("expires_at");
+    let tampered = path.replace(&format!("exp={exp}"), &format!("exp={}", exp + 3600));
+    let (status, _, _) = app.read(&tampered, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "tampered link: {tampered}");
+}
+
+/// `NCHAT_MEDIA_PUBLIC=1` restores the reference's public bucket behaviour.
+#[tokio::test]
+async fn public_mode_still_serves_anonymous_reads() {
+    let app = public_app();
+    let (ada_token, _ada_id) = app.signup("ada@example.com", "Ada").await;
+
+    let (status, body) = app.upload(&ada_token, "voice.webm", "audio/webm", b"abc").await;
+    assert_eq!(status, StatusCode::CREATED, "upload: {body}");
+    let key = body["key"].as_str().expect("key").to_string();
+
+    let (status, headers, bytes) = app.read(&format!("/media/file/{key}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"abc".to_vec());
+    assert!(headers
+        .iter()
+        .any(|h| h == "cache-control: public, max-age=31536000, immutable"));
 }

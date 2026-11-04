@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.22** (`versionCode 30`)
+- Current version: **1.0.23** (`versionCode 31`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -215,9 +215,11 @@ ApiClient (root + socketRoot) ──► every repository ──► every screen
 - **One committed default:** `nchat.properties` (`apiBase=`), the counterpart of the worker's
   `PUBLIC_API_URL` in `wrangler.toml`. Build-time precedence is
   `-PNCHAT_API_BASE` → `$NCHAT_API_BASE` → `local.properties` (`nchat.apiBase`) → that file.
-- **Nothing in git at all is also supported:** blank the value and set `NCHAT_API_BASE` as a
-  repository Actions variable/secret — `.github/workflows/build-apk.yaml` passes it to Gradle,
-  the way the Cloudflare dashboard supplies `VITE_API_URL`.
+- **Nothing in git at all: that is the current setup.** `nchat.properties` ships *empty*; the
+  address comes from the repository's Actions variable `NCHAT_API_BASE`, which
+  `.github/workflows/build-apk.yaml` passes to Gradle — the way the Cloudflare dashboard
+  supplies `VITE_API_URL`. The workflow refuses to publish a main-branch release when the
+  variable is missing, so a serverless APK can never be shipped by accident.
 - **No address at build time → the app asks for one.** `ServerSetupScreen` runs before the
   auth stage whenever neither the build nor Settings ▸ Server names a backend, so an
   unconfigured APK is a "connect your server" screen rather than a broken one.
@@ -225,14 +227,17 @@ ApiClient (root + socketRoot) ──► every repository ──► every screen
   `PUBLIC_API_URL` (env, default `http://localhost:$PORT`) — exactly the worker's variable —
   and allows cross-origin requests the way the worker's `cors({origin:'*'})` does.
 
-### Runtime override
+### No in-app server switcher
 
-`ServerConfig.effective()` reads **Settings ▸ Server** first (stored in
-`SharedPreferences("nchat_server")`), then the baked constant. Clearing the field returns to
-the build's address — never to offline mode. The value is read once at start-up (singletons
-own the sockets), so the dialog says "reopen NChat after saving". Debug builds also allow
-cleartext HTTP (`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be the
-server; release builds stay HTTPS-only.
+The address is a property of the APK, exactly like `VITE_API_URL` is a property of the web
+bundle: **Settings has no Server field** (removed in 1.0.23), and `ServerConfig` is gone —
+`ApiClient` takes `BuildConfig.NCHAT_API_BASE` directly. To point an install at another
+backend, build it with a different `NCHAT_API_BASE`.
+
+A build with no address cannot sign in anywhere, so it opens `MissingServerScreen` and says
+so, instead of failing every request. Debug builds allow cleartext HTTP
+(`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be the server; release builds
+stay HTTPS-only.
 
 ### Transport rules (`network/`)
 
@@ -246,6 +251,11 @@ server; release builds stay HTTPS-only.
   three legacy camelCase keys** the reference emits (`fileName`, `fileSize`, `lastMessage`,
   `unreadCount`, `receiverIds`). Every field is nullable/defaulted: the backend omits nulls,
   and a new server field must never crash an old APK.
+- **`MediaImages`** — the Coil loader registered by `NChatApplication` (a Coil
+  `ImageLoaderFactory`, so every `AsyncImage` inherits it). It adds `Authorization: Bearer …`
+  to `/media/` reads **only for our own origin**, renews the session once through
+  `ApiClient.renewAccessToken()` on a `401`, and caps the on-disk image cache at 128 MB.
+  Media is private on the server, so an unauthenticated loader would show broken tiles.
 - **`NChatApi`** — one function per route (paths taken from `server/src/routes/mod.rs`).
 - **`NChatSocket`** — `GET /realtime/connect?room=user:<id>&token=<jwt>`, exponential
   backoff 1 s → 30 s, `StateFlow<ConnectionState>`, and a `SharedFlow<RealtimeEvent>` of
@@ -396,6 +406,7 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
 | 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
 | 1.0.22 | 30 | *this build* | **Security & privacy pass** (see `SECURITY.md`). Tokens are AES-256-GCM encrypted under an Android Keystore key; the server throttles login/sign-up, caps upload size, confines media keys to the media directory (path-traversal fix), streams media instead of buffering it, and no longer ships a personal admin address in the source. |
+| 1.0.23 | 31 | *this build* | **Photos shrink, previews fly, the list opens instantly, media is private — and the server switcher is gone.** Picked photos are re-encoded to 1600 px / JPEG 85 with EXIF (GPS) stripped and a 320 px thumbnail uploaded alongside; the chat list paints from an on-device cache before the network answers (cleared on sign-out); `/media/file/*` now authorises per caller (uploader, conversation participant, group member, or status audience) and offers signed expiring links via `/media/link`, while the app loads every image with the session token through `MediaImages`. Settings ▸ Server was removed: the address is fixed at build time, bare hosts are normalised to `https://`. |
 
 
 ---
@@ -642,15 +653,26 @@ Ported from `GroupChatView.tsx`:
 
 ## 11. Roadmap
 
-Ordered by what the reference still exposes and what users have asked for:
+### Done in 1.0.23
 
-1. Real persistence (Room) so mock data survives restarts.
-2. Attachment picker parity: gallery multi-select, document browser, location picker.
-3. Status composer (text/photo stories with gradient backgrounds, viewers list).
-4. Group admin tools (add/remove members, roles, invite links).
-5. Search across chats and messages.
-6. Light/dark theme switch (dark palette already exists for calls — extend to chrome).
-7. ArkTS/Swift mirrors of the same design system (out of repo for now).
+1. **Private media** — `/media/file/*` authorises per caller, `/media/link` mints signed
+   expiring links, and every image request in the app carries the session token
+   (`network/MediaImages.kt`).
+2. **Photo compression + thumbnails** — 1600 px / JPEG 85 with EXIF stripped, plus a 320 px
+   thumbnail that travels with the message (`core/util/MediaPreparer.kt`).
+3. **Instant chat list** — the last list is painted from `filesDir/cache/chats.json` before
+   the network answers, and cleared on sign-out (`data/local/ChatListCache.kt`).
+4. **No in-app server switcher** — one address, fixed at build time.
+
+### Next (not started — each needs a go-ahead)
+
+5. **Pinned chats** surfacing (`PATCH /chats/:id` already stores the flag).
+6. **Push notifications (FCM)** so a backgrounded app wakes for a message.
+7. **E2EE design note** — a protocol change (per-conversation keys, no server-side search),
+   written up before any code.
+
+Older items still open: group admin tools (roles, invite links), search across chats and
+messages, light/dark chrome switch, ArkTS/Swift mirrors (out of repo).
 
 ---
 

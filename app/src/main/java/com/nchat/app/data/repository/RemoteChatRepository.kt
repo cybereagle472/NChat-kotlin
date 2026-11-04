@@ -1,5 +1,6 @@
 package com.nchat.app.data.repository
 
+import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Group
@@ -45,7 +46,9 @@ class RemoteChatRepository(
     private val api: NChatApi,
     private val tokens: TokenStore,
     private val socket: NChatSocket,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /** Last known chat list, painted before the network answers. */
+    private val cache: ChatListCache? = null
 ) : ChatRepository {
 
     private val localIds = AtomicLong(0L)
@@ -70,6 +73,8 @@ class RemoteChatRepository(
     private val myName: String get() = tokens.fullName ?: "You"
 
     init {
+        // Disk first (instant list), then the server's copy replaces it.
+        _chats.value = cache?.load().orEmpty()
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
         refresh()
     }
@@ -105,6 +110,7 @@ class RemoteChatRepository(
             }
             .sortedByDescending { it.lastMessageAt }
         _chats.value = merged
+        cache?.save(merged)
     }
 
     private suspend fun loadConversation(chatId: String) {
@@ -230,7 +236,8 @@ class RemoteChatRepository(
         fileName: String,
         mimeType: String,
         bytes: ByteArray,
-        caption: String?
+        caption: String?,
+        thumbnail: ByteArray?
     ) {
         val localId = "local-${localIds.incrementAndGet()}"
         val body = caption?.trim().orEmpty()
@@ -244,9 +251,14 @@ class RemoteChatRepository(
         preview(chatId, body.ifBlank { fileName }, DeliveryState.Sending)
 
         scope.launch {
-            // 1) upload the file, 2) send a message that points at it.
+            // 1) upload the file (and its preview), 2) send a message that points at both.
             val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
                 ?: return@launch
+            val thumb = thumbnail?.let { preview ->
+                runCatching { api.uploadMedia("thumb-$fileName", "image/jpeg", preview) }
+                    .getOrNull()
+                    ?.url
+            }
             val response = runCatching {
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
@@ -255,6 +267,7 @@ class RemoteChatRepository(
                         type = kind.wireType(),
                         clientMessageId = localId,
                         mediaUrl = media.url,
+                        thumbnailUrl = thumb,
                         duration = null
                     )
                 } else {
@@ -264,6 +277,7 @@ class RemoteChatRepository(
                         type = kind.wireType(),
                         clientMessageId = localId,
                         mediaUrl = media.url,
+                        thumbnailUrl = thumb,
                         fileName = fileName,
                         fileSize = media.fileSize?.toString()
                     )

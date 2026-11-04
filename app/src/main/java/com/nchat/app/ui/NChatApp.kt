@@ -39,17 +39,10 @@ private enum class LaunchStage { Auth, ProfileSetup, Main }
 @Composable
 fun NChatApp() {
     NChatTheme {
-        // Builds without a baked-in address (no NCHAT_API_BASE at build time, no saved
-        // override) ask for the server before anything else — same idea as the web client
-        // requiring VITE_API_URL at build time, never a URL inside a component.
-        var configured by remember { mutableStateOf(ServiceLocator.isServerConfigured) }
-        if (!configured) {
-            ServerSetupScreen(
-                onConnect = { url ->
-                    ServiceLocator.saveServerOverride(url)
-                    configured = ServiceLocator.isServerConfigured
-                }
-            )
+        // A build with no backend address cannot sign in anywhere; say so instead of
+        // failing every request. There is no in-app server switcher by design.
+        if (!ServiceLocator.isServerConfigured) {
+            MissingServerScreen()
             return@NChatTheme
         }
 

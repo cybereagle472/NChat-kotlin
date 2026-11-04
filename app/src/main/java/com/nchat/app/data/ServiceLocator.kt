@@ -1,8 +1,9 @@
 package com.nchat.app.data
 
 import android.content.Context
+import coil.ImageLoader
 import com.nchat.app.BuildConfig
-import com.nchat.app.core.config.ServerConfig
+import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
@@ -20,6 +21,7 @@ import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
+import com.nchat.app.network.MediaImages
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
@@ -33,9 +35,12 @@ import kotlinx.coroutines.launch
  * Composition root.
  *
  * NChat is a thin client: every repository below reads from the backend, so the app has one
- * source of truth and no demo data to drift out of sync with it. The backend URL is the
- * deployed worker baked in at build time (`BuildConfig.NCHAT_API_BASE`), overridable per
- * install in Settings ▸ Server for self-hosted servers (`server/`).
+ * source of truth and no demo data to drift out of sync with it.
+ *
+ * The backend address is fixed at build time (`BuildConfig.NCHAT_API_BASE`, filled by Gradle
+ * from `nchat.properties` / `NCHAT_API_BASE`) and never editable at runtime — the same
+ * "one address, injected by the build" rule the reference web app follows with
+ * `VITE_API_URL`. There is no in-app server switcher.
  */
 object ServiceLocator {
 
@@ -53,25 +58,22 @@ object ServiceLocator {
     // ------------------------------------------------------------ transport
 
     val tokens: TokenStore by lazy { TokenStore(requireContext()) }
-    private val apiClient: ApiClient by lazy {
-        ApiClient(ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE), tokens)
-    }
+    private val apiClient: ApiClient by lazy { ApiClient(BuildConfig.NCHAT_API_BASE, tokens) }
     val api: NChatApi by lazy { NChatApi(apiClient) }
     val socket: NChatSocket by lazy { NChatSocket(apiClient, tokens, appScope) }
 
-    /** The saved server override (null = use the build default). */
-    val serverOverride: String? get() = ServerConfig.override(requireContext())
+    /**
+     * Coil loader used by every `AsyncImage` in the app. It is registered as the singleton
+     * in [com.nchat.app.NChatApplication], so photos carry the session token the backend
+     * now requires (see [MediaImages]).
+     */
+    val images: ImageLoader by lazy { MediaImages.loader(requireContext(), apiClient, tokens) }
 
-    /** What this install connects to right now. */
-    val serverUrl: String get() = ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE)
+    /** The backend this build talks to; empty only for a misconfigured build. */
+    val serverUrl: String get() = BuildConfig.NCHAT_API_BASE.trim().trimEnd('/')
 
-    /** False only when neither this build nor Settings ▸ Server names a backend. */
-    val isServerConfigured: Boolean
-        get() = ServerConfig.isConfigured(requireContext(), BuildConfig.NCHAT_API_BASE)
-
-    fun saveServerOverride(url: String?) {
-        ServerConfig.save(requireContext(), url)
-    }
+    /** False only when the APK was built without a backend address. */
+    val isServerConfigured: Boolean get() = serverUrl.isNotEmpty()
 
     val connection: StateFlow<ConnectionState> get() = socket.state
 
@@ -90,12 +92,18 @@ object ServiceLocator {
 
     // --------------------------------------------------------- repositories
 
-    val authRepository: AuthRepository by lazy { RemoteAuthRepository(api, tokens, appScope) }
+    /** Disk cache of the chat list; wiped on sign-out. */
+    private val chatCache by lazy { ChatListCache(requireContext()) }
+
+
+    val authRepository: AuthRepository by lazy {
+        RemoteAuthRepository(api, tokens, appScope, chatCache)
+    }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)
     }
     val chatRepository: ChatRepository by lazy {
-        RemoteChatRepository(api, tokens, socket, appScope)
+        RemoteChatRepository(api, tokens, socket, appScope, chatCache)
     }
     val friendRepository: FriendRepository by lazy {
         RemoteFriendRepository(api, tokens, socket, appScope)

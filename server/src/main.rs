@@ -52,6 +52,23 @@ async fn main() {
         .filter(|value| *value > 0)
         .unwrap_or(300);
 
+    // Media privacy. The reference stored files in a private R2 bucket and handed out
+    // URLs; here a read is authorised per caller (see `routes::media`). `NCHAT_MEDIA_PUBLIC=1`
+    // is an escape hatch for a deployment that still expects public links.
+    let media_public = matches!(
+        std::env::var("NCHAT_MEDIA_PUBLIC")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes"
+    );
+    let media_ttl: i64 = std::env::var("NCHAT_MEDIA_TTL")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(600);
+
     let pool_size: usize = std::env::var("NCHAT_POOL")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -73,11 +90,15 @@ async fn main() {
         .with_auth_limiter(nchat_server::ratelimit::RateLimiter::new(
             auth_rate,
             std::time::Duration::from_secs(auth_window_secs),
-        ));
+        ))
+        .with_public_media(media_public)
+        .with_media_link_ttl(media_ttl);
     tracing::info!(
         max_upload_mb,
         auth_rate,
         auth_window_secs,
+        media_public,
+        media_ttl,
         "limits ready"
     );
     let app = build_app(state);

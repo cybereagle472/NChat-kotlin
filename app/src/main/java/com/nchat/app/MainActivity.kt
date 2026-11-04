@@ -12,6 +12,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Composition root: the backend address comes from BuildConfig (see nchat.properties),
+        // so there is nothing to configure here at runtime.
         ServiceLocator.init(applicationContext)
         setContent {
             NChatApp()

@@ -34,6 +34,8 @@ Environment:
 | `NCHAT_SECRET` | random per boot | HMAC key for bearer tokens — **set this in production** |
 | `NCHAT_TOKEN_TTL` | `2592000` | token lifetime in seconds (30 days) |
 | `NCHAT_LOG` | `info` | `tracing` filter, e.g. `debug` |
+| `NCHAT_MEDIA_PUBLIC` | `0` | `1` makes `/media/file/*` readable by anyone with the URL (the reference worker's public-bucket behaviour). Leave it off: reads are then authorised per caller. |
+| `NCHAT_MEDIA_TTL` | `600` | Lifetime of a signed media link minted by `GET /media/link`, in seconds. |
 
 Health check: `GET /api/v1/health` → `{"status":"ok","version":"0.1.0","users":0,"chats":0}`.
 
@@ -86,6 +88,31 @@ The server answers `{"type":"ready","userId":...}` then
 
 Client → server frames after the handshake: `{"type":"typing","chatId":"...","typing":true}`.
 Ping frames are answered with a pong.
+
+## Media privacy
+
+`GET /media/file/*key` is answered only when one of these holds:
+
+| Caller | Result |
+|---|---|
+| No token and no signature | `401` |
+| The uploader | `200` (with `Range` → `206`) |
+| Either end of the 1:1 message that references the file | `200` |
+| A member of the group the file was posted to | `200` |
+| In the audience of the status that uses the file | `200` |
+| Any signed-in user, for a profile or group avatar | `200` |
+| Anyone else | `404` — the response never confirms that a key exists |
+
+`GET /media/link?key=<key>` (authenticated) mints a shareable link:
+
+```json
+{ "url": "<PUBLIC_API_URL>/media/file/<key>?exp=1762345678&sig=…",
+  "expires_at": 1762345678, "expires_in": 600 }
+```
+
+The signature is `HMAC-SHA256(secret, "media:<key>:<exp>")`, so a link can be neither pointed
+at a different file nor kept alive by editing `exp`. Lifetime: `NCHAT_MEDIA_TTL`.
+`NCHAT_MEDIA_PUBLIC=1` turns the check off (public-bucket parity with the reference worker).
 
 ## Why this shape is fast
 

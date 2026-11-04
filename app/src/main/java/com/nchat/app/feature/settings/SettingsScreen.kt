@@ -96,10 +96,8 @@ fun SettingsScreen(
     val profile by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val avatar by ServiceLocator.profileRepository.avatar.collectAsStateWithLifecycle()
     var section by remember { mutableStateOf(SettingsPane.Main) }
-    var serverDialogOpen by remember { mutableStateOf(false) }
     // Read once: the repositories are built from this at first use, so a change applies on
     // the next launch (the dialog says so).
-    val serverUrl = remember { ServiceLocator.serverUrl }
     BackHandler(enabled = section != SettingsPane.Main) { section = SettingsPane.Main }
 
     val preferences = ServiceLocator.preferencesRepository
@@ -231,13 +229,6 @@ fun SettingsScreen(
                         )
                         SettingsMenuItem(
                             tone = MenuTone.Indigo,
-                            icon = Icons.Rounded.Settings,
-                            title = "Server",
-                            subtitle = Uri.parse(serverUrl).host ?: serverUrl,
-                            onClick = { serverDialogOpen = true }
-                        )
-                        SettingsMenuItem(
-                            tone = MenuTone.Indigo,
                             icon = Icons.Rounded.Refresh,
                             title = "Check for updates",
                             subtitle = if (state.checking) "Checking…" else "Version ${BuildConfig.VERSION_NAME}",
@@ -286,37 +277,31 @@ fun SettingsScreen(
                 }
 
                 item(key = "footer") {
-                    Text(
-                        text = "NChat v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
-                        fontSize = 12.sp,
-                        color = NcTheme.extra.textMuted,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = NcSpace.lg, bottom = NcSpace.xxl),
-                        textAlign = TextAlign.Center
-                    )
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "NChat v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
+                            fontSize = 12.sp,
+                            color = NcTheme.extra.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                        // Read-only, straight from BuildConfig: this is how you check that the
+                        // build actually received the address it was compiled with.
+                        Text(
+                            text = "Server: ${builtInServer()}",
+                            fontSize = 11.sp,
+                            color = NcTheme.extra.textMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
-    }
-
-    if (serverDialogOpen) {
-        ServerDialog(
-            initial = ServiceLocator.serverOverride.orEmpty(),
-            buildDefault = BuildConfig.NCHAT_API_BASE,
-            onDismiss = { serverDialogOpen = false },
-            onSave = { value ->
-                ServiceLocator.saveServerOverride(value)
-                serverDialogOpen = false
-                NcToaster.show(
-                    if (value.isBlank()) {
-                        "Server cleared — default server on next launch"
-                    } else {
-                        "Server saved — reopen NChat to connect"
-                    }
-                )
-            }
-        )
     }
 
     val info = state.info
@@ -642,51 +627,15 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 /** Which pane of Settings is showing. */
 private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked }
 
+
 /**
- * Settings ▸ Server: point this install at a running Rust backend (`server/`) without
- * rebuilding the APK. Empty clears the override and falls back to the build default —
- * clearing the field falls back to the server baked into the build.
+ * The host this APK was compiled against, with the scheme stripped so it reads like a name.
+ *
+ * It is a label, not a setting — there is no way to change it from the UI (the address is
+ * baked in at build time). It exists so "did the build get my address?" has a visual answer.
  */
-@Composable
-private fun ServerDialog(
-    initial: String,
-    buildDefault: String,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit
-) {
-    var draft by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Server") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(NcSpace.sm)) {
-                Text(
-                    text = "This build talks to $buildDefault. Paste another address to use a " +
-                        "self-hosted server (server/), or clear the field to go back to the " +
-                        "default. Reopen NChat after saving.",
-                    fontSize = 13.sp,
-                    color = NcTheme.extra.textSecondary
-                )
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    singleLine = true,
-                    placeholder = { Text("https://api.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF8B5CF6),
-                        unfocusedBorderColor = NcTheme.extra.textMuted.copy(alpha = 0.4f)
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(draft) }) {
-                Text("Save", fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
+private fun builtInServer(): String =
+    ServiceLocator.serverUrl
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .ifEmpty { "not set in this build" }
