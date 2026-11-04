@@ -39,6 +39,10 @@ interface ChatRepository {
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
     fun deleteMessage(chatId: String, messageId: String)
     fun createGroup(name: String, description: String, memberCount: Int): Group
+    fun addMembers(groupId: String, count: Int)
+    fun renameGroup(groupId: String, name: String)
+    fun leaveGroup(groupId: String)
+    fun forwardMessage(targetChatId: String, source: Message)
     fun markRead(chatId: String)
 }
 
@@ -183,7 +187,65 @@ class InMemoryChatRepository(
             lastActivityAt = System.currentTimeMillis()
         )
         _groups.update { current -> listOf(group) + current }
+        val chat = Chat(
+            id = group.id,
+            title = group.name,
+            avatarEmoji = group.avatarEmoji,
+            isGroup = true,
+            lastMessage = "Group created",
+            lastMessageAt = group.lastActivityAt
+        )
+        _chats.update { current -> listOf(chat) + current }
         return group
+    }
+
+    override fun addMembers(groupId: String, count: Int) {
+        _groups.update { groups ->
+            groups.map { group ->
+                if (group.id == groupId) {
+                    group.copy(memberCount = group.memberCount + count)
+                } else {
+                    group
+                }
+            }
+        }
+    }
+
+    override fun renameGroup(groupId: String, name: String) {
+        _groups.update { groups ->
+            groups.map { if (it.id == groupId) it.copy(name = name) else it }
+        }
+        _chats.update { chats ->
+            chats.map { if (it.id == groupId) it.copy(title = name) else it }
+        }
+    }
+
+    override fun leaveGroup(groupId: String) {
+        _groups.update { groups -> groups.filterNot { it.id == groupId } }
+        _chats.update { chats -> chats.filterNot { it.id == groupId } }
+        synchronized(conversations) { conversations.remove(groupId) }
+    }
+
+    override fun forwardMessage(targetChatId: String, source: Message) {
+        val stream = conversations[targetChatId] ?: return
+        val messageId = "local-${messageIds.incrementAndGet()}"
+        stream.update { current ->
+            current + source.copy(
+                id = messageId,
+                chatId = targetChatId,
+                authorId = "me",
+                authorName = profile.fullName,
+                timestamp = System.currentTimeMillis(),
+                isMine = true,
+                state = DeliveryState.Sending,
+                forwarded = true,
+                reactions = emptyList(),
+                replyAuthor = null,
+                replyText = null
+            )
+        }
+        updatePreview(targetChatId, source.text.ifBlank { "Forwarded message" }, DeliveryState.Sending)
+        advanceState(targetChatId, messageId)
     }
 
     override fun markRead(chatId: String) {

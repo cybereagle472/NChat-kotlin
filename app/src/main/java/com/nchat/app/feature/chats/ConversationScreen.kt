@@ -95,6 +95,7 @@ import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
 
 @Composable
@@ -118,6 +119,11 @@ fun ConversationScreen(
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
     var callKind by remember { mutableStateOf<CallKind?>(null) }
     var profileOpen by remember { mutableStateOf(false) }
+    var groupInfoOpen by remember { mutableStateOf(false) }
+    var forwardingId by remember { mutableStateOf<String?>(null) }
+    val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
+    val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
+    val group = groups.firstOrNull { it.id == chatId }
 
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -140,7 +146,9 @@ fun ConversationScreen(
                 chat = chat,
                 onBack = onBack,
                 onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
-                onOpenProfile = { profileOpen = true }
+                onOpenProfile = {
+                    if (chat?.isGroup == true) groupInfoOpen = true else profileOpen = true
+                }
             )
 
             LazyColumn(
@@ -159,7 +167,8 @@ fun ConversationScreen(
                         ) {
                             MessageBubble(
                                 message = item.message,
-                                onLongPress = { viewModel.onSelectMessage(item.message.id) }
+                                onLongPress = { viewModel.onSelectMessage(item.message.id) },
+                                showAuthor = chat?.isGroup == true || group != null
                             )
                         }
                     }
@@ -215,12 +224,43 @@ fun ConversationScreen(
                 clipboard.setText(AnnotatedString(activeMessage.text))
                 viewModel.onSelectMessage(null)
             },
+            onForward = {
+                forwardingId = activeMessage.id
+                viewModel.onSelectMessage(null)
+            },
             onDelete = {
                 pendingDelete = activeMessage
                 viewModel.onSelectMessage(null)
             }
         )
     }
+
+        if (groupInfoOpen && group != null) {
+            GroupInfoScreen(
+                group = group,
+                friends = ServiceLocator.friends,
+                selfName = ServiceLocator.profile.fullName,
+                onBack = { groupInfoOpen = false },
+                onRename = viewModel::onRenameGroup,
+                onAddMembers = viewModel::onAddMembers,
+                onLeave = {
+                    groupInfoOpen = false
+                    viewModel.onLeaveGroup()
+                    onBack()
+                }
+            )
+        }
+
+        forwardingId?.let { messageId ->
+            ForwardDialog(
+                chats = chats,
+                onDismiss = { forwardingId = null },
+                onForward = { targets ->
+                    viewModel.onForward(messageId, targets)
+                    forwardingId = null
+                }
+            )
+        }
 
         if (profileOpen) {
             ProfileViewScreen(
@@ -299,14 +339,15 @@ private fun DeleteMessageDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
 private fun ConversationHeader(
     chatTitle: String,
     chat: Chat?,
+    groupMemberCount: Int?,
     onBack: () -> Unit,
     onStartCall: (video: Boolean) -> Unit,
     onOpenProfile: () -> Unit
 ) {
     val status = when {
         chat?.isTyping == true -> "typing…"
+        chat?.isGroup == true -> groupMemberCount?.let { "$it members · tap for info" } ?: "group chat"
         chat?.isOnline == true -> "online"
-        chat?.isGroup == true -> "group chat"
         else -> "last seen recently"
     }
 

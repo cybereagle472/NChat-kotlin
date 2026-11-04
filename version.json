@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.0.4",
+  "versionCode": 13,
+  "versionName": "1.0.5",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.4 — the inert rows are alive. Status is now a real story viewer: tap any update for the full-screen view with segmented progress bars, tap-left/tap-right navigation, auto-advance and the brand backdrops; updates you have watched turn grey in the list. Tapping a chat's avatar or name opens the Profile page — gradient title bar, ringed 96dp avatar, @handle, presence line, About card, Message/Call/Video actions and a Block menu. Groups can finally be created: the + button opens the New Group screen (name, description, member picker with gradient selection circles), the group lands at the top of the list, and tapping a group opens its conversation."
+  "releaseNotes": "NChat 1.0.5 — groups and forwarding. Forward any message: the long-press menu now has Forward, which opens the reference picker (search, multi-select chats, gradient 'Forward to N' action) and delivers the message into each chat with a Forwarded label. Group conversations now behave like group chats: sender names sit above incoming bubbles, the header shows the member count and tapping it opens Group Info — rounded group avatar with camera badge, editable name, description, mute switch, the member list with Add members, and Leave group with confirmation. Newly created groups appear in the chat list too, so you can message them straight away."
 }

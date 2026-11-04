@@ -28,6 +28,7 @@ data class Message(
     val replyAuthor: String? = null,
     val replyText: String? = null,
     val isEdited: Boolean = false,
+    val forwarded: Boolean = false,
     val systemEvent: Boolean = false
 )
 
