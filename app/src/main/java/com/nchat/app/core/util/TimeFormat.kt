@@ -70,6 +70,46 @@ object TimeFormat {
         }
     }
 
+    /** History row label: `5:04 PM` today, `Yesterday`, `Mon`, `Nov 4`. */
+    fun historyTimestamp(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+        val daysApart = dayDistance(timestamp, now)
+        return when {
+            daysApart == 0L -> clock12(timestamp)
+            daysApart == 1L -> "Yesterday"
+            daysApart < 7L -> weekday(timestamp)
+            else -> "${monthShort(timestamp)} ${dayOfMonth(timestamp)}"
+        }
+    }
+
+    private fun clock12(timestamp: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val hour = calendar.get(Calendar.HOUR)
+        val suffix = if (calendar.get(Calendar.AM_PM) == Calendar.AM) "AM" else "PM"
+        val display = if (hour == 0) 12 else hour
+        return "$display:${calendar.get(Calendar.MINUTE).pad()} $suffix"
+    }
+
+    private fun monthShort(timestamp: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+        return when (calendar.get(Calendar.MONTH)) {
+            Calendar.JANUARY -> "Jan"
+            Calendar.FEBRUARY -> "Feb"
+            Calendar.MARCH -> "Mar"
+            Calendar.APRIL -> "Apr"
+            Calendar.MAY -> "May"
+            Calendar.JUNE -> "Jun"
+            Calendar.JULY -> "Jul"
+            Calendar.AUGUST -> "Aug"
+            Calendar.SEPTEMBER -> "Sep"
+            Calendar.OCTOBER -> "Oct"
+            Calendar.NOVEMBER -> "Nov"
+            else -> "Dec"
+        }
+    }
+
+    private fun dayOfMonth(timestamp: Long): Int =
+        Calendar.getInstance().apply { timeInMillis = timestamp }.get(Calendar.DAY_OF_MONTH)
+
     private fun dayDistance(timestamp: Long, now: Long): Long {
         val target = Calendar.getInstance().apply { timeInMillis = timestamp }
         val reference = Calendar.getInstance().apply { timeInMillis = now }

@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.0.7",
+  "versionCode": 16,
+  "versionName": "1.0.8",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.7 — a real Discover tab. Discover now has the reference's three sections: Friends (search, presence, message / voice / video buttons, tap a row for the profile card), Requests (incoming invites with sender, @handle and how long ago they arrived, plus Accept and Decline) and Find (search every person by name or username, with Friend badges and Add, Cancel or Unfriend actions). Unfriending asks for confirmation in the reference dialog, the tab badges show live counts, and every list animates in with the staggered slide-up. Messaging or calling someone from Discover opens (or creates) the chat for them, and calls start straight away."
+  "releaseNotes": "NChat 1.0.8 — the full call history. The History tab now opens with the All / Voice / Video / Missed filter pills (the active one snaps white and scales, like the reference) and lists every call with its direction — incoming in green, outgoing in violet, missed in red with a red avatar — plus a Voice or Video pill, the call length, and a timestamp that switches between time of day, Yesterday, weekday and date. Every row carries voice call, video call and message buttons, taps open the caller's profile card, and the list fills in with the staggered slide-up. Calls started from History open (or create) that chat and start ringing immediately; filtered views that end up empty show the reference 'No call history' card."
 }

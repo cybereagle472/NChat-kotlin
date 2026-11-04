@@ -7,9 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -58,8 +55,8 @@ fun HomeScreen(
     val friends = remember(friendGraph) {
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
-    var profileFriend by remember { mutableStateOf<Friend?>(null) }
-    BackHandler(enabled = profileFriend != null) { profileFriend = null }
+    var profileTarget by remember { mutableStateOf<ProfileTarget?>(null) }
+    BackHandler(enabled = profileTarget != null) { profileTarget = null }
     val chatsListState = rememberLazyListState()
     val statusListState = rememberLazyListState()
     val groupsListState = rememberLazyListState()
@@ -130,12 +127,46 @@ fun HomeScreen(
                                 NcScreen.Conversation(chat.id, chat.title, autoCallVideo = video)
                             )
                         },
-                        onViewProfile = { profileFriend = it }
+                        onViewProfile = { friend ->
+                            profileTarget = ProfileTarget(
+                                id = friend.id,
+                                name = friend.name,
+                                handle = friend.handle,
+                                isOnline = friend.isOnline
+                            )
+                        }
                     )
 
                     HomeTab.History -> HistoryScreen(
                         calls = ServiceLocator.calls,
-                        listState = historyListState
+                        listState = historyListState,
+                        onCall = { call, video ->
+                            val chat = ServiceLocator.chatRepository.openChat(
+                                personId = call.personId,
+                                title = call.name,
+                                isOnline = false
+                            )
+                            navigator.push(
+                                NcScreen.Conversation(chat.id, chat.title, autoCallVideo = video)
+                            )
+                        },
+                        onMessage = { call ->
+                            onOpenChat(
+                                ServiceLocator.chatRepository.openChat(
+                                    personId = call.personId,
+                                    title = call.name,
+                                    isOnline = false
+                                )
+                            )
+                        },
+                        onViewProfile = { call ->
+                            profileTarget = ProfileTarget(
+                                id = call.personId,
+                                name = call.name,
+                                handle = "@${call.personId}",
+                                isOnline = false
+                            )
+                        }
                     )
                 }
             }
@@ -147,7 +178,7 @@ fun HomeScreen(
         }
         }
 
-        val shown = profileFriend
+        val shown = profileTarget
         AnimatedVisibility(
             visible = shown != null,
             enter = slideInHorizontally(tween(280)) { it } + fadeIn(tween(200)),
@@ -161,25 +192,23 @@ fun HomeScreen(
                     about = if (shown.isOnline) "Online now" else "Hey there! I am using NChat.",
                     isOnline = shown.isOnline,
                     emoji = null,
-                    onBack = { profileFriend = null },
+                    onBack = { profileTarget = null },
                     onMessage = {
-                        val friend = shown
-                        profileFriend = null
+                        profileTarget = null
                         onOpenChat(
                             ServiceLocator.chatRepository.openChat(
-                                personId = friend.id,
-                                title = friend.name,
-                                isOnline = friend.isOnline
+                                personId = shown.id,
+                                title = shown.name,
+                                isOnline = shown.isOnline
                             )
                         )
                     },
                     onCall = { video ->
-                        val friend = shown
-                        profileFriend = null
+                        profileTarget = null
                         val chat = ServiceLocator.chatRepository.openChat(
-                            personId = friend.id,
-                            title = friend.name,
-                            isOnline = friend.isOnline
+                            personId = shown.id,
+                            title = shown.name,
+                            isOnline = shown.isOnline
                         )
                         navigator.push(
                             NcScreen.Conversation(chat.id, chat.title, autoCallVideo = video)
@@ -190,3 +219,11 @@ fun HomeScreen(
         }
     }
 }
+
+/** Whoever the profile overlay is currently showing. */
+private data class ProfileTarget(
+    val id: String,
+    val name: String,
+    val handle: String,
+    val isOnline: Boolean
+)
