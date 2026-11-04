@@ -1,0 +1,60 @@
+name: Rust backend
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    paths:
+      - 'server/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/backend.yml'
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server -> target
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Build
+        run: cargo build --all-targets 2>&1 | tee ../rust-build.log
+
+      - name: Clippy
+        run: cargo clippy --all-targets 2>&1 | tee ../rust-clippy.log
+        continue-on-error: true
+
+      - name: Test
+        run: cargo test 2>&1 | tee ../rust-test.log
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs
+          path: 'rust-*.log'
+          if-no-files-found: ignore
