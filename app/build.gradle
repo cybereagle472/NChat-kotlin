@@ -12,17 +12,35 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 28
-        versionName "1.0.20"
+        versionCode 29
+        versionName "1.0.21"
         resourceConfigurations += ['en']
 
-        // The backend this build talks to. The default is the deployed NChat worker — the
-        // same API the reference web app uses through VITE_API_URL; server/ is a
-        // byte-compatible Rust implementation of it. Override at build time with
-        //   NCHAT_API_BASE=https://host ./gradlew assembleRelease
-        // and at runtime in Settings ▸ Server.
-        def apiBase = (System.getenv("NCHAT_API_BASE") ?: "https://nchats-friends.usa66486.workers.dev").trim()
-        buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\" "
+        // The backend this build talks to, resolved once and baked into BuildConfig.
+        // Precedence: -PNCHAT_API_BASE > $NCHAT_API_BASE > local.properties > nchat.properties
+        // > empty (the app then asks for an address on first launch). No Kotlin source knows
+        // the address: ServerConfig.effective() -> ApiClient is the single choke point, the
+        // Android counterpart of the web client's VITE_API_URL -> API_BASE.
+        def apiBase = (project.findProperty("NCHAT_API_BASE")
+                ?: System.getenv("NCHAT_API_BASE")
+                ?: "")
+        if (apiBase.toString().trim().isEmpty()) {
+            ["local.properties": "nchat.apiBase", "nchat.properties": "apiBase"].each { name, key ->
+                def file = rootProject.file(name)
+                if (apiBase.toString().trim().isEmpty() && file.exists()) {
+                    def props = new Properties()
+                    file.withInputStream { stream -> props.load(stream) }
+                    apiBase = props.getProperty(key, "")
+                }
+            }
+        }
+        apiBase = apiBase.toString().trim().replaceAll('/+$', '')
+        if (apiBase.isEmpty()) {
+            logger.lifecycle("NCHAT_API_BASE is not set: this APK will ask for a server address on first launch.")
+        } else {
+            logger.lifecycle("NCHAT_API_BASE resolved from build configuration")
+        }
+        buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\""
     }
 
     signingConfigs {

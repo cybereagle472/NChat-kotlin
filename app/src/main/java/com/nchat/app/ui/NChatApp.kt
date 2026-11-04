@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -37,6 +39,20 @@ private enum class LaunchStage { Auth, ProfileSetup, Main }
 @Composable
 fun NChatApp() {
     NChatTheme {
+        // Builds without a baked-in address (no NCHAT_API_BASE at build time, no saved
+        // override) ask for the server before anything else — same idea as the web client
+        // requiring VITE_API_URL at build time, never a URL inside a component.
+        var configured by remember { mutableStateOf(ServiceLocator.isServerConfigured) }
+        if (!configured) {
+            ServerSetupScreen(
+                onConnect = { url ->
+                    ServiceLocator.saveServerOverride(url)
+                    configured = ServiceLocator.isServerConfigured
+                }
+            )
+            return@NChatTheme
+        }
+
         val auth = ServiceLocator.authRepository
         val session by auth.session.collectAsStateWithLifecycle()
         val profileComplete by auth.profileComplete.collectAsStateWithLifecycle()

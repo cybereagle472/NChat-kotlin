@@ -65,6 +65,10 @@ object ServiceLocator {
     /** What this install connects to right now. */
     val serverUrl: String get() = ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE)
 
+    /** False only when neither this build nor Settings ▸ Server names a backend. */
+    val isServerConfigured: Boolean
+        get() = ServerConfig.isConfigured(requireContext(), BuildConfig.NCHAT_API_BASE)
+
     fun saveServerOverride(url: String?) {
         ServerConfig.save(requireContext(), url)
     }
