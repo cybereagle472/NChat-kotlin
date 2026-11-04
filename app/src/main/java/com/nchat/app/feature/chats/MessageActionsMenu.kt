@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Forward
 import androidx.compose.material.icons.rounded.Reply
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -70,6 +71,7 @@ fun MessageActionMenu(
     onReact: (String) -> Unit,
     onReply: () -> Unit,
     onCopy: () -> Unit,
+    onForward: () -> Unit,
     onDelete: () -> Unit
 ) {
     val extra = NcTheme.extra
@@ -135,6 +137,7 @@ fun MessageActionMenu(
                         if (showReply) {
                             MenuAction(Icons.Rounded.Reply, "Reply", extra.textSecondary, onClick = onReply)
                         }
+                        MenuAction(Icons.Rounded.Forward, "Forward", extra.textSecondary, onClick = onForward)
                         if (showCopy) {
                             MenuAction(Icons.Rounded.ContentCopy, "Copy", extra.textSecondary, onClick = onCopy)
                         }

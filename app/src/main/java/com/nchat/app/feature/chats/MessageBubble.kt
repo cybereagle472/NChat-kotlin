@@ -75,7 +75,8 @@ fun DateSeparatorPill(label: String, modifier: Modifier = Modifier) {
 fun MessageBubble(
     message: Message,
     onLongPress: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAuthor: Boolean = false
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -90,6 +91,15 @@ fun MessageBubble(
             .padding(vertical = 2.dp),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
     ) {
+        if (showAuthor && !mine) {
+            Text(
+                text = message.authorName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+            )
+        }
         Column(
             modifier = Modifier
                 .widthIn(max = 300.dp)
@@ -126,6 +136,16 @@ fun MessageBubble(
                 MessageKind.Location -> LocationContent(mine = mine)
                 MessageKind.Video -> VideoContent(mine = mine)
                 MessageKind.Text -> Unit
+            }
+
+            if (message.forwarded) {
+                Text(
+                    text = "Forwarded",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
             }
 
             if (message.kind == MessageKind.Text || message.text.isNotBlank()) {

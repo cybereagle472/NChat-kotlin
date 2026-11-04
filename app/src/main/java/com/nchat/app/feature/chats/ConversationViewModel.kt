@@ -79,6 +79,26 @@ class ConversationViewModel(
         if (_activeMessageId.value == messageId) _activeMessageId.value = null
     }
 
+    fun onForward(messageId: String, targetChatIds: List<String>) {
+        if (targetChatIds.isEmpty()) return
+        val source = messages.value.firstOrNull { it.id == messageId } ?: return
+        targetChatIds.forEach { target -> repository.forwardMessage(target, source) }
+    }
+
+    fun onRenameGroup(name: String) {
+        if (name.isBlank()) return
+        repository.renameGroup(chatId, name)
+    }
+
+    fun onAddMembers(count: Int) {
+        if (count <= 0) return
+        repository.addMembers(chatId, count)
+    }
+
+    fun onLeaveGroup() {
+        repository.leaveGroup(chatId)
+    }
+
     fun onSendAttachment(kind: MessageKind) {
         repository.sendAttachment(
             chatId = chatId,
