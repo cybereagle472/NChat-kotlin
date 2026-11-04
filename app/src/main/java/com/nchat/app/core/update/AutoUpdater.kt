@@ -1,4 +1,4 @@
-package com.nchat.app.data.utils
+package com.nchat.app.core.update
 
 import android.content.ClipData
 import android.content.Context
@@ -35,7 +35,7 @@ object AutoUpdater {
             requestMethod = "GET"
             setRequestProperty("Cache-Control", "no-cache, no-store")
             setRequestProperty("Pragma", "no-cache")
-            setRequestProperty("User-Agent", "NChat-UI-Lab-Updater")
+            setRequestProperty("User-Agent", "NChat-Updater")
         }
         try {
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
@@ -60,7 +60,7 @@ object AutoUpdater {
             connectTimeout = 20000
             readTimeout = 60000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "NChat-UI-Lab-Updater")
+            setRequestProperty("User-Agent", "NChat-Updater")
             setRequestProperty("Accept", "application/vnd.android.package-archive")
         }
         try {
@@ -70,8 +70,8 @@ object AutoUpdater {
             val targetDir = File(context.filesDir, "updates").apply {
                 if (!exists() && !mkdirs()) error("Could not create update folder.")
             }
-            val apk = File(targetDir, "nchat-ui-lab-${info.versionCode}.apk")
-            val temp = File(targetDir, "nchat-ui-lab-${info.versionCode}.part")
+            val apk = File(targetDir, "nchat-${info.versionCode}.apk")
+            val temp = File(targetDir, "nchat-${info.versionCode}.part")
             connection.inputStream.use { input ->
                 FileOutputStream(temp).use { output -> input.copyTo(output) }
             }
