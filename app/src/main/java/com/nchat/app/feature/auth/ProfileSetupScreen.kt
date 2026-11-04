@@ -30,11 +30,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AtSign
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Sparkles
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -175,7 +175,7 @@ fun ProfileSetupScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Sparkles,
+                        imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
                         tint = Color(0xFF8B5CF6),
                         modifier = Modifier.size(15.dp)
@@ -342,7 +342,7 @@ fun ProfileSetupScreen(
                         username = value.lowercase().filter { it.isLetterOrDigit() || it == '_' }
                     },
                     placeholder = "janedoe",
-                    icon = Icons.Rounded.AtSign,
+                    icon = Icons.Rounded.Email,
                     modifier = Modifier.padding(top = 14.dp),
                     trailing = {
                         when {
