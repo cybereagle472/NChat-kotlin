@@ -1,8 +1,8 @@
 [package]
 name = "nchat-server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "NChat realtime backend — axum + tokio, in-memory state with atomic JSON persistence"
+description = "NChat backend — Rust port of worker/ (Cloudflare Workers + D1 + R2 + Durable Objects)"
 license = "MIT"
 
 [dependencies]
@@ -10,9 +10,12 @@ axum = { version = "0.7", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["clock"] }
 sha2 = "0.10"
 hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 base64 = "0.22"
 rand = "0.8"
 futures-util = "0.3"
@@ -23,9 +26,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+tempfile = "3"
 
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-panic = "abort"

@@ -1,77 +1,81 @@
-//! NChat backend: a small, fast realtime service for the Kotlin client.
+//! NChat backend — a Rust port of `worker/` from `nchat-friends`.
 //!
-//! Design rules that keep it instant:
-//! * state lives in memory, guarded by an `RwLock` — reads never touch the disk;
-//! * writes append to the in-memory tree and snapshot atomically (`db.json`);
-//! * realtime fan-out is one `tokio::sync::broadcast` channel for all sessions;
-//! * no per-request allocation beyond the JSON body.
+//! The reference is a Cloudflare Worker (Hono) on D1 + R2 + Durable Objects.
+//! This crate keeps the same database schema, the same routes, the same JSON
+//! (snake_case keys, same wrappers), the same JWT/PBKDF2 formats and the same
+//! realtime room contract, so the Kotlin client can talk to either backend
+//! unchanged. What changes is only the runtime: axum + tokio + SQLite.
 
-pub mod api;
-pub mod auth;
+pub mod db;
 pub mod error;
-pub mod model;
-pub mod store;
-pub mod ws;
+pub mod jwt;
+pub mod models;
+pub mod password;
+pub mod presence;
+pub mod privacy;
+pub mod realtime;
+pub mod routes;
+pub mod util;
 
 use axum::http::{header, HeaderMap};
 use axum::Router;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::error::ApiError;
-use crate::model::{now_ms, Id};
-use crate::store::Store;
-use crate::ws::Hub;
-
-/// Default lifetime of a bearer token (30 days).
-pub const DEFAULT_TOKEN_TTL_SECS: i64 = 30 * 24 * 60 * 60;
+use crate::db::Db;
+use crate::error::{ApiError, ApiResult};
+use crate::realtime::Hub;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: Arc<Store>,
+    pub db: Arc<Db>,
     pub hub: Hub,
-    pub secret: Arc<Vec<u8>>,
-    pub token_ttl_secs: i64,
+    pub secret: Arc<String>,
+    /// `PUBLIC_API_URL` in the reference — used to build absolute media URLs.
+    pub public_api_url: Arc<String>,
+    /// Stands in for the R2 bucket binding.
+    pub media_dir: Arc<PathBuf>,
 }
 
 impl AppState {
-    pub fn new(store: Store, secret: Vec<u8>, token_ttl_secs: i64) -> Self {
+    pub fn new(db: Db, secret: impl Into<String>) -> Self {
         Self {
-            store: Arc::new(store),
+            db: Arc::new(db),
             hub: Hub::new(),
-            secret: Arc::new(secret),
-            token_ttl_secs,
+            secret: Arc::new(secret.into()),
+            public_api_url: Arc::new(String::new()),
+            media_dir: Arc::new(PathBuf::from("data/media")),
         }
     }
 
-    pub fn issue_token(&self, user_id: &str) -> Option<String> {
-        auth::issue_token(&self.secret, user_id, now_ms(), self.token_ttl_secs)
+    pub fn with_public_url(mut self, base_url: impl Into<String>) -> Self {
+        self.public_api_url = Arc::new(base_url.into());
+        self
     }
 
-    /// `Authorization: Bearer <token>` → the current user id.
-    pub fn require_user(&self, headers: &HeaderMap) -> Result<Id, ApiError> {
+    pub fn with_media_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.media_dir = Arc::new(dir.into());
+        self
+    }
+
+    /// `requireAuth` middleware — `Authorization: Bearer <jwt>` → user id.
+    pub fn current_user(&self, headers: &HeaderMap) -> ApiResult<String> {
         let raw = headers
             .get(header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .unwrap_or_default();
         let token = raw
             .strip_prefix("Bearer ")
-            .or_else(|| raw.strip_prefix("bearer "))
-            .unwrap_or_default();
-        if token.is_empty() {
-            return Err(ApiError::Unauthorized);
-        }
-        let user_id = auth::verify_token(&self.secret, token, now_ms()).ok_or(ApiError::Unauthorized)?;
-        if self.store.user(&user_id).is_none() {
-            return Err(ApiError::Unauthorized);
-        }
-        Ok(user_id)
+            .ok_or_else(|| ApiError::unauthorized("Unauthorized"))?;
+        jwt::subject(token, &self.secret)
+            .ok_or_else(|| ApiError::unauthorized("Invalid or expired token"))
     }
 }
 
 pub fn build_app(state: AppState) -> Router {
-    api::router(state)
+    routes::router(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
