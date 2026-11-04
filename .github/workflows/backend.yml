@@ -68,12 +68,15 @@ jobs:
           mkdir -p .ci
           {
             echo "# backend failure — run $GITHUB_RUN_ID"
+            echo "## where"
+            pwd
+            ls -la .. 2>/dev/null | head -30
             echo "## build"
-            tail -n 400 rust-build.log 2>/dev/null || true
+            tail -n 300 ../rust-build.log 2>/dev/null || tail -n 300 rust-build.log 2>/dev/null || true
             echo "## test"
-            tail -n 400 rust-test.log 2>/dev/null || true
+            tail -n 400 ../rust-test.log 2>/dev/null || tail -n 400 rust-test.log 2>/dev/null || true
             echo "## clippy"
-            tail -n 120 rust-clippy.log 2>/dev/null || true
+            tail -n 120 ../rust-clippy.log 2>/dev/null || true
           } > .ci/last-failure.log
           git config user.name "nchat-ci"
           git config user.email "ci@nchat.local"
