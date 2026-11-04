@@ -5,6 +5,8 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +26,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -68,40 +75,89 @@ fun StatusViewer(
         mutableIntStateOf(startIndex.coerceIn(0, statuses.lastIndex))
     }
     val progress = remember { Animatable(0f) }
+    var paused by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dismissThreshold = with(LocalDensity.current) { 96.dp.toPx() }
     val current = statuses.getOrNull(index) ?: return
 
-    LaunchedEffect(index, statuses.size) {
-        val status = statuses.getOrNull(index) ?: return@LaunchedEffect
-        onViewed(status.id)
-        progress.snapTo(0f)
-        progress.animateTo(1f, tween(STATUS_DURATION_MS, easing = LinearEasing))
+    fun advance() {
         if (index < statuses.lastIndex) index += 1 else onDismiss()
+    }
+
+    fun rewind() {
+        if (index > 0) index -= 1 else onDismiss()
+    }
+
+    // Restart whenever the story changes; a pause simply cancels the running
+    // animation and the next launch resumes from the same fraction.
+    LaunchedEffect(index) {
+        onViewed(current.id)
+        progress.snapTo(0f)
+    }
+
+    LaunchedEffect(index, paused) {
+        if (paused) return@LaunchedEffect
+        val remaining = ((1f - progress.value) * STATUS_DURATION_MS).toInt().coerceAtLeast(1)
+        progress.animateTo(1f, tween(remaining, easing = LinearEasing))
+        if (progress.value >= 1f) advance()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .graphicsLayer { translationY = dragOffset }
             .background(Brush.linearGradient(StatusBackdrops[index % StatusBackdrops.size]))
+            .pointerInput(index) {
+                detectTapGestures(
+                    // Press and hold anywhere pauses the story, like the reference.
+                    onPress = {
+                        paused = true
+                        tryAwaitRelease()
+                        paused = false
+                    },
+                    onTap = { offset ->
+                        // Only the outer thirds navigate: the middle stays inert so a
+                        // tap away from an edge can never skip a story by accident.
+                        val width = size.width.toFloat()
+                        when {
+                            offset.x <= width * 0.3f -> rewind()
+                            offset.x >= width * 0.7f -> advance()
+                            else -> Unit
+                        }
+                    }
+                )
+            }
+            .pointerInput(index) {
+                detectVerticalDragGestures(
+                    onDragStart = { paused = true },
+                    onDragEnd = {
+                        if (dragOffset > dismissThreshold) {
+                            onDismiss()
+                        } else {
+                            dragOffset = 0f
+                            paused = false
+                        }
+                    },
+                    onDragCancel = {
+                        dragOffset = 0f
+                        paused = false
+                    }
+                ) { change, dragAmount ->
+                    if (dragAmount > 0f || dragOffset > 0f) {
+                        dragOffset = (dragOffset + dragAmount).coerceAtLeast(0f)
+                        change.consume()
+                    }
+                }
+            }
     ) {
-        // Tap zones: left half goes back, right half advances (reference uses thirds).
-        Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(0.4f)
-                    .clickable {
-                        if (index > 0) index -= 1 else onDismiss()
-                    }
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(0.6f)
-                    .clickable {
-                        if (index < statuses.lastIndex) index += 1 else onDismiss()
-                    }
-            )
-        }
+        // A swipe-down dims the story the further it is dragged towards dismissal.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Color.Black.copy(alpha = (dragOffset / (dismissThreshold * 3f)).coerceIn(0f, 0.5f))
+                )
+        )
 
         Text(
             text = current.caption,

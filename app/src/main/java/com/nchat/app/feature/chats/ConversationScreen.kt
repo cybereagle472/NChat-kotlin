@@ -18,6 +18,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Videocam
@@ -61,12 +64,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -74,9 +79,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +104,8 @@ import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
+import kotlin.random.Random
+import kotlinx.coroutines.delay
 
 @Composable
 fun ConversationScreen(
@@ -212,7 +221,8 @@ fun ConversationScreen(
                 onSendAttachment = { kind ->
                     viewModel.onSendAttachment(kind)
                     keyboard?.hide()
-                }
+                },
+                onSendVoice = viewModel::onSendVoice
             )
         }
 
@@ -448,9 +458,51 @@ private fun ComposerBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onCancelReply: () -> Unit,
-    onSendAttachment: (MessageKind) -> Unit
+    onSendAttachment: (MessageKind) -> Unit,
+    onSendVoice: (String) -> Unit
 ) {
     var mediaOpen by remember { mutableStateOf(false) }
+    var voicePhase by remember { mutableStateOf<VoicePhase?>(null) }
+    var elapsedMs by remember { mutableStateOf(0L) }
+    var cancelProgress by remember { mutableStateOf(0f) }
+    var lockProgress by remember { mutableStateOf(0f) }
+    val bars = remember { mutableStateListOf<Float>() }
+
+    val density = LocalDensity.current
+    val lockThreshold = with(density) { 56.dp.toPx() }
+    val cancelThreshold = with(density) { 96.dp.toPx() }
+    val minVoiceMs = 1000L
+
+    fun discardVoice() {
+        voicePhase = null
+        elapsedMs = 0L
+        cancelProgress = 0f
+        lockProgress = 0f
+        bars.clear()
+    }
+
+    fun sendVoice() {
+        val duration = elapsedMs
+        discardVoice()
+        onSendVoice(formatVoiceDuration(duration))
+    }
+
+    // Tick the timer and grow the waveform only while the recorder is live.
+    LaunchedEffect(voicePhase) {
+        val phase = voicePhase
+        if (phase == null || phase == VoicePhase.Paused) return@LaunchedEffect
+        var tick = 0
+        while (true) {
+            delay(100)
+            elapsedMs += 100
+            tick += 1
+            if (tick % 2 == 0) {
+                bars.add(0.22f + Random.nextFloat() * 0.78f)
+                if (bars.size > 20) bars.removeAt(0)
+            }
+        }
+    }
+
     val rotation by animateFloatAsState(
         targetValue = if (mediaOpen) 45f else 0f,
         animationSpec = tween(220),
@@ -486,9 +538,13 @@ private fun ComposerBar(
             replyTo?.let { quoted -> ReplyComposerStrip(quoted = quoted, onCancel = onCancelReply) }
         }
 
+        Box(modifier = Modifier.fillMaxWidth()) {
+        // The input row stays composed even while recording: the mic button owns the
+        // drag gesture, and a node that leaves composition would drop the pointer.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .alpha(if (voicePhase != null) 0f else 1f)
                 .shadow(6.dp, RoundedCornerShape(28.dp))
                 .clip(RoundedCornerShape(28.dp))
                 .background(Brush.linearGradient(NcTheme.extra.composerGradient))
@@ -558,17 +614,84 @@ private fun ComposerBar(
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(if (showSend) Color.White else Color(0x33FFFFFF))
+                            .then(
+                                if (!showSend) {
+                                    Modifier.pointerInput(Unit) {
+                                        awaitEachGesture {
+                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                            val startX = down.position.x
+                                            val startY = down.position.y
+                                            elapsedMs = 0L
+                                            bars.clear()
+                                            cancelProgress = 0f
+                                            lockProgress = 0f
+                                            voicePhase = VoicePhase.Holding
+                                            var locked = false
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.id == down.id }
+                                                    ?: break
+                                                if (!change.pressed) break
+                                                if (!locked) {
+                                                    val lift = startY - change.position.y
+                                                    val slideLeft = startX - change.position.x
+                                                    lockProgress = (lift / lockThreshold)
+                                                        .coerceIn(0f, 1f)
+                                                    cancelProgress = (slideLeft / cancelThreshold)
+                                                        .coerceIn(0f, 1f)
+                                                    if (lift >= lockThreshold) {
+                                                        locked = true
+                                                        lockProgress = 0f
+                                                        cancelProgress = 0f
+                                                        voicePhase = VoicePhase.Locked
+                                                    }
+                                                }
+                                                change.consume()
+                                            }
+                                            if (!locked) {
+                                                val cancelled = cancelProgress >= 0.9f ||
+                                                    elapsedMs < minVoiceMs
+                                                if (!cancelled) sendVoice() else discardVoice()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .clickable(enabled = showSend, onClick = onSend),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Send,
-                            contentDescription = if (showSend) "Send message" else "Record voice message",
+                            imageVector = if (showSend) Icons.Rounded.Send else Icons.Rounded.Mic,
+                            contentDescription = if (showSend) {
+                                "Send message"
+                            } else {
+                                "Hold to record, slide up to lock, slide left to cancel"
+                            },
                             tint = if (showSend) NcTheme.extra.typing else Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                 }
+            }
+        }
+
+            voicePhase?.let { phase ->
+                VoiceRecordingStrip(
+                    state = VoiceUiState(
+                        phase = phase,
+                        durationMs = elapsedMs,
+                        waveform = bars,
+                        cancelProgress = cancelProgress,
+                        lockProgress = lockProgress
+                    ),
+                    onDelete = { discardVoice() },
+                    onTogglePause = {
+                        voicePhase = if (phase == VoicePhase.Paused) VoicePhase.Locked else VoicePhase.Paused
+                    },
+                    onSend = { sendVoice() }
+                )
             }
         }
     }
