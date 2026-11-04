@@ -36,6 +36,7 @@ interface ChatRepository {
         replyText: String? = null
     )
     fun sendAttachment(chatId: String, kind: MessageKind, label: String)
+    fun sendVoice(chatId: String, durationLabel: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
     fun deleteMessage(chatId: String, messageId: String)
     fun createGroup(name: String, description: String, memberCount: Int): Group
@@ -99,6 +100,27 @@ class InMemoryChatRepository(
             )
         }
         updatePreview(chatId, body, DeliveryState.Sending)
+        advanceState(chatId, messageId)
+    }
+
+    override fun sendVoice(chatId: String, durationLabel: String) {
+        val stream = conversations[chatId] ?: return
+        val messageId = "local-${messageIds.incrementAndGet()}"
+        stream.update { current ->
+            current + Message(
+                id = messageId,
+                chatId = chatId,
+                authorId = "me",
+                authorName = profile.fullName,
+                text = "Voice message",
+                timestamp = System.currentTimeMillis(),
+                isMine = true,
+                kind = MessageKind.Voice,
+                state = DeliveryState.Sending,
+                durationLabel = durationLabel
+            )
+        }
+        updatePreview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
         advanceState(chatId, messageId)
     }
 

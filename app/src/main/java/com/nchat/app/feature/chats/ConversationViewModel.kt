@@ -99,6 +99,10 @@ class ConversationViewModel(
         repository.leaveGroup(chatId)
     }
 
+    fun onSendVoice(durationLabel: String) {
+        repository.sendVoice(chatId, durationLabel)
+    }
+
     fun onSendAttachment(kind: MessageKind) {
         repository.sendAttachment(
             chatId = chatId,

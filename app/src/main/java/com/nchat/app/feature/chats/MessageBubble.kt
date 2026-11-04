@@ -3,6 +3,7 @@
 package com.nchat.app.feature.chats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +46,7 @@ import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
+import kotlinx.coroutines.delay
 
 /** Glass pill that separates messages by day. */
 @Composable
@@ -148,7 +151,9 @@ fun MessageBubble(
                 )
             }
 
-            if (message.kind == MessageKind.Text || message.text.isNotBlank()) {
+            if (message.kind != MessageKind.Voice &&
+                (message.kind == MessageKind.Text || message.text.isNotBlank())
+            ) {
                 Text(
                     text = message.text,
                     style = MaterialTheme.typography.bodyLarge,
@@ -319,9 +324,30 @@ private fun VideoContent(mine: Boolean) {
 
 @Composable
 private fun VoiceContent(duration: String, mine: Boolean) {
+    var playing by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(0f) }
+    val totalMs = remember(duration) { parseVoiceDuration(duration) }
+
+    LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        while (true) {
+            delay(100)
+            val next = progress + 100f / totalMs
+            if (next >= 1f) {
+                progress = 0f
+                playing = false
+                break
+            }
+            progress = next
+        }
+    }
+
+    val accent = if (mine) Color.White else MaterialTheme.colorScheme.primary
     Row(
         modifier = Modifier
             .width(190.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { playing = !playing }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -333,30 +359,38 @@ private fun VoiceContent(duration: String, mine: Boolean) {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Rounded.PlayArrow,
-                contentDescription = "Play voice message",
+                imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (playing) "Pause voice message" else "Play voice message",
                 tint = Color.White,
                 modifier = Modifier.size(18.dp)
             )
         }
-        Row(
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                .padding(horizontal = 8.dp)
         ) {
-            repeat(22) { index ->
-                val barHeight = (4 + (index * 5) % 12).dp
-                Box(
-                    modifier = Modifier
-                        .width(2.5.dp)
-                        .height(barHeight)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(
-                            if (mine) Color(0xCCFFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
-                        )
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                repeat(22) { index ->
+                    val barHeight = (4 + (index * 5) % 12).dp
+                    val played = index / 22f <= progress
+                    Box(
+                        modifier = Modifier
+                            .width(2.5.dp)
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                if (played) {
+                                    accent
+                                } else {
+                                    accent.copy(alpha = 0.4f)
+                                }
+                            )
+                    )
+                }
             }
         }
         Text(
@@ -365,6 +399,16 @@ private fun VoiceContent(duration: String, mine: Boolean) {
             color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.textMuted
         )
     }
+}
+
+private fun parseVoiceDuration(label: String): Int {
+    val parts = label.split(":")
+    val seconds = if (parts.size == 2) {
+        (parts[0].toIntOrNull() ?: 0) * 60 + (parts[1].toIntOrNull() ?: 0)
+    } else {
+        parts.lastOrNull()?.toIntOrNull() ?: 1
+    }
+    return seconds.coerceAtLeast(1) * 1000
 }
 
 @Composable
