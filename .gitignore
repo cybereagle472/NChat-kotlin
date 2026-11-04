@@ -6,3 +6,5 @@ build/
 local.properties
 .idea/
 .ci/
+server/target/
+server/data/
