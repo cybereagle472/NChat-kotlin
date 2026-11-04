@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 interface ChatRepository {
     val chats: StateFlow<List<Chat>>
+    val groups: StateFlow<List<Group>>
     fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>>
     fun sendMessage(
         chatId: String,
@@ -37,6 +38,7 @@ interface ChatRepository {
     fun sendAttachment(chatId: String, kind: MessageKind, label: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
     fun deleteMessage(chatId: String, messageId: String)
+    fun createGroup(name: String, description: String, memberCount: Int): Group
     fun markRead(chatId: String)
 }
 
@@ -48,12 +50,14 @@ class InMemoryChatRepository(
     private val _chats = MutableStateFlow(seed.chats())
     override val chats: StateFlow<List<Chat>> = _chats.asStateFlow()
 
+    private val _groups = MutableStateFlow(seed.groups())
+    override val groups: StateFlow<List<Group>> = _groups.asStateFlow()
+
     private val conversations = mutableMapOf<String, MutableStateFlow<List<Message>>>()
     private val messageIds = AtomicLong(0L)
 
     val profile: UserProfile = MockDataProvider.profile
     val statuses: List<StatusUpdate> = MockDataProvider.statuses()
-    val groups: List<Group> = MockDataProvider.groups()
     val friends: List<Friend> = MockDataProvider.friends()
     val calls: List<CallRecord> = MockDataProvider.calls()
 
@@ -166,6 +170,20 @@ class InMemoryChatRepository(
                 }
             }
         }
+    }
+
+    override fun createGroup(name: String, description: String, memberCount: Int): Group {
+        val group = Group(
+            id = "group-${messageIds.incrementAndGet()}",
+            name = name,
+            description = description,
+            memberCount = memberCount + 1,
+            avatarEmoji = "👥",
+            lastActivity = "Group created",
+            lastActivityAt = System.currentTimeMillis()
+        )
+        _groups.update { current -> listOf(group) + current }
+        return group
     }
 
     override fun markRead(chatId: String) {
