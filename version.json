@@ -1,6 +1,6 @@
 {
-  "versionCode": 19,
-  "versionName": "1.0.11",
+  "versionCode": 20,
+  "versionName": "1.0.12",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.11 — your editable profile. Tapping the profile card at the top of Settings now opens the Profile page: a large avatar with a camera button, the Name and About rows you can edit in place with Save and Cancel, and the read-only Username and Phone rows. Changing the photo opens the real system photo picker and then the Move and Scale cropper from the reference — drag to reposition, pinch or use the slider and +/- buttons to zoom between 100% and 400%, double-tap to snap-zoom, rotate in 90° steps and confirm with the gradient check; the circle you framed is what gets saved. Your new name, bio and photo appear everywhere in the app straight away."
+  "releaseNotes": "NChat 1.0.12 — sign in, sign up and onboarding. The app now opens on the reference auth screen: violet gradient with floating circles, the gradient logo card, Welcome Back / Create Account copy, email and password fields with show/hide toggles, live 'email available / taken' checks while signing up, inline error banners and the Sign In / Sign Up switch. Creating an account leads to the one-last-step profile screen — gradient avatar styles, your name, a username with live availability and a 150-character bio — and then straight into the chats. Your session is remembered across launches, and Settings now has a Log Out button that returns you to the sign-in screen."
 }

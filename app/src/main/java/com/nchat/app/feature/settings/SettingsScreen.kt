@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
@@ -160,6 +161,35 @@ fun SettingsScreen(
                                 }
                             },
                             last = true
+                        )
+                    }
+                }
+
+                item(key = "logout") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = NcSpace.md)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xCCFFFFFF))
+                            .border(1.dp, Color(0x99FECACA), RoundedCornerShape(16.dp))
+                            .clickable { ServiceLocator.authRepository.signOut() }
+                            .padding(vertical = 15.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Logout,
+                            contentDescription = null,
+                            tint = Color(0xFFDC2626),
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Text(
+                            text = "Log Out",
+                            color = Color(0xFFDC2626),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                 }
