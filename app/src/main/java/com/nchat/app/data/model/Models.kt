@@ -1,14 +1,18 @@
 package com.nchat.app.data.model
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.Serializable
 
 /** Message payload types, mirroring the icons used in the reference previews. */
+@Serializable
 enum class MessageKind { Text, Photo, Video, Voice, Document, Location }
 
 /** Delivery state: single grey tick when sent, double sky tick when read. */
+@Serializable
 enum class DeliveryState { Sending, Sent, Read }
 
 @Immutable
+@Serializable
 data class Reaction(
     val emoji: String,
     val count: Int,
@@ -43,6 +47,7 @@ data class Message(
 
 /** A row in the Chats tab. */
 @Immutable
+@Serializable
 data class Chat(
     val id: String,
     val title: String,

@@ -110,6 +110,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.nchat.app.core.designsystem.NcToaster
+import com.nchat.app.core.util.MediaPreparer
+import com.nchat.app.core.util.PickedFile
 import com.nchat.app.core.util.readPickedFile
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
@@ -189,10 +191,27 @@ fun ConversationScreen(
         val kind = pendingKind
         pendingKind = null
         if (uri == null || kind == null) return
-        val file = readPickedFile(context, uri)
-        if (file == null) {
+        val picked = readPickedFile(context, uri)
+        if (picked == null) {
             NcToaster.show("That file is too large (max 24 MB)")
             return
+        }
+        // Photos are re-encoded before upload: EXIF (GPS, device) is dropped, the file drops
+        // from megabytes to a few hundred KB, and a thumbnail travels with it.
+        val file = if (MediaPreparer.canCompress(picked.mimeType)) {
+            val prepared = MediaPreparer.prepare(context, uri, picked.name)
+            if (prepared == null) {
+                picked
+            } else {
+                PickedFile(
+                    name = prepared.fileName,
+                    mimeType = prepared.mimeType,
+                    bytes = prepared.bytes,
+                    thumbnail = prepared.thumbnail
+                )
+            }
+        } else {
+            picked
         }
         viewModel.onSendMedia(kind, file)
     }

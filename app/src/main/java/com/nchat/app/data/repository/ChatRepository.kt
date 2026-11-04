@@ -32,7 +32,8 @@ interface ChatRepository {
         fileName: String,
         mimeType: String,
         bytes: ByteArray,
-        caption: String? = null
+        caption: String? = null,
+        thumbnail: ByteArray? = null
     )
     fun sendVoice(chatId: String, durationLabel: String)
     /** Rewrites the body of my own text message and flags it as edited. */

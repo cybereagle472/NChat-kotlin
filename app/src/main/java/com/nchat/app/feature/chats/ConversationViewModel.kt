@@ -131,7 +131,8 @@ class ConversationViewModel(
             kind = kind,
             fileName = file.name,
             mimeType = file.mimeType,
-            bytes = file.bytes
+            bytes = file.bytes,
+            thumbnail = file.thumbnail
         )
     }
 

@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.22** (`versionCode 30`)
+- Current version: **1.0.23** (`versionCode 31`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -225,14 +225,17 @@ ApiClient (root + socketRoot) ──► every repository ──► every screen
   `PUBLIC_API_URL` (env, default `http://localhost:$PORT`) — exactly the worker's variable —
   and allows cross-origin requests the way the worker's `cors({origin:'*'})` does.
 
-### Runtime override
+### No in-app server switcher
 
-`ServerConfig.effective()` reads **Settings ▸ Server** first (stored in
-`SharedPreferences("nchat_server")`), then the baked constant. Clearing the field returns to
-the build's address — never to offline mode. The value is read once at start-up (singletons
-own the sockets), so the dialog says "reopen NChat after saving". Debug builds also allow
-cleartext HTTP (`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be the
-server; release builds stay HTTPS-only.
+The address is a property of the APK, exactly like `VITE_API_URL` is a property of the web
+bundle: **Settings has no Server field** (removed in 1.0.23), and `ServerConfig` is gone —
+`ApiClient` takes `BuildConfig.NCHAT_API_BASE` directly. To point an install at another
+backend, build it with a different `NCHAT_API_BASE`.
+
+A build with no address cannot sign in anywhere, so it opens `MissingServerScreen` and says
+so, instead of failing every request. Debug builds allow cleartext HTTP
+(`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be the server; release builds
+stay HTTPS-only.
 
 ### Transport rules (`network/`)
 
@@ -396,6 +399,7 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
 | 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
 | 1.0.22 | 30 | *this build* | **Security & privacy pass** (see `SECURITY.md`). Tokens are AES-256-GCM encrypted under an Android Keystore key; the server throttles login/sign-up, caps upload size, confines media keys to the media directory (path-traversal fix), streams media instead of buffering it, and no longer ships a personal admin address in the source. |
+| 1.0.23 | 31 | *this build* | **Photos shrink, previews fly, the list opens instantly — and the server switcher is gone.** Picked photos are re-encoded to 1600 px / JPEG 85 with EXIF (GPS) stripped and a 320 px thumbnail uploaded alongside; the chat list paints from an on-device cache before the network answers (cleared on sign-out); media is fetched with the same bearer token as the API, so a private-media server works without UI changes. Settings ▸ Server was removed: the address is fixed at build time, bare hosts are normalised to `https://`. |
 
 
 ---

@@ -2,6 +2,7 @@ package com.nchat.app.data.repository
 
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.AuthResponse
+import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +24,9 @@ import java.io.IOException
 class RemoteAuthRepository(
     private val api: NChatApi,
     private val tokens: TokenStore,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /** On-device caches that must not survive a sign-out. */
+    private val cache: ChatListCache? = null
 ) : AuthRepository {
 
     private val _session = MutableStateFlow(tokens.email)
@@ -94,6 +97,7 @@ class RemoteAuthRepository(
         val refresh = tokens.refreshToken
         // Forget the session immediately: signing out must never depend on the network.
         tokens.clear()
+        cache?.clear()
         _session.value = null
         _profileComplete.value = false
         if (refresh != null) {

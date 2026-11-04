@@ -30,6 +30,8 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
 ```
 
 - `grep -rn "workers.dev" app/src/main/java` → **0 hits**.
+- There is **no runtime server switcher**: the address is a build property, so a device
+  cannot be redirected to a look-alike server by someone who briefly has the phone.
 - The single committed value lives in `nchat.properties` and can be removed from git entirely
   by setting `NCHAT_API_BASE` as a repository Actions variable/secret.
 
@@ -40,7 +42,7 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
 | Access token (15 min) | `SecurePrefs` — AES-256-GCM, key in the **Android Keystore**, not exportable |
 | Refresh token (30 days, single-use rotation) | same |
 | Identity (id, email, name, username, avatar URL) | same |
-| Server override | plain preference — it is not a secret |
+| Chat-list cache | plain JSON in app storage — chats and names only, wiped on sign-out |
 
 - A copied `SharedPreferences` file is useless on another device: the key never leaves the
   Keystore.
