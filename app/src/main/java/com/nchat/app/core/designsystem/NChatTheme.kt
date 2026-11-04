@@ -3,7 +3,6 @@ package com.nchat.app.core.designsystem
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -13,31 +12,26 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * Root theme for NChat. Applies the Material 3 colour scheme, the NChat typography and
- * shape scale, and the extra semantic colours used by chat surfaces.
+ * NChat theme. The reference client is a single light "glassmorphism violet" theme,
+ * so there is no dark variant to mirror yet.
  */
 @Composable
-fun NChatTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    val colorScheme = if (darkTheme) NcDarkColorScheme else NcLightColorScheme
-
+fun NChatTheme(content: @Composable () -> Unit) {
     val view = LocalView.current
     if (!view.isInEditMode) {
         val activity = view.context.findActivity()
         if (activity != null) {
             SideEffect {
                 val controller = WindowCompat.getInsetsController(activity.window, view)
-                controller.isAppearanceLightStatusBars = !darkTheme
-                controller.isAppearanceLightNavigationBars = !darkTheme
+                controller.isAppearanceLightStatusBars = false
+                controller.isAppearanceLightNavigationBars = true
             }
         }
     }
 
-    CompositionLocalProvider(LocalNcColors provides extraColorsFor(darkTheme)) {
+    CompositionLocalProvider(LocalNcColors provides extraColors()) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = NcColorScheme,
             typography = NcTypography,
             shapes = NcShapes,
             content = content
@@ -45,7 +39,6 @@ fun NChatTheme(
     }
 }
 
-/** Access point for NChat specific colours that Material 3 does not expose. */
 object NcTheme {
     val extra: NcExtraColors
         @Composable

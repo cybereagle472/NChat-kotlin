@@ -61,11 +61,7 @@ class SettingsViewModel : ViewModel() {
                     it.copy(
                         installing = false,
                         dialogVisible = if (launched) false else it.dialogVisible,
-                        notice = if (launched) {
-                            null
-                        } else {
-                            "Allow NChat to install unknown apps, then tap Install again."
-                        }
+                        notice = if (launched) null else "Allow NChat to install unknown apps, then tap Install again."
                     )
                 }
             } catch (error: Exception) {
