@@ -36,7 +36,7 @@ jobs:
           NCHAT_API_BASE: ${{ vars.NCHAT_API_BASE || secrets.NCHAT_API_BASE }}
         run: |
           if [ -z "$NCHAT_API_BASE" ]; then
-            echo "::warning title=No backend address::NCHAT_API_BASE is empty — this APK would ask for a server on first launch."
+            echo "::warning title=No backend address::NCHAT_API_BASE is empty — this APK would show 'This build has no server'."
             if [ "$GITHUB_REF" = "refs/heads/main" ]; then
               echo "::error title=Release blocked::Refusing to publish a release that has no backend address."
               exit 1
@@ -52,7 +52,7 @@ jobs:
           KEY_PASSWORD: NChatDemo2026!
           # Baked into BuildConfig.NCHAT_API_BASE. Set it as a repository variable (or
           # secret) to keep the address out of git entirely; when unset the build still
-          # succeeds and the app asks for a server on first launch.
+          # succeeds, but the app can only show "This build has no server".
           NCHAT_API_BASE: ${{ vars.NCHAT_API_BASE || secrets.NCHAT_API_BASE }}
         run: |
           set -o pipefail

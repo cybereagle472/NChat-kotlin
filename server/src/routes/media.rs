@@ -5,16 +5,20 @@
 //! the frontend expects. Reads support `Range` so audio/video scrubbing works.
 
 use axum::body::Body;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use hmac::{Hmac, Mac};
 use rusqlite::{params, OptionalExtension};
-use tokio::io::AsyncReadExt;
 use serde_json::{json, Value};
+use sha2::Sha256;
+use std::collections::HashMap;
+use tokio::io::AsyncReadExt;
 
 use crate::error::{ApiError, ApiResult};
-use crate::util::new_id;
+use crate::util::{new_id, now_secs};
 use crate::AppState;
 
 fn media_type_from_mime(mime: &str) -> &'static str {
@@ -200,18 +204,185 @@ fn safe_media_path(media_dir: &FsPath, key: &str) -> Option<PathBuf> {
     path.starts_with(media_dir).then_some(path)
 }
 
-/// `GET /media/file/*key` — public read with byte-range support (HTTP 206).
+// ------------------------------------------------------------ signed links
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// `sig = base64url(HMAC-SHA256(secret, "media:<key>:<unix exp>"))`.
+///
+/// The signature covers the key *and* the expiry, so a link can neither be
+/// pointed at a different file nor kept alive by editing the query string.
+fn sign_link(secret: &str, key: &str, exp: i64) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(format!("media:{key}:{exp}").as_bytes());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
+/// Signature check (constant time) plus expiry check.
+fn verify_link(secret: &str, key: &str, exp: i64, signature: &str) -> bool {
+    if exp <= now_secs() {
+        return false;
+    }
+    let expected = sign_link(secret, key, exp);
+    constant_time_eq(expected.as_bytes(), signature.as_bytes())
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in left.iter().zip(right) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
+/// Who may read a stored object.
+///
+/// A file is private to the conversation it belongs to: the uploader, both ends
+/// of a 1:1 message, every member of the group it was sent to, or the audience
+/// of a status. Avatars are the documented exception — they are shown in search
+/// results and member lists, so any signed-in user may load them.
+mod access {
+    use super::*;
+    use crate::privacy::{are_friends, Visibility};
+
+    pub fn can_read(state: &AppState, user_id: &str, key: &str) -> ApiResult<bool> {
+        state.db.with(|conn| {
+            let owned: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM media_attachments WHERE file_path = ? AND uploader_id = ?",
+                    params![key, user_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if owned.is_some() {
+                return Ok(true);
+            }
+
+            // ---- 1:1 messages ------------------------------------------------
+            let mut statement = conn.prepare(
+                "SELECT sender_id, receiver_id FROM messages
+                 WHERE instr(coalesce(media_url, ''), ?1) > 0
+                    OR instr(coalesce(thumbnail_url, ''), ?1) > 0",
+            )?;
+            let pairs = statement
+                .query_map([key], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if !pairs.is_empty() {
+                return Ok(pairs
+                    .iter()
+                    .any(|(sender, receiver)| sender == user_id || receiver == user_id));
+            }
+
+            // ---- group messages ----------------------------------------------
+            let mut statement = conn.prepare(
+                "SELECT group_id FROM group_messages
+                 WHERE instr(coalesce(media_url, ''), ?1) > 0
+                    OR instr(coalesce(thumbnail_url, ''), ?1) > 0",
+            )?;
+            let groups = statement
+                .query_map([key], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if !groups.is_empty() {
+                for group_id in groups {
+                    let member: Option<i64> = conn
+                        .query_row(
+                            "SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?",
+                            params![group_id, user_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if member.is_some() {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
+            }
+
+            // ---- statuses (unexpired, audience-checked) -----------------------
+            let mut statement = conn.prepare(
+                "SELECT user_id, privacy FROM statuses
+                 WHERE expires_at > ?2
+                   AND (instr(coalesce(content_url, ''), ?1) > 0
+                        OR instr(coalesce(thumbnail_url, ''), ?1) > 0)",
+            )?;
+            let statuses = statement
+                .query_map(params![key, crate::util::now_iso()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (author, privacy) in statuses {
+                if author == user_id {
+                    return Ok(true);
+                }
+                let friend = are_friends(conn, user_id, &author)?;
+                let audience = Visibility::parse(&privacy).unwrap_or(Visibility::Contacts);
+                if audience.allows(false, friend) {
+                    return Ok(true);
+                }
+            }
+
+            // ---- avatars ------------------------------------------------------
+            let avatar: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM users WHERE instr(coalesce(avatar_url, ''), ?1) > 0
+                     UNION ALL
+                     SELECT 1 FROM groups WHERE instr(coalesce(avatar_url, ''), ?1) > 0
+                     LIMIT 1",
+                    [key],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(avatar.is_some())
+        })
+    }
+}
+
+/// `GET /media/file/*key` — read with byte-range support (HTTP 206).
+///
+/// Authorisation is checked before a single byte is read:
+/// - a signed link (`?exp=&sig=`), minted by `/media/link`, needs no token —
+///   that is the "share outside the app" path;
+/// - otherwise the caller's bearer token must belong to the conversation that
+///   owns the file. A stranger gets `404`, so the response never confirms that
+///   a key exists.
 ///
 /// The body is streamed from disk: a 200 MB video used to be read into memory
 /// for every request, which is a one-line denial of service on a small VPS.
 pub async fn file(
     State(state): State<AppState>,
     Path(key): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let Some(path) = safe_media_path(&state.media_dir, &key) else {
         return Err(ApiError::not_found("Not found"));
     };
+
+    if state.media_requires_auth {
+        let signed = match (
+            query
+                .get("exp")
+                .and_then(|value| value.parse::<i64>().ok()),
+            query.get("sig"),
+        ) {
+            (Some(exp), Some(signature)) => verify_link(state.secret.as_str(), &key, exp, signature),
+            _ => false,
+        };
+        if !signed {
+            let user_id = state
+                .current_user(&headers)
+                .map_err(|_| ApiError::unauthorized("This file needs a signed-in request"))?;
+            if !access::can_read(&state, &user_id, &key)? {
+                return Err(ApiError::not_found("Not found"));
+            }
+        }
+    }
 
     let mut handle = match tokio::fs::File::open(&path).await {
         Ok(handle) => handle,
@@ -262,7 +433,11 @@ pub async fn file(
         .header(header::CONTENT_LENGTH, length)
         .header(
             header::CACHE_CONTROL,
-            "public, max-age=31536000, immutable",
+            if state.media_requires_auth {
+                "private, max-age=3600"
+            } else {
+                "public, max-age=31536000, immutable"
+            },
         )
         .header(header::ETAG, format!("{:?}", total.to_string()))
         .status(status);
@@ -285,6 +460,43 @@ pub async fn file(
     builder
         .body(Body::from_stream(stream))
         .map_err(|error| ApiError::internal(format!("could not build response: {error}")))
+}
+
+/// `GET /media/link?key=<key>` — mint a short-lived signed URL for a file the
+/// caller is already allowed to read.
+///
+/// Signing is what makes a link safe to hand to something that cannot send a
+/// bearer token (an external player, a sharing sheet). It expires after
+/// `NCHAT_MEDIA_TTL` seconds and only ever unlocks that one key.
+pub async fn link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> ApiResult<Json<Value>> {
+    let user_id = state.current_user(&headers)?;
+
+    let key = query.get("key").cloned().unwrap_or_default();
+    if key.is_empty() {
+        return Err(ApiError::bad_request("key is required"));
+    }
+    if safe_media_path(&state.media_dir, &key).is_none() {
+        return Err(ApiError::not_found("Not found"));
+    }
+    if !access::can_read(&state, &user_id, &key)? {
+        return Err(ApiError::not_found("Not found"));
+    }
+
+    let exp = now_secs() + state.media_link_ttl;
+    let signature = sign_link(state.secret.as_str(), &key, exp);
+    Ok(Json(json!({
+        "key": key,
+        "url": format!(
+            "{}/media/file/{}?exp={}&sig={}",
+            state.public_api_url, key, exp, signature
+        ),
+        "expires_at": exp,
+        "expires_in": state.media_link_ttl,
+    })))
 }
 
 /// `DELETE /media/file/*key` — uploader only.
@@ -364,6 +576,32 @@ mod tests {
         assert!(safe_media_path(dir, "user-1/..").is_none());
         assert!(safe_media_path(dir, "").is_none());
         assert!(safe_media_path(dir, ".").is_none());
+    }
+
+    #[test]
+    fn signatures_bind_the_key_and_the_expiry() {
+        let secret = "unit-test-secret";
+        let exp = now_secs() + 60;
+        let signature = sign_link(secret, "user-1/abc.png", exp);
+
+        assert!(verify_link(secret, "user-1/abc.png", exp, &signature));
+        // Another key with the same signature must fail.
+        assert!(!verify_link(secret, "user-1/other.png", exp, &signature));
+        // Extending the expiry must fail.
+        assert!(!verify_link(secret, "user-1/abc.png", exp + 60, &signature));
+        // A different secret must fail.
+        assert!(!verify_link("other", "user-1/abc.png", exp, &signature));
+        // Truncated or empty signatures must fail without panicking.
+        assert!(!verify_link(secret, "user-1/abc.png", exp, ""));
+        assert!(!verify_link(secret, "user-1/abc.png", exp, &signature.as_bytes()[..8]));
+    }
+
+    #[test]
+    fn expired_links_are_rejected() {
+        let secret = "unit-test-secret";
+        let past = now_secs() - 1;
+        let signature = sign_link(secret, "user-1/abc.png", past);
+        assert!(!verify_link(secret, "user-1/abc.png", past, &signature));
     }
 
     #[test]

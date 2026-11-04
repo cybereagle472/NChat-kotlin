@@ -42,8 +42,7 @@ object NcJson {
  * Thin HTTP layer over the Rust backend (`server/`).
  *
  * The app talks to it only through the repositories. The base URL comes from
- * `BuildConfig.NCHAT_API_BASE` (the deployed worker) and can be overridden per install in
- * Settings ▸ Server.
+ * `BuildConfig.NCHAT_API_BASE`, injected at build time — there is no runtime override.
  *
  * Access tokens live 15 minutes; every request that gets a 401 is refreshed once (the server
  * rotates refresh tokens, so refreshes are serialised through [refreshMutex]) and retried.
@@ -137,6 +136,13 @@ class ApiClient(
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
+
+    /**
+     * Renew the access token through the same single-flight mutex the REST layer uses.
+     * The image loader ([com.nchat.app.network.MediaImages]) calls this when a media read
+     * comes back `401`; sharing the mutex means one refresh, not one per picture.
+     */
+    suspend fun renewAccessToken(): String? = refreshAccessToken()
 
     private suspend fun refreshAccessToken(): String? = refreshMutex.withLock {
         val refresh = tokens.refreshToken

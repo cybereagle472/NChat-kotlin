@@ -63,26 +63,31 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
 | Credential throttling | `/auth/login` and `/auth/signup` are limited per (client, address) pair: `NCHAT_AUTH_RATE` attempts per `NCHAT_AUTH_WINDOW_SECS` (default 10 / 300 s) → `429 Too Many Attempts`. |
 | Uploads | Streamed to disk, capped at `NCHAT_MAX_UPLOAD_MB` (default 100) → `413`. Keys are generated server-side; client filenames are stored as metadata only. |
 | Stored media paths | Every read/delete key is validated against `..`, absolute paths and backslashes before it touches the filesystem; the resolved path must stay inside the media directory. Covered by unit tests in `server/src/routes/media.rs`. |
-| Media reads | Streamed in chunks with `Range` support — a 200 MB video no longer costs 200 MB of RAM per request. |
+| Media reads | Streamed in chunks with `Range` support — a 200 MB video no longer costs 200 MB of RAM per request. Authorisation is checked **before** the first byte: the caller's token must belong to the conversation that owns the file (uploader, either end of a 1:1 message, a member of the group, or a status audience), or the URL must carry a valid `?exp=&sig=` signature from `/media/link`. A stranger gets `404`, not `403`, so a response never confirms that a key exists. |
 | Admin routes | `/admin/*` accepts only the account named in `NCHAT_ADMIN_EMAIL`. **There is no default address in the source**: with the variable unset, nobody is an admin. |
 | CORS | Permissive (`*`), exactly like the reference worker, because the web client is a separate origin. The APK does not use CORS. Tighten it at the edge (`NCHAT_ALLOWED_ORIGINS` is the tracked next step). |
 | Logging | `TraceLayer` logs method + path + status. No tokens, no request bodies, no passwords. |
 
 ## 5. Deliberate limits (say them out loud)
 
-1. **Media URLs are public.** `/media/file/<user>/<uuid>.<ext>` needs no token, matching the
-   reference worker's public bucket. Keys are UUIDs, so they are not *guessable*, but anyone
-   who receives a link (a forwarded message, a screenshot of a URL, a proxy log) can open the
-   file. Making reads private needs the client to fetch with a token and signed URLs for the
-   browser — tracked as the next security task, and it diverges from the worker, so it must be
-   an explicit switch.
+1. **Media privacy is enforced by this server, not yet by the deployed worker.** `/media/file/*`
+   now requires the caller's token (scoped to the conversation) or a signed, expiring link —
+   the app sends that token on every image through `network/MediaImages.kt`. Two consequences
+   worth stating plainly:
+   - Against the Rust backend in `server/`, a forwarded URL is useless to a third account.
+   - The Cloudflare worker in `nchat-friends` still serves files publicly, so a link keeps
+     working for anyone who has it until that deployment adopts the same check. The APK is
+     already compatible with both: the extra `Authorization` header is ignored by a public
+     endpoint, and the image loader renews the session once on `401`.
+   `NCHAT_MEDIA_PUBLIC=1` restores the old public behaviour for a migration window.
 2. **The server can read messages.** There is no end-to-end encryption; the backend stores
    plaintext message content. E2EE is a protocol change (per-conversation keys, no server-side
    search), not a patch.
 3. **No push-based 2FA / device list yet.** Sessions are bearer tokens; revoking one device
    means rotating the password (which invalidates every session) or clearing that install.
-4. **The APK does not pin certificates.** Pinning would harden against corporate MITM proxies
-   but breaks the "point this build at your own server" feature.
+4. **The APK does not pin certificates.** Pinning would harden against corporate MITM proxies,
+   but it also blocks a rebuild against a new host (the address is baked in at build time, so a
+   rotation would ship a locked APK). Revisit if the backend host becomes permanent.
 
 ## 6. Deployment checklist
 

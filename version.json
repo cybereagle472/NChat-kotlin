@@ -2,5 +2,5 @@
   "versionCode": 31,
   "versionName": "1.0.23",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.23 — faster and more private. Photos are now resized and compressed before they are sent (a 6 MB camera shot becomes a few hundred KB), their hidden GPS/EXIF data is stripped, and a small thumbnail travels with each picture so chats paint instantly. The chat list also opens from an on-device cache and refreshes in the background. The in-app Server option is gone: the backend is fixed when the app is built, like any other messaging app."
+  "releaseNotes": "NChat 1.0.23 — faster and more private. Photos are now resized and compressed before they are sent (a 6 MB camera shot becomes a few hundred KB), their hidden GPS/EXIF data is stripped, and a small thumbnail travels with each picture so chats paint instantly. The chat list opens from an on-device cache and refreshes in the background. Photos are now private: the server only hands a file to the people in that chat, and the app proves who it is on every image it loads. Shared links expire. The in-app Server option is gone: the backend is fixed when the app is built, like any other messaging app."
 }

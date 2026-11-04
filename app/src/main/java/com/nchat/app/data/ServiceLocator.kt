@@ -1,6 +1,7 @@
 package com.nchat.app.data
 
 import android.content.Context
+import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.UserProfile
@@ -20,6 +21,7 @@ import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
+import com.nchat.app.network.MediaImages
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
@@ -59,6 +61,13 @@ object ServiceLocator {
     private val apiClient: ApiClient by lazy { ApiClient(BuildConfig.NCHAT_API_BASE, tokens) }
     val api: NChatApi by lazy { NChatApi(apiClient) }
     val socket: NChatSocket by lazy { NChatSocket(apiClient, tokens, appScope) }
+
+    /**
+     * Coil loader used by every `AsyncImage` in the app. It is registered as the singleton
+     * in [com.nchat.app.NChatApplication], so photos carry the session token the backend
+     * now requires (see [MediaImages]).
+     */
+    val images: ImageLoader by lazy { MediaImages.loader(requireContext(), apiClient, tokens) }
 
     /** The backend this build talks to; empty only for a misconfigured build. */
     val serverUrl: String get() = BuildConfig.NCHAT_API_BASE.trim().trimEnd('/')

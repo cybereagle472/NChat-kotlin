@@ -43,6 +43,13 @@ pub struct AppState {
     pub max_upload_bytes: u64,
     /// Throttles `/auth/login` and `/auth/signup` (`NCHAT_AUTH_RATE`, default 10 / 5 min).
     pub auth_limiter: Arc<ratelimit::RateLimiter>,
+    /// When `true` (the default), `/media/file/*` only answers a caller who is part of
+    /// the conversation that owns the object, or a short-lived signed link. The
+    /// reference relied on R2 bucket privacy; a self-hosted server has to check.
+    /// `NCHAT_MEDIA_PUBLIC=1` restores the old public-bucket behaviour.
+    pub media_requires_auth: bool,
+    /// Lifetime of a signed media link, in seconds (`NCHAT_MEDIA_TTL`, default 600).
+    pub media_link_ttl: i64,
 }
 
 impl AppState {
@@ -58,6 +65,8 @@ impl AppState {
                 10,
                 std::time::Duration::from_secs(300),
             )),
+            media_requires_auth: true,
+            media_link_ttl: 600,
         }
     }
 
@@ -78,6 +87,17 @@ impl AppState {
 
     pub fn with_auth_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
         self.auth_limiter = Arc::new(limiter);
+        self
+    }
+
+    /// `true` = the old "anyone with the URL can read it" bucket behaviour.
+    pub fn with_public_media(mut self, public: bool) -> Self {
+        self.media_requires_auth = !public;
+        self
+    }
+
+    pub fn with_media_link_ttl(mut self, seconds: i64) -> Self {
+        self.media_link_ttl = seconds.max(1);
         self
     }
 
