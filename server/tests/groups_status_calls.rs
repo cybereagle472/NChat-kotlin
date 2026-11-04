@@ -159,6 +159,7 @@ async fn group_lifecycle_messages_and_read_state() {
     assert_eq!(body["messages"].as_array().map(Vec::len), Some(1));
 
     let (_, body) = app.call("GET", "/groups", Some(&grace_token), None).await;
+    eprintln!("DIAG groups={body}");
     assert_eq!(body["groups"][0]["unreadCount"], 1);
 
     let (status, _) = app
