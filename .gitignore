@@ -1,0 +1,7 @@
+build-output.log
+*.apk
+*.keystore
+.gradle/
+build/
+local.properties
+.idea/
