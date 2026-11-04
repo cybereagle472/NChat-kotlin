@@ -2,6 +2,7 @@ package com.nchat.app.data.local
 
 import android.content.Context
 import com.nchat.app.data.model.Chat
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -27,15 +28,19 @@ class ChatListCache(context: Context) {
 
     fun load(): List<Chat> = runCatching {
         if (!file.exists()) return emptyList()
-        json.decodeFromString<List<Chat>>(file.readText())
+        json.decodeFromString(LIST_SERIALIZER, file.readText())
     }.getOrDefault(emptyList())
 
     fun save(chats: List<Chat>) {
         if (chats.isEmpty()) return
         runCatching {
             file.parentFile?.mkdirs()
-            file.writeText(json.encodeToString(chats))
+            file.writeText(json.encodeToString(LIST_SERIALIZER, chats))
         }
+    }
+
+    private companion object {
+        val LIST_SERIALIZER = ListSerializer(Chat.serializer())
     }
 
     fun clear() {
