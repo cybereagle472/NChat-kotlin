@@ -1,7 +1,6 @@
 package com.nchat.app.feature.history
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,13 +28,12 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallMade
 import androidx.compose.material.icons.rounded.CallReceived
 import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.PhoneMissed
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.PhoneMissed
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,7 +58,6 @@ import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.model.CallRecord
-import kotlinx.coroutines.delay
 
 private enum class HistoryFilter(val label: String) {
     All("All"),
@@ -117,19 +114,17 @@ fun HistoryScreen(
                     EmptyHistory()
                 }
             } else {
-                itemsIndexed(
+                items(
                     items = visible,
-                    key = { _, call -> call.id }
-                ) { index, call ->
-                    SlideUpHistory(index) {
-                        HistoryRow(
+                    key = { it.id }
+                ) { call ->
+                    HistoryRow(
                             call = call,
                             onOpenProfile = { onViewProfile(call) },
                             onVoice = { onCall(call, false) },
                             onVideo = { onCall(call, true) },
-                            onMessage = { onMessage(call) }
-                        )
-                    }
+                        onMessage = { onMessage(call) }
+                    )
                 }
             }
         }
@@ -420,33 +415,6 @@ private fun EmptyHistory() {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp)
         )
-    }
-}
-
-@Composable
-private fun SlideUpHistory(index: Int, content: @Composable () -> Unit) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(index.toLong() * 30L)
-        visible = true
-    }
-    val alpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(300),
-        label = "historyAlpha"
-    )
-    val offset by animateFloatAsState(
-        targetValue = if (visible) 0f else 14f,
-        animationSpec = tween(300),
-        label = "historyOffset"
-    )
-    Box(
-        modifier = Modifier.graphicsLayer {
-            this.alpha = alpha
-            translationY = offset.dp.toPx()
-        }
-    ) {
-        content()
     }
 }
 

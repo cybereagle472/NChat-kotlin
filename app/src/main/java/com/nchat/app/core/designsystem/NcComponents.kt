@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,9 +28,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -228,67 +230,41 @@ fun NcBackdrop(
     content: @Composable () -> Unit
 ) {
     val extra = NcTheme.extra
-    val transition = rememberInfiniteTransition(label = "blobs")
-    val drift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 9000),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "drift"
-    )
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Brush.linearGradient(extra.bodyGradient))
     ) {
-        Blob(
-            color = NcPalette.Violet300,
-            size = 260.dp,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .graphicsLayer {
-                    translationX = -60.dp.toPx() + drift * 36.dp.toPx()
-                    translationY = 40.dp.toPx() - drift * 48.dp.toPx()
-                }
-        )
-        Blob(
-            color = NcPalette.Fuchsia500,
-            size = 220.dp,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .graphicsLayer {
-                    translationX = 70.dp.toPx() - drift * 40.dp.toPx()
-                    translationY = -30.dp.toPx() + drift * 30.dp.toPx()
-                }
-        )
-        Blob(
-            color = NcPalette.Violet500,
-            size = 180.dp,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .graphicsLayer {
-                    translationX = -40.dp.toPx()
-                    translationY = drift * 60.dp.toPx() - 40.dp.toPx()
-                }
-        )
+        // The three ambient blobs are painted once, in a single draw pass. They used to
+        // be composables driven by an infinite transition, which re-rasterised three
+        // large radial gradients every frame and made every screen feel sluggish.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val violet300 = NcPalette.Violet300
+            val fuchsia500 = NcPalette.Fuchsia500
+            val violet500 = NcPalette.Violet500
+
+            fun blob(color: Color, radius: Float, center: Offset) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(color.copy(alpha = 0.5f), color.copy(alpha = 0f)),
+                        center = center,
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = center
+                )
+            }
+
+            blob(violet300, 150.dp.toPx(), Offset(-24.dp.toPx(), 70.dp.toPx()))
+            blob(
+                fuchsia500,
+                125.dp.toPx(),
+                Offset(size.width + 34.dp.toPx(), size.height - 40.dp.toPx())
+            )
+            blob(violet500, 105.dp.toPx(), Offset(-16.dp.toPx(), size.height * 0.46f))
+        }
         content()
     }
-}
-
-@Composable
-private fun Blob(color: Color, size: Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    listOf(color.copy(alpha = 0.55f), color.copy(alpha = 0f))
-                )
-            )
-    )
 }
 
 /** Glass empty state with the gradient emoji tile from the reference chat list. */

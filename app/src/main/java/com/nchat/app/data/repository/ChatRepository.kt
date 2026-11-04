@@ -87,7 +87,8 @@ class InMemoryChatRepository(
     override fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>> =
         synchronized(conversations) {
             conversations.getOrPut(chatId) {
-                MutableStateFlow(seed.conversation(chatId, chatTitle))
+                val isGroup = _chats.value.firstOrNull { it.id == chatId }?.isGroup == true
+                MutableStateFlow(seed.conversation(chatId, chatTitle, isGroup))
             }.asStateFlow()
         }
 

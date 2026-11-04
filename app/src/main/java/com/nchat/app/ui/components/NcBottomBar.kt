@@ -1,7 +1,6 @@
 package com.nchat.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -90,21 +89,23 @@ private fun NavItem(
     modifier: Modifier = Modifier
 ) {
     val interaction = rememberPressSource()
+    // Tab selection has to read as instant: a short colour tween and a snappy scale,
+    // no bouncy spring overshoot (that overshoot is what felt like a delayed tap).
     val tint by animateColorAsState(
         targetValue = if (selected) Color.White else NcTheme.extra.textTertiary,
-        animationSpec = tween(300),
+        animationSpec = tween(120),
         label = "navTint"
     )
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.05f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = tween(140),
         label = "navScale"
     )
     // The reference also presses the chip down to 0.95 while it is held.
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         targetValue = if (pressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 900f),
+        animationSpec = tween(90),
         label = "navPress"
     )
 

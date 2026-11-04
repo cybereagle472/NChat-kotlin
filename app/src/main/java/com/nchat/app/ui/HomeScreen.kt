@@ -1,12 +1,10 @@
 package com.nchat.app.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -66,14 +64,12 @@ fun HomeScreen(
     Box(modifier = modifier.fillMaxSize()) {
         NcBackdrop(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = navigator.tab,
-                modifier = Modifier.weight(1f),
-                transitionSpec = {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                },
-                label = "tabContent"
-            ) { tab ->
+            // Swapping tabs is a plain composition swap: no cross-fade, no entry
+            // animations. The cross-fade used to keep both trees alive for 180ms and
+            // replayed every list's staggered entrance, which is what made switching
+            // feel slow.
+            Box(modifier = Modifier.weight(1f)) {
+                val tab = navigator.tab
                 when (tab) {
                     HomeTab.Chats -> ChatsScreen(
                         viewModel = chatsViewModel,

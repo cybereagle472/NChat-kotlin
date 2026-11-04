@@ -48,6 +48,7 @@ object MockDataProvider {
                 title = "Family ❤️",
                 avatarEmoji = "👨‍👩‍👧",
                 isGroup = true,
+                isTyping = true,
                 lastMessage = "Ammi: Khana kha liya sab ne?",
                 lastMessageAt = base - 11 * MINUTE,
                 unreadCount = 12,
@@ -131,15 +132,23 @@ object MockDataProvider {
         )
     }
 
-    fun conversation(chatId: String, chatTitle: String): List<Message> {
+    fun conversation(chatId: String, chatTitle: String, isGroup: Boolean = false): List<Message> {
         val base = now()
+        // Group chats alternate between members so the sender-run avatars and names read right.
+        val members = if (isGroup) {
+            listOf("Ammi", "Areeb Khan", "Hira Shah", "Usman Tariq")
+        } else {
+            listOf(chatTitle)
+        }
+        fun author(index: Int): Pair<String, String> =
+            "member-${index % members.size}" to members[index % members.size]
         return listOf(
             Message(
                 id = "$chatId-1",
                 chatId = chatId,
-                authorId = chatId,
-                authorName = chatTitle,
-                text = "Assalam o alaikum! Sab theek?",
+                authorId = author(0).first,
+                authorName = author(0).second,
+                text = if (isGroup) "Ammi: Khana kha liya sab ne?" else "Assalam o alaikum! Sab theek?",
                 timestamp = base - 1 * DAY - 4 * HOUR,
                 isMine = false
             ),
@@ -156,8 +165,8 @@ object MockDataProvider {
             Message(
                 id = "$chatId-3",
                 chatId = chatId,
-                authorId = chatId,
-                authorName = chatTitle,
+                authorId = author(1).first,
+                authorName = author(1).second,
                 text = "Ek cheez share karni thi, dekh lena.",
                 timestamp = base - 1 * DAY - 3 * HOUR,
                 isMine = false,
@@ -166,8 +175,8 @@ object MockDataProvider {
             Message(
                 id = "$chatId-4",
                 chatId = chatId,
-                authorId = chatId,
-                authorName = chatTitle,
+                authorId = author(1).first,
+                authorName = author(1).second,
                 text = "Voice message",
                 timestamp = base - 1 * DAY - 3 * HOUR + 2 * MINUTE,
                 isMine = false,
@@ -189,8 +198,8 @@ object MockDataProvider {
             Message(
                 id = "$chatId-6",
                 chatId = chatId,
-                authorId = chatId,
-                authorName = chatTitle,
+                authorId = author(2).first,
+                authorName = author(2).second,
                 text = "Photo",
                 timestamp = base - 5 * HOUR,
                 isMine = false,
@@ -213,8 +222,8 @@ object MockDataProvider {
             Message(
                 id = "$chatId-8",
                 chatId = chatId,
-                authorId = chatId,
-                authorName = chatTitle,
+                authorId = author(3).first,
+                authorName = author(3).second,
                 text = "Bhai call recording bhej de, urgent hai.",
                 timestamp = base - 2 * MINUTE,
                 isMine = false

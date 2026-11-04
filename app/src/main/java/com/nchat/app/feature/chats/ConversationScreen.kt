@@ -146,6 +146,17 @@ fun ConversationScreen(
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
     val group = groups.firstOrNull { it.id == chatId }
+    val isGroupChat = chat?.isGroup == true || group != null
+    // Group chats name who is typing; direct chats keep the anonymous "typing…" label.
+    val typingMember = remember(chat?.isTyping, isGroupChat, messages, groupFriends) {
+        if (chat?.isTyping == true && isGroupChat) {
+            // Name the last member who spoke — that is who the demo "types" next.
+            messages.lastOrNull { !it.isMine }?.authorName
+                ?: groupFriends.firstOrNull()?.name
+        } else {
+            null
+        }
+    }
 
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -167,6 +178,7 @@ fun ConversationScreen(
                 chatTitle = chatTitle,
                 chat = chat,
                 groupMemberCount = group?.memberCount,
+                typingMember = typingMember,
                 onBack = onBack,
                 onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
                 onOpenProfile = {
@@ -195,7 +207,8 @@ fun ConversationScreen(
                             MessageBubble(
                                 message = item.message,
                                 onLongPress = { viewModel.onSelectMessage(item.message.id) },
-                                showAuthor = chat?.isGroup == true || group != null
+                                showAuthor = isGroupChat,
+                                showAvatar = item.showSender
                             )
                         }
                     }
@@ -215,7 +228,18 @@ fun ConversationScreen(
                                     .background(Color.White)
                                     .padding(horizontal = 14.dp, vertical = 12.dp)
                             ) {
-                                NcTypingDots()
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (typingMember != null) {
+                                        Text(
+                                            text = "$typingMember is typing",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF7C3AED)
+                                        )
+                                        Box(modifier = Modifier.size(6.dp))
+                                    }
+                                    NcTypingDots()
+                                }
                             }
                         }
                     }
@@ -501,11 +525,14 @@ private fun ConversationHeader(
     chatTitle: String,
     chat: Chat?,
     groupMemberCount: Int?,
+    typingMember: String?,
     onBack: () -> Unit,
     onStartCall: (video: Boolean) -> Unit,
     onOpenProfile: () -> Unit
 ) {
+    val isActivity = typingMember != null || chat?.isTyping == true
     val status = when {
+        typingMember != null -> "$typingMember typing…"
         chat?.isTyping == true -> "typing…"
         chat?.isGroup == true -> groupMemberCount?.let { "$it members · tap for info" } ?: "group chat"
         chat?.isOnline == true -> "online"
@@ -560,12 +587,22 @@ private fun ConversationHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = status,
-                color = Color(0xCCFFFFFF),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = status,
+                    color = if (isActivity) Color(0xFF86EFAC) else Color(0xCCFFFFFF),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isActivity) {
+                    NcTypingDots(
+                        color = Color(0xFF86EFAC),
+                        dotSize = 4.dp,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+            }
         }
         }
 
@@ -980,7 +1017,7 @@ private sealed interface TimelineItem {
         override val key: String = "sep-$label"
     }
 
-    data class Bubble(val message: Message) : TimelineItem {
+    data class Bubble(val message: Message, val showSender: Boolean) : TimelineItem {
         override val key: String = message.id
     }
 }
@@ -988,13 +1025,17 @@ private sealed interface TimelineItem {
 private fun buildTimeline(messages: List<Message>): List<TimelineItem> {
     val timeline = mutableListOf<TimelineItem>()
     var lastLabel: String? = null
+    var previousAuthor: String? = null
     messages.forEach { message ->
         val label = TimeFormat.daySeparator(message.timestamp)
-        if (label != lastLabel) {
+        val newDay = label != lastLabel
+        if (newDay) {
             timeline += TimelineItem.Separator(label)
             lastLabel = label
         }
-        timeline += TimelineItem.Bubble(message)
+        // Avatar only on the first bubble of a sender run (or after a day separator).
+        timeline += TimelineItem.Bubble(message, showSender = newDay || previousAuthor != message.authorId)
+        previousAuthor = message.authorId
     }
     return timeline
 }
