@@ -104,6 +104,12 @@ Next steps on this list (in order): an append-only journal instead of full
 snapshots, `MsgPack`/`bincode` frames for the WebSocket, then Argon2id
 passwords.
 
+## Notes for the next commit
+
+`Cargo.lock` is not checked in yet (the first build happens in CI). Run
+`cargo build` once locally and commit the generated lock file — binary crates
+should pin their dependency graph.
+
 ## Tests
 
 ```bash
