@@ -77,8 +77,8 @@ push) plus the status composer and group member administration.
 | Delivery tick (sent / read) on own last message | ✅ | `DeliveryTick` |
 | "typing" / "recording audio" preview line with dots | ✅ | `TypingLine`, green mic variant |
 | Empty states (no chats / no results) | ✅ | `NcGlassEmptyState` |
-| Long-press chat menu (pin, mute, archive, mark read, delete chat) | ❌ | reference has none either — but it is the one obvious missing affordance |
-| Pinned / archived sections | ❌ | not in reference |
+| Long-press chat menu (pin, mute, archive, mark read, delete chat) | 🟡 | 1.0.17 — pin, mute, mark read, delete-with-confirm; archive still absent |
+| Pinned / archived sections | 🟡 | 1.0.17 — pinned chats sort to the top with a pin marker; no archived section |
 | Prefetch of message history for the first N chats | ❌ | reference `chatService.prefetchChatsMessages` |
 
 ## 3. 1:1 conversation — `ChatView.tsx` (3,033 lines)

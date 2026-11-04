@@ -1,12 +1,14 @@
 package com.nchat.app.feature.chats
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,24 +17,35 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcGlassEmptyState
@@ -40,6 +53,7 @@ import com.nchat.app.core.designsystem.NcGlassRow
 import com.nchat.app.core.designsystem.NcSize
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.designsystem.NcUnreadBadge
 import com.nchat.app.core.util.TimeFormat
@@ -59,6 +73,7 @@ fun ChatsScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var pendingDelete by remember { mutableStateOf<Chat?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         NcTabHeader(
@@ -94,21 +109,75 @@ fun ChatsScreen(
                         onClick = {
                             viewModel.markRead(chat.id)
                             onOpenChat(chat)
-                        }
+                        },
+                        onTogglePin = {
+                            viewModel.togglePin(chat.id, !chat.pinned)
+                            NcToaster.show(if (chat.pinned) "Chat unpinned" else "Chat pinned")
+                        },
+                        onToggleMute = {
+                            viewModel.toggleMute(chat.id, !chat.muted)
+                            NcToaster.show(
+                                if (chat.muted) "Notifications on" else "Notifications muted"
+                            )
+                        },
+                        onMarkRead = {
+                            viewModel.markRead(chat.id)
+                            NcToaster.show("Marked as read")
+                        },
+                        onDelete = { pendingDelete = chat }
                     )
                 }
             }
         }
     }
+
+    pendingDelete?.let { doomed ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete chat?", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(
+                    "This removes the conversation with ${doomed.title} from this device.",
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteChat(doomed.id)
+                        pendingDelete = null
+                        NcToaster.show("Chat deleted")
+                    }
+                ) {
+                    Text("Delete", color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("Cancel", color = NcTheme.extra.textTertiary)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun ChatRow(chat: Chat, onClick: () -> Unit) {
+private fun ChatRow(
+    chat: Chat,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit,
+    onToggleMute: () -> Unit,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit
+) {
     val extra = NcTheme.extra
     val hasUnread = chat.unreadCount > 0
+    var menuOpen by remember { mutableStateOf(false) }
 
+    Box(modifier = Modifier.fillMaxWidth()) {
     NcGlassRow(
         onClick = onClick,
+        onLongClick = { menuOpen = true },
         modifier = Modifier.padding(bottom = NcSpace.sm)
     ) {
         NcAvatar(
@@ -130,6 +199,26 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                if (chat.pinned) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = "Pinned",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(13.dp)
+                    )
+                }
+                if (chat.muted) {
+                    Icon(
+                        imageVector = Icons.Rounded.NotificationsOff,
+                        contentDescription = "Muted",
+                        tint = extra.textMuted,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(13.dp)
+                    )
+                }
                 Text(
                     text = TimeFormat.listTimestamp(chat.lastMessageAt),
                     style = MaterialTheme.typography.labelMedium,
@@ -162,6 +251,77 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                 }
             }
         }
+    }
+
+    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+        DropdownMenuItem(
+            text = { Text(if (chat.pinned) "Unpin chat" else "Pin chat", fontSize = 14.sp) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.PushPin,
+                    contentDescription = null,
+                    tint = extra.textTertiary,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            onClick = {
+                menuOpen = false
+                onTogglePin()
+            }
+        )
+        DropdownMenuItem(
+            text = {
+                Text(
+                    if (chat.muted) "Unmute notifications" else "Mute notifications",
+                    fontSize = 14.sp
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.NotificationsOff,
+                    contentDescription = null,
+                    tint = extra.textTertiary,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            onClick = {
+                menuOpen = false
+                onToggleMute()
+            }
+        )
+        if (hasUnread) {
+            DropdownMenuItem(
+                text = { Text("Mark as read", fontSize = 14.sp) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.DoneAll,
+                        contentDescription = null,
+                        tint = extra.textTertiary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onMarkRead()
+                }
+            )
+        }
+        DropdownMenuItem(
+            text = { Text("Delete chat", fontSize = 14.sp, color = Color(0xFFDC2626)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = null,
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            onClick = {
+                menuOpen = false
+                onDelete()
+            }
+        )
+    }
     }
 }
 

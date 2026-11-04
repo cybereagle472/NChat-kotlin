@@ -34,7 +34,8 @@ class ChatsViewModel(
                         chat.title.contains(currentQuery, ignoreCase = true) ||
                         chat.lastMessage.contains(currentQuery, ignoreCase = true)
                 }
-                .sortedByDescending { it.lastMessageAt }
+                // Pinned conversations float to the top, then newest first.
+                .sortedWith(compareByDescending<Chat> { it.pinned }.thenByDescending { it.lastMessageAt })
             ChatsUiState(
                 query = currentQuery,
                 chats = visible,
@@ -51,6 +52,12 @@ class ChatsViewModel(
     }
 
     fun markRead(chatId: String) = repository.markRead(chatId)
+
+    fun togglePin(chatId: String, pinned: Boolean) = repository.setPinned(chatId, pinned)
+
+    fun toggleMute(chatId: String, muted: Boolean) = repository.setMuted(chatId, muted)
+
+    fun deleteChat(chatId: String) = repository.deleteChat(chatId)
 
     companion object {
         fun factory(repository: ChatRepository) = viewModelFactory {

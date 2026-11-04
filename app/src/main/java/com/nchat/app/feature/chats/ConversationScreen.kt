@@ -114,6 +114,7 @@ import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -129,7 +130,6 @@ fun ConversationScreen(
     )
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
-    val composerText by viewModel.composerText.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val activeMessageId by viewModel.activeMessageId.collectAsStateWithLifecycle()
     val replyTo by viewModel.replyTo.collectAsStateWithLifecycle()
@@ -307,7 +307,7 @@ fun ConversationScreen(
             }
 
             ComposerBar(
-                text = composerText,
+                textFlow = viewModel.composerText,
                 replyTo = replyTo,
                 onTextChange = viewModel::onComposerChange,
                 onSend = {
@@ -1021,7 +1021,7 @@ private fun HeaderAction(
 
 @Composable
 private fun ComposerBar(
-    text: String,
+    textFlow: StateFlow<String>,
     replyTo: Message?,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -1029,6 +1029,8 @@ private fun ComposerBar(
     onSendAttachment: (MessageKind) -> Unit,
     onSendVoice: (String) -> Unit
 ) {
+    // Collected here, not in the screen: typing then only recomposes the composer.
+    val text by textFlow.collectAsStateWithLifecycle()
     var mediaOpen by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf<VoicePhase?>(null) }
     var elapsedMs by remember { mutableStateOf(0L) }
