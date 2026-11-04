@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.0.0",
+  "versionCode": 9,
+  "versionName": "1.0.1",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.0 — the Kotlin client now mirrors the violet glass design of the reference app: gradient tab headers, floating glass navigation, glass chat rows with delivery ticks and typing dots, gradient chat bubbles, and the glass composer."
+  "releaseNotes": "NChat 1.0.1 — fixes the in-app update crash. The updater wrote the APK to internal storage while FileProvider only allowed external storage, so tapping \"Download & install\" threw an error that froze the app. The provider paths are fixed, installs now run off the main thread, and every failure is reported instead of crashing. This build also matches the violet glass design of the reference app."
 }
