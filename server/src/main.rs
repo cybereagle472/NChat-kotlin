@@ -34,6 +34,24 @@ async fn main() {
         format!("http://localhost:{port}")
     });
 
+    // Upload cap and credential throttling. Cloudflare's edge applied both for the worker;
+    // a self-hosted server must enforce them itself.
+    let max_upload_mb: u64 = std::env::var("NCHAT_MAX_UPLOAD_MB")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(100);
+    let auth_rate: usize = std::env::var("NCHAT_AUTH_RATE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10);
+    let auth_window_secs: u64 = std::env::var("NCHAT_AUTH_WINDOW_SECS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(300);
+
     let pool_size: usize = std::env::var("NCHAT_POOL")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -50,7 +68,18 @@ async fn main() {
 
     let state = AppState::new(db, secret)
         .with_public_url(public_api_url.clone())
-        .with_media_dir(media_dir.clone());
+        .with_media_dir(media_dir.clone())
+        .with_max_upload(max_upload_mb * 1024 * 1024)
+        .with_auth_limiter(nchat_server::ratelimit::RateLimiter::new(
+            auth_rate,
+            std::time::Duration::from_secs(auth_window_secs),
+        ));
+    tracing::info!(
+        max_upload_mb,
+        auth_rate,
+        auth_window_secs,
+        "limits ready"
+    );
     let app = build_app(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

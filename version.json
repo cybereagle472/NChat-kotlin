@@ -1,6 +1,6 @@
 {
-  "versionCode": 29,
-  "versionName": "1.0.21",
+  "versionCode": 30,
+  "versionName": "1.0.22",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.21 — the backend address is no longer written into the app's code. It is supplied when the build is made (the same way the web app takes VITE_API_URL) and read once at start-up, so every request and the live socket still share a single source. If a build is made without an address, NChat now shows a \"Connect NChat\" screen and stores what you type, instead of failing quietly."
+  "releaseNotes": "NChat 1.0.22 — a security and privacy pass. Your login tokens are now encrypted on the device with a key held by the Android Keystore instead of sitting in plain preferences, and the server got real protections: login/sign-up throttling against password guessing, an upload size limit, files that cannot be read outside the media folder, streamed downloads that no longer load whole videos into memory, and no personal e-mail baked into the admin code. Details in SECURITY.md."
 }

@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use crate::error::{ApiError, ApiResult};
 use crate::models::UserRow;
 use crate::password;
+use crate::ratelimit::client_key;
 use crate::routes::{parse_body, text_field};
 use crate::util::{iso_in_secs, new_id, now_iso};
 use crate::{jwt, AppState};
@@ -107,6 +108,7 @@ pub async fn check_email(
 
 pub async fn signup(
     State(state): State<AppState>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let body = parse_body(&body);
@@ -114,6 +116,13 @@ pub async fn signup(
         .unwrap_or_default()
         .trim()
         .to_lowercase();
+
+    if !state.auth_limiter.allow(&client_key(&headers, &email)) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many attempts — try again in a few minutes",
+        ));
+    }
     let password = text_field(&body, "password").unwrap_or_default();
     let full_name = text_field(&body, "full_name").unwrap_or_default().trim().to_string();
 
@@ -165,13 +174,27 @@ pub async fn signup(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-pub async fn login(State(state): State<AppState>, body: Bytes) -> ApiResult<Json<Value>> {
+pub async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
     let body = parse_body(&body);
     let email = text_field(&body, "email")
         .unwrap_or_default()
         .trim()
         .to_lowercase();
     let password = text_field(&body, "password").unwrap_or_default();
+
+    // Password guessing is the cheapest attack on a private chat server: throttle per
+    // (client, address) pair instead of only per client, so a shared NAT does not lock
+    // out everyone behind it.
+    if !state.auth_limiter.allow(&client_key(&headers, &email)) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many attempts — try again in a few minutes",
+        ));
+    }
 
     let user = find_by_email(&state, &email)?;
     let Some(user) = user else {

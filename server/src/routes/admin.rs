@@ -1,8 +1,8 @@
 //! `/admin/*` — port of `worker/src/routes/admin.ts`.
 //!
 //! The reference gates the panel on a hardcoded admin email rather than the
-//! `is_admin` column; that behaviour is preserved, with the address overridable
-//! through `NCHAT_ADMIN_EMAIL` for self-hosted deployments.
+//! `is_admin` column. The e-mail address that may reach these routes is deployment
+//! configuration (`NCHAT_ADMIN_EMAIL`) — it is deliberately not baked into the source.
 
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -13,8 +13,6 @@ use crate::error::{ApiError, ApiResult};
 use crate::presence::ONLINE_THRESHOLD_MS;
 use crate::util::now_millis;
 use crate::AppState;
-
-pub const DEFAULT_ADMIN_EMAIL: &str = "kazmiinasir6@gmail.com";
 
 pub async fn stats(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
@@ -27,7 +25,13 @@ pub async fn stats(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
         .optional()
     })?;
 
-    let admin_email = std::env::var("NCHAT_ADMIN_EMAIL").unwrap_or_else(|_| DEFAULT_ADMIN_EMAIL.to_string());
+    // No default: a self-hosted server must name its own admin, otherwise nobody is one.
+    let admin_email = std::env::var("NCHAT_ADMIN_EMAIL").unwrap_or_default().trim().to_lowercase();
+    if admin_email.is_empty() {
+        return Err(ApiError::forbidden(
+            "No administrator is configured (set NCHAT_ADMIN_EMAIL)",
+        ));
+    }
     match email {
         Some(email) if email.eq_ignore_ascii_case(&admin_email) => {}
         _ => return Err(ApiError::forbidden("Forbidden")),
