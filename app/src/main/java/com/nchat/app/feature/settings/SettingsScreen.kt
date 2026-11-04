@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +65,7 @@ import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.UserProfile
+import kotlin.math.roundToInt
 
 /**
  * 1:1 port of the reference `Settings.tsx` main section: a brand-gradient header
@@ -155,15 +158,67 @@ fun SettingsScreen(
             onDismissRequest = viewModel::dismissDialog,
             title = { Text("NChat ${info.versionName}") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(NcSpace.sm)) {
-                    Text("A new build is ready to install.")
+                val extra = NcTheme.extra
+                val progress = state.progress
+                Column(verticalArrangement = Arrangement.spacedBy(NcSpace.md)) {
+                    Text(
+                        text = "A new build is ready to install.",
+                        fontSize = 14.sp,
+                        color = extra.textSecondary
+                    )
                     Text(
                         text = info.notes,
-                        fontSize = 14.sp,
-                        color = NcTheme.extra.textTertiary
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = extra.textTertiary,
+                        maxLines = 14,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (state.installing) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Column(verticalArrangement = Arrangement.spacedBy(NcSpace.xs)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (progress != null && progress >= 1f) {
+                                        "Installing update…"
+                                    } else {
+                                        "Downloading update…"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = extra.textSecondary
+                                )
+                                Text(
+                                    text = if (progress != null) {
+                                        "${(progress * 100).roundToInt()}%"
+                                    } else {
+                                        "Please wait"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = extra.textPrimary
+                                )
+                            }
+                            val barModifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(CircleShape)
+                            if (progress != null) {
+                                LinearProgressIndicator(
+                                    progress = { progress.coerceIn(0f, 1f) },
+                                    modifier = barModifier,
+                                    color = NcTheme.extra.brandGradient[1],
+                                    trackColor = NcTheme.extra.brandGradient[1].copy(alpha = 0.18f)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = barModifier,
+                                    color = NcTheme.extra.brandGradient[1],
+                                    trackColor = NcTheme.extra.brandGradient[1].copy(alpha = 0.18f)
+                                )
+                            }
+                        }
                     }
                 }
             },

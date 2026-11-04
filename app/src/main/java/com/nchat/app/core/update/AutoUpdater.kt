@@ -78,48 +78,79 @@ object AutoUpdater {
         }
     }
 
-    suspend fun downloadUpdate(context: Context, info: UpdateInfo): File =
-        withContext(Dispatchers.IO) {
-            val connection = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "NChat-Updater")
-                setRequestProperty("Accept", APK_MIME)
-            }
-            try {
-                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    error("APK download failed (HTTP ${connection.responseCode}).")
-                }
-                val targetDir = File(context.filesDir, "updates").apply {
-                    if (!exists() && !mkdirs()) error("Could not create the update folder.")
-                }
-                // Remove APKs from earlier attempts so storage never creeps up.
-                targetDir.listFiles()?.forEach { stale ->
-                    if (stale.name != "nchat-${info.versionCode}.apk") stale.delete()
-                }
-
-                val apk = File(targetDir, "nchat-${info.versionCode}.apk")
-                val temp = File(targetDir, "nchat-${info.versionCode}.part")
-                connection.inputStream.use { input ->
-                    FileOutputStream(temp).use { output -> input.copyTo(output) }
-                }
-
-                if (temp.length() < MIN_APK_BYTES || !hasZipHeader(temp)) {
-                    temp.delete()
-                    error("The downloaded file is not a valid APK. Please retry.")
-                }
-                if (!isNchatPackage(context, temp)) {
-                    temp.delete()
-                    error("The downloaded file is not a valid NChat build.")
-                }
-                if (apk.exists()) apk.delete()
-                check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
-                apk
-            } finally {
-                connection.disconnect()
-            }
+    /**
+     * Downloads the APK and reports real byte progress through [onProgress]: a value in
+     * `0f..1f`, or `null` when the server does not send a Content-Length (the UI then
+     * shows an indeterminate bar for that stretch).
+     */
+    suspend fun downloadUpdate(
+        context: Context,
+        info: UpdateInfo,
+        onProgress: (Float?) -> Unit = {}
+    ): File = withContext(Dispatchers.IO) {
+        val connection = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 20_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "NChat-Updater")
+            setRequestProperty("Accept", APK_MIME)
         }
+        try {
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                error("APK download failed (HTTP ${connection.responseCode}).")
+            }
+            val targetDir = File(context.filesDir, "updates").apply {
+                if (!exists() && !mkdirs()) error("Could not create the update folder.")
+            }
+            // Remove APKs from earlier attempts so storage never creeps up.
+            targetDir.listFiles()?.forEach { stale ->
+                if (stale.name != "nchat-${info.versionCode}.apk") stale.delete()
+            }
+
+            val apk = File(targetDir, "nchat-${info.versionCode}.apk")
+            val temp = File(targetDir, "nchat-${info.versionCode}.part")
+            val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
+
+            onProgress(if (totalBytes != null) 0f else null)
+            connection.inputStream.use { input ->
+                FileOutputStream(temp).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    var lastReported = -1
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        copied += read
+                        // One callback per whole percent keeps the UI smooth without
+                        // flooding the main thread with state updates.
+                        val percent = totalBytes
+                            ?.let { ((copied * 100) / it).toInt().coerceIn(0, 100) }
+                        if (percent != null && percent != lastReported) {
+                            lastReported = percent
+                            onProgress(percent / 100f)
+                        }
+                    }
+                    output.flush()
+                }
+            }
+
+            if (temp.length() < MIN_APK_BYTES || !hasZipHeader(temp)) {
+                temp.delete()
+                error("The downloaded file is not a valid APK. Please retry.")
+            }
+            if (!isNchatPackage(context, temp)) {
+                temp.delete()
+                error("The downloaded file is not a valid NChat build.")
+            }
+            if (apk.exists()) apk.delete()
+            check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
+            onProgress(1f)
+            apk
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     /**
      * Shares the APK with the system installer.

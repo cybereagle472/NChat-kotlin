@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
+import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.repository.ChatRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +33,10 @@ class ConversationViewModel(
     private val _activeMessageId = MutableStateFlow<String?>(null)
     val activeMessageId: StateFlow<String?> = _activeMessageId.asStateFlow()
 
+    /** The message the composer is currently quoting, if any. */
+    private val _replyTo = MutableStateFlow<Message?>(null)
+    val replyTo: StateFlow<Message?> = _replyTo.asStateFlow()
+
     init {
         repository.markRead(chatId)
     }
@@ -43,12 +48,50 @@ class ConversationViewModel(
     fun onSend() {
         val text = _composerText.value
         if (text.isBlank()) return
-        repository.sendMessage(chatId, text)
+        val quoted = _replyTo.value
+        repository.sendMessage(
+            chatId = chatId,
+            text = text,
+            replyAuthor = quoted?.authorName,
+            replyText = quoted?.text
+        )
         _composerText.value = ""
+        _replyTo.value = null
+    }
+
+    fun onReply() {
+        _activeMessageId.value?.let { id ->
+            _replyTo.value = messages.value.firstOrNull { it.id == id }
+        }
+        _activeMessageId.value = null
+    }
+
+    fun onCancelReply() {
+        _replyTo.value = null
     }
 
     fun onSelectMessage(messageId: String?) {
         _activeMessageId.value = messageId
+    }
+
+    fun onDeleteMessage(messageId: String) {
+        repository.deleteMessage(chatId, messageId)
+        if (_activeMessageId.value == messageId) _activeMessageId.value = null
+    }
+
+    fun onSendAttachment(kind: MessageKind) {
+        repository.sendAttachment(
+            chatId = chatId,
+            kind = kind,
+            label = when (kind) {
+                MessageKind.Photo -> "Photo"
+                MessageKind.Video -> "Video"
+                MessageKind.Document -> "document.pdf"
+                MessageKind.Voice -> "Voice message"
+                MessageKind.Location -> "Location"
+                MessageKind.Text -> ""
+            }
+        )
     }
 
     fun onReaction(emoji: String) {

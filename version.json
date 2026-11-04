@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.0.2",
+  "versionCode": 11,
+  "versionName": "1.0.3",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.2 — visual polish round. Chat, status, group and history rows no longer show the bright white band that appeared inside each glass card: the row shadow layer and tap ripple were composited as an opaque plate under the translucent fill, so both were replaced with the exact reference treatment (flat rgba(255,255,255,.7) fill, hairline highlight border, spring press scale). Settings is now the bright light-glass page it should be — the dark night theme that tinted every card grey-olive is gone, the page sits on the violet body gradient again, and the header carries the gradient profile card. Also: softer brand colour for the launcher icon and cheaper draws across all lists for smoother scrolling."
+  "releaseNotes": "NChat 1.0.3 — the tab bar is clean and the updater is honest. The bottom navigation no longer shows banded, mixed colours behind the active tab: its elevation layer was compositing as an opaque plate under the gradient chip, so the chip is now a flat brand gradient with a white hairline and a spring press, and the labels/icons match the reference sizes. Updates now report real progress — the bar fills with the actual download percentage instead of looping, then switches to 'Installing…'. New in this build: long-press a message for the reference action menu (quick reactions, Reply, Copy, Delete with confirmation), a reply strip above the composer, the Photos/Videos/Files attachment popup, and a full call screen with pulsing rings, live timer and mute/speaker/end controls behind the header call buttons."
 }
