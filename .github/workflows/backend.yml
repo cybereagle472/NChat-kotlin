@@ -82,4 +82,7 @@ jobs:
           git config user.email "ci@nchat.local"
           git add -f .ci/last-failure.log
           git commit -m "ci: backend failure log [skip ci]" || true
+          # The branch may have moved while the job ran (the agent pushes fixes), so rebase
+          # before publishing the log; otherwise the push is rejected and the log is lost.
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
