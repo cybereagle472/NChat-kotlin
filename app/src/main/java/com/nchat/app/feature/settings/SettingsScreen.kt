@@ -233,11 +233,7 @@ fun SettingsScreen(
                             tone = MenuTone.Indigo,
                             icon = Icons.Rounded.Settings,
                             title = "Server",
-                            subtitle = if (serverUrl.isEmpty()) {
-                                "Demo data — no backend"
-                            } else {
-                                Uri.parse(serverUrl).host ?: serverUrl
-                            },
+                            subtitle = Uri.parse(serverUrl).host ?: serverUrl,
                             onClick = { serverDialogOpen = true }
                         )
                         SettingsMenuItem(
@@ -314,7 +310,7 @@ fun SettingsScreen(
                 serverDialogOpen = false
                 NcToaster.show(
                     if (value.isBlank()) {
-                        "Server cleared — demo data on next launch"
+                        "Server cleared — default server on next launch"
                     } else {
                         "Server saved — reopen NChat to connect"
                     }
@@ -649,7 +645,7 @@ private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked
 /**
  * Settings ▸ Server: point this install at a running Rust backend (`server/`) without
  * rebuilding the APK. Empty clears the override and falls back to the build default —
- * for the published demo APK that means the offline mock data.
+ * clearing the field falls back to the server baked into the build.
  */
 @Composable
 private fun ServerDialog(
@@ -665,12 +661,9 @@ private fun ServerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(NcSpace.sm)) {
                 Text(
-                    text = if (buildDefault.isBlank()) {
-                        "Leave empty to keep using the offline demo data. Paste the base URL " +
-                            "of a running NChat backend, for example http://192.168.1.10:8080"
-                    } else {
-                        "This build defaults to $buildDefault. Leave empty to use that default."
-                    },
+                    text = "This build talks to $buildDefault. Paste another address to use a " +
+                        "self-hosted server (server/), or clear the field to go back to the " +
+                        "default. Reopen NChat after saving.",
                     fontSize = 13.sp,
                     color = NcTheme.extra.textSecondary
                 )

@@ -224,6 +224,57 @@ class RemoteChatRepository(
         }
     }
 
+    override fun sendMedia(
+        chatId: String,
+        kind: MessageKind,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        caption: String?
+    ) {
+        val localId = "local-${localIds.incrementAndGet()}"
+        val body = caption?.trim().orEmpty()
+        appendLocal(
+            chatId = chatId,
+            message = baseMessage(chatId, localId, body).copy(
+                kind = kind,
+                fileName = fileName
+            )
+        )
+        preview(chatId, body.ifBlank { fileName }, DeliveryState.Sending)
+
+        scope.launch {
+            // 1) upload the file, 2) send a message that points at it.
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
+                ?: return@launch
+            val response = runCatching {
+                if (isGroup(chatId)) {
+                    api.sendGroupMessage(
+                        chatId,
+                        body,
+                        type = kind.wireType(),
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        duration = null
+                    )
+                } else {
+                    api.sendMessage(
+                        chatId,
+                        body,
+                        type = kind.wireType(),
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        fileName = fileName,
+                        fileSize = media.fileSize?.toString()
+                    )
+                }
+            }.getOrNull()
+            val created = response?.message ?: return@launch
+            replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
+            preview(chatId, body.ifBlank { fileName }, DeliveryState.Sent)
+        }
+    }
+
     override fun forwardMessage(targetChatId: String, source: Message) {
         val body = source.text.ifBlank { "Forwarded message" }
         sendMessage(targetChatId, body)

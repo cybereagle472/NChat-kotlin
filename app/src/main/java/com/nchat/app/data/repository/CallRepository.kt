@@ -1,6 +1,5 @@
 package com.nchat.app.data.repository
 
-import com.nchat.app.data.mock.MockDataProvider
 import com.nchat.app.data.model.CallRecord
 import com.nchat.app.network.CallDto
 import com.nchat.app.network.NChatApi
@@ -19,16 +18,15 @@ import java.util.TimeZone
 interface CallRepository {
     val history: StateFlow<List<CallRecord>>
     fun refresh()
-}
 
-class InMemoryCallRepository(
-    seed: List<CallRecord> = MockDataProvider.calls()
-) : CallRepository {
+    /**
+     * `POST /calls` — opens a call record and rings the other side (the worker pushes
+     * `call:incoming`). Returns the server id, or null when the request failed.
+     */
+    suspend fun placeCall(personId: String, video: Boolean): String? = null
 
-    private val _history = MutableStateFlow(seed)
-    override val history: StateFlow<List<CallRecord>> = _history.asStateFlow()
-
-    override fun refresh() = Unit
+    /** `POST /calls/{id}/end` — writes the outcome the History tab reads back. */
+    suspend fun finishCall(callId: String, seconds: Long, status: String = "ended") = Unit
 }
 
 class RemoteCallRepository(
@@ -51,6 +49,16 @@ class RemoteCallRepository(
                 }
             }
         }
+        refresh()
+    }
+
+    override suspend fun placeCall(personId: String, video: Boolean): String? =
+        runCatching {
+            api.startCall(personId, if (video) "video" else "audio").call?.id
+        }.getOrNull()
+
+    override suspend fun finishCall(callId: String, seconds: Long, status: String) {
+        runCatching { api.endCall(callId, status, seconds) }
         refresh()
     }
 

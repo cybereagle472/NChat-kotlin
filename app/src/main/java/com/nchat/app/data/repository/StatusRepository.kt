@@ -1,6 +1,5 @@
 package com.nchat.app.data.repository
 
-import com.nchat.app.data.mock.MockDataProvider
 import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
@@ -29,43 +28,6 @@ interface StatusRepository {
     fun create(text: String)
     fun markViewed(id: String)
     fun delete(id: String)
-}
-
-class InMemoryStatusRepository(
-    seed: List<StatusUpdate> = MockDataProvider.statuses()
-) : StatusRepository {
-
-    private val _statuses = MutableStateFlow(seed)
-    override val statuses: StateFlow<List<StatusUpdate>> = _statuses.asStateFlow()
-
-    override fun refresh() = Unit
-
-    override fun create(text: String) {
-        val body = text.trim()
-        if (body.isEmpty()) return
-        _statuses.update { current ->
-            listOf(
-                StatusUpdate(
-                    id = "status-${System.currentTimeMillis()}",
-                    authorName = "You",
-                    caption = body,
-                    timestamp = System.currentTimeMillis(),
-                    viewed = true,
-                    isMine = true
-                )
-            ) + current
-        }
-    }
-
-    override fun markViewed(id: String) {
-        _statuses.update { list ->
-            list.map { if (it.id == id) it.copy(viewed = true) else it }
-        }
-    }
-
-    override fun delete(id: String) {
-        _statuses.update { list -> list.filterNot { it.id == id } }
-    }
 }
 
 class RemoteStatusRepository(

@@ -83,7 +83,8 @@ fun HomeScreen(
 
                     HomeTab.Status -> StatusScreen(
                         statuses = statuses,
-                        listState = statusListState
+                        listState = statusListState,
+                        onCreateStatus = { text -> ServiceLocator.statusRepository.create(text) }
                     )
 
                     HomeTab.Groups -> GroupsScreen(

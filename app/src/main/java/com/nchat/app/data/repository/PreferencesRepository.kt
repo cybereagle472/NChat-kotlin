@@ -2,10 +2,14 @@ package com.nchat.app.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.nchat.app.network.NChatApi
+import com.nchat.app.network.PrivacySettingsDto
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /** Who may see a privacy-gated field, mirrored from `privacyService.ts`. */
 enum class Visibility(val label: String) {
@@ -32,9 +36,10 @@ data class NotificationSettings(
 )
 
 /**
- * Local stand-in for the reference `privacyService` + notification preferences. Values are
- * kept in SharedPreferences so a toggle survives a relaunch, which is what makes the
- * Settings panes feel real rather than decorative.
+ * Privacy tiers and notification preferences.
+ *
+ * Privacy is the backend's (`/privacy`) — it decides what other people's clients may see, so
+ * it has to live on the server. Notifications are per-device by nature and stay local.
  */
 interface PreferencesRepository {
     val privacy: StateFlow<PrivacySettings>
@@ -44,6 +49,9 @@ interface PreferencesRepository {
     fun setProfilePhoto(value: Visibility)
     fun setReadReceipts(enabled: Boolean)
     fun setOnlineStatus(enabled: Boolean)
+
+    /** Pulls the privacy tiers from the backend. */
+    suspend fun refresh() = Unit
 
     fun setMessageNotifications(enabled: Boolean)
     fun setCallNotifications(enabled: Boolean)
@@ -138,5 +146,98 @@ class LocalPreferencesRepository(context: Context) : PreferencesRepository {
         const val KEY_NOTIF_PREVIEW = "notif_preview"
         const val KEY_NOTIF_SOUND = "notif_sound"
         const val KEY_NOTIF_VIBRATE = "notif_vibrate"
+    }
+}
+
+/**
+ * Privacy tiers from `GET/PATCH /privacy`; notification switches stay device-local, because
+ * the reference has no server-side notification preferences either.
+ */
+class RemotePreferencesRepository(
+    context: Context,
+    private val api: NChatApi,
+    private val scope: CoroutineScope
+) : PreferencesRepository {
+
+    private val local = LocalPreferencesRepository(context)
+
+    private val _privacy = MutableStateFlow(PrivacySettings())
+    override val privacy: StateFlow<PrivacySettings> = _privacy.asStateFlow()
+
+    override val notifications: StateFlow<NotificationSettings> = local.notifications
+
+    init {
+        scope.launch { runCatching { refresh() } }
+    }
+
+    override suspend fun refresh() {
+        val remote = runCatching { api.privacySettings().settings }.getOrNull() ?: return
+        _privacy.value = remote.toModel()
+    }
+
+    override fun setLastSeen(value: Visibility) {
+        _privacy.update { it.copy(lastSeen = value) }
+        push(lastSeen = value)
+    }
+
+    override fun setProfilePhoto(value: Visibility) {
+        _privacy.update { it.copy(profilePhoto = value) }
+        push(profilePhoto = value)
+    }
+
+    override fun setReadReceipts(enabled: Boolean) {
+        _privacy.update { it.copy(readReceipts = enabled) }
+        push(readReceipts = enabled)
+    }
+
+    override fun setOnlineStatus(enabled: Boolean) {
+        _privacy.update { it.copy(onlineStatus = enabled) }
+        push(onlineStatus = enabled)
+    }
+
+    override fun setMessageNotifications(enabled: Boolean) = local.setMessageNotifications(enabled)
+    override fun setCallNotifications(enabled: Boolean) = local.setCallNotifications(enabled)
+    override fun setShowPreview(enabled: Boolean) = local.setShowPreview(enabled)
+    override fun setSound(enabled: Boolean) = local.setSound(enabled)
+    override fun setVibrate(enabled: Boolean) = local.setVibrate(enabled)
+
+    private fun push(
+        lastSeen: Visibility? = null,
+        profilePhoto: Visibility? = null,
+        readReceipts: Boolean? = null,
+        onlineStatus: Boolean? = null
+    ) {
+        scope.launch {
+            val response = runCatching {
+                api.updatePrivacy(
+                    lastSeenVisibility = lastSeen?.wire(),
+                    profilePhotoVisibility = profilePhoto?.wire(),
+                    readReceipts = readReceipts,
+                    onlineStatusEnabled = onlineStatus
+                )
+            }.getOrNull()
+            // Snap back to the server's truth if the write was rejected.
+            response?.settings?.let { _privacy.value = it.toModel() }
+        }
+    }
+
+    private fun PrivacySettingsDto.toModel() = PrivacySettings(
+        lastSeen = lastSeenVisibility.toVisibility(Visibility.Everyone),
+        profilePhoto = profilePhotoVisibility.toVisibility(Visibility.Everyone),
+        readReceipts = showsReadReceipts,
+        onlineStatus = showsOnlineStatus
+    )
+
+    private fun String.toVisibility(fallback: Visibility): Visibility = when (this) {
+        "everyone" -> Visibility.Everyone
+        "contacts" -> Visibility.Contacts
+        "nobody" -> Visibility.Nobody
+        else -> fallback
+    }
+
+    private fun Visibility.wire(): String = when (this) {
+        Visibility.Everyone -> "everyone"
+        Visibility.Contacts -> "contacts"
+        Visibility.Nobody -> "nobody"
     }
 }

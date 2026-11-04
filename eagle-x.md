@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.18** (`versionCode 26`)
+- Current version: **1.0.19** (`versionCode 27`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -182,24 +182,33 @@ only proof of compilation.
 
 ## 3.2 How the client reaches it
 
-The app was mock-only until 1.0.18. It now has two data sources and picks one at start-up;
-nothing above the repository layer knows which is active.
+There is one data source: the deployed backend. The in-memory demo layer and its seed data
+were deleted in 1.0.19, so nothing in the app can fall back to fabricated chats, friends or
+statuses — an install with no network shows the API's own error, not invented content.
 
 ```
 UI (screens, view models) ──► repository interfaces
-                                  ├── InMemory* (demo data, always available)
-                                  └── Remote*   (Rust backend)
+                                  └── Remote* (the only implementation)
                                           └── ApiClient (OkHttp) · NChatSocket (WebSocket)
 ```
 
-### Choosing the source
+### The built-in backend
 
-`ServerConfig.effective()` resolves, in order: **Settings ▸ Server** (saved at runtime),
-then `BuildConfig.NCHAT_API_BASE` (baked at build time), then nothing. Nothing means the
-in-memory repositories — that is what the published APK does, so a fresh install works with
-no server and no configuration. A non-empty URL switches every repository in
-`ServiceLocator` to its remote twin. The value is read once, so the dialog says "reopen
-NChat to connect" rather than trying to swap sockets under a running UI.
+The published APK talks to **`https://nchats-friends.usa66486.workers.dev`** — the same
+Cloudflare Worker the reference app uses (`worker/wrangler.toml` → `PUBLIC_API_URL`,
+`src/lib/apiClient.ts` → `VITE_API_URL`). The Rust server in `server/` is a byte-compatible
+port of that worker, so the two can be swapped at will. The URL is a build constant
+(`NCHAT_API_BASE`, defaulting to the worker, overridable with `-PNCHAT_API_BASE=…`), never a
+literal buried in request code.
+
+### Overrides
+
+`ServerConfig.effective()` resolves **Settings ▸ Server** (runtime override, stored in
+`SharedPreferences("nchat_server")`) first, then the baked constant. Clearing the field goes
+back to the built-in worker — never to offline mode. The value is read once at start-up
+(singletons own the sockets), so the dialog says "reopen NChat after saving". Debug builds
+also allow cleartext HTTP (`app/src/debug/AndroidManifest.xml`) so a local `cargo run` can be
+used as the server; release builds stay HTTPS-only.
 
 ### Transport rules (`network/`)
 
@@ -249,17 +258,37 @@ NChat to connect" rather than trying to swap sockets under a running UI.
 - **Pins/mutes and group member counts** update optimistically, then reconcile from the
   server reply.
 
+### Backend features wired in 1.0.19
+
+- **Attachments are real files.** Photo / video / document picks go through
+  `ActivityResultContracts` → `readPickedFile` (24 MB cap) → `POST /media/upload` →
+  `POST /messages` (or `/groups/:id/messages`) with `media_url`, `type`, and file name/size.
+  The optimistic bubble is replaced by the server row, exactly like a text send.
+- **Status composer.** The ＋ badge on "My status" (and the header actions) opens a text
+  composer that calls `POST /status`; contacts receive `status:new` and the 24-hour expiry is
+  the server's.
+- **Privacy tiers are the server's.** `GET`/`PATCH /privacy` back Settings ▸ Privacy
+  (`everyone` / `contacts` / `nobody`, read receipts, online status). Notification switches
+  stay device-local — the reference has no server-side notification preferences either.
+- **Avatars upload.** A cropped avatar is re-encoded to PNG, uploaded to `/media/upload`, and
+  stored on the account with `PATCH /users/me {avatar_url}`.
+- **Calls create records.** Opening a 1:1 call places `POST /calls` (the other side gets
+  `call:incoming`); hanging up closes it with `POST /calls/:id/end {status, duration}`, so
+  History and the peer agree on what happened.
+- **Live username availability.** Sign-up asks `GET /users/username-available` instead of
+  comparing against a hardcoded list.
+
 ### Still missing on this strand (deliberate, tracked)
 
-1. **Calls do not place real WebRTC calls yet** — the signalling routes and models exist and
-   history is live, but the overlay is still the simulated one; it needs a WebRTC stack,
-   ICE handling and the TURN credentials from `/calls/turn-credentials`.
-2. **Media uploads are not wired into the composer** — `POST /media/upload` is implemented
-   both sides; the attachment sheet still sends a label instead of a file.
+1. **No media rendering in-app.** Photos and clips upload and arrive as rows, but bubbles
+   still draw the type placeholder — the client has no image loader yet (Coil + `avatar_url`
+   / `media_url` rendering is the next slice).
+2. **Calls have no audio/video transport.** Signalling endpoints, TURN credentials and call
+   records are all real; the overlay is still a ringing UI with no WebRTC stack behind it.
 3. **No offline queue** — a send that fails while the socket is down is not retried
    automatically (ARCHITECTURE step 5).
-4. **Status composer** still cannot create a status from the UI, although
-   `POST /status` is wired in the repository.
+4. **Incoming calls are not surfaced** — `call:incoming` refreshes History but does not yet
+   raise a full-screen ringer.
 
 ---
 
@@ -326,7 +355,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
 | 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
 | 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
-| 1.0.18 | 26 | *this build* | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
+| 1.0.18 | 26 | | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
+| 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK now talks to `https://nchats-friends.usa66486.workers.dev` out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
 
 ---
 

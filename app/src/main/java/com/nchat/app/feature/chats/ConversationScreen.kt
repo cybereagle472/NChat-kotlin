@@ -102,10 +102,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.nchat.app.core.designsystem.NcToaster
+import com.nchat.app.core.util.readPickedFile
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.ServiceLocator
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
@@ -170,6 +179,29 @@ fun ConversationScreen(
 
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+
+    // Attachments are real files: pick → read → upload → send (`POST /media/upload`).
+    var pendingKind by remember { mutableStateOf<MessageKind?>(null) }
+    fun deliverPicked(uri: Uri?) {
+        val kind = pendingKind
+        pendingKind = null
+        if (uri == null || kind == null) return
+        val file = readPickedFile(context, uri)
+        if (file == null) {
+            NcToaster.show("That file is too large (max 24 MB)")
+            return
+        }
+        viewModel.onSendMedia(kind, file)
+    }
+
+    val mediaPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> deliverPicked(uri) }
+
+    val documentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> deliverPicked(uri) }
     val firstUnreadId by viewModel.firstUnreadId.collectAsStateWithLifecycle()
     val timeline = remember(messages, firstUnreadId) { buildTimeline(messages, firstUnreadId) }
     val typingRow = if (chat?.isTyping == true) 1 else 0
@@ -316,8 +348,29 @@ fun ConversationScreen(
                 },
                 onCancelReply = viewModel::onCancelReply,
                 onSendAttachment = { kind ->
-                    viewModel.onSendAttachment(kind)
                     keyboard?.hide()
+                    when (kind) {
+                        MessageKind.Photo -> {
+                            pendingKind = MessageKind.Photo
+                            mediaPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+
+                        MessageKind.Video -> {
+                            pendingKind = MessageKind.Video
+                            mediaPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            )
+                        }
+
+                        MessageKind.Document -> {
+                            pendingKind = MessageKind.Document
+                            documentPicker.launch(arrayOf("*/*"))
+                        }
+
+                        else -> viewModel.onSendAttachment(kind)
+                    }
                 },
                 onSendVoice = viewModel::onSendVoice
             )
@@ -425,6 +478,30 @@ fun ConversationScreen(
         }
 
         callKind?.let { kind ->
+            // A 1:1 call is a real server-side record: it is opened when the overlay appears
+            // and closed with the elapsed time when the user hangs up, so History (and the
+            // other side's `call:incoming`) reflect a call that actually happened.
+            if (chat?.isGroup != true && group == null) {
+                LaunchedEffect(kind) {
+                    val startedAt = System.currentTimeMillis()
+                    val callId = ServiceLocator.callRepository.placeCall(
+                        personId = chatId,
+                        video = kind == CallKind.Video
+                    )
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        callId?.let { id ->
+                            val seconds = ((System.currentTimeMillis() - startedAt) / 1000)
+                                .coerceAtLeast(0)
+                            withContext(NonCancellable) {
+                                ServiceLocator.callRepository.finishCall(id, seconds)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Group chats ring the whole roster in the group-call surface; 1:1 keeps the
             // simpler call overlay.
             if (chat?.isGroup == true || group != null) {

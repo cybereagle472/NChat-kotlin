@@ -1,6 +1,6 @@
 {
-  "versionCode": 26,
-  "versionName": "1.0.18",
+  "versionCode": 27,
+  "versionName": "1.0.19",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.18 — the app can now talk to a real backend. Open Settings ▸ Server and paste the address of a running NChat server (or build the APK with NCHAT_API_BASE) and sign in, chat, create groups, follow statuses and see your call history straight from it — with live updates over one socket, optimistic sends and read receipts. Leave the field empty and everything keeps working on the built-in demo data, exactly as before."
+  "releaseNotes": "NChat 1.0.19 — the published app now uses the real backend by default (no setup needed), and the demo data is gone: no mock chats, friends or statuses anywhere. Photos, videos and documents now actually upload and send, statuses can be created, privacy settings are stored on the server, avatars upload, and calls ring the other person and land in History. Settings ▸ Server still points any install at your own server."
 }

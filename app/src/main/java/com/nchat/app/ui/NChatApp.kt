@@ -47,15 +47,13 @@ fun NChatApp() {
             else -> LaunchStage.Main
         }
 
-        // Backend builds: open the realtime socket once signed in, pull the account, and keep
-        // the presence heartbeat alive while the app is in the foreground. Mock builds skip
-        // all of it, so the offline demo behaves exactly as before.
+        // Once signed in: open the realtime socket, pull the account from the backend, and
+        // keep the presence heartbeat alive while the app is in the foreground.
         LaunchedEffect(session) {
             if (session == null) {
                 ServiceLocator.disconnectRealtime()
                 return@LaunchedEffect
             }
-            if (!ServiceLocator.isRemote) return@LaunchedEffect
             ServiceLocator.connectRealtime()
             ServiceLocator.profileRepository.refresh()
             while (true) {

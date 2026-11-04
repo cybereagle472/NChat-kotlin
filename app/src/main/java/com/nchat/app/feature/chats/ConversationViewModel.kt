@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.core.util.PickedFile
 import com.nchat.app.data.repository.ChatRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -56,7 +57,7 @@ class ConversationViewModel(
 
     fun onComposerChange(value: String) {
         _composerText.value = value
-        // Remote builds stream "typing" to the other side; the mock build ignores it.
+        // Stream "typing" to the other side.
         repository.setTyping(chatId, value.isNotEmpty())
     }
 
@@ -121,6 +122,17 @@ class ConversationViewModel(
 
     fun onSendVoice(durationLabel: String) {
         repository.sendVoice(chatId, durationLabel)
+    }
+
+    /** A real attachment: the bytes are uploaded, then the message points at them. */
+    fun onSendMedia(kind: MessageKind, file: PickedFile) {
+        repository.sendMedia(
+            chatId = chatId,
+            kind = kind,
+            fileName = file.name,
+            mimeType = file.mimeType,
+            bytes = file.bytes
+        )
     }
 
     fun onSendAttachment(kind: MessageKind) {
