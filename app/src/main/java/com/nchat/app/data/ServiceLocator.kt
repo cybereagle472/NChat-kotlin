@@ -8,22 +8,16 @@ import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
 import com.nchat.app.data.repository.ChatRepository
 import com.nchat.app.data.repository.FriendRepository
-import com.nchat.app.data.repository.InMemoryCallRepository
-import com.nchat.app.data.repository.InMemoryChatRepository
-import com.nchat.app.data.repository.InMemoryFriendRepository
-import com.nchat.app.data.repository.InMemoryProfileRepository
-import com.nchat.app.data.repository.InMemoryStatusRepository
-import com.nchat.app.data.repository.LocalAuthRepository
 import com.nchat.app.data.repository.LocalPreferencesRepository
 import com.nchat.app.data.repository.PreferencesRepository
 import com.nchat.app.data.repository.ProfileRepository
-import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.data.repository.RemoteAuthRepository
 import com.nchat.app.data.repository.RemoteCallRepository
 import com.nchat.app.data.repository.RemoteChatRepository
 import com.nchat.app.data.repository.RemoteFriendRepository
-import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.RemoteProfileRepository
+import com.nchat.app.data.repository.RemoteStatusRepository
+import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.NChatApi
@@ -36,15 +30,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Composition root — the single seam between the UI and where its data comes from.
+ * Composition root.
  *
- * Two modes, chosen at build time by `BuildConfig.NCHAT_API_BASE`:
- *
- * - **empty** → the in-memory mock repositories (what the released demo APK ships, so it
- *   works with no server at all),
- * - **set** → the repositories that talk to the Rust backend in `server/`.
- *
- * Screens never check which mode is active; they only see the interfaces.
+ * NChat is a thin client: every repository below reads from the backend, so the app has one
+ * source of truth and no demo data to drift out of sync with it. The backend URL is the
+ * deployed worker baked in at build time (`BuildConfig.NCHAT_API_BASE`), overridable per
+ * install in Settings ▸ Server for self-hosted servers (`server/`).
  */
 object ServiceLocator {
 
@@ -65,78 +56,55 @@ object ServiceLocator {
     private val apiClient: ApiClient by lazy {
         ApiClient(ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE), tokens)
     }
+    val api: NChatApi by lazy { NChatApi(apiClient) }
+    val socket: NChatSocket by lazy { NChatSocket(apiClient, tokens, appScope) }
 
     /** The saved server override (null = use the build default). */
     val serverOverride: String? get() = ServerConfig.override(requireContext())
 
-    /** What this install would connect to right now: "" means the in-memory demo data. */
+    /** What this install connects to right now. */
     val serverUrl: String get() = ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE)
 
     fun saveServerOverride(url: String?) {
         ServerConfig.save(requireContext(), url)
     }
-    val api: NChatApi by lazy { NChatApi(apiClient) }
-    val socket: NChatSocket by lazy { NChatSocket(apiClient, tokens, appScope) }
-
-    /** True when this build was pointed at a backend. */
-    val isRemote: Boolean get() = apiClient.isConfigured
 
     val connection: StateFlow<ConnectionState> get() = socket.state
 
-    /** Opens the realtime socket (no-op on mock builds). */
     fun connectRealtime() {
-        if (isRemote) socket.connect()
+        socket.connect()
     }
 
     fun disconnectRealtime() {
-        if (isRemote) socket.disconnect()
+        socket.disconnect()
     }
 
     /** Writes the heartbeat that keeps this account "online" for everyone else. */
     fun reportPresence() {
-        if (!isRemote) return
         appScope.launch { runCatching { api.heartbeat() } }
     }
 
     // --------------------------------------------------------- repositories
 
-    val authRepository: AuthRepository get() = if (isRemote) remoteAuth else localAuth
-    val profileRepository: ProfileRepository get() = if (isRemote) remoteProfile else mockProfile
-    val chatRepository: ChatRepository get() = if (isRemote) remoteChat else mockChat
-    val friendRepository: FriendRepository get() = if (isRemote) remoteFriends else mockFriends
-    val statusRepository: StatusRepository get() = if (isRemote) remoteStatus else mockStatus
-    val callRepository: CallRepository get() = if (isRemote) remoteCalls else mockCalls
-    val preferencesRepository: PreferencesRepository get() = preferencesRepositoryImpl
-
-    val profile: UserProfile get() = profileRepository.profile.value
-
-    private val localAuth: AuthRepository by lazy { LocalAuthRepository(requireContext()) }
-    private val remoteAuth: AuthRepository by lazy {
-        RemoteAuthRepository(api, tokens, appScope)
-    }
-    private val remoteProfile: ProfileRepository by lazy {
+    val authRepository: AuthRepository by lazy { RemoteAuthRepository(api, tokens, appScope) }
+    val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)
     }
-    private val remoteChat: RemoteChatRepository by lazy {
+    val chatRepository: ChatRepository by lazy {
         RemoteChatRepository(api, tokens, socket, appScope)
     }
-    private val remoteFriends: FriendRepository by lazy {
+    val friendRepository: FriendRepository by lazy {
         RemoteFriendRepository(api, tokens, socket, appScope)
     }
-    private val remoteStatus: StatusRepository by lazy {
+    val statusRepository: StatusRepository by lazy {
         RemoteStatusRepository(api, tokens, socket, appScope)
     }
-    private val remoteCalls: CallRepository by lazy {
+    val callRepository: CallRepository by lazy {
         RemoteCallRepository(api, tokens, socket, appScope)
     }
-    private val mockStatus: StatusRepository by lazy { InMemoryStatusRepository() }
-    private val mockCalls: CallRepository by lazy { InMemoryCallRepository() }
-    private val mockProfile: InMemoryProfileRepository by lazy { InMemoryProfileRepository() }
-    private val mockChat: InMemoryChatRepository by lazy {
-        InMemoryChatRepository(profileProvider = { profileRepository.profile.value })
-    }
-    private val mockFriends: InMemoryFriendRepository by lazy { InMemoryFriendRepository() }
-    private val preferencesRepositoryImpl: PreferencesRepository by lazy {
+    val preferencesRepository: PreferencesRepository by lazy {
         LocalPreferencesRepository(requireContext())
     }
+
+    val profile: UserProfile get() = profileRepository.profile.value
 }

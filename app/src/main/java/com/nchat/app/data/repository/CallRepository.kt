@@ -1,6 +1,5 @@
 package com.nchat.app.data.repository
 
-import com.nchat.app.data.mock.MockDataProvider
 import com.nchat.app.data.model.CallRecord
 import com.nchat.app.network.CallDto
 import com.nchat.app.network.NChatApi
@@ -19,16 +18,6 @@ import java.util.TimeZone
 interface CallRepository {
     val history: StateFlow<List<CallRecord>>
     fun refresh()
-}
-
-class InMemoryCallRepository(
-    seed: List<CallRecord> = MockDataProvider.calls()
-) : CallRepository {
-
-    private val _history = MutableStateFlow(seed)
-    override val history: StateFlow<List<CallRecord>> = _history.asStateFlow()
-
-    override fun refresh() = Unit
 }
 
 class RemoteCallRepository(

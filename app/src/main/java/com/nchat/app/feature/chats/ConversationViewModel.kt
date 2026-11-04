@@ -56,7 +56,7 @@ class ConversationViewModel(
 
     fun onComposerChange(value: String) {
         _composerText.value = value
-        // Remote builds stream "typing" to the other side; the mock build ignores it.
+        // Stream "typing" to the other side.
         repository.setTyping(chatId, value.isNotEmpty())
     }
 

@@ -16,11 +16,13 @@ android {
         versionName "1.0.18"
         resourceConfigurations += ['en']
 
-        // Empty means "no backend": the app keeps using the in-memory mock repositories, which
-        // is what the released demo APK does. Build with NCHAT_API_BASE=https://host:port to
-        // produce an APK whose repositories talk to the Rust backend in server/.
-        def apiBase = (System.getenv("NCHAT_API_BASE") ?: "").trim()
-        buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\"" 
+        // The backend this build talks to. The default is the deployed NChat worker — the
+        // same API the reference web app uses through VITE_API_URL; server/ is a
+        // byte-compatible Rust implementation of it. Override at build time with
+        //   NCHAT_API_BASE=https://host ./gradlew assembleRelease
+        // and at runtime in Settings ▸ Server.
+        def apiBase = (System.getenv("NCHAT_API_BASE") ?: "https://nchats-friends.usa66486.workers.dev").trim()
+        buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\" "
     }
 
     signingConfigs {
