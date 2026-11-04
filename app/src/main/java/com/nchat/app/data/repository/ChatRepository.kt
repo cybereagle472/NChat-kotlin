@@ -21,6 +21,19 @@ interface ChatRepository {
         replyText: String? = null
     )
     fun sendAttachment(chatId: String, kind: MessageKind, label: String)
+
+    /**
+     * Uploads [bytes] to `POST /media/upload` and sends the resulting message — the real
+     * attachment path the reference uses for photos, clips and documents.
+     */
+    fun sendMedia(
+        chatId: String,
+        kind: MessageKind,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        caption: String? = null
+    )
     fun sendVoice(chatId: String, durationLabel: String)
     /** Rewrites the body of my own text message and flags it as edited. */
     fun editMessage(chatId: String, messageId: String, text: String)

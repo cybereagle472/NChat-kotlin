@@ -10,7 +10,7 @@ sealed interface AuthResult {
 }
 
 /**
- * The reference's `authService`, backed by the NChat API (`/auth/*`). The session survives
+ * The reference's `authService`, backed by the NChat API (`/auth` endpoints). The session survives
  * restarts because the token pair is stored on the device; the account itself lives on the
  * server, so the same login works on every install.
  */

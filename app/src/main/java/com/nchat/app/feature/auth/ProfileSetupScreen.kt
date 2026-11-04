@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import com.nchat.app.data.ServiceLocator
 
 /** The six avatar gradients from `ProfileSetup.tsx`. */
 private val AvatarGradients = listOf(
