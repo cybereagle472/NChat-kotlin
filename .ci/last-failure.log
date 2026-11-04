@@ -1,4 +1,4 @@
-run: 41806601851
+run: 41806873037
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
@@ -28,10 +28,10 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
 > Task :app:desugarReleaseFileDependencies FROM-CACHE
-> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseArtProfile
-> Task :app:mergeExtDexRelease FROM-CACHE
+> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseShaders FROM-CACHE
+> Task :app:mergeExtDexRelease FROM-CACHE
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets FROM-CACHE
@@ -43,24 +43,9 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
 
-> Task :app:compileReleaseKotlin
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/ServiceLocator.kt:7:38 Unresolved reference: AuthRepository
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/ServiceLocator.kt:89:25 Unresolved reference: AuthRepository
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/ServiceLocator.kt:89:43 Property delegate must have a 'getValue(ServiceLocator, KProperty<*>)' method. None of the following functions is suitable: 
-public inline operator fun <T> Lazy<RemoteAuthRepository>.getValue(thisRef: Any?, property: KProperty<*>): RemoteAuthRepository defined in kotlin
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/AuthRepository.kt:31:1 Unclosed comment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:27:5 Unresolved reference: AuthRepository
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:30:5 'session' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:33:5 'profileComplete' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:35:5 'isEmailRegistered' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:48:5 'signIn' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:67:5 'signUp' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:88:5 'completeProfile' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteAuthRepository.kt:93:5 'signOut' overrides nothing
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/auth/ProfileSetupScreen.kt:113:29 Unresolved reference: ServiceLocator
-
 > Task :app:compileReleaseKotlin FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1793784032786.json
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:192:19 Unresolved reference: onSendMedia
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1793784158742.json
 
 FAILURE: Build failed with an exception.
 
@@ -266,5 +251,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 37s
+BUILD FAILED in 39s
 32 actionable tasks: 15 executed, 17 from cache
