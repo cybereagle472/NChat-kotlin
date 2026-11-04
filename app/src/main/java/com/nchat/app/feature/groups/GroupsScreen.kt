@@ -45,7 +45,7 @@ fun GroupsScreen(
     friends: List<Friend>,
     listState: LazyListState,
     onOpenGroup: (Group) -> Unit,
-    onCreateGroup: (name: String, description: String, memberCount: Int) -> Unit,
+    onCreateGroup: (name: String, description: String, memberIds: List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra

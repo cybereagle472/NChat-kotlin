@@ -17,6 +17,7 @@ import com.nchat.app.data.repository.LocalPreferencesRepository
 import com.nchat.app.data.repository.PreferencesRepository
 import com.nchat.app.data.repository.ProfileRepository
 import com.nchat.app.data.repository.RemoteAuthRepository
+import com.nchat.app.data.repository.RemoteChatRepository
 import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
@@ -84,7 +85,7 @@ object ServiceLocator {
 
     val authRepository: AuthRepository get() = if (isRemote) remoteAuth else localAuth
     val profileRepository: ProfileRepository get() = if (isRemote) remoteProfile else mockProfile
-    val chatRepository: ChatRepository get() = mockChat
+    val chatRepository: ChatRepository get() = if (isRemote) remoteChat else mockChat
     val friendRepository: FriendRepository get() = mockFriends
     val preferencesRepository: PreferencesRepository get() = preferencesRepositoryImpl
 
@@ -99,6 +100,9 @@ object ServiceLocator {
     }
     private val remoteProfile: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)
+    }
+    private val remoteChat: RemoteChatRepository by lazy {
+        RemoteChatRepository(api, tokens, socket, appScope)
     }
     private val mockProfile: InMemoryProfileRepository by lazy { InMemoryProfileRepository() }
     private val mockChat: InMemoryChatRepository by lazy {

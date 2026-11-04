@@ -56,7 +56,7 @@ import com.nchat.app.data.model.Friend
 fun CreateGroupScreen(
     friends: List<Friend>,
     onBack: () -> Unit,
-    onCreate: (name: String, description: String, memberCount: Int) -> Unit,
+    onCreate: (name: String, description: String, memberIds: List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
@@ -232,7 +232,7 @@ fun CreateGroupScreen(
 
             item(key = "create") {
                 CreateGroupButton(enabled = canCreate) {
-                    onCreate(name.trim(), description.trim(), selected.size)
+                    onCreate(name.trim(), description.trim(), selected.toList())
                 }
             }
         }
