@@ -103,7 +103,7 @@ async fn group_lifecycle_messages_and_read_state() {
     let app = app();
     let (ada_token, ada_id) = app.signup("ada@example.com", "Ada").await;
     let (grace_token, grace_id) = app.signup("grace@example.com", "Grace").await;
-    let (linus_token, _linus_id) = app.signup("linus@example.com", "Linus").await;
+    let (linus_token, linus_id) = app.signup("linus@example.com", "Linus").await;
 
     let (status, body) = app
         .call(
@@ -222,11 +222,22 @@ async fn group_lifecycle_messages_and_read_state() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // Admins can promote, mute and delete; non-admins cannot.
+    // Admins can promote, mute and delete; non-admins cannot. (Changing your
+    // *own* role is a 400 before the admin check, exactly like the reference.)
     let (status, _) = app
         .call(
             "PATCH",
             &format!("/groups/{group_id}/members/{grace_id}"),
+            Some(&grace_token),
+            Some(json!({ "role": "admin" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = app
+        .call(
+            "PATCH",
+            &format!("/groups/{group_id}/members/{linus_id}"),
             Some(&grace_token),
             Some(json!({ "role": "admin" })),
         )
