@@ -5,7 +5,9 @@ import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.ChatRepository
+import com.nchat.app.data.repository.FriendRepository
 import com.nchat.app.data.repository.InMemoryChatRepository
+import com.nchat.app.data.repository.InMemoryFriendRepository
 
 /**
  * Composition root. One place to swap the in-memory repository for the Rust backend
@@ -14,10 +16,12 @@ import com.nchat.app.data.repository.InMemoryChatRepository
 object ServiceLocator {
 
     val chatRepository: ChatRepository get() = repository
+    val friendRepository: FriendRepository get() = friendsRepository
     val statuses: List<StatusUpdate> get() = repository.statuses
     val friends: List<Friend> get() = repository.friends
     val calls: List<CallRecord> get() = repository.calls
     val profile: UserProfile get() = repository.profile
 
     private val repository: InMemoryChatRepository by lazy { InMemoryChatRepository() }
+    private val friendsRepository: InMemoryFriendRepository by lazy { InMemoryFriendRepository() }
 }

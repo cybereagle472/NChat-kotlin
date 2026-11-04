@@ -45,6 +45,9 @@ interface ChatRepository {
     fun leaveGroup(groupId: String)
     fun forwardMessage(targetChatId: String, source: Message)
     fun markRead(chatId: String)
+
+    /** Existing chat for this person, or a fresh one seeded with a greeting. */
+    fun openChat(personId: String, title: String, isOnline: Boolean): Chat
 }
 
 class InMemoryChatRepository(
@@ -65,6 +68,20 @@ class InMemoryChatRepository(
     val statuses: List<StatusUpdate> = MockDataProvider.statuses()
     val friends: List<Friend> = MockDataProvider.friends()
     val calls: List<CallRecord> = MockDataProvider.calls()
+
+    override fun openChat(personId: String, title: String, isOnline: Boolean): Chat {
+        val existing = _chats.value.firstOrNull { it.id == personId }
+        if (existing != null) return existing
+        val chat = Chat(
+            id = personId,
+            title = title,
+            isOnline = isOnline,
+            lastMessage = "You are now friends — say hello 👋",
+            lastMessageAt = System.currentTimeMillis()
+        )
+        _chats.update { current -> current + chat }
+        return chat
+    }
 
     override fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>> =
         synchronized(conversations) {

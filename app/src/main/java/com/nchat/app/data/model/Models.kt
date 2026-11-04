@@ -72,15 +72,22 @@ data class Group(
     val lastActivityAt: Long
 )
 
-/** Friend suggestion / friend row for the Discover tab. */
+/** Where a person sits in the friend graph, driving the Discover action buttons. */
+enum class FriendRelation { Friend, Incoming, Outgoing, None }
+
 data class Friend(
     val id: String,
     val name: String,
     val handle: String,
     val isOnline: Boolean,
-    val mutualFriends: Int,
-    val requestIncoming: Boolean = false
-)
+    val mutualFriends: Int = 0,
+    val relation: FriendRelation = FriendRelation.None,
+    val lastSeenAt: Long? = null,
+    val requestedAt: Long? = null
+) {
+    /** Convenience used by the groups picker, which only cares about pending invites. */
+    val requestIncoming: Boolean get() = relation == FriendRelation.Incoming
+}
 
 /** Call log row for the History tab. */
 data class CallRecord(

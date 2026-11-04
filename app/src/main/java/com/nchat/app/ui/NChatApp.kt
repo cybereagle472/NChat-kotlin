@@ -54,7 +54,8 @@ fun NChatApp() {
                         chatId = screen.chatId,
                         chatTitle = screen.title,
                         onBack = { navigator.pop() },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        autoCallVideo = screen.autoCallVideo
                     )
 
                     is NcScreen.Settings -> SettingsScreen(

@@ -25,7 +25,15 @@ enum class HomeTab(val label: String, val icon: ImageVector) {
 sealed interface NcScreen {
     data object Home : NcScreen
 
-    data class Conversation(val chatId: String, val title: String) : NcScreen
+    /**
+     * A conversation. [autoCallVideo] is null for a normal open, or true/false when the
+     * chat should pop straight into a video / voice call (Discover's call buttons).
+     */
+    data class Conversation(
+        val chatId: String,
+        val title: String,
+        val autoCallVideo: Boolean? = null
+    ) : NcScreen
 
     data object Settings : NcScreen
 }

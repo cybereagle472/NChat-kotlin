@@ -1,15 +1,27 @@
 package com.nchat.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -19,11 +31,14 @@ import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
+import com.nchat.app.data.model.Friend
+import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.feature.chats.ChatsScreen
 import com.nchat.app.feature.chats.ChatsViewModel
 import com.nchat.app.feature.discover.DiscoverScreen
 import com.nchat.app.feature.groups.GroupsScreen
 import com.nchat.app.feature.history.HistoryScreen
+import com.nchat.app.feature.profile.ProfileViewScreen
 import com.nchat.app.feature.status.StatusScreen
 import com.nchat.app.ui.components.NcBottomBar
 
@@ -39,13 +54,20 @@ fun HomeScreen(
     )
 
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
+    val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
+    val friends = remember(friendGraph) {
+        friendGraph.filter { it.relation == FriendRelation.Friend }
+    }
+    var profileFriend by remember { mutableStateOf<Friend?>(null) }
+    BackHandler(enabled = profileFriend != null) { profileFriend = null }
     val chatsListState = rememberLazyListState()
     val statusListState = rememberLazyListState()
     val groupsListState = rememberLazyListState()
     val discoverListState = rememberLazyListState()
     val historyListState = rememberLazyListState()
 
-    NcBackdrop(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
+        NcBackdrop(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = navigator.tab,
@@ -71,7 +93,7 @@ fun HomeScreen(
 
                     HomeTab.Groups -> GroupsScreen(
                         groups = groups,
-                        friends = ServiceLocator.friends,
+                        friends = friends,
                         listState = groupsListState,
                         onOpenGroup = { group ->
                             navigator.push(NcScreen.Conversation(group.id, group.name))
@@ -82,9 +104,33 @@ fun HomeScreen(
                     )
 
                     HomeTab.Discover -> DiscoverScreen(
-                        friends = ServiceLocator.friends,
+                        friends = friends,
                         listState = discoverListState,
-                        onMessage = {}
+                        onAddFriend = { ServiceLocator.friendRepository.sendRequest(it) },
+                        onCancelRequest = { ServiceLocator.friendRepository.cancelRequest(it) },
+                        onAcceptRequest = { ServiceLocator.friendRepository.accept(it) },
+                        onDeclineRequest = { ServiceLocator.friendRepository.decline(it) },
+                        onUnfriend = { ServiceLocator.friendRepository.unfriend(it) },
+                        onMessage = { friend ->
+                            onOpenChat(
+                                ServiceLocator.chatRepository.openChat(
+                                    personId = friend.id,
+                                    title = friend.name,
+                                    isOnline = friend.isOnline
+                                )
+                            )
+                        },
+                        onCall = { friend, video ->
+                            val chat = ServiceLocator.chatRepository.openChat(
+                                personId = friend.id,
+                                title = friend.name,
+                                isOnline = friend.isOnline
+                            )
+                            navigator.push(
+                                NcScreen.Conversation(chat.id, chat.title, autoCallVideo = video)
+                            )
+                        },
+                        onViewProfile = { profileFriend = it }
                     )
 
                     HomeTab.History -> HistoryScreen(
@@ -98,6 +144,49 @@ fun HomeScreen(
                 selected = navigator.tab,
                 onSelect = navigator::selectTab
             )
+        }
+        }
+
+        val shown = profileFriend
+        AnimatedVisibility(
+            visible = shown != null,
+            enter = slideInHorizontally(tween(280)) { it } + fadeIn(tween(200)),
+            exit = slideOutHorizontally(tween(280)) { it } + fadeOut(tween(180)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            if (shown != null) {
+                ProfileViewScreen(
+                    name = shown.name,
+                    handle = shown.handle.removePrefix("@"),
+                    about = if (shown.isOnline) "Online now" else "Hey there! I am using NChat.",
+                    isOnline = shown.isOnline,
+                    emoji = null,
+                    onBack = { profileFriend = null },
+                    onMessage = {
+                        val friend = shown
+                        profileFriend = null
+                        onOpenChat(
+                            ServiceLocator.chatRepository.openChat(
+                                personId = friend.id,
+                                title = friend.name,
+                                isOnline = friend.isOnline
+                            )
+                        )
+                    },
+                    onCall = { video ->
+                        val friend = shown
+                        profileFriend = null
+                        val chat = ServiceLocator.chatRepository.openChat(
+                            personId = friend.id,
+                            title = friend.name,
+                            isOnline = friend.isOnline
+                        )
+                        navigator.push(
+                            NcScreen.Conversation(chat.id, chat.title, autoCallVideo = video)
+                        )
+                    }
+                )
+            }
         }
     }
 }
