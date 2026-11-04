@@ -234,7 +234,9 @@ fun ConversationScreen(
                                             text = "$typingMember is typing",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF7C3AED)
+                                            color = Color(0xFF7C3AED),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Box(modifier = Modifier.size(6.dp))
                                     }
@@ -593,6 +595,7 @@ private fun ConversationHeader(
                     color = if (isActivity) Color(0xFF86EFAC) else Color(0xCCFFFFFF),
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 if (isActivity) {

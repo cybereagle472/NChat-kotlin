@@ -143,11 +143,31 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.10 | 90 | `nchat-build-90` | Group call wiring, profile repository, cropper polish, settings profile pane. |
 | 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
 | 1.0.12 | 20 | `nchat-build-98` | Auth screen, profile setup, local session, Log Out. |
-| 1.0.13 | 21 | *pending* | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
+| 1.0.13 | 21 | `nchat-build-101` | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
+| 1.0.14 | 22 | *pending* | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
 
 ---
 
 ## 6. What each feature cost (and why it looks the way it does)
+
+### 6.0 Row anatomy (read this before writing any list row)
+
+Rows broke in 1.0.13 exactly where a flexible `Row` had one more child than it had space:
+the call-history duration was measured with ~15dp left, so `12:08` wrapped one character per
+line and every card grew around it. The invariants that prevent this class of bug:
+
+- **One hierarchy per card, three lines max:** identity, meta, then time. The same order in
+  every list, so cards are the same height on every screen.
+- **Every text in a row is single-line**: `maxLines = 1` plus `softWrap = false` for tokens
+  (times, durations, pills) and `overflow = TextOverflow.Ellipsis` for names.
+- **Exactly one child may shrink:** the flexible label gets `Modifier.weight(1f, fill = false)`.
+  Fixed-size siblings (pills, badges, ticks, action icons) must never be the child that gets
+  squeezed, otherwise they wrap.
+- **Fixed leading and trailing columns:** avatar 44–56dp, trailing actions 28–32dp each; the
+  middle column alone takes `weight(1f)`.
+- **`heightIn(min = …)`** on the card so one- and two-line bodies still align.
+- **Shared gutters:** `contentPadding = PaddingValues(NcSpace.md)` (12dp) and
+  `Arrangement.spacedBy(NcSpace.sm)` (8dp) for every tab list.
 
 ### 6.1 Chat list
 Glass row: 56dp gradient avatar, name, snippet, time, unread count. Rows are dense (2dp
@@ -281,7 +301,7 @@ Known-good: `OpenWith`, `RotateRight`, `ZoomIn`, `ZoomOut`, `Close`, `Check`,
 
 ---
 
-## 9. Performance rules (added in 1.0.13)
+## 9. Performance & layout rules (1.0.13 / 1.0.14)
 
 User report: *"switching between Chats / Groups / Status / History / Discover has been slow
 since 1.0.2 — it must be instant."* Root causes were self-inflicted decoration, not data:
@@ -308,6 +328,10 @@ Standing rules:
 - Nav affordances animate in ≤150 ms.
 - Keep `key`s on list items and hoist `LazyListState` to the tab host so returning to a
   tab restores its scroll offset instead of rebuilding.
+- Rows follow §6.0: single-line text, one weighted flexible child, fixed leading/trailing
+  columns, `heightIn(min = …)`. Whenever a new label is added to a row, ask "what happens at
+  1.3× font scale on a 360dp screen?" — if the answer is "it wraps", weight the label and
+  ellipsize it, never the token beside it.
 
 ---
 

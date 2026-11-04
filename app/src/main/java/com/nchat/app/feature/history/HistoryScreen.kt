@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -51,7 +52,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.designsystem.pressFeedback
@@ -106,8 +106,8 @@ fun HistoryScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(NcSpace.md),
+            verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
         ) {
             if (visible.isEmpty()) {
                 item(key = "history-empty") {
@@ -219,39 +219,43 @@ private fun HistoryRow(
     onMessage: () -> Unit
 ) {
     val interaction = rememberPressSource()
+    val duration = call.durationLabel?.takeIf { it.isNotBlank() }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 76.dp)
             .pressFeedback(interaction)
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xB3FFFFFF))
             .border(1.dp, Color(0xB3FFFFFF), RoundedCornerShape(16.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onOpenProfile)
-            .padding(12.dp),
+            .padding(horizontal = NcSpace.md, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (call.missed) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(
+                    if (call.missed) {
                         Brush.linearGradient(listOf(Color(0xFFF87171), Color(0xFFFB7185)))
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                AvatarInitial(call)
-            }
-        } else {
-            NcAvatar(
-                name = call.name,
-                size = 48.dp,
-                emoji = if (call.isGroup) "👥" else null
-            )
+                    } else {
+                        Brush.linearGradient(NcTheme.extra.brandGradient)
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            AvatarInitial(call)
         }
 
-        Column(modifier = Modifier.weight(1f)) {
+        // Fixed three-line hierarchy: name, direction + type, then time + duration.
+        // Every line is single-line so a narrow card can never stack characters.
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
             Text(
                 text = call.name,
                 color = if (call.missed) Red600 else Slate800,
@@ -262,7 +266,6 @@ private fun HistoryRow(
             )
 
             Row(
-                modifier = Modifier.padding(top = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -270,16 +273,19 @@ private fun HistoryRow(
                     imageVector = directionIcon(call),
                     contentDescription = null,
                     tint = directionColor(call),
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(13.dp)
                 )
                 Text(
                     text = directionLabel(call),
                     color = Slate600,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    // Only the direction label yields space; the pill keeps its size.
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-
                 if (call.isVideo) {
                     TypePill(
                         label = "Video",
@@ -295,28 +301,40 @@ private fun HistoryRow(
                         background = Color(0xFFDBEAFE)
                     )
                 }
+            }
 
-                if (!call.durationLabel.isNullOrBlank()) {
-                    Text(text = "•", color = Color(0xFF94A3B8), fontSize = 11.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = TimeFormat.historyTimestamp(call.timestamp),
+                    color = Slate500,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                if (duration != null) {
                     Text(
-                        text = call.durationLabel,
+                        text = "·",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    Text(
+                        text = duration,
                         color = Violet,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
-
-            Text(
-                text = TimeFormat.historyTimestamp(call.timestamp),
-                color = Slate500,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(top = 3.dp)
-            )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             HistoryAction(Icons.Rounded.Call, "Voice call", onVoice)
             HistoryAction(Icons.Rounded.Videocam, "Video call", onVideo)
             HistoryAction(Icons.Rounded.ChatBubble, "Message", onMessage)
@@ -329,8 +347,9 @@ private fun AvatarInitial(call: CallRecord) {
     Text(
         text = if (call.isGroup) "👥" else call.name.trim().take(1).uppercase().ifBlank { "?" },
         color = Color.White,
-        fontSize = if (call.isGroup) 18.sp else 16.sp,
-        fontWeight = FontWeight.SemiBold
+        fontSize = if (call.isGroup) 17.sp else 15.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1
     )
 }
 
@@ -355,7 +374,14 @@ private fun TypePill(
             tint = foreground,
             modifier = Modifier.size(11.dp)
         )
-        Text(text = label, color = foreground, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = label,
+            color = foreground,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
@@ -364,9 +390,9 @@ private fun HistoryAction(icon: ImageVector, label: String, onClick: () -> Unit)
     val interaction = rememberPressSource()
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(30.dp)
             .pressFeedback(interaction)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(9.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
