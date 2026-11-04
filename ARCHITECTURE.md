@@ -42,8 +42,11 @@ the client keeps a local cache and updates optimistically.
 
 ## Migration plan (each step shippable on its own)
 
-1. **Backend foundation — done (`server/`, 1.0.18).** Auth, users, chats,
-   messages, receipts, typing, presence, WebSocket fan-out, tests, CI.
+1. **Backend — done (`server/`).** Not a from-scratch design: a line-for-line Rust
+   port of `nchat-friends/worker` (auth, users, friends, messages, groups, statuses,
+   1:1 calls, group calls, media, privacy, admin, realtime fan-out), with the same
+   schema, the same JSON and 13 end-to-end flows in `cargo test`. See `eagle-x.md` §3.1
+   for the runtime mapping and the behaviours that must not drift.
 2. **Transport layer in the app.** `network/NChatApi.kt` (OkHttp +
    `kotlinx.serialization`) and `network/NChatSocket.kt` (WebSocket with
    exponential backoff and a `StateFlow<ConnectionState>`).
@@ -67,5 +70,7 @@ the client keeps a local cache and updates optimistically.
   works with no server.
 * The backend owns ordering and unread counts (sequence numbers + receipts);
   the client owns presentation. Never compute unread in two places.
-* Nothing on the wire is `snake_case`, nothing is nullable-by-accident: the
-  Kotlin `data/model` classes and `server/src/model.rs` are edited together.
+* The wire format is the reference worker's, not ours: `snake_case` keys, the same
+  wrappers (`{messages:[]}`, `{chats:[]}`), the same 201/400/403/404/409 choices. The
+  Kotlin `data/model` classes and `server/src/models.rs` are edited together, and a
+  changed field means changing the reference contract — don't.
