@@ -144,10 +144,15 @@ fun ConversationScreen(
             ConversationHeader(
                 chatTitle = chatTitle,
                 chat = chat,
+                groupMemberCount = group?.memberCount,
                 onBack = onBack,
                 onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
                 onOpenProfile = {
-                    if (chat?.isGroup == true) groupInfoOpen = true else profileOpen = true
+                    if (chat?.isGroup == true || group != null) {
+                        groupInfoOpen = true
+                    } else {
+                        profileOpen = true
+                    }
                 }
             )
 
