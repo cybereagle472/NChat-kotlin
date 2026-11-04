@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcToaster
+import com.nchat.app.data.ServiceLocator
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.core.designsystem.pressFeedback
 
@@ -69,7 +72,9 @@ fun ProfileViewScreen(
 ) {
     val extra = NcTheme.extra
     var menuOpen by remember { mutableStateOf(false) }
-    var blocked by remember { mutableStateOf(false) }
+    // Blocking is real state now: the same set feeds Settings ▸ Blocked Users.
+    val blockedNames by ServiceLocator.friendRepository.blockedNames.collectAsStateWithLifecycle()
+    val blocked = name in blockedNames
 
     Column(modifier = modifier.fillMaxSize().background(Color.White)) {
         Box(
@@ -142,7 +147,13 @@ fun ProfileViewScreen(
                             )
                         },
                         onClick = {
-                            blocked = !blocked
+                            if (blocked) {
+                                ServiceLocator.friendRepository.unblock(name)
+                                NcToaster.show("$name unblocked")
+                            } else {
+                                ServiceLocator.friendRepository.block(name)
+                                NcToaster.show("$name blocked")
+                            }
                             menuOpen = false
                         }
                     )

@@ -14,11 +14,16 @@ import kotlinx.coroutines.flow.update
  */
 interface FriendRepository {
     val friends: StateFlow<List<Friend>>
+
+    /** Display names the user has blocked; drives the Settings ▸ Blocked Users pane. */
+    val blockedNames: StateFlow<Set<String>>
     fun accept(id: String)
     fun decline(id: String)
     fun sendRequest(id: String)
     fun cancelRequest(id: String)
     fun unfriend(id: String)
+    fun block(name: String)
+    fun unblock(name: String)
 }
 
 class InMemoryFriendRepository(
@@ -27,6 +32,9 @@ class InMemoryFriendRepository(
 
     private val _friends = MutableStateFlow(seed)
     override val friends: StateFlow<List<Friend>> = _friends.asStateFlow()
+
+    private val _blockedNames = MutableStateFlow<Set<String>>(emptySet())
+    override val blockedNames: StateFlow<Set<String>> = _blockedNames.asStateFlow()
 
     override fun accept(id: String) = move(id, FriendRelation.Friend)
 
@@ -37,6 +45,16 @@ class InMemoryFriendRepository(
     override fun cancelRequest(id: String) = move(id, FriendRelation.None)
 
     override fun sendRequest(id: String) = move(id, FriendRelation.Outgoing, stamp = true)
+
+    override fun block(name: String) {
+        val key = name.trim()
+        if (key.isEmpty()) return
+        _blockedNames.update { it + key }
+    }
+
+    override fun unblock(name: String) {
+        _blockedNames.update { it - name }
+    }
 
     private fun move(id: String, relation: FriendRelation, stamp: Boolean = false) {
         _friends.update { list ->

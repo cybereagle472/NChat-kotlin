@@ -12,6 +12,8 @@ import com.nchat.app.data.repository.InMemoryChatRepository
 import com.nchat.app.data.repository.InMemoryFriendRepository
 import com.nchat.app.data.repository.InMemoryProfileRepository
 import com.nchat.app.data.repository.LocalAuthRepository
+import com.nchat.app.data.repository.LocalPreferencesRepository
+import com.nchat.app.data.repository.PreferencesRepository
 import com.nchat.app.data.repository.ProfileRepository
 
 /**
@@ -38,6 +40,7 @@ object ServiceLocator {
     val chatRepository: ChatRepository get() = repository
     val friendRepository: FriendRepository get() = friendsRepository
     val profileRepository: ProfileRepository get() = profileRepositoryImpl
+    val preferencesRepository: PreferencesRepository get() = preferencesRepositoryImpl
     val statuses: List<StatusUpdate> get() = repository.statuses
     val friends: List<Friend> get() = repository.friends
     val calls: List<CallRecord> get() = repository.calls
@@ -48,4 +51,9 @@ object ServiceLocator {
         InMemoryChatRepository(profileProvider = { profileRepositoryImpl.profile.value })
     }
     private val friendsRepository: InMemoryFriendRepository by lazy { InMemoryFriendRepository() }
+    private val preferencesRepositoryImpl: PreferencesRepository by lazy {
+        LocalPreferencesRepository(
+            appContext ?: error("ServiceLocator.init(context) must run before the UI")
+        )
+    }
 }
