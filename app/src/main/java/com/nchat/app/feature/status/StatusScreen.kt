@@ -22,6 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,116 +52,133 @@ fun StatusScreen(
     val mine = statuses.firstOrNull { it.isMine }
     val others = statuses.filterNot { it.isMine }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        NcTabHeader(
-            title = "Status",
-            actions = {
-                NcHeaderAction(Icons.Rounded.CameraAlt, "Camera", onClick = {})
-                NcHeaderAction(Icons.Rounded.Edit, "Text status", onClick = {})
-            }
-        )
+    var viewingIndex by remember { mutableStateOf<Int?>(null) }
+    var locallyViewed by remember { mutableStateOf(emptySet<String>()) }
+    fun openStatus(status: StatusUpdate) {
+        viewingIndex = statuses.indexOfFirst { it.id == status.id }.takeIf { it >= 0 }
+    }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(NcSpace.md),
-            verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
-        ) {
-            item(key = "my-status") {
-                NcGlassRow(onClick = {}) {
-                    Box {
-                        NcAvatar(name = mine?.authorName ?: "My status", size = 56.dp)
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                                .border(2.dp, Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(13.dp)
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            NcTabHeader(
+                title = "Status",
+                actions = {
+                    NcHeaderAction(Icons.Rounded.CameraAlt, "Camera", onClick = {})
+                    NcHeaderAction(Icons.Rounded.Edit, "Text status", onClick = {})
+                }
+            )
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(NcSpace.md),
+                verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
+            ) {
+                item(key = "my-status") {
+                    NcGlassRow(onClick = { mine?.let(::openStatus) }) {
+                        Box {
+                            NcAvatar(name = mine?.authorName ?: "My status", size = 56.dp)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .border(2.dp, Color.White, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "My status",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = extra.textSecondary
+                            )
+                            Text(
+                                text = "Tap to add status update",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = extra.textTertiary
                             )
                         }
                     }
-                    Column(modifier = Modifier.weight(1f)) {
+                }
+
+                item(key = "recent-header") {
+                    Text(
+                        text = "Recent updates",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = extra.textTertiary,
+                        modifier = Modifier.padding(start = NcSpace.xs, top = NcSpace.sm)
+                    )
+                }
+
+                items(items = others, key = { it.id }) { status ->
+                    NcGlassRow(onClick = { openStatus(status) }) {
+                        Box(
+                            modifier = Modifier
+                                .size(62.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (status.viewed || status.id in locallyViewed) {
+                                        Brush.linearGradient(listOf(extra.divider, extra.divider))
+                                    } else {
+                                        Brush.linearGradient(extra.brandGradient)
+                                    }
+                                )
+                                .padding(3.dp)
+                        ) {
+                            NcAvatar(
+                                name = status.authorName,
+                                emoji = status.avatarEmoji,
+                                size = 56.dp
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = status.authorName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = extra.textSecondary
+                            )
+                            Text(
+                                text = status.caption,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = extra.textTertiary,
+                                maxLines = 1
+                            )
+                        }
                         Text(
-                            text = "My status",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = extra.textSecondary
-                        )
-                        Text(
-                            text = "Tap to add status update",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = extra.textTertiary
+                            text = TimeFormat.shortAgo(status.timestamp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = extra.textMuted
                         )
                     }
                 }
-            }
 
-            item(key = "recent-header") {
-                Text(
-                    text = "Recent updates",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = extra.textTertiary,
-                    modifier = Modifier.padding(start = NcSpace.xs, top = NcSpace.sm)
-                )
-            }
-
-            items(items = others, key = { it.id }) { status ->
-                NcGlassRow(onClick = {}) {
-                    Box(
-                        modifier = Modifier
-                            .size(62.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (status.viewed) {
-                                    Brush.linearGradient(listOf(extra.divider, extra.divider))
-                                } else {
-                                    Brush.linearGradient(extra.brandGradient)
-                                }
-                            )
-                            .padding(3.dp)
-                    ) {
-                        NcAvatar(
-                            name = status.authorName,
-                            emoji = status.avatarEmoji,
-                            size = 56.dp
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = status.authorName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = extra.textSecondary
-                        )
-                        Text(
-                            text = status.caption,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = extra.textTertiary,
-                            maxLines = 1
-                        )
-                    }
+                item(key = "status-footer") {
+                    Spacer(modifier = Modifier.size(NcSpace.md))
                     Text(
-                        text = TimeFormat.shortAgo(status.timestamp),
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Status updates disappear after 24 hours",
+                        style = MaterialTheme.typography.labelSmall,
                         color = extra.textMuted
                     )
                 }
             }
+        }
 
-            item(key = "status-footer") {
-                Spacer(modifier = Modifier.size(NcSpace.md))
-                Text(
-                    text = "Status updates disappear after 24 hours",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = extra.textMuted
-                )
-            }
+        viewingIndex?.let { start ->
+            StatusViewer(
+                statuses = statuses,
+                startIndex = start,
+                onViewed = { id -> locallyViewed = locallyViewed + id },
+                onDismiss = { viewingIndex = null }
+            )
         }
     }
 }

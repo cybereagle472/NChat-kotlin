@@ -95,6 +95,7 @@ import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.feature.profile.ProfileViewScreen
 
 @Composable
 fun ConversationScreen(
@@ -116,6 +117,7 @@ fun ConversationScreen(
     val anchors = remember { mutableStateMapOf<String, Rect>() }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
     var callKind by remember { mutableStateOf<CallKind?>(null) }
+    var profileOpen by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -137,7 +139,8 @@ fun ConversationScreen(
                 chatTitle = chatTitle,
                 chat = chat,
                 onBack = onBack,
-                onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio }
+                onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
+                onOpenProfile = { profileOpen = true }
             )
 
             LazyColumn(
@@ -219,6 +222,22 @@ fun ConversationScreen(
         )
     }
 
+        if (profileOpen) {
+            ProfileViewScreen(
+                name = chatTitle,
+                handle = chatTitle.lowercase().replace(" ", ""),
+                about = if (chat?.isGroup == true) "Group conversation" else "Hey there! I am using NChat.",
+                isOnline = chat?.isOnline == true,
+                emoji = chat?.avatarEmoji,
+                onBack = { profileOpen = false },
+                onMessage = { profileOpen = false },
+                onCall = { video ->
+                    profileOpen = false
+                    callKind = if (video) CallKind.Video else CallKind.Audio
+                }
+            )
+        }
+
         callKind?.let { kind ->
             CallOverlay(
                 name = chatTitle,
@@ -281,7 +300,8 @@ private fun ConversationHeader(
     chatTitle: String,
     chat: Chat?,
     onBack: () -> Unit,
-    onStartCall: (video: Boolean) -> Unit
+    onStartCall: (video: Boolean) -> Unit,
+    onOpenProfile: () -> Unit
 ) {
     val status = when {
         chat?.isTyping == true -> "typing…"
@@ -315,6 +335,14 @@ private fun ConversationHeader(
             )
         }
 
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onOpenProfile)
+                .padding(end = NcSpace.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+        ) {
         NcAvatar(
             name = chatTitle,
             emoji = chat?.avatarEmoji,
@@ -336,6 +364,7 @@ private fun ConversationHeader(
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1
             )
+        }
         }
 
         HeaderAction(Icons.Rounded.Videocam, "Video call", onClick = { onStartCall(true) })

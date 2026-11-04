@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.core.designsystem.NcBackdrop
 import com.nchat.app.core.navigation.HomeTab
 import com.nchat.app.core.navigation.NcNavigator
+import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
 import com.nchat.app.feature.chats.ChatsScreen
@@ -35,6 +38,7 @@ fun HomeScreen(
         factory = ChatsViewModel.factory(ServiceLocator.chatRepository)
     )
 
+    val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
     val chatsListState = rememberLazyListState()
     val statusListState = rememberLazyListState()
     val groupsListState = rememberLazyListState()
@@ -66,9 +70,15 @@ fun HomeScreen(
                     )
 
                     HomeTab.Groups -> GroupsScreen(
-                        groups = ServiceLocator.groups,
+                        groups = groups,
+                        friends = ServiceLocator.friends,
                         listState = groupsListState,
-                        onCreateGroup = {}
+                        onOpenGroup = { group ->
+                            navigator.push(NcScreen.Conversation(group.id, group.name))
+                        },
+                        onCreateGroup = { name, description, members ->
+                            ServiceLocator.chatRepository.createGroup(name, description, members)
+                        }
                     )
 
                     HomeTab.Discover -> DiscoverScreen(

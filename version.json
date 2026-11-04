@@ -1,6 +1,6 @@
 {
-  "versionCode": 11,
-  "versionName": "1.0.3",
+  "versionCode": 12,
+  "versionName": "1.0.4",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.3 — the tab bar is clean and the updater is honest. The bottom navigation no longer shows banded, mixed colours behind the active tab: its elevation layer was compositing as an opaque plate under the gradient chip, so the chip is now a flat brand gradient with a white hairline and a spring press, and the labels/icons match the reference sizes. Updates now report real progress — the bar fills with the actual download percentage instead of looping, then switches to 'Installing…'. New in this build: long-press a message for the reference action menu (quick reactions, Reply, Copy, Delete with confirmation), a reply strip above the composer, the Photos/Videos/Files attachment popup, and a full call screen with pulsing rings, live timer and mute/speaker/end controls behind the header call buttons."
+  "releaseNotes": "NChat 1.0.4 — the inert rows are alive. Status is now a real story viewer: tap any update for the full-screen view with segmented progress bars, tap-left/tap-right navigation, auto-advance and the brand backdrops; updates you have watched turn grey in the list. Tapping a chat's avatar or name opens the Profile page — gradient title bar, ringed 96dp avatar, @handle, presence line, About card, Message/Call/Video actions and a Block menu. Groups can finally be created: the + button opens the New Group screen (name, description, member picker with gradient selection circles), the group lands at the top of the list, and tapping a group opens its conversation."
 }
