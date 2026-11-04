@@ -29,7 +29,8 @@ ServerConfig.effective()   ← Settings ▸ Server (per-install override)
 ApiClient (root + socketRoot) ──► repositories ──► screens
 ```
 
-- `grep -rn "workers.dev" app/src/main/java` → **0 hits**.
+- `grep -rn "workers.dev" app/src/main/java` → **0 hits**, and the address is not in the
+  repository either: it lives in the Actions variable `NCHAT_API_BASE`.
 - There is **no runtime server switcher**: the address is a build property, so a device
   cannot be redirected to a look-alike server by someone who briefly has the phone.
 - The single committed value lives in `nchat.properties` and can be removed from git entirely

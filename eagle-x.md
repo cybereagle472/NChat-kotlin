@@ -215,9 +215,11 @@ ApiClient (root + socketRoot) ──► every repository ──► every screen
 - **One committed default:** `nchat.properties` (`apiBase=`), the counterpart of the worker's
   `PUBLIC_API_URL` in `wrangler.toml`. Build-time precedence is
   `-PNCHAT_API_BASE` → `$NCHAT_API_BASE` → `local.properties` (`nchat.apiBase`) → that file.
-- **Nothing in git at all is also supported:** blank the value and set `NCHAT_API_BASE` as a
-  repository Actions variable/secret — `.github/workflows/build-apk.yaml` passes it to Gradle,
-  the way the Cloudflare dashboard supplies `VITE_API_URL`.
+- **Nothing in git at all: that is the current setup.** `nchat.properties` ships *empty*; the
+  address comes from the repository's Actions variable `NCHAT_API_BASE`, which
+  `.github/workflows/build-apk.yaml` passes to Gradle — the way the Cloudflare dashboard
+  supplies `VITE_API_URL`. The workflow refuses to publish a main-branch release when the
+  variable is missing, so a serverless APK can never be shipped by accident.
 - **No address at build time → the app asks for one.** `ServerSetupScreen` runs before the
   auth stage whenever neither the build nor Settings ▸ Server names a backend, so an
   unconfigured APK is a "connect your server" screen rather than a broken one.
