@@ -2,22 +2,26 @@ package com.nchat.app.data
 
 import android.content.Context
 import com.nchat.app.BuildConfig
-import com.nchat.app.data.model.CallRecord
-import com.nchat.app.data.model.Friend
-import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
+import com.nchat.app.data.repository.CallRepository
 import com.nchat.app.data.repository.ChatRepository
 import com.nchat.app.data.repository.FriendRepository
+import com.nchat.app.data.repository.InMemoryCallRepository
 import com.nchat.app.data.repository.InMemoryChatRepository
 import com.nchat.app.data.repository.InMemoryFriendRepository
 import com.nchat.app.data.repository.InMemoryProfileRepository
+import com.nchat.app.data.repository.InMemoryStatusRepository
 import com.nchat.app.data.repository.LocalAuthRepository
 import com.nchat.app.data.repository.LocalPreferencesRepository
 import com.nchat.app.data.repository.PreferencesRepository
 import com.nchat.app.data.repository.ProfileRepository
+import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.data.repository.RemoteAuthRepository
+import com.nchat.app.data.repository.RemoteCallRepository
 import com.nchat.app.data.repository.RemoteChatRepository
+import com.nchat.app.data.repository.RemoteFriendRepository
+import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
@@ -86,12 +90,11 @@ object ServiceLocator {
     val authRepository: AuthRepository get() = if (isRemote) remoteAuth else localAuth
     val profileRepository: ProfileRepository get() = if (isRemote) remoteProfile else mockProfile
     val chatRepository: ChatRepository get() = if (isRemote) remoteChat else mockChat
-    val friendRepository: FriendRepository get() = mockFriends
+    val friendRepository: FriendRepository get() = if (isRemote) remoteFriends else mockFriends
+    val statusRepository: StatusRepository get() = if (isRemote) remoteStatus else mockStatus
+    val callRepository: CallRepository get() = if (isRemote) remoteCalls else mockCalls
     val preferencesRepository: PreferencesRepository get() = preferencesRepositoryImpl
 
-    val statuses: List<StatusUpdate> get() = mockChat.statuses
-    val friends: List<Friend> get() = mockChat.friends
-    val calls: List<CallRecord> get() = mockChat.calls
     val profile: UserProfile get() = profileRepository.profile.value
 
     private val localAuth: AuthRepository by lazy { LocalAuthRepository(requireContext()) }
@@ -104,6 +107,17 @@ object ServiceLocator {
     private val remoteChat: RemoteChatRepository by lazy {
         RemoteChatRepository(api, tokens, socket, appScope)
     }
+    private val remoteFriends: FriendRepository by lazy {
+        RemoteFriendRepository(api, tokens, socket, appScope)
+    }
+    private val remoteStatus: StatusRepository by lazy {
+        RemoteStatusRepository(api, tokens, socket, appScope)
+    }
+    private val remoteCalls: CallRepository by lazy {
+        RemoteCallRepository(api, tokens, socket, appScope)
+    }
+    private val mockStatus: StatusRepository by lazy { InMemoryStatusRepository() }
+    private val mockCalls: CallRepository by lazy { InMemoryCallRepository() }
     private val mockProfile: InMemoryProfileRepository by lazy { InMemoryProfileRepository() }
     private val mockChat: InMemoryChatRepository by lazy {
         InMemoryChatRepository(profileProvider = { profileRepository.profile.value })

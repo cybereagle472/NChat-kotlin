@@ -49,6 +49,8 @@ fun HomeScreen(
     )
 
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
+    val statuses by ServiceLocator.statusRepository.statuses.collectAsStateWithLifecycle()
+    val calls by ServiceLocator.callRepository.history.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
     val friends = remember(friendGraph) {
         friendGraph.filter { it.relation == FriendRelation.Friend }
@@ -80,7 +82,7 @@ fun HomeScreen(
                     )
 
                     HomeTab.Status -> StatusScreen(
-                        statuses = ServiceLocator.statuses,
+                        statuses = statuses,
                         listState = statusListState
                     )
 
@@ -134,7 +136,7 @@ fun HomeScreen(
                     )
 
                     HomeTab.History -> HistoryScreen(
-                        calls = ServiceLocator.calls,
+                        calls = calls,
                         listState = historyListState,
                         onCall = { call, video ->
                             val chat = ServiceLocator.chatRepository.openChat(
