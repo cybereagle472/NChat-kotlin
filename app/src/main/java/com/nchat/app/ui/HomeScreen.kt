@@ -131,7 +131,8 @@ fun HomeScreen(
                                 id = friend.id,
                                 name = friend.name,
                                 handle = friend.handle,
-                                isOnline = friend.isOnline
+                                isOnline = friend.isOnline,
+                                avatarUrl = friend.avatarUrl
                             )
                         }
                     )
@@ -225,5 +226,6 @@ private data class ProfileTarget(
     val id: String,
     val name: String,
     val handle: String,
-    val isOnline: Boolean
+    val isOnline: Boolean,
+    val avatarUrl: String? = null
 )
