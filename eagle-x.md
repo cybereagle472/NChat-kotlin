@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.19** (`versionCode 27`)
+- Current version: **1.0.20** (`versionCode 28`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -278,12 +278,24 @@ used as the server; release builds stay HTTPS-only.
 - **Live username availability.** Sign-up asks `GET /users/username-available` instead of
   comparing against a hardcoded list.
 
+### Remote media rendering (1.0.20)
+
+Media and avatars are fetched, not simulated. Coil (`coil-compose`) loads:
+
+- **Photo bubbles** — `media_url` fills the 210×140 frame (`ContentScale.Crop`); the brand
+  gradient is only the loading/fallback state.
+- **Video bubbles** — the poster frame is `thumbnail_url ?: media_url` with the play badge on
+  top.
+- **The media viewer** — tapping a photo/clip opens the file full-screen.
+- **Avatars** — `avatar_url` renders inside `NcAvatar` wherever the model carries one (chat
+  list rows, conversation header); the gradient initial stays as the fallback.
+- `/media/file/:key` is **public** in the reference worker (no auth header needed), so Coil
+  fetches directly; the returned URL is absolute and already points at the server that
+  stored the file.
+
 ### Still missing on this strand (deliberate, tracked)
 
-1. **No media rendering in-app.** Photos and clips upload and arrive as rows, but bubbles
-   still draw the type placeholder — the client has no image loader yet (Coil + `avatar_url`
-   / `media_url` rendering is the next slice).
-2. **Calls have no audio/video transport.** Signalling endpoints, TURN credentials and call
+1. **Calls have no audio/video transport.** Signalling endpoints, TURN credentials and call
    records are all real; the overlay is still a ringing UI with no WebRTC stack behind it.
 3. **No offline queue** — a send that fails while the socket is down is not retried
    automatically (ARCHITECTURE step 5).
@@ -357,6 +369,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
 | 1.0.18 | 26 | | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
 | 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK now talks to `https://nchats-friends.usa66486.workers.dev` out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
+| 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
+
 
 ---
 

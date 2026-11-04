@@ -183,6 +183,7 @@ private fun ChatRow(
         NcAvatar(
             name = chat.title,
             emoji = chat.avatarEmoji,
+            imageUrl = chat.avatarUrl,
             size = NcSize.rowAvatar,
             isOnline = chat.isOnline,
             showPresence = !chat.isGroup

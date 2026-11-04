@@ -28,6 +28,9 @@ data class Message(
     val state: DeliveryState = DeliveryState.Read,
     val durationLabel: String? = null,
     val fileName: String? = null,
+    /** `media_url` from the backend — the uploaded file this bubble points at. */
+    val mediaUrl: String? = null,
+    val thumbnailUrl: String? = null,
     val reactions: List<Reaction> = emptyList(),
     val replyAuthor: String? = null,
     val replyText: String? = null,
@@ -44,6 +47,8 @@ data class Chat(
     val id: String,
     val title: String,
     val avatarEmoji: String? = null,
+    /** Server-hosted profile photo, when the account has one. */
+    val avatarUrl: String? = null,
     val isOnline: Boolean = false,
     val isGroup: Boolean = false,
     val lastMessage: String = "",
