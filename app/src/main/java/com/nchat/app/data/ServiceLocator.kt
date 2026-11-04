@@ -2,6 +2,7 @@ package com.nchat.app.data
 
 import android.content.Context
 import com.nchat.app.BuildConfig
+import com.nchat.app.core.config.ServerConfig
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
@@ -61,7 +62,19 @@ object ServiceLocator {
     // ------------------------------------------------------------ transport
 
     val tokens: TokenStore by lazy { TokenStore(requireContext()) }
-    private val apiClient: ApiClient by lazy { ApiClient(BuildConfig.NCHAT_API_BASE, tokens) }
+    private val apiClient: ApiClient by lazy {
+        ApiClient(ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE), tokens)
+    }
+
+    /** The saved server override (null = use the build default). */
+    val serverOverride: String? get() = ServerConfig.override(requireContext())
+
+    /** What this install would connect to right now: "" means the in-memory demo data. */
+    val serverUrl: String get() = ServerConfig.effective(requireContext(), BuildConfig.NCHAT_API_BASE)
+
+    fun saveServerOverride(url: String?) {
+        ServerConfig.save(requireContext(), url)
+    }
     val api: NChatApi by lazy { NChatApi(apiClient) }
     val socket: NChatSocket by lazy { NChatSocket(apiClient, tokens, appScope) }
 
