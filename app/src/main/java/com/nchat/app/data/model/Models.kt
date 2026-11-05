@@ -76,11 +76,40 @@ data class StatusUpdate(
     val avatarEmoji: String? = null,
     /** Server-hosted profile photo of the author, when they have one. */
     val avatarUrl: String? = null,
+    /** Author's user id — needed to mute them (`POST /status/mute`). */
+    val authorId: String = "",
     val caption: String,
     val timestamp: Long,
     val viewed: Boolean,
-    val isMine: Boolean = false
+    val isMine: Boolean = false,
+    /** `text`, `image` or `video`, straight from the server row. */
+    val contentType: String = "text",
+    /** The picture itself, when this is a photo status (`content_url`). */
+    val contentUrl: String? = null,
+    /** How many other people have seen it — only ever non-zero for my own. */
+    val viewCount: Int = 0
 )
+
+/** One person who watched a status (`GET /status/:id/views`). */
+data class StatusViewer(
+    val id: String,
+    val name: String,
+    val avatarUrl: String? = null,
+    val viewedAt: Long = 0L
+)
+
+/** One row of a group's member list, straight from `GET /groups`'s `members[]`. */
+@Immutable
+data class GroupMember(
+    val userId: String,
+    val name: String,
+    val avatarUrl: String? = null,
+    /** `admin` or `member`. */
+    val role: String = "member",
+    val isMuted: Boolean = false
+) {
+    val isAdmin: Boolean get() = role == "admin"
+}
 
 /** Group entry for the Groups tab. */
 @Immutable
@@ -92,8 +121,16 @@ data class Group(
     val unreadCount: Int = 0,
     val avatarEmoji: String? = null,
     val lastActivity: String,
-    val lastActivityAt: Long
-)
+    val lastActivityAt: Long,
+    /** The real member list the server sends — not a guess derived from the friend list. */
+    val members: List<GroupMember> = emptyList(),
+    /** Who created the group; only they may delete it. */
+    val createdBy: String? = null,
+    /** This account's role in the group, so the UI knows whether to offer admin actions. */
+    val myRole: String? = null
+) {
+    val iAmAdmin: Boolean get() = myRole == "admin"
+}
 
 /** Where a person sits in the friend graph, driving the Discover action buttons. */
 enum class FriendRelation { Friend, Incoming, Outgoing, None }

@@ -464,7 +464,11 @@ fun ConversationScreen(
                     groupInfoOpen = false
                     viewModel.onLeaveGroup()
                     onBack()
-                }
+                },
+                selfId = ServiceLocator.tokens.userId.orEmpty(),
+                onRemoveMember = viewModel::onRemoveMember,
+                onSetMemberRole = viewModel::onSetMemberRole,
+                onDeleteGroup = viewModel::onDeleteGroup
             )
         }
 

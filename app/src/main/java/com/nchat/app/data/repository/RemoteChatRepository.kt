@@ -2,6 +2,7 @@ package com.nchat.app.data.repository
 
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.Chat
+import com.nchat.app.data.model.GroupMember
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
@@ -469,6 +470,33 @@ class RemoteChatRepository(
         }
     }
 
+    override fun removeMember(groupId: String, userId: String) {
+        scope.launch {
+            runCatching { api.removeGroupMember(groupId, userId) }
+            refresh()
+        }
+    }
+
+    override fun setMemberRole(groupId: String, userId: String, role: String) {
+        scope.launch {
+            runCatching { api.setMemberRole(groupId, userId, role) }
+            refresh()
+        }
+    }
+
+    override fun deleteGroup(groupId: String) {
+        _chats.update { list -> list.filterNot { it.id == groupId } }
+        _groups.update { list -> list.filterNot { it.id == groupId } }
+        synchronized(conversations) {
+            conversations.remove(groupId)
+            groupIds.remove(groupId)
+        }
+        scope.launch {
+            runCatching { api.deleteGroup(groupId) }
+            refresh()
+        }
+    }
+
     override fun deleteChat(chatId: String) {
         _chats.update { list -> list.filterNot { it.id == chatId } }
         synchronized(conversations) { conversations.remove(chatId) }
@@ -783,16 +811,33 @@ class RemoteChatRepository(
         muted = members.firstOrNull { it.userId == myId }?.isMuted == true
     )
 
-    private fun GroupDto.toGroup(): Group = Group(
-        id = id,
-        name = name,
-        description = description.orEmpty(),
-        memberCount = if (members.isEmpty()) 1 else members.size,
-        unreadCount = unreadCount,
-        avatarEmoji = "👥",
-        lastActivity = lastMessage?.previewText().orEmpty(),
-        lastActivityAt = isoMillis(lastMessage?.createdAt ?: createdAt)
-    )
+    private fun GroupDto.toGroup(): Group {
+        val roster = members.map { member ->
+            GroupMember(
+                userId = member.userId,
+                name = member.profile?.let { it.fullName ?: it.username ?: it.email ?: "Member" }
+                    ?: "Member",
+                avatarUrl = member.profile?.avatarUrl,
+                role = member.role,
+                isMuted = member.isMuted
+            )
+        }
+        return Group(
+            id = id,
+            name = name,
+            description = description.orEmpty(),
+            memberCount = if (roster.isEmpty()) 1 else roster.size,
+            unreadCount = unreadCount,
+            avatarEmoji = "👥",
+            lastActivity = lastMessage?.previewText().orEmpty(),
+            lastActivityAt = isoMillis(lastMessage?.createdAt ?: createdAt),
+            // `/groups` already returns every member with their profile; the UI used to
+            // ignore it and guess the roster from the friend list instead.
+            members = roster,
+            createdBy = createdBy,
+            myRole = members.firstOrNull { it.userId == myId }?.role
+        )
+    }
 
     private fun MessageDto.toModel(chatId: String): Message {
         val mine = senderId == myId

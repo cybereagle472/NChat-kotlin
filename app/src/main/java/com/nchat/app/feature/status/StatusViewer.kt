@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,12 +41,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
+import coil.compose.AsyncImage
 import com.nchat.app.data.model.StatusUpdate
 
 private const val STATUS_DURATION_MS = 4_500
@@ -68,7 +72,12 @@ fun StatusViewer(
     statuses: List<StatusUpdate>,
     startIndex: Int,
     onViewed: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Tapping the eye count on my own status opens the list of who watched it. */
+    onShowViewers: (StatusUpdate) -> Unit = {},
+    mutedAuthorIds: Set<String> = emptySet(),
+    onMuteAuthor: (String) -> Unit = {},
+    onUnmuteAuthor: (String) -> Unit = {}
 ) {
     if (statuses.isEmpty()) return
     var index by remember {
@@ -150,6 +159,17 @@ fun StatusViewer(
                 }
             }
     ) {
+        // A photo status is the picture itself, with the caption over it; a text status keeps
+        // the brand gradient behind it.
+        if (current.contentType != "text" && !current.contentUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = current.contentUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
         // A swipe-down dims the story the further it is dragged towards dismissal.
         Box(
             modifier = Modifier
@@ -242,6 +262,53 @@ fun StatusViewer(
                     text = relativeTime(current.timestamp),
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp
+                )
+            }
+            if (!current.isMine) {
+                val muted = current.authorId in mutedAuthorIds
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.2f))
+                        .clickable {
+                            if (muted) onUnmuteAuthor(current.authorId)
+                            else onMuteAuthor(current.authorId)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (muted) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = if (muted) "Unmute updates" else "Mute updates",
+                        tint = Color.White,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+            }
+        }
+
+        // My own status: the eye count, which opens the viewer list.
+        if (current.isMine) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 36.dp)
+                    .clickable { onShowViewers(current) },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Visibility,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = if (current.viewCount > 0) "  ${current.viewCount} views" else "  No views yet",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

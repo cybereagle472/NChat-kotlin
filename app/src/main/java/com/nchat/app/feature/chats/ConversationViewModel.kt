@@ -120,6 +120,22 @@ class ConversationViewModel(
         repository.leaveGroup(chatId)
     }
 
+    /** Admin only: drop somebody from the group (`DELETE /groups/:id/members/:userId`). */
+    fun onRemoveMember(userId: String) {
+        if (userId.isBlank()) return
+        repository.removeMember(chatId, userId)
+    }
+
+    /** Admin only: promote (`admin`) or demote (`member`). */
+    fun onSetMemberRole(userId: String, role: String) {
+        if (userId.isBlank()) return
+        repository.setMemberRole(chatId, userId, role)
+    }
+
+    fun onDeleteGroup() {
+        repository.deleteGroup(chatId)
+    }
+
     fun onSendVoice(durationLabel: String) {
         repository.sendVoice(chatId, durationLabel)
     }

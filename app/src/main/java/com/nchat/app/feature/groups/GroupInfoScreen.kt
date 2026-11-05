@@ -21,13 +21,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddModerator
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.RemoveModerator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -55,6 +59,7 @@ import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.Group
+import com.nchat.app.data.model.GroupMember
 
 /**
  * Port of `GroupInfo.tsx`: gradient title bar, rounded group avatar with the camera
@@ -70,6 +75,10 @@ fun GroupInfoScreen(
     onRename: (String) -> Unit,
     onAddMembers: (memberIds: List<String>) -> Unit,
     onLeave: () -> Unit,
+    selfId: String = "",
+    onRemoveMember: (userId: String) -> Unit = {},
+    onSetMemberRole: (userId: String, role: String) -> Unit = { _, _ -> },
+    onDeleteGroup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
@@ -79,9 +88,16 @@ fun GroupInfoScreen(
     var pickingMembers by remember { mutableStateOf(false) }
     var confirmingLeave by remember { mutableStateOf(false) }
     var addedCount by remember { mutableStateOf(0) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<GroupMember?>(null) }
 
-    val members = remember(friends, group.memberCount, addedCount) {
-        friends.take((group.memberCount - 1 + addedCount).coerceAtLeast(0))
+    // The roster comes from the server (`/groups` returns every member with their profile).
+    // It used to be guessed as "the first N of my friend list", which showed strangers as
+    // members and hid real ones.
+    val roster = remember(group.id, group.members) { group.members }
+    val canManage = group.iAmAdmin
+    val others = remember(roster, selfId) {
+        roster.filter { it.userId != selfId }
     }
 
     NcBackdrop(modifier = modifier.fillMaxSize()) {
@@ -197,7 +213,7 @@ fun GroupInfoScreen(
                         )
                     }
                     Text(
-                        text = "${group.memberCount + addedCount} members",
+                        text = "${if (roster.isEmpty()) group.memberCount else roster.size} members",
                         fontSize = 12.sp,
                         color = extra.textMuted,
                         modifier = Modifier.padding(top = 2.dp, bottom = NcSpace.lg)
@@ -249,7 +265,7 @@ fun GroupInfoScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${group.memberCount + addedCount} Members",
+                            text = "${if (roster.isEmpty()) group.memberCount else roster.size} Members",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = extra.textSecondary,
@@ -278,9 +294,37 @@ fun GroupInfoScreen(
                         }
                     }
 
-                    MemberRow(name = "$selfName (you)", note = "Admin", isFirst = true)
-                    members.forEach { friend ->
-                        MemberRow(name = friend.name, note = "@${friend.handle}", isFirst = false)
+                    val me = roster.firstOrNull { it.userId == selfId }
+                    MemberRow(
+                        name = "$selfName (you)",
+                        note = if (me?.isAdmin == true) "Admin" else "Member",
+                        isFirst = true,
+                        avatarUrl = me?.avatarUrl
+                    )
+                    others.forEach { member ->
+                        MemberRow(
+                            name = member.name,
+                            note = if (member.isAdmin) "Admin" else "Member",
+                            isFirst = false,
+                            avatarUrl = member.avatarUrl,
+                            // Admin controls: promote/demote and remove. Only a group admin
+                            // gets them, and never against themselves.
+                            onToggleRole = if (canManage) {
+                                {
+                                    onSetMemberRole(
+                                        member.userId,
+                                        if (member.isAdmin) "member" else "admin"
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onRemove = if (canManage) {
+                                { removing = member }
+                            } else {
+                                null
+                            }
+                        )
                     }
                 }
 
@@ -314,6 +358,38 @@ fun GroupInfoScreen(
                     }
                 }
 
+                if (canManage) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = NcSpace.lg, vertical = NcSpace.sm)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0x1ADC2626))
+                            .border(1.dp, Color(0x33DC2626), RoundedCornerShape(16.dp))
+                            .clickable { confirmingDelete = true }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Delete group",
+                                color = Color(0xFFDC2626),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = "Group members can see each other's messages",
                     fontSize = 11.sp,
@@ -342,12 +418,58 @@ fun GroupInfoScreen(
 
     if (pickingMembers) {
         AddMembersDialog(
-            candidates = friends.takeLast((friends.size - members.size).coerceAtLeast(0)),
+            // Only people who are not already in the group can be added.
+            candidates = friends.filterNot { friend -> roster.any { it.userId == friend.id } },
             onDismiss = { pickingMembers = false },
             onConfirm = { memberIds ->
                 addedCount += memberIds.size
                 pickingMembers = false
                 onAddMembers(memberIds)
+            }
+        )
+    }
+
+    removing?.let { member ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove ${member.name}?", fontWeight = FontWeight.SemiBold) },
+            text = { Text("They will no longer see this group's messages.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        removing = null
+                        onRemoveMember(member.userId)
+                    }
+                ) {
+                    Text("Remove", color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removing = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (confirmingDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("Delete this group?", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text("${group.name} and its messages will be removed for everyone. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmingDelete = false
+                        onDeleteGroup()
+                        onBack()
+                    }
+                ) {
+                    Text("Delete", color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
             }
         )
     }
@@ -377,7 +499,14 @@ fun GroupInfoScreen(
 }
 
 @Composable
-private fun MemberRow(name: String, note: String, isFirst: Boolean) {
+private fun MemberRow(
+    name: String,
+    note: String,
+    isFirst: Boolean,
+    avatarUrl: String? = null,
+    onToggleRole: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null
+) {
     val extra = NcTheme.extra
     Row(
         modifier = Modifier
@@ -386,14 +515,21 @@ private fun MemberRow(name: String, note: String, isFirst: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NcSpace.md)
     ) {
-        NcAvatar(name = name, size = 40.dp, isOnline = isFirst, showPresence = isFirst)
+        NcAvatar(
+            name = name,
+            imageUrl = avatarUrl,
+            size = 40.dp,
+            isOnline = isFirst,
+            showPresence = isFirst
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = name,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = extra.textPrimary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = note,
@@ -402,6 +538,40 @@ private fun MemberRow(name: String, note: String, isFirst: Boolean) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        onToggleRole?.let { toggle ->
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = toggle),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (note == "Admin") Icons.Rounded.RemoveModerator
+                    else Icons.Rounded.AddModerator,
+                    contentDescription = if (note == "Admin") "Demote to member"
+                    else "Make admin",
+                    tint = Color(0xFF7C3AED),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+        }
+        onRemove?.let { remove ->
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = remove),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PersonRemove,
+                    contentDescription = "Remove from group",
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
         }
     }
 }

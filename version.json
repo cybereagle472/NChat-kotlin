@@ -1,6 +1,6 @@
 {
-  "versionCode": 35,
-  "versionName": "1.0.27",
+  "versionCode": 36,
+  "versionName": "1.0.28",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.27 — the Friends, Requests and Find tabs are wired to the server the way the reference app is. Requests and Find suggestions are no longer filtered away before they reach the screen, requests you sent now show under Requests with Cancel, and Find performs a real server-side search as you type instead of only searching people already on the phone. Your own profile photo now loads from the server on every launch. Settings ▸ Sync check can now tell you whether a second account exists for your email and whether old conversations are still on the server for people you are no longer friends with."
+  "releaseNotes": "NChat 1.0.28 — Status is wired the way the reference does it: photo statuses (pick a picture, it uploads and posts as an image status), a real \"viewed by\" list with names and avatars on your own status, mute/unmute for a contact's updates, and your own photo in the My-status ring. Group Info now shows the server's actual member list instead of guessing it from your friend list, with admin controls to promote, demote and remove members, and delete the group."
 }
