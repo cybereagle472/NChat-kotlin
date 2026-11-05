@@ -71,6 +71,7 @@ fun HomeScreen(
     val calls by ServiceLocator.callRepository.history.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
     val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
+    val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     // Blocked contacts are hidden from Friends/Requests/Find (their chat row stays put, so the
     // conversation is right where you left it when you unblock).
     val visibleGraph = remember(friendGraph, blockedIds) {
@@ -111,7 +112,6 @@ fun HomeScreen(
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
     val friendActionError by ServiceLocator.friendRepository.actionError.collectAsStateWithLifecycle()
-    val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     // Everyone this account already has a 1:1 conversation with: Find offers them Message
     // instead of Add, even when the server holds no friendship row for them.
     val chatPeerIds = remember(chats) { chats.filterNot { it.isGroup }.map { it.id }.toSet() }
