@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.27** (`versionCode 35`)
+- Current version: **1.0.28** (`versionCode 36`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -388,35 +388,36 @@ Each row is one shipped release; versionCode is what the updater compares.
 
 | Version | versionCode | Release tag | What landed |
 |---|---|---|---|
-| 1.0.0 | 60 | `nchat-build-60` | Foundation: theme, bottom bar, chat list, conversation, composer, bubbles, mock data. |
-| 1.0.1 | 62 | `nchat-build-62` | Glass surfaces, empty states, avatar gradients, day separators, message state icons. |
-| 1.0.2 | 66 | `nchat-build-66` | Full Discover (friends/requests), status ring + viewer, history screen; **tab switching regressed here**. |
-| 1.0.3 | 70 | `nchat-build-70` | Groups: list, create, group info, group chat; group call overlay. |
-| 1.0.4 | 72 | `nchat-build-72` | Voice recorder gesture (lock at −56dp, cancel at −96dp), waveform, playback. |
-| 1.0.5 | 75 | `nchat-build-75` | Message actions sheet (reply, forward, copy, delete, react), reactions row. |
-| 1.0.6 | 78 | `nchat-build-78` | Call overlay (audio/video), pip-style minimise, in-call controls. |
-| 1.0.7 | 82 | `nchat-build-82` | Profile screens + image cropper (pan/zoom, aspect presets), settings sections. |
-| 1.0.8 | 84 | `nchat-build-84` | Update checker, version manifest, FileProvider install flow. |
-| 1.0.9 | 88 | `nchat-build-88` | Forward dialog, status viewers polish, header actions, consistency sweep. |
-| 1.0.10 | 90 | `nchat-build-90` | Group call wiring, profile repository, cropper polish, settings profile pane. |
-| 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
-| 1.0.12 | 20 | `nchat-build-98` | Auth screen, profile setup, local session, Log Out. |
-| 1.0.13 | 21 | `nchat-build-101` | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
-| 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
-| 1.0.15 | 23 | `nchat-build-105` | Conversation depth: resume marker, jump-to-latest, media viewer, message editing, toasts; per-row render layers removed. |
-| 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
-| 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
-| 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
-| 1.0.18 | 26 | | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
-| 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK talks to the configured backend out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
-| 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
-| 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
-| 1.0.22 | 30 | *this build* | **Security & privacy pass** (see `SECURITY.md`). Tokens are AES-256-GCM encrypted under an Android Keystore key; the server throttles login/sign-up, caps upload size, confines media keys to the media directory (path-traversal fix), streams media instead of buffering it, and no longer ships a personal admin address in the source. |
-| 1.0.27 | 35 | *this build* | **Discover was never receiving the data it renders.** `HomeScreen` passed a list pre-filtered to accepted friends into `DiscoverScreen`, which derives the Requests tab and the Find suggestions from it — so both were structurally always empty. It now gets the whole graph. `FriendRepository.search` adds the missing `GET /users/search` call (debounced, stale answers cancelled), so Find searches the server as you type instead of only the page already on the device; sent requests get their own section with Cancel. `UserProfile.avatarUrl` carries the account's own photo from `/users/me` (and from the cached identity on a cold start) into `ProfileAvatar`, which finally loads it with Coil instead of showing initials. `ChatListCache` only persists a fully successful refresh. Sync check gains an account audit: duplicate accounts for the same email, and a per-contact message count for people in the call history that are no longer friends. |
+| 1.0.28 | 36 | *this build* | **Status and Group Info wired to endpoints that existed but were never called.** `StatusRepository` gains `createPhoto` (`POST /media/upload` → `POST /status` with `content_type: image` and `content_url`), `viewers()` (`GET /status/:id/views`) and `mute`/`unmute` backed by `mutedAuthors` from `GET /status/muted`; `StatusUpdate` carries `authorId`, `contentType`, `contentUrl`, `viewCount`, and `StatusViewer` renders the picture plus an eye count that opens the viewer list. Group Info had been showing a *guessed* roster (`friends.take(memberCount - 1)`); `Group` now carries the real `members[]` from `/groups` with `createdBy`/`myRole`, so `removeMember`, `setMemberRole` and `deleteGroup` finally have somewhere to go. |
+| 1.0.27 | 35 | *shipped as build 174* | **Discover was never receiving the data it renders.** `HomeScreen` handed `DiscoverScreen` a list pre-filtered to accepted friends, and that screen derives the Requests tab and the Find suggestions from it — so both were structurally always empty. It now gets the whole graph. `FriendRepository.search` adds the missing `GET /users/search` call (debounced, stale answers cancelled), so Find searches the server as you type; sent requests get their own section with Cancel. `UserProfile.avatarUrl` carries the account's own photo from `/users/me` (and the cached identity on a cold start) into `ProfileAvatar`, which finally loads it with Coil. `ChatListCache` only persists a fully successful refresh. Sync check gains an account audit: duplicate accounts for the same email, plus a per-contact message count for call-history people who are no longer friends. |
 | 1.0.26 | 34 | | **Nothing fails silently any more.** `ApiClient` records every call in `ApiLog` (path, status, duration, error) and Settings ▸ **Sync check** probes ten endpoints, printing the server's own answer next to the signed-in account — `SyncCheck.kt`. `RemoteChatRepository.syncError` drives a red banner with Retry above the chat list, so "empty" can no longer mean "the request failed". Profile photos are wired through the whole UI: `Friend.avatarUrl` and `StatusUpdate.avatarUrl` reach `NcAvatar.imageUrl` in Discover (friends, requests, Find), the status ring and viewer, and `ProfileViewScreen`. |
 | 1.0.25 | 33 | *shipped as build 169* | **Fixes the launch crash reported from build 32** (`ClassCastException: java.lang.Boolean cannot be cast to java.lang.String` at `SecurePrefs.getString` → `TokenStore.profileComplete` → `RemoteAuthRepository.<init>`). An older install had stored `profile_complete` as a real boolean; `SharedPreferences.getString` throws on that type, and it ran before the first frame. `SecurePrefs` now reads through `readRaw`, which keeps the value whatever its type and coerces it, so a legacy key can never again make the app unopenable. |
 | 1.0.24 | 32 | *shipped as build 167* | **A failure now explains itself.** Any uncaught exception (plus every caught-but-important background failure) is written to `files/last-crash.txt` and to the app's external files dir, and the next launch opens `CrashReportScreen` — selectable text, one-tap *Copy report*, *Delete and start*. The image loader was rebuilt as a standalone OkHttp client fed by lambdas, so a picture that cannot be fetched degrades to a placeholder instead of a process death; `ServiceLocator.appScope` gained a `CoroutineExceptionHandler` for the same reason. |
 | 1.0.23 | 31 | *shipped as build 165* | **Photos shrink, previews fly, the list opens instantly, media is private — and the server switcher is gone.** Picked photos are re-encoded to 1600 px / JPEG 85 with EXIF (GPS) stripped and a 320 px thumbnail uploaded alongside; the chat list paints from an on-device cache before the network answers (cleared on sign-out); `/media/file/*` now authorises per caller (uploader, conversation participant, group member, or status audience) and offers signed expiring links via `/media/link`, while the app loads every image with the session token through `MediaImages`. Settings ▸ Server was removed: the address is fixed at build time, bare hosts are normalised to `https://`. |
+| 1.0.22 | 30 | *this build* | **Security & privacy pass** (see `SECURITY.md`). Tokens are AES-256-GCM encrypted under an Android Keystore key; the server throttles login/sign-up, caps upload size, confines media keys to the media directory (path-traversal fix), streams media instead of buffering it, and no longer ships a personal admin address in the source. |
+| 1.0.21 | 29 | *this build* | **The backend address left the code.** Gradle resolves it once from `nchat.properties` / `-PNCHAT_API_BASE` / `$NCHAT_API_BASE` / `local.properties` (or a CI variable) into `BuildConfig.NCHAT_API_BASE`; `ApiClient` stays the single choke point for HTTP and WebSocket. A build with no address now opens a "Connect NChat" screen and saves what you enter. |
+| 1.0.20 | 28 | *this build* | **Media renders.** Coil brings `media_url` into photo/video bubbles and the full-screen viewer, and `avatar_url` into chat-list/header avatars, so an upload is visible on both sides instead of a placeholder. |
+| 1.0.19 | 27 | *this build* | **The deployed backend is built in and the demo data is gone.** The APK talks to the configured backend out of the box (Settings ▸ Server still overrides it), every `InMemory*` repository and its seed data was deleted, and the remaining unwired routes were finished: real attachment uploads, the status composer, server-side privacy tiers, avatar upload, and 1:1 call records that the peer is actually rung for. |
+| 1.0.18 | 26 | | **The app can talk to the Rust backend.** OkHttp + kotlinx.serialization transport with refresh-token rotation, one realtime socket per user, remote repositories for auth/profile/chats/groups/messages/friends/statuses/call history, and Settings ▸ Server to point any install at a running server. Empty server = the same offline demo as before. |
+| 1.0.17 | 25 | `nchat-build-112` | Composer state hoisted (typing no longer recomposes the conversation); chat long-press menu with pin/mute/mark-read/delete. |
+| 1.0.16 | 24 | `nchat-build-107` | Settings panes that work: Privacy, Notifications, Blocked users (persisted), shared block state. |
+| 1.0.15 | 23 | `nchat-build-105` | Conversation depth: resume marker, jump-to-latest, media viewer, message editing, toasts; per-row render layers removed. |
+| 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
+| 1.0.13 | 21 | `nchat-build-101` | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
+| 1.0.12 | 20 | `nchat-build-98` | Auth screen, profile setup, local session, Log Out. |
+| 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
+| 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
+| 1.0.10 | 90 | `nchat-build-90` | Group call wiring, profile repository, cropper polish, settings profile pane. |
+| 1.0.9 | 88 | `nchat-build-88` | Forward dialog, status viewers polish, header actions, consistency sweep. |
+| 1.0.8 | 84 | `nchat-build-84` | Update checker, version manifest, FileProvider install flow. |
+| 1.0.7 | 82 | `nchat-build-82` | Profile screens + image cropper (pan/zoom, aspect presets), settings sections. |
+| 1.0.6 | 78 | `nchat-build-78` | Call overlay (audio/video), pip-style minimise, in-call controls. |
+| 1.0.5 | 75 | `nchat-build-75` | Message actions sheet (reply, forward, copy, delete, react), reactions row. |
+| 1.0.4 | 72 | `nchat-build-72` | Voice recorder gesture (lock at −56dp, cancel at −96dp), waveform, playback. |
+| 1.0.3 | 70 | `nchat-build-70` | Groups: list, create, group info, group chat; group call overlay. |
+| 1.0.2 | 66 | `nchat-build-66` | Full Discover (friends/requests), status ring + viewer, history screen; **tab switching regressed here**. |
+| 1.0.1 | 62 | `nchat-build-62` | Glass surfaces, empty states, avatar gradients, day separators, message state icons. |
+| 1.0.0 | 60 | `nchat-build-60` | Foundation: theme, bottom bar, chat list, conversation, composer, bubbles, mock data. |
 
 
 ---

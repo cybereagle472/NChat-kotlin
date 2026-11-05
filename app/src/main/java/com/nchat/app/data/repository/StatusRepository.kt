@@ -1,6 +1,7 @@
 package com.nchat.app.data.repository
 
 import com.nchat.app.data.model.StatusUpdate
+import com.nchat.app.data.model.StatusViewer
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.StatusDto
@@ -24,10 +25,24 @@ import java.util.TimeZone
  */
 interface StatusRepository {
     val statuses: StateFlow<List<StatusUpdate>>
+
+    /** Authors whose updates this account muted (`GET /status/muted`, bare user ids). */
+    val mutedAuthors: StateFlow<Set<String>>
+
     fun refresh()
     fun create(text: String)
+
+    /** Posts a photo status: upload the picture, then `POST /status` with `content_url`. */
+    fun createPhoto(bytes: ByteArray, mimeType: String, caption: String, fileName: String = "status.jpg")
+
     fun markViewed(id: String)
     fun delete(id: String)
+
+    /** Who watched my status — `GET /status/:id/views`. Empty for anyone else's. */
+    suspend fun viewers(statusId: String): List<StatusViewer>
+
+    fun mute(authorId: String)
+    fun unmute(authorId: String)
 }
 
 class RemoteStatusRepository(
@@ -39,6 +54,9 @@ class RemoteStatusRepository(
 
     private val _statuses = MutableStateFlow<List<StatusUpdate>>(emptyList())
     override val statuses: StateFlow<List<StatusUpdate>> = _statuses.asStateFlow()
+
+    private val _mutedAuthors = MutableStateFlow<Set<String>>(emptySet())
+    override val mutedAuthors: StateFlow<Set<String>> = _mutedAuthors.asStateFlow()
 
     init {
         scope.launch {
@@ -53,6 +71,7 @@ class RemoteStatusRepository(
         scope.launch {
             val mine = runCatching { api.myStatuses().statuses }.getOrDefault(emptyList())
             val feed = runCatching { api.statusFeed().statuses }.getOrDefault(emptyList())
+            runCatching { api.mutedStatuses().muted }.getOrNull()?.let { _mutedAuthors.value = it.toSet() }
             val myName = tokens.fullName ?: "You"
             _statuses.value = mine.map { it.toModel(myName, isMine = true) } +
                 feed.map { it.toModel(it.fullName ?: "NChat user", isMine = false) }
@@ -64,6 +83,52 @@ class RemoteStatusRepository(
         if (body.isEmpty()) return
         scope.launch {
             runCatching { api.createStatus(body) }
+            refresh()
+        }
+    }
+
+    override fun createPhoto(bytes: ByteArray, mimeType: String, caption: String, fileName: String) {
+        scope.launch {
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
+                ?: return@launch
+            runCatching {
+                api.createStatus(
+                    textContent = caption,
+                    contentType = "image",
+                    contentUrl = media.url
+                )
+            }
+            refresh()
+        }
+    }
+
+    override suspend fun viewers(statusId: String): List<StatusViewer> =
+        runCatching { api.statusViews(statusId).views }.getOrDefault(emptyList()).map { view ->
+            StatusViewer(
+                id = view.viewerId,
+                name = view.fullName?.takeIf { it.isNotBlank() }
+                    ?: view.username?.takeIf { it.isNotBlank() }?.let { "@$it" }
+                    ?: "NChat user",
+                avatarUrl = view.avatarUrl,
+                viewedAt = isoMillis(view.viewedAt)
+            )
+        }
+
+    override fun mute(authorId: String) {
+        if (authorId.isBlank()) return
+        _mutedAuthors.update { it + authorId }
+        _statuses.update { list -> list.filterNot { it.authorId == authorId && !it.isMine } }
+        scope.launch {
+            runCatching { api.muteStatus(authorId) }
+            refresh()
+        }
+    }
+
+    override fun unmute(authorId: String) {
+        if (authorId.isBlank()) return
+        _mutedAuthors.update { it - authorId }
+        scope.launch {
+            runCatching { api.unmuteStatus(authorId) }
             refresh()
         }
     }
@@ -86,6 +151,10 @@ class RemoteStatusRepository(
         id = id,
         authorName = authorName,
         avatarUrl = avatarUrl,
+        authorId = userId,
+        contentType = contentType,
+        contentUrl = contentUrl,
+        viewCount = viewCount,
         caption = textContent?.takeIf { it.isNotBlank() }
             ?: caption?.takeIf { it.isNotBlank() }
             ?: when (contentType) {

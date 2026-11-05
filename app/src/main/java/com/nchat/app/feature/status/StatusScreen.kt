@@ -1,12 +1,17 @@
 package com.nchat.app.feature.status
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +33,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,8 +52,10 @@ import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcGlassRow
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.util.MediaPreparer
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.model.StatusUpdate
+import com.nchat.app.data.model.StatusViewer
 import com.nchat.app.ui.components.NcHeaderAction
 import com.nchat.app.ui.components.NcTabHeader
 
@@ -54,6 +64,15 @@ fun StatusScreen(
     statuses: List<StatusUpdate>,
     listState: LazyListState,
     onCreateStatus: (String) -> Unit = {},
+    /** My own photo, so the "My status" ring shows it the same way a contact's does. */
+    myAvatarUrl: String? = null,
+    /** Photo status: bytes, mime type, caption, file name — uploaded then posted. */
+    onCreatePhotoStatus: (ByteArray, String, String, String) -> Unit = { _, _, _, _ -> },
+    mutedAuthorIds: Set<String> = emptySet(),
+    onMuteAuthor: (String) -> Unit = {},
+    onUnmuteAuthor: (String) -> Unit = {},
+    /** Who watched one of my updates (`GET /status/:id/views`). */
+    loadViewers: suspend (String) -> List<StatusViewer> = { emptyList() },
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
@@ -63,6 +82,13 @@ fun StatusScreen(
     var viewingIndex by remember { mutableStateOf<Int?>(null) }
     var locallyViewed by remember { mutableStateOf(emptySet<String>()) }
     var composing by remember { mutableStateOf(false) }
+    var viewersFor by remember { mutableStateOf<StatusUpdate?>(null) }
+    var viewers by remember { mutableStateOf<List<StatusViewer>>(emptyList()) }
+
+    LaunchedEffect(viewersFor) {
+        val target = viewersFor ?: return@LaunchedEffect
+        viewers = loadViewers(target.id)
+    }
     fun openStatus(status: StatusUpdate) {
         viewingIndex = statuses.indexOfFirst { it.id == status.id }.takeIf { it >= 0 }
     }
@@ -85,7 +111,11 @@ fun StatusScreen(
                 item(key = "my-status") {
                     NcGlassRow(onClick = { if (mine != null) openStatus(mine) else composing = true }) {
                         Box {
-                            NcAvatar(name = mine?.authorName ?: "My status", size = 56.dp)
+                            NcAvatar(
+                                name = mine?.authorName ?: "My status",
+                                imageUrl = mine?.avatarUrl ?: myAvatarUrl,
+                                size = 56.dp
+                            )
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -197,7 +227,19 @@ fun StatusScreen(
                 statuses = statuses,
                 startIndex = start,
                 onViewed = { id -> locallyViewed = locallyViewed + id },
-                onDismiss = { viewingIndex = null }
+                onDismiss = { viewingIndex = null },
+                onShowViewers = { status -> viewersFor = status },
+                mutedAuthorIds = mutedAuthorIds,
+                onMuteAuthor = onMuteAuthor,
+                onUnmuteAuthor = onUnmuteAuthor
+            )
+        }
+
+        viewersFor?.let { status ->
+            StatusViewersDialog(
+                count = status.viewCount,
+                viewers = viewers,
+                onDismiss = { viewersFor = null }
             )
         }
 
@@ -207,6 +249,10 @@ fun StatusScreen(
                 onCreate = { text ->
                     composing = false
                     onCreateStatus(text)
+                },
+                onCreatePhoto = { bytes, mimeType, caption, fileName ->
+                    composing = false
+                    onCreatePhotoStatus(bytes, mimeType, caption, fileName)
                 }
             )
         }
@@ -214,42 +260,172 @@ fun StatusScreen(
 }
 
 /**
- * The text status composer: a caption (and nothing else yet — photo/video statuses need the
- * media upload path). `POST /status` stores it for 24 hours and the server pushes
- * `status:new` to every contact.
+ * The status composer. A caption on its own becomes a text status; picking a photo turns it
+ * into an image status (`content_type: "image"` + `content_url`), which is what the reference
+ * offers and what `POST /status` expects. The picture is re-encoded through [MediaPreparer]
+ * first, so a 12 MP camera shot is not uploaded raw.
  */
 @Composable
 private fun StatusComposerDialog(
     onDismiss: () -> Unit,
-    onCreate: (String) -> Unit
+    onCreate: (String) -> Unit,
+    onCreatePhoto: (bytes: ByteArray, mimeType: String, caption: String, fileName: String) -> Unit
 ) {
+    val context = LocalContext.current
     var draft by remember { mutableStateOf("") }
+    var photo by remember { mutableStateOf<MediaPreparer.Prepared?>(null) }
+    var preparing by remember { mutableStateOf(false) }
+
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        preparing = true
+        photo = MediaPreparer.prepare(context, uri, "status.jpg")
+            ?: runCatching {
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) null else MediaPreparer.Prepared(bytes, null, "status.jpg", mime)
+            }.getOrNull()
+        preparing = false
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New status") },
+        title = { Text(if (photo == null) "New status" else "New photo status") },
         text = {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                placeholder = { Text("What's on your mind?") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF8B5CF6),
-                    unfocusedBorderColor = NcTheme.extra.textMuted.copy(alpha = 0.4f)
-                )
-            )
+            Column {
+                if (photo == null) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        placeholder = { Text("What's on your mind?") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF8B5CF6),
+                            unfocusedBorderColor = NcTheme.extra.textMuted.copy(alpha = 0.4f)
+                        )
+                    )
+                    TextButton(
+                        enabled = !preparing,
+                        onClick = {
+                            picker.launch(
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CameraAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(if (preparing) "  Preparing…" else "  Add a photo")
+                    }
+                } else {
+                    val preview = remember(photo) {
+                        runCatching {
+                            android.graphics.BitmapFactory.decodeByteArray(
+                                photo!!.bytes, 0, photo!!.bytes.size
+                            )?.asImageBitmap()
+                        }.getOrNull()
+                    }
+                    if (preview != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = preview,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                        )
+                    }
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        placeholder = { Text("Add a caption (optional)") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = NcSpace.sm),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF8B5CF6),
+                            unfocusedBorderColor = NcTheme.extra.textMuted.copy(alpha = 0.4f)
+                        )
+                    )
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                enabled = draft.isNotBlank(),
-                onClick = { onCreate(draft.trim()) }
+                enabled = if (photo == null) draft.isNotBlank() else !preparing,
+                onClick = {
+                    val picked = photo
+                    if (picked == null) {
+                        onCreate(draft.trim())
+                    } else {
+                        onCreatePhoto(picked.bytes, picked.mimeType, draft.trim(), picked.fileName)
+                    }
+                }
             ) {
                 Text("Share", fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+/** Who watched one of my updates, newest first (`GET /status/:id/views`). */
+@Composable
+private fun StatusViewersDialog(
+    count: Int,
+    viewers: List<StatusViewer>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (count > 0) "Viewed by $count" else "No views yet") },
+        text = {
+            if (viewers.isEmpty()) {
+                Text(
+                    text = if (count > 0) {
+                        "The server counted views but returned no names."
+                    } else {
+                        "Nobody has opened this status yet."
+                    },
+                    color = NcTheme.extra.textSecondary
+                )
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(NcSpace.sm)) {
+                    items(items = viewers, key = { it.id }) { viewer ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+                        ) {
+                            NcAvatar(
+                                name = viewer.name,
+                                imageUrl = viewer.avatarUrl,
+                                size = 36.dp
+                            )
+                            Text(
+                                text = viewer.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = NcTheme.extra.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }

@@ -55,6 +55,11 @@ interface ChatRepository {
     fun addMembers(groupId: String, memberIds: List<String>)
     fun renameGroup(groupId: String, name: String)
     fun leaveGroup(groupId: String)
+
+    /** Admin actions — `DELETE /groups/:id/members/:userId`, `PATCH .../members/:userId`, `DELETE /groups/:id`. */
+    fun removeMember(groupId: String, userId: String)
+    fun setMemberRole(groupId: String, userId: String, role: String)
+    fun deleteGroup(groupId: String)
     fun setPinned(chatId: String, pinned: Boolean)
     fun setMuted(chatId: String, muted: Boolean)
     fun deleteChat(chatId: String)

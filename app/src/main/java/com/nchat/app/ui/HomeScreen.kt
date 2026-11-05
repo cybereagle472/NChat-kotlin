@@ -56,6 +56,8 @@ fun HomeScreen(
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
     val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
+    val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
+    val mutedAuthors by ServiceLocator.statusRepository.mutedAuthors.collectAsStateWithLifecycle()
     var profileTarget by remember { mutableStateOf<ProfileTarget?>(null) }
     BackHandler(enabled = profileTarget != null) { profileTarget = null }
     val chatsListState = rememberLazyListState()
@@ -85,7 +87,20 @@ fun HomeScreen(
                     HomeTab.Status -> StatusScreen(
                         statuses = statuses,
                         listState = statusListState,
-                        onCreateStatus = { text -> ServiceLocator.statusRepository.create(text) }
+                        onCreateStatus = { text -> ServiceLocator.statusRepository.create(text) },
+                        myAvatarUrl = me.avatarUrl,
+                        onCreatePhotoStatus = { bytes, mimeType, caption, fileName ->
+                            ServiceLocator.statusRepository.createPhoto(
+                                bytes = bytes,
+                                mimeType = mimeType,
+                                caption = caption,
+                                fileName = fileName
+                            )
+                        },
+                        mutedAuthorIds = mutedAuthors,
+                        onMuteAuthor = { ServiceLocator.statusRepository.mute(it) },
+                        onUnmuteAuthor = { ServiceLocator.statusRepository.unmute(it) },
+                        loadViewers = { id -> ServiceLocator.statusRepository.viewers(id) }
                     )
 
                     HomeTab.Groups -> GroupsScreen(
