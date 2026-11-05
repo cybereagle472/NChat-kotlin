@@ -1,6 +1,6 @@
 {
-  "versionCode": 43,
-  "versionName": "1.0.35",
+  "versionCode": 44,
+  "versionName": "1.0.36",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.35 — messaging is instant again and voice notes actually arrive. The chat now merges what the server knows with what you just sent instead of replacing the whole history (that is what made a new message vanish), the server's own echo of your message updates the bubble, and a send retries three times before giving up — and then says so, with a red warning you can tap to resend. Voice notes: uploads now survive an expired login token (they used to fail silently), the recording survives a flaky MediaRecorder, the wire carries the length in seconds like the web client, and any failure is shown instead of being swallowed. The leftover mock attachment path is gone."
+  "releaseNotes": "NChat 1.0.36 — no message can be lost again. Every send is written to a queue on the phone before it leaves (the same outbox the reference keeps in IndexedDB): if the network, the login token or the app itself drops mid-send, the message is retried automatically — at startup, whenever the realtime connection returns, and up to five times — and the server de-duplicates by client id so a retry can never post it twice. Messages still waiting are restored into the chat when you reopen it, even after a restart. Group chats now name every sender (member profiles are seeded instead of showing \"NChat user\") and read receipts turn your ticks blue when a member reads the group."
 }

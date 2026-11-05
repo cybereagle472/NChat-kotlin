@@ -2,6 +2,8 @@ package com.nchat.app.data.repository
 
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.model.OutboxEntry
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.GroupMember
 import com.nchat.app.data.model.DeliveryState
@@ -15,6 +17,7 @@ import com.nchat.app.network.GroupDto
 import com.nchat.app.network.MessageDto
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NcJson
+import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.TokenStore
@@ -57,7 +60,9 @@ class RemoteChatRepository(
     /** Ids this device has blocked; their live messages are held back, never deleted. */
     private val blockedIds: () -> Set<String> = { emptySet() },
     /** Last known chat list, painted before the network answers. */
-    private val cache: ChatListCache? = null
+    private val cache: ChatListCache? = null,
+    /** Queue of messages that still have to reach the server — see [OutboxStore]. */
+    private val outbox: OutboxStore? = null
 ) : ChatRepository {
 
     private val localIds = AtomicLong(0L)
@@ -103,6 +108,14 @@ class RemoteChatRepository(
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
         // somebody who never had them.
+        // Anything left in the outbox from the last run goes out now, and again every time the
+        // realtime socket comes back up — the reference does the same on reconnect.
+        scope.launch {
+            socket.state.collect { state ->
+                if (state == ConnectionState.Connected) flushOutbox()
+            }
+        }
+        flushOutbox()
         scope.launch {
             tokens.signedIn.collect { signedIn ->
                 if (signedIn) return@collect
@@ -116,6 +129,7 @@ class RemoteChatRepository(
                     requested.clear()
                     groupIds.clear()
                 }
+                outbox?.clear()
             }
         }
         refresh()
@@ -151,6 +165,9 @@ class RemoteChatRepository(
 
         direct.forEach { rememberName(it.userId, it.profile) }
 
+        // Group bubbles name their author from this map; without seeding it every other member
+        // of a group chat was labelled "NChat user".
+        groupRows.forEach { group -> group.members.forEach { member -> rememberName(member.userId, member.profile) } }
         _groups.value = groupRows.map { it.toGroup() }
 
         val dmChats = direct.map { it.toChat() }
@@ -296,7 +313,10 @@ class RemoteChatRepository(
     override fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>> {
         val stream = stream(chatId)
         val first = synchronized(requested) { requested.add(chatId) }
-        if (first) scope.launch { runCatching { loadConversation(chatId) } }
+        if (first) scope.launch {
+            runCatching { loadConversation(chatId) }
+            restorePending(chatId)
+        }
         return stream.asStateFlow()
     }
 
@@ -338,6 +358,15 @@ class RemoteChatRepository(
             )
         )
         preview(chatId, body, DeliveryState.Sending)
+        outbox?.add(
+            OutboxEntry(
+                clientId = localId,
+                chatId = chatId,
+                isGroup = isGroup(chatId),
+                ownerId = myId,
+                text = body
+            )
+        )
         dispatch(chatId, localId, body) { clientId ->
             if (isGroup(chatId)) {
                 api.sendGroupMessage(chatId, body, clientMessageId = clientId, replyTo = null)
@@ -390,6 +419,20 @@ class RemoteChatRepository(
             // `duration` travels as whole seconds, the same field the reference sends, so the
             // bubble shows the right length on either client.
             val seconds = durationSeconds(durationLabel)
+            outbox?.add(
+                OutboxEntry(
+                    clientId = localId,
+                    chatId = chatId,
+                    isGroup = isGroup(chatId),
+                    ownerId = myId,
+                    text = "Voice message",
+                    type = "voice",
+                    mediaUrl = media.url,
+                    duration = seconds,
+                    fileName = fileName,
+                    fileSize = media.fileSize?.toString()
+                )
+            )
             val created = sendWithRetry {
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
@@ -417,6 +460,7 @@ class RemoteChatRepository(
                 markFailed(chatId, localId)
                 return@launch
             }
+            outbox?.remove(localId)
             replaceLocal(
                 chatId,
                 localId,
@@ -464,6 +508,20 @@ class RemoteChatRepository(
                     .getOrNull()
                     ?.url
             }
+            outbox?.add(
+                OutboxEntry(
+                    clientId = localId,
+                    chatId = chatId,
+                    isGroup = isGroup(chatId),
+                    ownerId = myId,
+                    text = body,
+                    type = kind.wireType(),
+                    mediaUrl = media.url,
+                    thumbnailUrl = thumb,
+                    fileName = fileName,
+                    fileSize = media.fileSize?.toString()
+                )
+            )
             val created = sendWithRetry {
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
@@ -492,6 +550,7 @@ class RemoteChatRepository(
                 markFailed(chatId, localId)
                 return@launch
             }
+            outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             preview(chatId, body.ifBlank { fileName }, DeliveryState.Sent)
         }
@@ -515,6 +574,7 @@ class RemoteChatRepository(
                 markFailed(chatId, localId)
                 return@launch
             }
+            outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             preview(chatId, body, DeliveryState.Sent)
         }
@@ -546,6 +606,91 @@ class RemoteChatRepository(
         }
     }
 
+    /**
+     * Sends everything still queued for this account.
+     *
+     * Safe to call at any time: the worker de-duplicates by `client_message_id`, so a message
+     * that actually arrived but whose answer was lost is simply acknowledged, not duplicated.
+     */
+    fun flushOutbox() {
+        val store = outbox ?: return
+        val me = myId
+        if (me.isEmpty()) return
+        scope.launch {
+            store.all().filter { it.ownerId == me || it.ownerId.isEmpty() }.forEach { entry -> deliver(entry) }
+        }
+    }
+
+    private suspend fun deliver(entry: OutboxEntry) {
+        val store = outbox ?: return
+        val response = runCatching {
+            if (entry.isGroup) {
+                api.sendGroupMessage(
+                    entry.chatId,
+                    entry.text,
+                    type = entry.type,
+                    clientMessageId = entry.clientId,
+                    replyTo = entry.replyTo,
+                    mediaUrl = entry.mediaUrl,
+                    thumbnailUrl = entry.thumbnailUrl,
+                    duration = entry.duration
+                )
+            } else {
+                api.sendMessage(
+                    entry.chatId,
+                    entry.text,
+                    type = entry.type,
+                    clientMessageId = entry.clientId,
+                    replyTo = entry.replyTo,
+                    mediaUrl = entry.mediaUrl,
+                    thumbnailUrl = entry.thumbnailUrl,
+                    duration = entry.duration,
+                    fileName = entry.fileName,
+                    fileSize = entry.fileSize
+                )
+            }
+        }
+        val created = response.getOrNull()?.message
+        if (created != null) {
+            store.remove(entry.clientId)
+            replaceLocal(entry.chatId, entry.clientId, created.toModel(entry.chatId).copy(state = DeliveryState.Sent))
+            preview(entry.chatId, entry.text, DeliveryState.Sent)
+            return
+        }
+        if (store.bumpAttempts(entry.clientId) >= MAX_OUTBOX_ATTEMPTS) {
+            store.remove(entry.clientId)
+            markFailed(entry.chatId, entry.clientId)
+        }
+    }
+
+    /** Puts queued messages back on screen when a conversation is opened. */
+    private fun restorePending(chatId: String) {
+        val store = outbox ?: return
+        val pending = store.all().filter { it.chatId == chatId && (it.ownerId == myId || it.ownerId.isEmpty()) }
+        if (pending.isEmpty()) return
+        val known = stream(chatId).value.mapNotNull { it.clientMessageId }.toSet()
+        val restored = pending.filterNot { it.clientId in known }.map { entry ->
+            Message(
+                id = entry.clientId,
+                chatId = chatId,
+                authorId = myId,
+                authorName = myName,
+                text = entry.text,
+                timestamp = entry.createdAt,
+                isMine = true,
+                kind = kindOf(entry.type),
+                state = DeliveryState.Sending,
+                durationLabel = durationLabelOf(entry.duration),
+                fileName = entry.fileName,
+                mediaUrl = entry.mediaUrl,
+                clientMessageId = entry.clientId
+            )
+        }
+        if (restored.isNotEmpty()) {
+            updateMessages(chatId) { messages -> (messages + restored).sortedBy { it.timestamp } }
+        }
+    }
+
     /** Marks a pending bubble as failed and says so — a stuck clock with no message is the bug. */
     private fun markFailed(chatId: String, localId: String) {
         updateMessages(chatId) { messages ->
@@ -562,6 +707,7 @@ class RemoteChatRepository(
      */
     private fun reconcileOwn(chatId: String, dto: MessageDto) {
         if (chatId.isEmpty()) return
+        dto.clientMessageId?.let { outbox?.remove(it) }
         val model = dto.toModel(chatId).copy(state = DeliveryState.Sent, failed = false)
         val key = dto.clientMessageId
         updateMessages(chatId) { messages ->
@@ -588,6 +734,24 @@ class RemoteChatRepository(
         val localId = message.id
         val resendUrl = message.mediaUrl
         updateMessages(chatId) { list -> list.map { if (it.id == localId) it.copy(failed = false) else it } }
+        // A manual retry of an already-uploaded message puts it back in the queue too, so a
+        // second failure still gets the automatic flush.
+        if (resendUrl != null) {
+            outbox?.add(
+                OutboxEntry(
+                    clientId = localId,
+                    chatId = chatId,
+                    isGroup = isGroup(chatId),
+                    ownerId = myId,
+                    text = message.text,
+                    type = message.kind.wireType(),
+                    mediaUrl = resendUrl,
+                    thumbnailUrl = message.thumbnailUrl,
+                    duration = message.durationLabel?.let { durationSeconds(it) },
+                    fileName = message.fileName
+                )
+            )
+        }
         scope.launch {
             val created = sendWithRetry {
                 when {
@@ -619,6 +783,7 @@ class RemoteChatRepository(
                 if (stream(chatId).value.firstOrNull { it.id == localId }?.failed != true) markFailed(chatId, localId)
                 return@launch
             }
+            outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             preview(chatId, message.text, DeliveryState.Sent)
         }
@@ -886,6 +1051,16 @@ class RemoteChatRepository(
                     messages.map {
                         if (it.id == id) it.copy(reactions = decodeReactions(reactions)) else it
                     }
+                }
+            }
+
+            "group-message:read" -> {
+                // Somebody in the group read up to `read_at`: flip my own ticks past that point.
+                val groupId = event.string("group_id") ?: return
+                val reader = event.string("reader_id").orEmpty()
+                if (reader == myId) return
+                updateMessages(groupId) { messages ->
+                    messages.map { if (it.isMine) it.copy(state = DeliveryState.Read) else it }
                 }
             }
 
@@ -1208,6 +1383,15 @@ class RemoteChatRepository(
         )
     }
 
+    private fun kindOf(type: String): MessageKind = when (type.lowercase()) {
+        "image", "photo" -> MessageKind.Photo
+        "video" -> MessageKind.Video
+        "audio", "voice" -> MessageKind.Voice
+        "document", "file" -> MessageKind.Document
+        "location" -> MessageKind.Location
+        else -> MessageKind.Text
+    }
+
     private fun MessageDto.kind(): MessageKind = when (type.lowercase()) {
         "image", "photo" -> MessageKind.Photo
         "video" -> MessageKind.Video
@@ -1325,6 +1509,8 @@ class RemoteChatRepository(
         /** Messages kept per conversation in memory; matches the page the server returns. */
         const val MESSAGE_PAGE = 100
         const val SEND_ATTEMPTS = 3
+        /** The reference gives up on a queued message after five tries. */
+        const val MAX_OUTBOX_ATTEMPTS = 5
 
         val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
