@@ -43,6 +43,12 @@ object ApiLog {
 
     fun snapshot(): List<Entry> = synchronized(entries) { entries.toList() }
 
+    /** The most recent request that failed, or `null` when everything answered 2xx. */
+    fun lastFailure(): Entry? = synchronized(entries) { entries.lastOrNull { it.isFailure } }
+
+    /** The most recent request that succeeded. */
+    fun lastSuccess(): Entry? = synchronized(entries) { entries.lastOrNull { !it.isFailure } }
+
     fun clear() = synchronized(entries) { entries.clear() }
 
     /** `10:42:07  GET  /messages/chats  200  180 ms` — or the failure, in one line. */

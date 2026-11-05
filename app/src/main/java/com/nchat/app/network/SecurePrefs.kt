@@ -66,18 +66,29 @@ class SecurePrefs(context: Context, name: String) {
         runCatching { prefs.all[key] }.getOrNull()
     }
 
-    fun putString(key: String, value: String?) {
+    fun putString(key: String, value: String?) = putString(key, value, sync = false)
+
+    /**
+     * Same write, but flushed to disk before returning.
+     *
+     * `apply()` only queues the write: if the process dies first — the user taps Update and the
+     * installer force-stops us, the system reclaims a backgrounded app, the battery dies — the
+     * new value never reaches the file. That is fatal for a rotated refresh token, because the
+     * server has already invalidated the old one: the device is left holding a dead credential
+     * and every request afterwards answers 401, which the UI shows as "all my chats vanished".
+     * The token pair therefore goes through this synchronous path.
+     */
+    fun putStringSync(key: String, value: String?) = putString(key, value, sync = true)
+
+    private fun putString(key: String, value: String?, sync: Boolean) {
         val editor = prefs.edit()
+        val sealed = value?.let { encrypt(it) }
         if (value == null) {
-            editor.remove(key).apply()
-            return
-        }
-        val sealed = encrypt(value)
-        if (sealed == null) {
-            editor.putString(key, value).apply()
+            editor.remove(key)
         } else {
-            editor.putString(key, PREFIX + sealed).apply()
+            editor.putString(key, sealed?.let { PREFIX + it } ?: value)
         }
+        if (sync) editor.commit() else editor.apply()
     }
 
     fun getBoolean(key: String, default: Boolean = false): Boolean =
