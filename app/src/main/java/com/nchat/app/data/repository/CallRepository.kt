@@ -1,6 +1,10 @@
 package com.nchat.app.data.repository
 
+import android.content.Context
+import android.media.AudioManager
+import android.util.Log
 import com.nchat.app.core.designsystem.NcToaster
+import com.nchat.app.data.calls.WebRtcEngine
 import com.nchat.app.data.model.ActiveCall
 import com.nchat.app.data.model.CallRecord
 import com.nchat.app.data.model.CallState
@@ -8,37 +12,51 @@ import com.nchat.app.network.CallDto
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.NcJson
+import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
+import org.webrtc.EglBase
+import org.webrtc.VideoTrack
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Calls, both directions, against the Cloudflare worker.
+ * Calls, both directions, against the Cloudflare worker — signalling **and** media.
  *
- * The protocol is entirely REST + realtime (`worker/src/routes/calls.ts`):
+ * The protocol is REST + realtime (`worker/src/routes/calls.ts`), and the media half is
+ * [WebRtcEngine]:
  *
- * - caller: `POST /calls` → `{ call }`, and the callee's personal room receives
- *   `call:incoming` with the full call plus `caller_profile` (`calls.ts:66`, `:117`);
- * - callee answers: `POST /calls/:id/answer` and the caller receives `call:answered`;
- * - either side ends it: `POST /calls/:id/end` and the other receives `call:ended`;
- * - `GET /calls/history` feeds the History tab.
+ * - caller: `POST /calls { receiver_id, call_type, offer_sdp }` → `{ call }`, and the callee's
+ *   personal room receives `call:incoming` with the call plus `caller_profile` (`calls.ts:66`);
+ * - callee answers: `POST /calls/:id/answer { answer_sdp }` → the caller receives
+ *   `call:answered { callId, answer_sdp }`;
+ * - both: ICE candidates go out through `POST /calls/:id/signal { candidate }` and arrive as
+ *   `call:signal { callId, from, candidate }`;
+ * - either side ends it: `POST /calls/:id/end { status, duration }` → `call:ended`;
+ * - `GET /calls/history` feeds the History tab, `GET /calls/turn-credentials` supplies the
+ *   Cloudflare TURN servers used when a direct path is impossible.
  *
- * Before 1.0.40 none of that was called: the call screen ran a 1.6-second timer and then
- * pretended to be connected, the callee's phone never rang, and no call record was ever
- * written. [active] is the state machine the call screen renders, so what is on screen is
- * exactly what the server has.
- *
- * **Media**: exchanging audio/video needs WebRTC (`signalCall` / `turn-credentials` are the
- * transport for it). This build wires the full signalling and call lifecycle; the media
- * layer is the next piece, and the call screen says so instead of faking a conversation.
+ * The state machine is deliberately explicit — [CallState.Ringing] → [CallState.Connecting] →
+ * [CallState.Live] → [CallState.Ended] — because the reference's hardest-won lesson is that
+ * "answered" and "connected" are different things (`CallModal.tsx` keeps
+ * `everConnectedRef`, a 20 s connecting timeout and a 6 s disconnect grace for exactly this).
+ * A call that never connects is reported as failed instead of sitting on "Connecting…".
  */
 interface CallRepository {
     val history: StateFlow<List<CallRecord>>
@@ -46,18 +64,21 @@ interface CallRepository {
     /** The call this app is ringing/connected in, or null. Drives the call screen. */
     val active: StateFlow<ActiveCall?>
 
+    /** Our camera, for the call screen's preview renderer. Null when there is no video. */
+    val localVideoTrack: StateFlow<VideoTrack?>
+
+    /** The far end's camera, for the full-screen renderer. */
+    val remoteVideoTrack: StateFlow<VideoTrack?>
+
+    /** The EGL context the renderers must be initialised with; null when media is down. */
+    val eglContext: EglBase.Context?
+
     fun refresh()
 
-    /** `POST /calls` — opens a call record and rings the other side. */
-    suspend fun placeCall(personId: String, video: Boolean): String? = null
-
-    /** `POST /calls/{id}/end` — writes the outcome the History tab reads back. */
-    suspend fun finishCall(callId: String, seconds: Long, status: String = "ended") = Unit
-
-    /** Start an outgoing call and show the ringing screen. */
+    /** Start an outgoing call and show the ringing screen (`POST /calls`). */
     fun dial(personId: String, name: String, avatarUrl: String?, video: Boolean)
 
-    /** Answer the incoming call on screen (`POST /calls/:id/answer`). */
+    /** Answer the incoming call on screen (offer → `POST /calls/:id/answer`). */
     fun answer()
 
     /** Decline the incoming call; the caller sees "Declined". */
@@ -66,15 +87,22 @@ interface CallRepository {
     /** Hang up / cancel a ringing call. */
     fun hangUp()
 
-    /** Clear a finished call from the screen (the overlay's own "close"). */
+    /** Clear a finished call from the screen. */
     fun dismiss()
+
+    fun setMicMuted(muted: Boolean)
+
+    fun setSpeaker(on: Boolean)
+
+    fun flipCamera()
 }
 
 class RemoteCallRepository(
     private val api: NChatApi,
     private val tokens: TokenStore,
     private val socket: NChatSocket,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val context: Context
 ) : CallRepository {
 
     private val _history = MutableStateFlow<List<CallRecord>>(emptyList())
@@ -83,7 +111,57 @@ class RemoteCallRepository(
     private val _active = MutableStateFlow<ActiveCall?>(null)
     override val active: StateFlow<ActiveCall?> = _active.asStateFlow()
 
+    private val _localVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    override val localVideoTrack: StateFlow<VideoTrack?> = _localVideoTrack.asStateFlow()
+
+    private val _remoteVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    override val remoteVideoTrack: StateFlow<VideoTrack?> = _remoteVideoTrack.asStateFlow()
+
+    override val eglContext: EglBase.Context? get() = engine?.eglContext
+
     private val myId: String get() = tokens.userId.orEmpty()
+
+    // --------------------------------------------------------------- call state
+
+    /*
+     * Cross-thread state.
+     *
+     * The app-wide coroutine scope runs on `Dispatchers.Default` and socket events arrive on
+     * their own thread, so every field the call machine shares is volatile, and the candidate
+     * queue is lock-guarded: an ICE candidate produced while `POST /calls` was still in flight
+     * must not be lost to a data race.
+     */
+    @Volatile
+    private var engine: WebRtcEngine? = null
+
+    @Volatile
+    private var callId: String? = null
+
+    /** The caller's offer, held between `call:incoming` and the Answer tap. */
+    @Volatile
+    private var pendingOffer: JsonObject? = null
+
+    /** Candidates gathered before the server gave us a call id. */
+    private val pendingCandidates = mutableListOf<JsonObject>()
+
+    private var dialJob: Job? = null
+    private var answerJob: Job? = null
+    private var ringJob: Job? = null
+    private var connectingJob: Job? = null
+    private var disconnectJob: Job? = null
+    private var dismissJob: Job? = null
+    @Volatile
+    private var everConnected = false
+    /** Guards against a second teardown of the same call. */
+    @Volatile
+    private var terminated = false
+
+    private var turnCache: JsonElement? = null
+    private var turnFetchedAt = 0L
+
+    private val audioManager by lazy {
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
 
     init {
         scope.launch {
@@ -92,20 +170,45 @@ class RemoteCallRepository(
         refresh()
     }
 
-    // ------------------------------------------------------------------ screen
+    /** True while a call is on screen *or* being prepared (before the server returns an id). */
+    private fun busy(): Boolean =
+        _active.value != null || dialJob?.isActive == true || answerJob?.isActive == true
+
+    // -------------------------------------------------------------- dial / answer
 
     override fun dial(personId: String, name: String, avatarUrl: String?, video: Boolean) {
         if (personId.isBlank()) return
-        if (_active.value != null) {
+        if (busy()) {
             NcToaster.show("You're already on a call")
             return
         }
-        scope.launch {
-            val id = placeCall(personId, video)
+        dialJob = scope.launch {
+            val ice = iceServers()
+            val callEngine = withContext(Dispatchers.Default) {
+                WebRtcEngine.create(context, video, listener)
+            }
+            if (callEngine == null) {
+                NcToaster.show("This device can't make calls")
+                return@launch
+            }
+            engine = callEngine
+            val offer = callEngine.createOffer(ice)
+            if (offer == null) {
+                closeMedia()
+                NcToaster.show("Couldn't start the call — check microphone/camera access")
+                return@launch
+            }
+            val id = runCatching {
+                api.startCall(personId, if (video) "video" else "audio", offer).call?.id
+            }.getOrNull()
             if (id == null) {
+                closeMedia()
                 NcToaster.show("Couldn't start the call — check your connection")
                 return@launch
             }
+            callId = id
+            terminated = false
+            drainPendingCandidates()
             _active.value = ActiveCall(
                 id = id,
                 peerId = personId,
@@ -113,32 +216,72 @@ class RemoteCallRepository(
                 peerAvatarUrl = avatarUrl,
                 isVideo = video,
                 incoming = false,
-                state = CallState.Ringing
+                state = CallState.Ringing,
+                speakerOn = video
             )
+            applyAudioRoute(video)
+            // No voicemail: nobody picked up within the ring window, so record it as missed.
+            ringJob = scope.launch {
+                delay(RING_TIMEOUT_MS)
+                if (_active.value?.state == CallState.Ringing) {
+                    _active.value = _active.value?.copy(state = CallState.Ended, note = "No answer")
+                    finish(callId, "missed", 0L)
+                }
+            }
         }
     }
 
     override fun answer() {
         val call = _active.value ?: return
-        if (call.state != CallState.Ringing) return
-        scope.launch {
-            val answered = runCatching { api.answerCall(call.id, null) }.isSuccess
-            if (!answered) {
-                NcToaster.show("Couldn't answer — the call may have ended")
-                _active.value = call.copy(state = CallState.Ended, note = "Missed")
+        if (call.state != CallState.Ringing || !call.incoming) return
+        if (answerJob?.isActive == true) return
+        answerJob = scope.launch {
+            val offer = pendingOffer
+            if (offer == null) {
+                NcToaster.show("This call's setup didn't arrive — ask them to call again")
+                decline()
+                return@launch
+            }
+            val callEngine = withContext(Dispatchers.Default) {
+                WebRtcEngine.create(context, call.isVideo, listener)
+            }
+            if (callEngine == null) {
+                NcToaster.show("This device can't make calls")
+                decline()
+                return@launch
+            }
+            engine = callEngine
+            _active.value = call.copy(state = CallState.Connecting, startedAt = 0L)
+            val answer = callEngine.acceptOffer(offer, iceServers())
+            if (answer == null) {
+                // We never managed to join: that is a dropped call, not a declined one
+                // (`CallModal.tsx` answerCall's catch does exactly this).
+                closeMedia()
+                _active.value = call.copy(state = CallState.Ended, note = "Couldn't connect")
+                runCatching { api.endCall(call.id, "ended", 0L) }
                 scheduleDismiss()
                 return@launch
             }
-            _active.value = call.copy(
-                state = CallState.Connected,
-                startedAt = System.currentTimeMillis()
-            )
+            val ok = runCatching { api.answerCall(call.id, answer) }.isSuccess
+            if (!ok) {
+                // Most likely the caller already hung up while we were accepting.
+                closeMedia()
+                _active.value = null
+                refresh()
+                return@launch
+            }
+            callId = call.id
+            terminated = false
+            drainPendingCandidates()
+            armConnectingTimeout()
         }
     }
 
     override fun decline() {
         val call = _active.value ?: return
+        stopTimeouts()
         _active.value = call.copy(state = CallState.Ended, note = "Declined")
+        closeMedia()
         scope.launch {
             runCatching { api.endCall(call.id, "declined", 0L) }
             refresh()
@@ -148,23 +291,24 @@ class RemoteCallRepository(
 
     override fun hangUp() {
         val call = _active.value ?: return
-        val seconds = if (call.state == CallState.Connected && call.startedAt > 0L) {
+        val seconds = if (call.state == CallState.Live && call.startedAt > 0L) {
             ((System.currentTimeMillis() - call.startedAt) / 1000L).coerceAtLeast(0L)
         } else {
             0L
         }
+        stopTimeouts()
         _active.value = if (call.state == CallState.Ringing) {
             call.copy(state = CallState.Ended, note = "Cancelled")
         } else {
             call.copy(state = CallState.Ended, note = null)
         }
+        closeMedia()
         scope.launch {
-            // `status` is what the History row shows on both phones; a call nobody picked up
-            // is "missed", not "ended" (see the reference's `endCall` call sites).
-            val status = if (call.state == CallState.Ringing) {
-                if (call.incoming) "declined" else "missed"
-            } else {
-                "ended"
+            // A call nobody picked up is "missed" on both phones, not "ended".
+            val status = when {
+                call.state == CallState.Ringing && call.incoming -> "declined"
+                call.state == CallState.Ringing -> "missed"
+                else -> "ended"
             }
             runCatching { api.endCall(call.id, status, seconds) }
             refresh()
@@ -173,33 +317,213 @@ class RemoteCallRepository(
     }
 
     override fun dismiss() {
+        dismissJob?.cancel()
         _active.value = null
+        if (_active.value == null) {
+            terminated = true
+            closeMedia()
+        }
     }
 
-    /** Closes the overlay a moment after it shows how the call finished. */
-    private fun scheduleDismiss() {
-        scope.launch {
-            delay(1_600)
-            // Only clear the call we finished — a new one may have started meanwhile.
-            val current = _active.value
-            if (current != null && current.state == CallState.Ended) _active.value = null
+    override fun setMicMuted(muted: Boolean) {
+        engine?.setMicMuted(muted)
+        _active.update { it?.copy(micMuted = muted) }
+    }
+
+    override fun setSpeaker(on: Boolean) {
+        _active.update { it?.copy(speakerOn = on) }
+        applyAudioRoute(on)
+    }
+
+    override fun flipCamera() {
+        engine?.flipCamera()
+        _active.update { it?.copy(frontCamera = engine?.isFrontCamera ?: it.frontCamera) }
+    }
+
+    // -------------------------------------------------------------- media engine
+
+    private val listener = object : WebRtcEngine.Listener {
+        override fun onIceCandidate(candidate: JsonObject) {
+            val id = callId
+            if (id == null) {
+                synchronized(pendingCandidates) { pendingCandidates.add(candidate) }
+                return
+            }
+            scope.launch {
+                runCatching {
+                    api.signalCall(id, buildJsonObject { put("candidate", candidate) })
+                }
+            }
         }
+
+        override fun onConnected() {
+            if (terminated || everConnected) return
+            val current = _active.value ?: return
+            if (current.state == CallState.Ended) return
+            everConnected = true
+            disconnectJob?.cancel()
+            connectingJob?.cancel()
+            ringJob?.cancel()
+            _active.update { call ->
+                call?.copy(state = CallState.Live, startedAt = System.currentTimeMillis())
+            }
+            val video = _active.value?.isVideo == true
+            applyAudioRoute(_active.value?.speakerOn ?: video)
+        }
+
+        override fun onDisconnected() {
+            if (!everConnected || terminated) return
+            disconnectJob?.cancel()
+            // A blip (wifi handover, a missed keepalive) usually recovers within a second or
+            // two — the reference waits 6 s before believing it (`CallModal.tsx:33`).
+            disconnectJob = scope.launch {
+                delay(DISCONNECT_GRACE_MS)
+                if (_active.value?.state == CallState.Live) {
+                    _active.update { it?.copy(state = CallState.Ended, note = "Connection lost") }
+                    finish(callId, "ended", 0L, media = false)
+                }
+            }
+        }
+
+        override fun onFailed() {
+            if (terminated) return
+            val id = callId
+            val note = if (everConnected) "Connection lost" else "Couldn't connect"
+            _active.update { it?.copy(state = CallState.Ended, note = note) }
+            // `finish` reads the id it was handed, so teardown clearing `callId` cannot leave
+            // the other phone ringing for a call this side gave up on.
+            finish(id, "ended", 0L)
+        }
+
+        override fun onLocalVideo(track: VideoTrack?) {
+            _localVideoTrack.value = track
+            _active.update { it?.copy(localVideo = track != null) }
+        }
+
+        override fun onRemoteVideo(track: VideoTrack?) {
+            _remoteVideoTrack.value = track
+            _active.update { it?.copy(remoteVideo = track != null) }
+        }
+
+        override fun onError(message: String) {
+            Log.w(TAG, "media error: $message")
+            _active.update { it?.copy(mediaError = message) }
+        }
+    }
+
+    private fun armConnectingTimeout() {
+        connectingJob?.cancel()
+        connectingJob = scope.launch {
+            delay(CONNECTING_TIMEOUT_MS)
+            if (!everConnected && _active.value?.state == CallState.Connecting) {
+                _active.update { it?.copy(state = CallState.Ended, note = "Couldn't connect") }
+                finish(callId, "ended", 0L, media = false)
+            }
+        }
+    }
+
+    private fun stopTimeouts() {
+        ringJob?.cancel()
+        connectingJob?.cancel()
+        disconnectJob?.cancel()
+        ringJob = null
+        connectingJob = null
+        disconnectJob = null
+    }
+
+    /** Ends a call server-side, tears the media down, and lets the screen show the outcome. */
+    private fun finish(id: String?, status: String, seconds: Long, media: Boolean = true) {
+        if (terminated) return
+        terminated = true
+        stopTimeouts()
+        if (media) closeMedia()
+        scope.launch {
+            id?.let { runCatching { api.endCall(it, status, seconds) } }
+            refresh()
+        }
+        scheduleDismiss()
+    }
+
+    private fun closeMedia() {
+        _localVideoTrack.value = null
+        _remoteVideoTrack.value = null
+        engine?.close()
+        engine = null
+        pendingOffer = null
+        callId = null
+        synchronized(pendingCandidates) { pendingCandidates.clear() }
+        everConnected = false
+        applyAudioRoute(null)
+    }
+
+    private fun scheduleDismiss() {
+        dismissJob?.cancel()
+        dismissJob = scope.launch {
+            delay(1_600)
+            if (_active.value?.state == CallState.Ended) _active.value = null
+        }
+    }
+
+    private fun drainPendingCandidates() {
+        val id = callId ?: return
+        val queued = synchronized(pendingCandidates) {
+            if (pendingCandidates.isEmpty()) return
+            pendingCandidates.toList().also { pendingCandidates.clear() }
+        }
+        scope.launch {
+            queued.forEach { candidate ->
+                runCatching {
+                    api.signalCall(id, buildJsonObject { put("candidate", candidate) })
+                }
+            }
+        }
+    }
+
+    /** Speaker for video calls and the speakerphone toggle; earpiece otherwise. */
+    private fun applyAudioRoute(speaker: Boolean?) {
+        val manager = audioManager ?: return
+        runCatching {
+            if (speaker == null) {
+                manager.isSpeakerphoneOn = false
+                manager.mode = AudioManager.MODE_NORMAL
+            } else {
+                manager.mode = AudioManager.MODE_IN_COMMUNICATION
+                manager.isSpeakerphoneOn = speaker
+            }
+        }
+    }
+
+    /**
+     * `GET /calls/turn-credentials`, cached for 100 minutes like the reference
+     * (`callService.ts:45`) — the worker mints short-lived Cloudflare credentials, and asking
+     * again on every call would only add latency to dialling.
+     */
+    private suspend fun iceServers(): List<org.webrtc.PeerConnection.IceServer> {
+        val now = System.currentTimeMillis()
+        val fresh = turnCache != null && now - turnFetchedAt < TURN_TTL_MS
+        if (!fresh) {
+            turnCache = runCatching { api.turnCredentials().iceServers }.getOrNull()
+            turnFetchedAt = now
+        }
+        return WebRtcEngine.iceServers(turnCache)
     }
 
     // ------------------------------------------------------------------ events
 
-    private fun handleCallEvent(type: String, event: com.nchat.app.network.RealtimeEvent) {
+    private fun handleCallEvent(type: String, event: RealtimeEvent) {
         when (type) {
             "call:incoming" -> {
                 val row = event.objectOrNull("call") ?: return
-                val call = runCatching { NcJson.format.decodeFromJsonElement<CallDto>(row) }.getOrNull()
-                    ?: return
+                val call = runCatching { NcJson.format.decodeFromJsonElement<CallDto>(row) }
+                    .getOrNull() ?: return
                 if (call.callerId == myId) return
-                // Already busy: tell the caller so their screen doesn't ring forever.
-                if (_active.value != null) {
+                if (busy()) {
+                    // Busy: tell the caller so their screen doesn't ring forever.
                     scope.launch { runCatching { api.endCall(call.id, "declined", 0L) } }
                     return
                 }
+                resetCallState()
+                pendingOffer = call.offerSdp.asSdpObject()
                 val profile = call.callerProfile
                 _active.value = ActiveCall(
                     id = call.id,
@@ -208,25 +532,38 @@ class RemoteCallRepository(
                     peerAvatarUrl = profile?.avatarUrl,
                     isVideo = call.callType.equals("video", ignoreCase = true),
                     incoming = true,
-                    state = CallState.Ringing
+                    state = CallState.Ringing,
+                    speakerOn = call.callType.equals("video", ignoreCase = true)
                 )
             }
 
             "call:answered" -> {
-                val callId = event.string("callId") ?: event.string("call_id") ?: return
-                val current = _active.value ?: return
-                if (current.id != callId || current.state != CallState.Ringing) return
-                _active.value = current.copy(
-                    state = CallState.Connected,
-                    startedAt = System.currentTimeMillis()
-                )
+                val id = event.string("callId") ?: event.string("call_id") ?: return
+                if (id != _active.value?.id) return
+                ringJob?.cancel()
+                if (_active.value?.state == CallState.Ringing) {
+                    _active.update { it?.copy(state = CallState.Connecting) }
+                }
+                val answer = event.objectOrNull("answer_sdp") ?: event.objectOrNull("answerSdp")
+                if (answer != null) engine?.applyAnswer(answer)
+                armConnectingTimeout()
+            }
+
+            "call:signal" -> {
+                val id = event.string("callId") ?: event.string("call_id") ?: return
+                if (id != _active.value?.id) return
+                val candidate = event.objectOrNull("candidate") ?: return
+                engine?.addRemoteCandidate(candidate)
             }
 
             "call:ended" -> {
-                val callId = event.string("callId") ?: event.string("call_id")
+                val id = event.string("callId") ?: event.string("call_id")
                 val current = _active.value
                 val status = event.string("status").orEmpty()
-                if (current != null && (callId == null || current.id == callId)) {
+                if (current != null && (id == null || current.id == id)) {
+                    terminated = true
+                    stopTimeouts()
+                    closeMedia()
                     _active.value = current.copy(
                         state = CallState.Ended,
                         note = when {
@@ -239,22 +576,23 @@ class RemoteCallRepository(
                 }
                 refresh()
             }
-
-            "call:signal" -> Unit // WebRTC transport — see the class comment.
         }
     }
 
-    // ------------------------------------------------------------------- REST
-
-    override suspend fun placeCall(personId: String, video: Boolean): String? =
-        runCatching {
-            api.startCall(personId, if (video) "video" else "audio").call?.id
-        }.getOrNull()
-
-    override suspend fun finishCall(callId: String, seconds: Long, status: String) {
-        runCatching { api.endCall(callId, status, seconds) }
-        refresh()
+    private fun resetCallState() {
+        stopTimeouts()
+        engine?.close()
+        engine = null
+        callId = null
+        pendingOffer = null
+        synchronized(pendingCandidates) { pendingCandidates.clear() }
+        everConnected = false
+        terminated = false
+        _localVideoTrack.value = null
+        _remoteVideoTrack.value = null
     }
+
+    // ------------------------------------------------------------------- REST
 
     override fun refresh() {
         scope.launch {
@@ -285,7 +623,28 @@ class RemoteCallRepository(
         return synchronized(ISO) { runCatching { ISO.parse(value)?.time ?: 0L }.getOrDefault(0L) }
     }
 
+    /**
+     * SDP arrives either as the object the caller posted (`call:incoming`) or as the JSON
+     * string the database stored (`GET /calls/history`), so both are accepted.
+     */
+    private fun JsonElement?.asSdpObject(): JsonObject? = when (this) {
+        is JsonObject -> this
+        is JsonPrimitive -> runCatching {
+            NcJson.format.parseToJsonElement(content) as? JsonObject
+        }.getOrNull()
+
+        else -> null
+    }
+
     private companion object {
+        const val TAG = "NChatCalls"
+
+        /** The reference's own numbers (`CallModal.tsx:18`, `:26`, `:33`). */
+        const val RING_TIMEOUT_MS = 45_000L
+        const val CONNECTING_TIMEOUT_MS = 20_000L
+        const val DISCONNECT_GRACE_MS = 6_000L
+        const val TURN_TTL_MS = 100 * 60_000L
+
         val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }

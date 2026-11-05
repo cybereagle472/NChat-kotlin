@@ -154,8 +154,8 @@ caller identity masking in `call:incoming`). The app must never decide them loca
 | `POST /calls/:id/answer` | `CallRepository.answer` | Answer button | ✅ **since 1.0.40** |
 | `POST /calls/:id/end` | `decline` / `hangUp` | Decline, End, Cancel | ✅ **since 1.0.40** |
 | `GET /calls/history` | `refresh` | History tab | ✅ |
-| `POST /calls/:id/signal` | — | — | ⏳ WebRTC transport, see §10.3 |
-| `GET /calls/turn-credentials` | — | — | ⏳ WebRTC transport, see §10.3 |
+| `POST /calls/:id/signal` | `CallRepository` (ICE) → `signalCall` | `call:signal` both ways | ✅ **since 1.0.41** |
+| `GET /calls/turn-credentials` | `CallRepository.iceServers()` | Cloudflare TURN, cached 100 min | ✅ **since 1.0.41** |
 
 Realtime: `call:incoming` → ring; `call:answered` → connected; `call:ended` → outcome;
 `call:signal` → ICE/offer passthrough (`calls.ts:117`, `:137`, `:153`, `:124`).
@@ -194,17 +194,34 @@ group calls". The group-chat call button therefore says so instead of opening th
 overlay has been deleted in 1.0.40 (git history keeps it). Wiring this needs the same media
 layer as §10.3, timeboxed as its own release.
 
-### 10.3 Call media (WebRTC)
+### 10.3 Call media — now implemented
 
-Signalling is now complete, but there is no media: no `RTCPeerConnection`, no ICE, no
-microphone or camera on the call. `signalCall` and `turnCredentials` are the transport the
-media layer will use (`calls.ts:38` returns the Cloudflare TURN `iceServers`).
+1.0.41 adds the media layer (`data/calls/WebRtcEngine.kt`), ported from the reference's
+`CallModal.tsx` + `callService.ts`:
 
-Consequence, stated plainly in the call screen while connected: the line is *signalled*,
-not *audible*. Nothing in the UI pretends otherwise. The media layer is the next release;
-it needs `io.github.webrtc-sdk:android`, an audio track from the microphone, video capture
-plus `SurfaceViewRenderer`, and `signalCall`/`turn-credentials` wired into
-`CallRepository.handleCallEvent`.
+- the caller builds the peer connection, creates an offer and posts it *with* the call
+  (`POST /calls { offer_sdp }`), so the callee receives it inside `call:incoming`;
+- the callee applies that offer, creates the answer and posts it (`/calls/:id/answer`) — the
+  caller receives it as `call:answered { answer_sdp }`;
+- ICE candidates trickle through `POST /calls/:id/signal { candidate }` and arrive as
+  `call:signal { callId, from, candidate }`. Candidates that arrive before this side has a
+  peer connection (the callee is still ringing) are queued and flushed, never dropped;
+- `GET /calls/turn-credentials` supplies Cloudflare TURN servers, cached for 100 minutes like
+  the reference (`callService.ts:45`), with public STUN as the direct-path fallback.
+
+The state machine is explicit: `Ringing → Connecting → Live → Ended`. "Connecting…" is SDP
+exchanged with ICE still working; the timer only starts when ICE/DTLS actually connects. The
+reference's own guard rails are ported: a 45 s ring timeout (recorded as missed), a 20 s
+connecting timeout and a 6 s disconnect grace (`CallModal.tsx:18`, `:26`, `:33`) — a call that
+cannot connect says so and closes instead of sitting on "Connecting…" forever.
+
+Media permissions (`RECORD_AUDIO`, `CAMERA`) are requested *before* dialling and *before*
+answering: the peer connection opens the microphone while it builds the offer, so asking later
+just produces a silent call.
+
+Known limit, stated plainly: calls run while the app is in the foreground. A background
+`microphone` foreground service (to keep the line alive with the screen off) is not part of
+this release.
 
 ### 10.4 `GET /admin/stats`, `GET /admin/users`
 
@@ -220,6 +237,9 @@ frontend. Not a product feature; the app never calls them.
 | Status views never counted | `StatusRepository.markViewed` had no caller — the viewer only updated local state | `POST /status/:id/view` on open |
 | A peer never saw "recording audio…" | `setRecording` had no caller; only the *incoming* event was rendered | sent on recorder start/stop/pause, and cleared on dispose |
 | Group "is typing" named the wrong person | the worker sends `sender_id` (`groups.ts:575`) but only `is_typing` was stored, so the UI credited whoever spoke last | `Chat.typingUserId` carries the real id, resolved against the roster |
+| A "connected" call was silent | no media layer at all: no peer connection, no tracks, no ICE | WebRTC engine, offer/answer via the worker, TURN credentials, real video renders |
+| A call could sit on "Connecting…" forever | nothing watched ICE state | `Connecting → Live` only on ICE/DTLS connect, with 20 s / 6 s timeouts ported from the reference |
+| Microphone/camera asked for too late | no permission gate | `rememberCallPermissionGate` before dialling and before answering |
 | Group-chat calls opened a fake screen | `GroupCallOverlay` animated a roster that was never signalled | says group calls are not available; overlay deleted |
 
 ## 12. Realtime event coverage
@@ -244,14 +264,19 @@ branches that intentionally do nothing say so in code.
 
 ## 13. Verification checklist
 
-1. `python3` scan in the header → the only uncalled methods are `blockUser`,
-   `turnCredentials`, `signalCall`, `startGroupCall`, `joinGroupCall`, `signalGroupCall`,
-   `declineGroupCall`, `leaveGroupCall` — each explained above.
+1. `python3` scan in the header → the only uncalled methods are `blockUser` and the five
+   group-call ones — each explained above. `signalCall` and `turnCredentials` are used from
+   1.0.41 on.
 2. Two devices, same account? No: two accounts, both online.
    - Send a message: appears on the other device instantly, ticks update both ways.
    - Type: the other side shows "typing…" and clears after ~6 s.
    - Hold the mic: the other side shows "recording audio…".
    - Post a status, open it on the other device: the author's viewer count increments.
    - Call: the other phone rings with Answer/Decline; declining shows "Declined" on the
-     caller; answering shows a running timer on both; ending writes a History row on both.
+     caller; answering shows "Connecting…" and then a running timer, and **you can hear each
+     other**; a video call shows the other camera full-screen with your own in the corner;
+     mute silences your side, speaker moves the audio to the loudspeaker, flip switches
+     cameras; ending writes a History row on both.
+   - Call on mobile data with the other phone on Wi-Fi: ICE should relay through the worker's
+     TURN credentials rather than failing.
 3. Airplane mode on one device, send, re-enable: the message flushes from the outbox once.

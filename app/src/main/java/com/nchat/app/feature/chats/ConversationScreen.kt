@@ -269,6 +269,9 @@ fun ConversationScreen(
     val timeline = remember(messages, firstUnreadId) { buildTimeline(messages, firstUnreadId) }
     val typingRow = if (chat?.isTyping == true) 1 else 0
     val scope = rememberCoroutineScope()
+    // Calls need the microphone (and camera for video) before the peer connection can open
+    // them, so the call buttons ask first — see CallPermissions.kt.
+    val callGate = rememberCallPermissionGate()
     // Auto-scroll only when the reader is parked at the bottom, or sent the message
     // themselves; otherwise new traffic must never yank the viewport away.
     val atBottom by remember { derivedStateOf { !listState.canScrollForward } }
@@ -583,13 +586,16 @@ fun ConversationScreen(
                 }
             } else {
                 LaunchedEffect(kind) {
-                    ServiceLocator.callRepository.dial(
-                        personId = chatId,
-                        name = chatTitle,
-                        avatarUrl = chat?.avatarUrl,
-                        video = kind == CallKind.Video
-                    )
+                    val video = kind == CallKind.Video
                     callKind = null
+                    callGate(video) {
+                        ServiceLocator.callRepository.dial(
+                            personId = chatId,
+                            name = chatTitle,
+                            avatarUrl = chat?.avatarUrl,
+                            video = video
+                        )
+                    }
                 }
             }
         }

@@ -230,6 +230,13 @@ data class CallDto(
     val duration: Long? = null,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("ended_at") val endedAt: String? = null,
+    /**
+     * The SDP that belongs to this call, as either an object (`call:incoming` carries what the
+     * caller posted) or a JSON string (`GET /calls/history` reads it back out of the database).
+     * Both shapes land here so the media layer never has to care which one it got.
+     */
+    @SerialName("offer_sdp") val offerSdp: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName("answer_sdp") val answerSdp: kotlinx.serialization.json.JsonElement? = null,
     @SerialName("caller_profile") val callerProfile: UserDto? = null,
     @SerialName("receiver_profile") val receiverProfile: UserDto? = null,
     @SerialName("other_profile") val otherProfile: UserDto? = null,
