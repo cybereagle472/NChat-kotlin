@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.29** (`versionCode 37`)
+- Current version: **1.0.30** (`versionCode 38`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
@@ -388,6 +388,7 @@ Each row is one shipped release; versionCode is what the updater compares.
 
 | Version | versionCode | Release tag | What landed |
 |---|---|---|---|
+| 1.0.30 | 38 | *this build* | **Voice messages actually carry audio.** `core/audio/VoiceRecorder.kt` records AAC/.m4a through `MediaRecorder` (with the `RECORD_AUDIO` permission), `ChatRepository.sendVoice` uploads the clip to `POST /media/upload` and sends `type: voice` with `media_url` + `duration` — before this the message had no file at all, so the receiver heard silence. `MessageBubble.VoiceContent` plays the URL through `MediaPlayer` with a real position and pause. Chats tab is 1:1 only (`ChatsViewModel` drops group rows, matching `Chats.tsx`); `reload()` keeps threads the server does not list and `bumpPreview()` creates a row for an incoming message from a non-friend; Discover resolves relation at render time (graph → pending request → existing conversation) so a friend never shows Add, and `FriendRepository.pendingSent`/`actionError` make a refused request revert and explain itself. |
 | 1.0.28 | 36 | *this build* | **Status and Group Info wired to endpoints that existed but were never called.** `StatusRepository` gains `createPhoto` (`POST /media/upload` → `POST /status` with `content_type: image` and `content_url`), `viewers()` (`GET /status/:id/views`) and `mute`/`unmute` backed by `mutedAuthors` from `GET /status/muted`; `StatusUpdate` carries `authorId`, `contentType`, `contentUrl`, `viewCount`, and `StatusViewer` renders the picture plus an eye count that opens the viewer list. Group Info had been showing a *guessed* roster (`friends.take(memberCount - 1)`); `Group` now carries the real `members[]` from `/groups` with `createdBy`/`myRole`, so `removeMember`, `setMemberRole` and `deleteGroup` finally have somewhere to go. |
 | 1.0.27 | 35 | *shipped as build 174* | **Discover was never receiving the data it renders.** `HomeScreen` handed `DiscoverScreen` a list pre-filtered to accepted friends, and that screen derives the Requests tab and the Find suggestions from it — so both were structurally always empty. It now gets the whole graph. `FriendRepository.search` adds the missing `GET /users/search` call (debounced, stale answers cancelled), so Find searches the server as you type; sent requests get their own section with Cancel. `UserProfile.avatarUrl` carries the account's own photo from `/users/me` (and the cached identity on a cold start) into `ProfileAvatar`, which finally loads it with Coil. `ChatListCache` only persists a fully successful refresh. Sync check gains an account audit: duplicate accounts for the same email, plus a per-contact message count for call-history people who are no longer friends. |
 | 1.0.26 | 34 | | **Nothing fails silently any more.** `ApiClient` records every call in `ApiLog` (path, status, duration, error) and Settings ▸ **Sync check** probes ten endpoints, printing the server's own answer next to the signed-in account — `SyncCheck.kt`. `RemoteChatRepository.syncError` drives a red banner with Retry above the chat list, so "empty" can no longer mean "the request failed". Profile photos are wired through the whole UI: `Friend.avatarUrl` and `StatusUpdate.avatarUrl` reach `NcAvatar.imageUrl` in Discover (friends, requests, Find), the status ring and viewer, and `ProfileViewScreen`. |
@@ -405,8 +406,8 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.14 | 22 | `nchat-build-103` | Layout sweep: call-history rows rebuilt, single-line labels everywhere, shared 12dp gutters / 8dp gaps. |
 | 1.0.13 | 21 | `nchat-build-101` | Named group typing indicators, group sender avatars, **tab-switch performance fix**, this document. |
 | 1.0.12 | 20 | `nchat-build-98` | Auth screen, profile setup, local session, Log Out. |
-| 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
 | 1.0.17 backend | — | *server only* | `server/` lands: full Rust port of the reference worker (all routes, realtime, media, TURN, admin) with 13 end-to-end test flows. No APK change. |
+| 1.0.11 | 94 | `nchat-build-94` | Settings profile pane finished; PR #13. |
 | 1.0.10 | 90 | `nchat-build-90` | Group call wiring, profile repository, cropper polish, settings profile pane. |
 | 1.0.9 | 88 | `nchat-build-88` | Forward dialog, status viewers polish, header actions, consistency sweep. |
 | 1.0.8 | 84 | `nchat-build-84` | Update checker, version manifest, FileProvider install flow. |
@@ -417,7 +418,6 @@ Each row is one shipped release; versionCode is what the updater compares.
 | 1.0.3 | 70 | `nchat-build-70` | Groups: list, create, group info, group chat; group call overlay. |
 | 1.0.2 | 66 | `nchat-build-66` | Full Discover (friends/requests), status ring + viewer, history screen; **tab switching regressed here**. |
 | 1.0.1 | 62 | `nchat-build-62` | Glass surfaces, empty states, avatar gradients, day separators, message state icons. |
-| 1.0.0 | 60 | `nchat-build-60` | Foundation: theme, bottom bar, chat list, conversation, composer, bubbles, mock data. |
 
 
 ---

@@ -208,34 +208,81 @@ class RemoteChatRepository(
         }
     }
 
-    override fun sendVoice(chatId: String, durationLabel: String) {
+    override fun sendVoice(
+        chatId: String,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        durationLabel: String
+    ) {
         val localId = "local-${localIds.incrementAndGet()}"
         appendLocal(
             chatId = chatId,
             message = baseMessage(chatId, localId, "Voice message").copy(
                 kind = MessageKind.Voice,
-                durationLabel = durationLabel
+                durationLabel = durationLabel,
+                fileName = fileName
             )
         )
         preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
-        dispatch(chatId, localId, "Voice message") { clientId ->
-            if (isGroup(chatId)) {
-                api.sendGroupMessage(
-                    chatId,
-                    "Voice message",
-                    type = "audio",
-                    clientMessageId = clientId,
-                    duration = durationLabel
-                )
-            } else {
-                api.sendMessage(
-                    chatId,
-                    "Voice message",
-                    type = "audio",
-                    clientMessageId = clientId,
-                    duration = durationLabel
-                )
+
+        scope.launch {
+            // Upload first: without a `media_url` the receiver gets an audio row with no file,
+            // which is exactly the "it arrives but it is silent" bug.
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
+            if (media == null) {
+                // Leave the bubble in "sending" — the same thing a failed text send does — but
+                // stop pretending the chat preview is still in flight.
+                preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
+                return@launch
             }
+            // The sender can play their own clip straight away from the uploaded URL.
+            replaceLocal(
+                chatId,
+                localId,
+                baseMessage(chatId, localId, "Voice message").copy(
+                    kind = MessageKind.Voice,
+                    durationLabel = durationLabel,
+                    fileName = fileName,
+                    mediaUrl = media.url,
+                    state = DeliveryState.Sending
+                )
+            )
+            val response = runCatching {
+                if (isGroup(chatId)) {
+                    api.sendGroupMessage(
+                        chatId,
+                        "Voice message",
+                        type = "voice",
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        duration = durationLabel
+                    )
+                } else {
+                    api.sendMessage(
+                        chatId,
+                        "Voice message",
+                        type = "voice",
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        duration = durationLabel,
+                        fileName = fileName,
+                        fileSize = media.fileSize?.toString()
+                    )
+                }
+            }.getOrNull()
+            val created = response?.message
+            if (created == null) return@launch
+            replaceLocal(
+                chatId,
+                localId,
+                created.toModel(chatId).copy(
+                    // A server row that lost the URL still has to be playable locally.
+                    mediaUrl = created.mediaUrl ?: media.url,
+                    state = DeliveryState.Sent
+                )
+            )
+            preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sent)
         }
     }
 

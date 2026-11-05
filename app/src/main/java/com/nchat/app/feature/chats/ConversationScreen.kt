@@ -64,6 +64,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -103,12 +104,16 @@ import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
+import com.nchat.app.core.audio.VoiceRecorder
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.util.MediaPreparer
 import com.nchat.app.core.util.PickedFile
@@ -1142,10 +1147,22 @@ private fun ComposerBar(
     onSend: () -> Unit,
     onCancelReply: () -> Unit,
     onSendAttachment: (MessageKind) -> Unit,
-    onSendVoice: (String) -> Unit
+    onSendVoice: (bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) -> Unit
 ) {
     // Collected here, not in the screen: typing then only recomposes the composer.
     val text by textFlow.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current.applicationContext
+    val recorder = remember { VoiceRecorder(appContext) }
+    var recordDenied by remember { mutableStateOf(false) }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        // Recording only ever starts from the gesture, so a grant arriving mid-gesture is
+        // treated as "hold the mic again" rather than silently capturing nothing.
+        recordDenied = !granted
+        if (!granted) NcToaster.show("Microphone access is needed for voice messages")
+    }
+    DisposableEffect(Unit) { onDispose { recorder.cancel() } }
     var mediaOpen by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf<VoicePhase?>(null) }
     var elapsedMs by remember { mutableStateOf(0L) }
@@ -1159,6 +1176,7 @@ private fun ComposerBar(
     val minVoiceMs = 1000L
 
     fun discardVoice() {
+        recorder.cancel()
         voicePhase = null
         elapsedMs = 0L
         cancelProgress = 0f
@@ -1167,9 +1185,14 @@ private fun ComposerBar(
     }
 
     fun sendVoice() {
-        val duration = elapsedMs
+        val clip = recorder.stop()
+        val duration = if (elapsedMs > 0L) elapsedMs else 0L
         discardVoice()
-        onSendVoice(formatVoiceDuration(duration))
+        if (clip == null) {
+            NcToaster.show("Couldn't record — check the microphone and try again")
+            return
+        }
+        onSendVoice(clip.bytes, clip.mimeType, clip.fileName, formatVoiceDuration(duration))
     }
 
     // Tick the timer and grow the waveform only while the recorder is live.
@@ -1310,6 +1333,18 @@ private fun ComposerBar(
                                             bars.clear()
                                             cancelProgress = 0f
                                             lockProgress = 0f
+                                            val granted = ContextCompat.checkSelfPermission(
+                                                appContext,
+                                                Manifest.permission.RECORD_AUDIO
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                            if (!granted) {
+                                                micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                                                return@awaitEachGesture
+                                            }
+                                            if (!recorder.start()) {
+                                                NcToaster.show("Microphone unavailable")
+                                                return@awaitEachGesture
+                                            }
                                             voicePhase = VoicePhase.Holding
                                             var locked = false
                                             while (true) {

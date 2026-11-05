@@ -2,6 +2,8 @@
 
 package com.nchat.app.feature.chats
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +54,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.ui.unit.sp
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.BubbleShapeMine
 import com.nchat.app.core.designsystem.BubbleShapeTheirs
 import com.nchat.app.core.designsystem.NcTheme
@@ -201,7 +205,8 @@ fun MessageBubble(
                 )
                 MessageKind.Voice -> VoiceContent(
                     duration = message.durationLabel ?: "00:00",
-                    mine = mine
+                    mine = mine,
+                    mediaUrl = message.mediaUrl
                 )
                 MessageKind.Document -> DocumentContent(
                     name = message.fileName ?: "document.pdf",
@@ -515,22 +520,100 @@ private fun VideoContent(
 }
 
 @Composable
-private fun VoiceContent(duration: String, mine: Boolean) {
+private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = null) {
     var playing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
+    var prepared by remember { mutableStateOf(false) }
     val totalMs = remember(duration) { parseVoiceDuration(duration) }
 
-    LaunchedEffect(playing) {
+    // A player per bubble, created only when the message actually carries audio. Media is
+    // served publicly by the worker (with byte ranges), so the URL can be set directly.
+    val player = remember(mediaUrl) {
+        mediaUrl?.takeIf { it.isNotBlank() }?.let {
+            runCatching {
+                MediaPlayer().apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .build()
+                    )
+                }
+            }.getOrNull()
+        }
+    }
+    DisposableEffect(player) {
+        onDispose { runCatching { player?.release() } }
+    }
+
+    // Real position while the player runs; the old timer is kept only for messages that
+    // predate the upload and have no file to play.
+    LaunchedEffect(playing, player) {
         if (!playing) return@LaunchedEffect
-        while (true) {
-            delay(100)
-            val next = progress + 100f / totalMs
-            if (next >= 1f) {
-                progress = 0f
-                playing = false
-                break
+        if (player != null) {
+            while (true) {
+                delay(80)
+                val total = runCatching { player.duration }.getOrDefault(0)
+                val current = runCatching { player.currentPosition }.getOrDefault(0)
+                progress = if (total > 0) (current.toFloat() / total).coerceIn(0f, 1f) else 0f
+                if (!playing) break
             }
-            progress = next
+        } else {
+            if (totalMs <= 0) {
+                playing = false
+                return@LaunchedEffect
+            }
+            while (true) {
+                delay(100)
+                val next = progress + 100f / totalMs
+                if (next >= 1f) {
+                    progress = 0f
+                    playing = false
+                    break
+                }
+                progress = next
+            }
+        }
+    }
+
+    fun toggle() {
+        val current = player
+        if (current == null) {
+            playing = !playing
+            return
+        }
+        if (playing) {
+            runCatching { current.pause() }
+            playing = false
+            return
+        }
+        val started = runCatching {
+            if (!prepared) {
+                current.setDataSource(mediaUrl)
+                current.setOnPreparedListener {
+                    it.start()
+                    prepared = true
+                    playing = true
+                }
+                current.setOnCompletionListener {
+                    progress = 0f
+                    playing = false
+                }
+                current.setOnErrorListener { _, _, _ ->
+                    playing = false
+                    progress = 0f
+                    true
+                }
+                current.prepareAsync()
+            } else {
+                if (current.currentPosition >= current.duration) current.seekTo(0)
+                current.start()
+                playing = true
+            }
+        }
+        if (started.isFailure) {
+            playing = false
+            NcToaster.show("Couldn't play this voice message")
         }
     }
 
@@ -539,7 +622,7 @@ private fun VoiceContent(duration: String, mine: Boolean) {
         modifier = Modifier
             .width(190.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable { playing = !playing }
+            .clickable { toggle() }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
