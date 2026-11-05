@@ -66,6 +66,9 @@ class RemoteChatRepository(
 ) : ChatRepository {
 
 
+    /** How long a received "typing" indicator survives without a refresh (WhatsApp-like). */
+    private val TYPING_TTL_MS = 6_000L
+
     /** How many messages a conversation keeps in memory; matches the server's page size. */
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
     override val chats: StateFlow<List<Chat>> = _chats.asStateFlow()
@@ -134,7 +137,9 @@ class RemoteChatRepository(
         // realtime socket comes back up — the reference does the same on reconnect.
         scope.launch {
             socket.state.collect { state ->
-                if (state == ConnectionState.Connected) flushOutbox()
+                if (state != ConnectionState.Connected) return@collect
+                flushOutbox()
+                resyncAfterReconnect()
             }
         }
         flushOutbox()
@@ -159,6 +164,31 @@ class RemoteChatRepository(
 
     private val _syncError = MutableStateFlow<String?>(null)
     override val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
+    /**
+     * Catches up after the realtime socket was away.
+     *
+     * A WebSocket is not a mailbox: anything the server broadcast while the connection was
+     * down is gone for good. Every messenger solves this the same way — on reconnect, re-read
+     * the list and the open conversations — and without it a dropped socket silently cost the
+     * user every message sent during the gap until they restarted the app. The first connect
+     * of a process is skipped because the initial load already covers it.
+     */
+    private fun resyncAfterReconnect() {
+        if (!hasConnectedBefore) {
+            hasConnectedBefore = true
+            return
+        }
+        scope.launch {
+            runCatching { reload() }
+            val open = synchronized(requested) { requested.toList() }
+            open.forEach { chatId -> runCatching { loadConversation(chatId) } }
+        }
+    }
+
+    /** True once this process has seen the socket come up; see [resyncAfterReconnect]. */
+    @Volatile
+    private var hasConnectedBefore = false
 
     /** Reloads the chat list and the groups list from the server. */
     override fun refresh() {
@@ -340,6 +370,10 @@ class RemoteChatRepository(
             restorePending(chatId)
         }
         return stream.asStateFlow()
+    }
+
+    override fun refreshConversation(chatId: String) {
+        scope.launch { runCatching { loadConversation(chatId) } }
     }
 
     private fun stream(chatId: String): MutableStateFlow<List<Message>> =
@@ -1126,6 +1160,7 @@ class RemoteChatRepository(
                 val sender = event.string("sender_id") ?: return
                 val typing = event.string("is_typing") == "true"
                 affectChat(sender) { it.copy(isTyping = typing) }
+                if (typing) scheduleTypingExpiry(sender) else cancelTypingExpiry(sender)
             }
 
             "recording" -> {
@@ -1167,6 +1202,7 @@ class RemoteChatRepository(
                 val groupId = event.string("group_id") ?: return
                 val typing = event.string("is_typing") == "true"
                 affectChat(groupId) { it.copy(isTyping = typing) }
+                if (typing) scheduleTypingExpiry(groupId) else cancelTypingExpiry(groupId)
             }
 
             "group-recording" -> {
@@ -1175,10 +1211,74 @@ class RemoteChatRepository(
                 affectChat(groupId) { it.copy(isRecording = recording) }
             }
 
-            "group:created", "group:updated", "group:deleted", "group-member:joined",
-            "group-member:left" -> refresh()
+            /*
+             * Group traffic, applied straight from the payload.
+             *
+             * The worker already sends the whole object — `group:created` / `group:updated`
+             * carry `{ group }` (`worker/src/routes/groups.ts:137`, `:347`) — so a full
+             * `refresh()` here was pure latency: 2–3 round trips before a new group (or a
+             * rename, or a new member) showed up. Applying the object is instant and, because
+             * the existing row's preview/unread state is kept, cannot lose local state.
+             */
+            "group:created", "group:updated" -> {
+                val group = event.objectOrNull("group")?.let { decodeGroup(it) } ?: return
+                applyGroup(group)
+            }
+
+            "group-member:joined", "group-member:left", "group-member:updated" -> {
+                val groupId = event.string("group_id") ?: return
+                // The member list arrives without the group's own row, so re-read just that
+                // one group (a single GET) instead of reloading every chat and group.
+                scope.launch {
+                    runCatching { api.group(groupId).group }.getOrNull()?.let { applyGroup(it) }
+                }
+            }
+
+            "group:deleted" -> {
+                val groupId = event.string("group_id") ?: event.string("id") ?: return
+                dropGroup(groupId)
+            }
         }
     }
+
+    /** Inserts or replaces one group, keeping the local preview/unread state of its chat row. */
+    private fun applyGroup(dto: GroupDto) {
+        dto.members.forEach { member -> rememberName(member.userId, member.profile) }
+        synchronized(conversations) { groupIds += dto.id }
+        val group = dto.toGroup()
+        _groups.update { list -> list.filterNot { it.id == group.id } + group }
+        _chats.update { list ->
+            val existing = list.firstOrNull { it.id == dto.id }
+            val fresh = dto.toChat()
+            val row = if (existing == null) fresh else fresh.copy(
+                lastMessage = existing.lastMessage.ifBlank { fresh.lastMessage },
+                lastMessageAt = existing.lastMessageAt.takeIf { it > 0L } ?: fresh.lastMessageAt,
+                lastMessageKind = if (existing.lastMessage.isBlank()) fresh.lastMessageKind else existing.lastMessageKind,
+                lastMessageMine = existing.lastMessageMine,
+                lastMessageState = existing.lastMessageState,
+                unreadCount = existing.unreadCount,
+                pinned = existing.pinned,
+                muted = existing.muted,
+                isTyping = existing.isTyping,
+                isRecording = existing.isRecording
+            )
+            (list.filterNot { it.id == dto.id } + row).sortedByDescending { it.lastMessageAt }
+        }
+    }
+
+    /** Removes a group the user is no longer in (or that was deleted for everyone). */
+    private fun dropGroup(groupId: String) {
+        synchronized(conversations) {
+            groupIds -= groupId
+            conversations.remove(groupId)
+            requested.remove(groupId)
+        }
+        _groups.update { list -> list.filterNot { it.id == groupId } }
+        _chats.update { list -> list.filterNot { it.id == groupId } }
+    }
+
+    private fun decodeGroup(row: JsonObject): GroupDto? =
+        runCatching { NcJson.format.decodeFromJsonElement<GroupDto>(row) }.getOrNull()
 
     private fun ingest(chatId: String, dto: MessageDto) {
         val stream = stream(chatId)
@@ -1301,6 +1401,30 @@ class RemoteChatRepository(
 
     private fun affectChat(chatId: String, transform: (Chat) -> Chat) {
         _chats.update { list -> list.map { if (it.id == chatId) transform(it) else it } }
+    }
+
+    /** Live "typing" rows, so a stale one can be cleared when the peer goes quiet. */
+    private val typingExpiry = mutableMapOf<String, Job>()
+
+    /**
+     * "…is typing" that turns itself off.
+     *
+     * The server relays each `typing` frame as-is and never sends an expiry, so a sender whose
+     * phone sleeps mid-sentence (or whose "stopped typing" frame is lost — WebSockets are not
+     * reliable) leaves the indicator on forever. WhatsApp expires it for the same reason:
+     * the *absence* of new typing frames is what ends it.
+     */
+    private fun scheduleTypingExpiry(chatId: String) {
+        val job = scope.launch {
+            delay(TYPING_TTL_MS)
+            affectChat(chatId) { it.copy(isTyping = false, isRecording = false) }
+        }
+        val previous = synchronized(typingExpiry) { typingExpiry.put(chatId, job) }
+        previous?.cancel()
+    }
+
+    private fun cancelTypingExpiry(chatId: String) {
+        synchronized(typingExpiry) { typingExpiry.remove(chatId) }?.cancel()
     }
 
     private fun rememberName(userId: String, profile: UserDto?) {

@@ -55,6 +55,27 @@ import com.nchat.app.feature.profile.ProfileViewScreen
 import com.nchat.app.feature.status.StatusScreen
 import com.nchat.app.ui.components.NcBottomBar
 
+/** Small floating "Connecting…" / "Reconnecting…" chip (see [HomeScreen]). */
+@Composable
+private fun ReconnectPill(label: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xE61E293B))
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = "●", color = Color(0xFFFBBF24), fontSize = 9.sp)
+        Text(
+            text = label,
+            color = Color(0xFFF8FAFC),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 6.dp)
+        )
+    }
+}
+
 @Composable
 fun HomeScreen(
     navigator: NcNavigator,
@@ -129,6 +150,23 @@ fun HomeScreen(
     // The realtime socket coming up means the account is reachable again: pull everything once
     // more instead of leaving the user on the empty state they were shown while it was down.
     val connection by ServiceLocator.connection.collectAsStateWithLifecycle()
+    /*
+     * A quiet, honest indicator.
+     *
+     * Nothing in the app could tell the user whether realtime was actually up, so "it arrives
+     * a few seconds late" had no explanation on screen. WhatsApp shows exactly this: a small
+     * banner while the connection is being (re)established. It waits 1.2 s before appearing,
+     * so an ordinary reconnect — which is now immediate — never flashes it.
+     */
+    var showReconnect by remember { mutableStateOf(false) }
+    LaunchedEffect(connection) {
+        if (connection == com.nchat.app.network.ConnectionState.Connected) {
+            showReconnect = false
+            return@LaunchedEffect
+        }
+        delay(1_200)
+        showReconnect = true
+    }
     LaunchedEffect(connection) {
         if (connection != com.nchat.app.network.ConnectionState.Connected) return@LaunchedEffect
         /*
@@ -318,6 +356,19 @@ fun HomeScreen(
                 onSelect = navigator::selectTab
             )
         }
+        }
+
+        if (showReconnect) {
+            ReconnectPill(
+                label = if (connection == com.nchat.app.network.ConnectionState.Connecting) {
+                    "Connecting…"
+                } else {
+                    "Reconnecting…"
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+            )
         }
 
         syncDiag?.let { text ->

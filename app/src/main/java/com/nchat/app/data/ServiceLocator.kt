@@ -102,6 +102,18 @@ object ServiceLocator {
         socket.connect()
     }
 
+    /**
+     * "Make sure realtime is up" — called when the app comes back to the foreground.
+     *
+     * A socket that died while the phone was in a pocket (wifi handover, doze, a killed
+     * Durable Object) is otherwise only noticed the next time the loop's backoff expires: the
+     * user opens the app, nothing arrives, and messages turn up seconds later. This wakes it
+     * immediately.
+     */
+    fun ensureRealtime() {
+        socket.ensureConnected()
+    }
+
     fun disconnectRealtime() {
         socket.disconnect()
     }

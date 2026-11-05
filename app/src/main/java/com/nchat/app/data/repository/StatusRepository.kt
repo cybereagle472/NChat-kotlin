@@ -3,6 +3,7 @@ package com.nchat.app.data.repository
 import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.data.model.StatusViewer
 import com.nchat.app.network.NChatApi
+import com.nchat.app.network.NcJson
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.StatusDto
 import com.nchat.app.network.TokenStore
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.decodeFromJsonElement
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -55,13 +57,33 @@ class RemoteStatusRepository(
     private val _statuses = MutableStateFlow<List<StatusUpdate>>(emptyList())
     override val statuses: StateFlow<List<StatusUpdate>> = _statuses.asStateFlow()
 
+    /** This account, so an event about my own status is not treated as somebody else's. */
+    private val myId: String get() = tokens.userId.orEmpty()
+
     private val _mutedAuthors = MutableStateFlow<Set<String>>(emptySet())
     override val mutedAuthors: StateFlow<Set<String>> = _mutedAuthors.asStateFlow()
 
     init {
         scope.launch {
             socket.events.collect { event ->
-                if (event.type == "status:new" || event.type == "status:view") refresh()
+                when (event.type) {
+                    /*
+                     * The event carries the whole status row
+                     * (`worker/src/routes/status.ts:62-63` sends `{ status: { ...row,
+                     * full_name, username, avatar_url } }`), so a new post can be shown the
+                     * moment it is published. Reloading mine + the feed + the mute list took
+                     * three round trips, which is why a friend's status appeared late.
+                     */
+                    "status:new" -> {
+                        val row = event.objectOrNull("status")
+                        val dto = row?.let {
+                            runCatching { NcJson.format.decodeFromJsonElement<StatusDto>(it) }.getOrNull()
+                        }
+                        if (dto == null) refresh() else applyIncoming(dto)
+                    }
+                    // Somebody looked at *my* status: only my own rows changed.
+                    "status:view" -> refreshMine()
+                }
             }
         }
         refresh()
@@ -144,6 +166,29 @@ class RemoteStatusRepository(
         scope.launch {
             runCatching { api.deleteStatus(id) }
             refresh()
+        }
+    }
+
+    /** A friend published a status: put it at the top of the list right away. */
+    private fun applyIncoming(dto: StatusDto) {
+        if (dto.id.isEmpty() || dto.userId == myId) return
+        if (dto.userId in _mutedAuthors.value) return
+        val name = dto.fullName ?: dto.username ?: "NChat user"
+        _statuses.update { list ->
+            (list.filterNot { it.id == dto.id } + dto.toModel(name, isMine = false))
+                .sortedByDescending { it.timestamp }
+        }
+    }
+
+    /** Refreshes only this account's own statuses (view counts). */
+    private fun refreshMine() {
+        scope.launch {
+            val mine = runCatching { api.myStatuses().statuses }.getOrDefault(emptyList())
+            val myName = tokens.fullName ?: "You"
+            _statuses.update { list ->
+                (list.filterNot { it.isMine } + mine.map { it.toModel(myName, isMine = true) })
+                    .sortedByDescending { it.timestamp }
+            }
         }
     }
 
