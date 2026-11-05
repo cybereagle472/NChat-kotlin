@@ -73,6 +73,8 @@ fun StatusScreen(
     onUnmuteAuthor: (String) -> Unit = {},
     /** Who watched one of my updates (`GET /status/:id/views`). */
     loadViewers: suspend (String) -> List<StatusViewer> = { emptyList() },
+    /** `POST /status/:id/view` — the author's viewer count depends on this being sent. */
+    onMarkViewed: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val extra = NcTheme.extra
@@ -226,7 +228,18 @@ fun StatusScreen(
             StatusViewer(
                 statuses = statuses,
                 startIndex = start,
-                onViewed = { id -> locallyViewed = locallyViewed + id },
+                onViewed = { id ->
+                    locallyViewed = locallyViewed + id
+                    /*
+                     * Tell the server.
+                     *
+                     * `StatusRepository.markViewed` existed but nothing ever called it, so a
+                     * friend's story was only ever "viewed" on this device: their viewer count
+                     * never moved and the ring never cleared for them. `POST /status/:id/view`
+                     * is the whole feature (`worker/src/routes/status.ts:109`).
+                     */
+                    onMarkViewed(id)
+                },
                 onDismiss = { viewingIndex = null },
                 onShowViewers = { status -> viewersFor = status },
                 mutedAuthorIds = mutedAuthorIds,

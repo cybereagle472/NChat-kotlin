@@ -1201,7 +1201,8 @@ class RemoteChatRepository(
             "group-typing" -> {
                 val groupId = event.string("group_id") ?: return
                 val typing = event.string("is_typing") == "true"
-                affectChat(groupId) { it.copy(isTyping = typing) }
+                val who = event.string("sender_id")?.takeIf { it.isNotBlank() && it != myId }
+                affectChat(groupId) { it.copy(isTyping = typing, typingUserId = who) }
                 if (typing) scheduleTypingExpiry(groupId) else cancelTypingExpiry(groupId)
             }
 

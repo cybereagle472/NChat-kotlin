@@ -21,19 +21,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.MicOff
-import androidx.compose.material.icons.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nchat.app.data.model.ActiveCall
+import com.nchat.app.data.model.CallState
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
@@ -61,33 +58,40 @@ private val CallBackground = listOf(
 )
 
 /**
- * Audio/video call screen, ported from `CallModal.tsx`: slate-purple gradient backdrop,
- * a blurred brand glow, the contact avatar inside pulsing rings, the live status line
- * ("Ringing…" then a running timer) and the mute / speaker / end controls.
+ * The call screen, driven entirely by [ActiveCall].
+ *
+ * Ported from `CallModal.tsx` (gradient backdrop, brand glow, pulsing avatar rings, status
+ * line, controls) with one deliberate difference: **nothing here is decided locally**. The
+ * old version counted 1.6 seconds and then declared itself connected, on a call the server
+ * had never heard of and the other phone never rang for. Every state below comes from the
+ * worker (`POST /calls`, `call:incoming`, `call:answered`, `call:ended`), so "Ringing…" means
+ * the other phone is actually ringing.
+ *
+ * Audio/video media itself needs WebRTC, which this build does not carry yet; while connected
+ * the screen says so plainly rather than pretending to be a live line.
  */
 @Composable
 fun CallOverlay(
-    name: String,
-    emoji: String?,
-    isVideo: Boolean,
-    onClose: () -> Unit
+    call: ActiveCall,
+    onAnswer: () -> Unit,
+    onDecline: () -> Unit,
+    onHangUp: () -> Unit
 ) {
-    var connected by remember { mutableStateOf(false) }
+    // Live timer, anchored to the moment the server reported the answer.
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(connected) {
-        while (!connected) {
-            delay(1_600)
-            connected = true
-        }
-    }
-    LaunchedEffect(connected) {
-        if (!connected) return@LaunchedEffect
+    LaunchedEffect(call.state, call.startedAt) {
+        elapsedSeconds = 0L
+        if (call.state != CallState.Connected || call.startedAt <= 0L) return@LaunchedEffect
         while (true) {
+            elapsedSeconds = ((System.currentTimeMillis() - call.startedAt) / 1000L).coerceAtLeast(0L)
             delay(1_000)
-            elapsedSeconds += 1
         }
     }
+
+    val connected = call.state == CallState.Connected
+    val ringing = call.state == CallState.Ringing
+    // "Incoming" is the only case that offers Answer; everything else can only be ended.
+    val canAnswer = ringing && call.incoming
 
     Box(
         modifier = Modifier
@@ -115,21 +119,15 @@ fun CallOverlay(
                     .padding(NcSpace.lg),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.12f))
-                        .clickable(onClick = onClose),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Close call",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                Text(
+                    text = when {
+                        call.isVideo -> "Video call"
+                        else -> "Voice call"
+                    },
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
 
             Column(
@@ -140,10 +138,10 @@ fun CallOverlay(
                 verticalArrangement = Arrangement.Center
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    if (!connected) {
+                    if (ringing) {
                         PulsingRing(delayMillis = 0)
                         PulsingRing(delayMillis = 700)
-                    } else {
+                    } else if (connected) {
                         ConnectedRing()
                     }
                     Box(
@@ -154,12 +152,12 @@ fun CallOverlay(
                             .border(2.dp, Color.White.copy(alpha = 0.2f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        NcAvatar(name = name, emoji = emoji, size = 144.dp)
+                        NcAvatar(name = call.peerName, emoji = null, size = 144.dp)
                     }
                 }
 
                 Text(
-                    text = name,
+                    text = call.peerName,
                     color = Color.White,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
@@ -171,7 +169,7 @@ fun CallOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
                 ) {
-                    if (!connected) {
+                    if (ringing) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -181,13 +179,30 @@ fun CallOverlay(
                     }
                     Text(
                         text = when {
-                            !connected -> if (isVideo) "Calling… (video)" else "Ringing…"
-                            else -> formatCallDuration(elapsedSeconds)
+                            connected -> formatCallDuration(elapsedSeconds)
+                            call.state == CallState.Ended -> call.note ?: "Call ended"
+                            canAnswer -> if (call.isVideo) "Incoming video call…" else "Incoming call…"
+                            else -> if (call.isVideo) "Ringing… (video)" else "Ringing…"
                         },
-                        color = if (connected) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.75f),
+                        color = when {
+                            connected -> Color(0xFF4ADE80)
+                            call.state == CallState.Ended -> Color(0xFFFCA5A5)
+                            else -> Color.White.copy(alpha = 0.75f)
+                        },
                         fontSize = 17.sp,
                         fontWeight = if (connected) FontWeight.SemiBold else FontWeight.Normal,
                         textAlign = TextAlign.Center
+                    )
+                }
+
+                if (connected) {
+                    // The truth beats a silent line the user would read as "the app is broken".
+                    Text(
+                        text = "Audio isn't connected in this build — calling media is next",
+                        color = Color.White.copy(alpha = 0.45f),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = NcSpace.md, start = NcSpace.xl, end = NcSpace.xl)
                     )
                 }
             }
@@ -200,27 +215,29 @@ fun CallOverlay(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                var muted by remember { mutableStateOf(false) }
-                var speaker by remember { mutableStateOf(false) }
+                when {
+                    canAnswer -> {
+                        CallControl(
+                            icon = Icons.Rounded.CallEnd,
+                            label = "Decline",
+                            destructive = true,
+                            onClick = onDecline
+                        )
+                        CallControl(
+                            icon = Icons.Rounded.Call,
+                            label = "Answer",
+                            active = true,
+                            onClick = onAnswer
+                        )
+                    }
 
-                CallControl(
-                    icon = if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
-                    label = if (muted) "Unmute" else "Mute",
-                    active = muted,
-                    onClick = { muted = !muted }
-                )
-                CallControl(
-                    icon = if (speaker) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
-                    label = "Speaker",
-                    active = speaker,
-                    onClick = { speaker = !speaker }
-                )
-                CallControl(
-                    icon = Icons.Rounded.CallEnd,
-                    label = "End",
-                    destructive = true,
-                    onClick = onClose
-                )
+                    call.state != CallState.Ended -> CallControl(
+                        icon = Icons.Rounded.CallEnd,
+                        label = if (ringing) "Cancel" else "End",
+                        destructive = true,
+                        onClick = onHangUp
+                    )
+                }
             }
         }
     }

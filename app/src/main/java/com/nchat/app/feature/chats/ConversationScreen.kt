@@ -207,10 +207,13 @@ fun ConversationScreen(
     val group = groups.firstOrNull { it.id == chatId }
     val isGroupChat = chat?.isGroup == true || group != null
     // Group chats name who is typing; direct chats keep the anonymous "typing…" label.
-    val typingMember = remember(chat?.isTyping, isGroupChat, messages, groupFriends) {
+    // The name comes from the event's `sender_id`, resolved against the roster — it used to be
+    // guessed from whoever spoke last, which credited the wrong person most of the time.
+    val typingMember = remember(chat?.isTyping, chat?.typingUserId, isGroupChat, groupFriends) {
         if (chat?.isTyping == true && isGroupChat) {
-            // Name the last member who spoke — that is who the demo "types" next.
-            messages.lastOrNull { !it.isMine }?.authorName
+            val who = chat?.typingUserId
+            groupFriends.firstOrNull { it.id == who }?.name
+                ?: group?.members?.firstOrNull { it.userId == who }?.name
                 ?: groupFriends.firstOrNull()?.name
         } else {
             null
@@ -446,7 +449,10 @@ fun ConversationScreen(
                         else -> Unit
                     }
                 },
-                onSendVoice = viewModel::onSendVoice
+                onSendVoice = viewModel::onSendVoice,
+                onRecordingChange = { recording ->
+                    ServiceLocator.chatRepository.setRecording(chatId, recording)
+                }
             )
             }
         }
@@ -558,49 +564,33 @@ fun ConversationScreen(
             )
         }
 
+        /*
+         * Calls are NOT rendered here any more.
+         *
+         * They used to live inside the conversation: tapping the header opened a local overlay
+         * that rang for 1.6 s and then declared itself connected, and the in-chat group variant
+         * "rang" a roster that never heard about it. A call has to outlive the screen (you accept
+         * it from the Chats tab, you stay on the line while you read another chat), so the state
+         * machine lives in `CallRepository` and the overlay is drawn once by `HomeRoot`.
+         */
         callKind?.let { kind ->
-            // A 1:1 call is a real server-side record: it is opened when the overlay appears
-            // and closed with the elapsed time when the user hangs up, so History (and the
-            // other side's `call:incoming`) reflect a call that actually happened.
-            if (chat?.isGroup != true && group == null) {
+            // Group calls are not part of the reference backend's working set (the web app skips
+            // them too); say so instead of opening a screen that cannot connect.
+            if (chat?.isGroup == true || group != null) {
+                LaunchedEffect(kind) { callKind = null }
+                LaunchedEffect(Unit) {
+                    NcToaster.show("Group calls aren't available yet")
+                }
+            } else {
                 LaunchedEffect(kind) {
-                    val startedAt = System.currentTimeMillis()
-                    val callId = ServiceLocator.callRepository.placeCall(
+                    ServiceLocator.callRepository.dial(
                         personId = chatId,
+                        name = chatTitle,
+                        avatarUrl = chat?.avatarUrl,
                         video = kind == CallKind.Video
                     )
-                    try {
-                        awaitCancellation()
-                    } finally {
-                        callId?.let { id ->
-                            val seconds = ((System.currentTimeMillis() - startedAt) / 1000)
-                                .coerceAtLeast(0)
-                            withContext(NonCancellable) {
-                                ServiceLocator.callRepository.finishCall(id, seconds)
-                            }
-                        }
-                    }
+                    callKind = null
                 }
-            }
-
-            // Group chats ring the whole roster in the group-call surface; 1:1 keeps the
-            // simpler call overlay.
-            if (chat?.isGroup == true || group != null) {
-                GroupCallOverlay(
-                    title = chatTitle,
-                    emoji = chat?.avatarEmoji,
-                    isVideo = kind == CallKind.Video,
-                    memberCount = group?.memberCount ?: (groupFriends.size + 1),
-                    participants = groupFriends.map { it.name },
-                    onClose = { callKind = null }
-                )
-            } else {
-                CallOverlay(
-                    name = chatTitle,
-                    emoji = chat?.avatarEmoji,
-                    isVideo = kind == CallKind.Video,
-                    onClose = { callKind = null }
-                )
             }
         }
     }
@@ -1304,7 +1294,15 @@ private fun ComposerBar(
     onSend: () -> Unit,
     onCancelReply: () -> Unit,
     onSendAttachment: (MessageKind) -> Unit,
-    onSendVoice: (bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) -> Unit
+    onSendVoice: (bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) -> Unit,
+    /**
+     * Live "recording a voice message" state for the other side
+     * (`POST /messages/recording` / `POST /groups/:id/recording`).
+     *
+     * The repository has had `setRecording` all along and the incoming `recording` events were
+     * already rendered — but nothing ever *sent* them, so a peer never saw the mic indicator.
+     */
+    onRecordingChange: (Boolean) -> Unit = {}
 ) {
     // Collected here, not in the screen: typing then only recomposes the composer.
     val text by textFlow.collectAsStateWithLifecycle()
@@ -1319,7 +1317,12 @@ private fun ComposerBar(
         recordDenied = !granted
         if (!granted) NcToaster.show("Microphone access is needed for voice messages")
     }
-    DisposableEffect(Unit) { onDispose { recorder.cancel() } }
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder.cancel()
+            onRecordingChange(false)
+        }
+    }
     var mediaOpen by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf<VoicePhase?>(null) }
     var elapsedMs by remember { mutableStateOf(0L) }
@@ -1339,6 +1342,7 @@ private fun ComposerBar(
         cancelProgress = 0f
         lockProgress = 0f
         bars.clear()
+        onRecordingChange(false)
     }
 
     fun sendVoice() {
@@ -1350,6 +1354,12 @@ private fun ComposerBar(
             return
         }
         onSendVoice(clip.bytes, clip.mimeType, clip.fileName, formatVoiceDuration(duration))
+    }
+
+    // Tell the other side the moment the recorder is live, and only then.
+    LaunchedEffect(voicePhase) {
+        val phase = voicePhase
+        onRecordingChange(phase != null && phase != VoicePhase.Paused)
     }
 
     // Tick the timer and grow the waveform only while the recorder is live.

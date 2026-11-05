@@ -32,6 +32,7 @@ import com.nchat.app.feature.auth.AuthScreen
 import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.settings.SettingsScreen
+import com.nchat.app.feature.chats.CallOverlay
 import kotlinx.coroutines.delay
 
 /** Where the app is in the reference's launch flow. */
@@ -150,6 +151,24 @@ private fun HomeRoot() {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        }
+
+        /*
+         * The call screen, above everything.
+         *
+         * It has to be here rather than inside a conversation: an incoming call must ring
+         * whichever tab is open, and answering must not depend on which chat you happen to be
+         * looking at. The state comes from `CallRepository`, which is driven by the worker
+         * (`call:incoming` / `call:answered` / `call:ended`), so this overlay is the call.
+         */
+        val activeCall by ServiceLocator.callRepository.active.collectAsStateWithLifecycle()
+        activeCall?.let { call ->
+            CallOverlay(
+                call = call,
+                onAnswer = { ServiceLocator.callRepository.answer() },
+                onDecline = { ServiceLocator.callRepository.decline() },
+                onHangUp = { ServiceLocator.callRepository.hangUp() }
+            )
         }
     }
 }
