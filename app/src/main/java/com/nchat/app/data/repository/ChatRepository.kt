@@ -46,7 +46,17 @@ interface ChatRepository {
         caption: String? = null,
         thumbnail: ByteArray? = null
     )
-    fun sendVoice(chatId: String, durationLabel: String)
+    /**
+     * Sends a recorded voice message: the clip is uploaded first and the message carries its
+     * `media_url`, which is what makes the other side actually hear something.
+     */
+    fun sendVoice(
+        chatId: String,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        durationLabel: String
+    )
     /** Rewrites the body of my own text message and flags it as edited. */
     fun editMessage(chatId: String, messageId: String, text: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)

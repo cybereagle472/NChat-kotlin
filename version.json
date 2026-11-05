@@ -1,6 +1,6 @@
 {
-  "versionCode": 36,
-  "versionName": "1.0.28",
+  "versionCode": 38,
+  "versionName": "1.0.30",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.28 — Status is wired the way the reference does it: photo statuses (pick a picture, it uploads and posts as an image status), a real \"viewed by\" list with names and avatars on your own status, mute/unmute for a contact's updates, and your own photo in the My-status ring. Group Info now shows the server's actual member list instead of guessing it from your friend list, with admin controls to promote, demote and remove members, and delete the group."
+  "releaseNotes": "NChat 1.0.30 — voice messages are real. Holding the mic now records through MediaRecorder (AAC/.m4a), uploads the clip, and sends it with its media_url and duration, so the other side actually hears it; bubbles play back through MediaPlayer with a real progress bar and can be paused, on both 1:1 and group chats. Chats tab is 1:1 only (groups stay in Groups), ongoing conversations survive a refresh, and Find shows Message instead of Add for anyone you already talk to, with an instant Cancel after you tap Add."
 }

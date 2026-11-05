@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Groups
@@ -105,6 +106,14 @@ fun DiscoverScreen(
      */
     searchResults: List<Friend> = emptyList(),
     onSearch: (String) -> Unit = {},
+    /** Requests this device sent that the server has not confirmed yet (reference: `sentRequestIds`). */
+    sentRequestIds: Set<String> = emptySet(),
+    /**
+     * People this account already has a conversation with. The Find tab treats them as
+     * contactable — offering Message instead of Add — even when the server has no friendship
+     * row for them, which is exactly the case when someone is being chatted with daily.
+     */
+    chatIds: Set<String> = emptySet(),
     onAddFriend: (String) -> Unit,
     onCancelRequest: (String) -> Unit,
     onAcceptRequest: (String) -> Unit,
@@ -121,6 +130,21 @@ fun DiscoverScreen(
     var busyId by remember { mutableStateOf<String?>(null) }
 
     val friendRows = remember(friends) { friends.filter { it.relation == FriendRelation.Friend } }
+
+    /**
+     * The live graph, so a row's relation is decided at render time rather than frozen when
+     * the search response arrived (the reference does the same with `friendIdSet`).
+     */
+    val graphById = remember(friends) { friends.associateBy { it.id } }
+    val resolve: (Friend) -> Friend = { person ->
+        val known = graphById[person.id] ?: person
+        when {
+            known.relation != FriendRelation.None -> known
+            person.id in sentRequestIds -> known.copy(relation = FriendRelation.Outgoing)
+            person.id in chatIds -> known.copy(relation = FriendRelation.Friend)
+            else -> known
+        }
+    }
     val requests = remember(friends) { friends.filter { it.relation == FriendRelation.Incoming } }
     /** Requests this user sent that nobody has answered yet (`GET /friends/sent`). */
     val sent = remember(friends) { friends.filter { it.relation == FriendRelation.Outgoing } }
@@ -233,7 +257,8 @@ fun DiscoverScreen(
                                     busyId = friend.id
                                     onCancelRequest(friend.id)
                                 },
-                                onUnfriendClick = { confirming = friend }
+                                onUnfriendClick = { confirming = friend },
+                                onMessage = { onMessage(friend) }
                             )
                         }
                     }
@@ -254,11 +279,11 @@ fun DiscoverScreen(
                     // While typing, the server's answer is authoritative — it searches every
                     // account, not just the ones already on this device. With an empty query the
                     // tab falls back to the suggestions page, exactly like the reference.
-                    val visibleUsers = if (query.isBlank()) {
+                    val visibleUsers = (if (query.isBlank()) {
                         suggestions
                     } else {
                         searchResults.ifEmpty { suggestions.filter { it.matches(query) } }
-                    }
+                    }).map(resolve)
 
                     if (visibleUsers.isEmpty()) {
                         item(key = "find-empty") {
@@ -310,7 +335,8 @@ fun DiscoverScreen(
                                         busyId = friend.id
                                         onCancelRequest(friend.id)
                                     },
-                                onUnfriendClick = { confirming = friend }
+                                onUnfriendClick = { confirming = friend },
+                                onMessage = { onMessage(friend) }
                             )
                         }
                     }
@@ -733,7 +759,8 @@ private fun UserCard(
     onOpenProfile: () -> Unit,
     onAdd: () -> Unit,
     onCancel: () -> Unit,
-    onUnfriendClick: () -> Unit
+    onUnfriendClick: () -> Unit,
+    onMessage: () -> Unit
 ) {
     GlassCard(onClick = onOpenProfile) {
         NcAvatar(
@@ -754,22 +781,6 @@ private fun UserCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (friend.relation == FriendRelation.Friend) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFDCFCE7))
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "Friend",
-                            color = Color(0xFF15803D),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
             }
             Text(
                 text = friend.handle.ifBlank { "@user" },
@@ -780,12 +791,14 @@ private fun UserCard(
         }
 
         when (friend.relation) {
+            // In Find, someone you can talk to is offered the chat, not an unfriend button —
+            // that lives on the Friends tab, where the relationship is the subject.
             FriendRelation.Friend -> ActionPill(
-                label = if (busy) "..." else "Friends",
-                icon = Icons.Rounded.HowToReg,
+                label = "Message",
+                icon = Icons.Rounded.Chat,
                 background = SolidColor(Color(0xFFDCFCE7)),
                 foreground = Color(0xFF15803D),
-                onClick = onUnfriendClick
+                onClick = onMessage
             )
 
             FriendRelation.Outgoing -> ActionPill(

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.core.designsystem.NcBackdrop
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.navigation.HomeTab
 import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
@@ -57,6 +59,21 @@ fun HomeScreen(
     }
     val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
+    val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
+    val friendActionError by ServiceLocator.friendRepository.actionError.collectAsStateWithLifecycle()
+    val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
+    // Everyone this account already has a 1:1 conversation with: Find offers them Message
+    // instead of Add, even when the server holds no friendship row for them.
+    val chatPeerIds = remember(chats) { chats.filterNot { it.isGroup }.map { it.id }.toSet() }
+
+    // A friend action that the server refused (409 already friends, network, …) is shown
+    // once instead of vanishing — the reference reverts its optimistic state in the same case.
+    LaunchedEffect(friendActionError) {
+        friendActionError?.let {
+            NcToaster.show(it)
+            ServiceLocator.friendRepository.clearActionError()
+        }
+    }
     val mutedAuthors by ServiceLocator.statusRepository.mutedAuthors.collectAsStateWithLifecycle()
     var profileTarget by remember { mutableStateOf<ProfileTarget?>(null) }
     BackHandler(enabled = profileTarget != null) { profileTarget = null }
@@ -123,6 +140,8 @@ fun HomeScreen(
                         listState = discoverListState,
                         searchResults = findResults,
                         onSearch = { ServiceLocator.friendRepository.search(it) },
+                        sentRequestIds = pendingSent,
+                        chatIds = chatPeerIds,
                         onAddFriend = { ServiceLocator.friendRepository.sendRequest(it) },
                         onCancelRequest = { ServiceLocator.friendRepository.cancelRequest(it) },
                         onAcceptRequest = { ServiceLocator.friendRepository.accept(it) },

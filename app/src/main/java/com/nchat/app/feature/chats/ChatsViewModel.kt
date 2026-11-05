@@ -30,7 +30,10 @@ class ChatsViewModel(
 
     val uiState: StateFlow<ChatsUiState> =
         combine(repository.chats, query, repository.syncError) { chats, currentQuery, error ->
-            val visible = chats
+            // The Chats tab is 1:1 only, exactly like the reference's `Chats.tsx` (rows keyed
+            // on the contact's `user_id`); groups belong to the Groups tab.
+            val directOnly = chats.filterNot { it.isGroup }
+            val visible = directOnly
                 .filter { chat ->
                     currentQuery.isBlank() ||
                         chat.title.contains(currentQuery, ignoreCase = true) ||
@@ -41,7 +44,7 @@ class ChatsViewModel(
             ChatsUiState(
                 query = currentQuery,
                 chats = visible,
-                totalUnread = chats.sumOf { it.unreadCount },
+                totalUnread = directOnly.sumOf { it.unreadCount },
                 error = error
             )
         }.stateIn(

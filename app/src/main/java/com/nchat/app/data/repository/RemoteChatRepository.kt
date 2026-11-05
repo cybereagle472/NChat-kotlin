@@ -114,7 +114,20 @@ class RemoteChatRepository(
 
         val dmChats = direct.map { it.toChat() }
         val groupChats = groupRows.map { it.toChat() }
-        val merged = (dmChats + groupChats)
+
+        // Keep 1:1 threads the app already knows about but the server does not list.
+        // `/messages/chats` only ever returns *friends*, so without this an ongoing
+        // conversation with someone the friendship table does not know about vanished from
+        // the list on the very next refresh (it used to be replaced wholesale).
+        val knownDmIds = dmChats.map { it.id }.toSet()
+        val keptDms = _chats.value.filter { chat ->
+            !chat.isGroup &&
+                chat.id !in knownDmIds &&
+                chat.id !in groupIds &&
+                chat.lastMessage.isNotBlank()
+        }
+
+        val merged = (dmChats + keptDms + groupChats)
             .map { chat ->
                 chat.copy(
                     pinned = chat.id in pinned,
@@ -195,34 +208,81 @@ class RemoteChatRepository(
         }
     }
 
-    override fun sendVoice(chatId: String, durationLabel: String) {
+    override fun sendVoice(
+        chatId: String,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        durationLabel: String
+    ) {
         val localId = "local-${localIds.incrementAndGet()}"
         appendLocal(
             chatId = chatId,
             message = baseMessage(chatId, localId, "Voice message").copy(
                 kind = MessageKind.Voice,
-                durationLabel = durationLabel
+                durationLabel = durationLabel,
+                fileName = fileName
             )
         )
         preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
-        dispatch(chatId, localId, "Voice message") { clientId ->
-            if (isGroup(chatId)) {
-                api.sendGroupMessage(
-                    chatId,
-                    "Voice message",
-                    type = "audio",
-                    clientMessageId = clientId,
-                    duration = durationLabel
-                )
-            } else {
-                api.sendMessage(
-                    chatId,
-                    "Voice message",
-                    type = "audio",
-                    clientMessageId = clientId,
-                    duration = durationLabel
-                )
+
+        scope.launch {
+            // Upload first: without a `media_url` the receiver gets an audio row with no file,
+            // which is exactly the "it arrives but it is silent" bug.
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
+            if (media == null) {
+                // Leave the bubble in "sending" — the same thing a failed text send does — but
+                // stop pretending the chat preview is still in flight.
+                preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
+                return@launch
             }
+            // The sender can play their own clip straight away from the uploaded URL.
+            replaceLocal(
+                chatId,
+                localId,
+                baseMessage(chatId, localId, "Voice message").copy(
+                    kind = MessageKind.Voice,
+                    durationLabel = durationLabel,
+                    fileName = fileName,
+                    mediaUrl = media.url,
+                    state = DeliveryState.Sending
+                )
+            )
+            val response = runCatching {
+                if (isGroup(chatId)) {
+                    api.sendGroupMessage(
+                        chatId,
+                        "Voice message",
+                        type = "voice",
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        duration = durationLabel
+                    )
+                } else {
+                    api.sendMessage(
+                        chatId,
+                        "Voice message",
+                        type = "voice",
+                        clientMessageId = localId,
+                        mediaUrl = media.url,
+                        duration = durationLabel,
+                        fileName = fileName,
+                        fileSize = media.fileSize?.toString()
+                    )
+                }
+            }.getOrNull()
+            val created = response?.message
+            if (created == null) return@launch
+            replaceLocal(
+                chatId,
+                localId,
+                created.toModel(chatId).copy(
+                    // A server row that lost the URL still has to be playable locally.
+                    mediaUrl = created.mediaUrl ?: media.url,
+                    state = DeliveryState.Sent
+                )
+            )
+            preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sent)
         }
     }
 
@@ -723,16 +783,49 @@ class RemoteChatRepository(
 
     private fun bumpPreview(chatId: String, dto: MessageDto) {
         _chats.update { list ->
-            list.map { chat ->
-                if (chat.id != chatId) chat
-                else chat.copy(
+            if (list.none { it.id == chatId }) {
+                // A message from somebody the server does not list as a friend still deserves
+                // a row — `/messages/chats` only knows friends, so without this an incoming
+                // chat from anyone else never appeared in the list at all.
+                val isGroupChat = synchronized(conversations) { chatId in groupIds }
+                list + Chat(
+                    id = chatId,
+                    title = nameOf(chatId),
+                    isGroup = isGroupChat,
                     lastMessage = dto.previewText(),
                     lastMessageAt = isoMillis(dto.createdAt),
-                    lastMessageMine = false,
-                    lastMessageState = null,
                     lastMessageKind = dto.kind(),
-                    unreadCount = chat.unreadCount + 1
+                    unreadCount = 1
                 )
+            } else {
+                list.map { chat ->
+                    if (chat.id != chatId) chat
+                    else chat.copy(
+                        lastMessage = dto.previewText(),
+                        lastMessageAt = isoMillis(dto.createdAt),
+                        lastMessageMine = false,
+                        lastMessageState = null,
+                        lastMessageKind = dto.kind(),
+                        unreadCount = chat.unreadCount + 1
+                    )
+                }
+            }
+        }
+
+        // Newly created rows have no profile yet; fetch one so the row is not "NChat user".
+        if (names[chatId] == null) {
+            scope.launch {
+                val profile = runCatching { api.user(chatId).profile }.getOrNull() ?: return@launch
+                rememberName(chatId, profile)
+                _chats.update { list ->
+                    list.map { chat ->
+                        if (chat.id != chatId) chat
+                        else chat.copy(
+                            title = profile.displayName(),
+                            avatarUrl = profile.avatarUrl
+                        )
+                    }
+                }
             }
         }
     }

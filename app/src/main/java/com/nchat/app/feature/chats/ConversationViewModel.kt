@@ -136,8 +136,15 @@ class ConversationViewModel(
         repository.deleteGroup(chatId)
     }
 
-    fun onSendVoice(durationLabel: String) {
-        repository.sendVoice(chatId, durationLabel)
+    fun onSendVoice(bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) {
+        if (bytes.isEmpty()) return
+        repository.sendVoice(
+            chatId = chatId,
+            bytes = bytes,
+            mimeType = mimeType,
+            fileName = fileName,
+            durationLabel = durationLabel
+        )
     }
 
     /** A real attachment: the bytes are uploaded, then the message points at them. */
