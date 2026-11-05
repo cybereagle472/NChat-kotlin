@@ -105,12 +105,15 @@ import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import android.net.Uri
+import android.widget.MediaController
+import android.widget.VideoView
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
@@ -224,6 +227,9 @@ fun ConversationScreen(
                     thumbnail = prepared.thumbnail
                 )
             }
+        } else if (kind == MessageKind.Video) {
+            // A clip gets a poster frame so the bubble shows the video, not a black tile.
+            picked.copy(thumbnail = MediaPreparer.videoPoster(context, uri))
         } else {
             picked
         }
@@ -656,10 +662,11 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                     .padding(horizontal = NcSpace.md, vertical = 96.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val source = message.mediaUrl ?: message.thumbnailUrl
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(320.dp)
+                        .height(if (isVideo) 420.dp else 320.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(
                             if (isVideo) {
@@ -670,21 +677,33 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    val source = message.thumbnailUrl ?: message.mediaUrl
-                    if (source != null) {
-                        AsyncImage(
-                            model = source,
-                            contentDescription = if (isVideo) "Video" else "Photo",
-                            contentScale = ContentScale.Crop,
+                    when {
+                        /*
+                         * A video used to open as a still frame with a play icon on top — nothing
+                         * was ever played. The reference opens a real `<video>` element
+                         * (`ChatView.tsx:2194-2198`); this is the Android equivalent: the platform
+                         * `VideoView`, which streams over HTTP(S) with byte ranges and brings its
+                         * own transport controls (play / pause / scrub), exactly what a user
+                         * expects from tapping a clip.
+                         */
+                        isVideo && source != null -> VideoPlayer(
+                            url = source,
                             modifier = Modifier.fillMaxSize()
                         )
-                    }
-                    if (isVideo || source == null) {
-                        Icon(
+
+                        source != null -> AsyncImage(
+                            model = source,
+                            contentDescription = "Photo",
+                            // Fit, not Crop: the full picture is the point of the viewer.
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        else -> Icon(
                             imageVector = if (isVideo) Icons.Rounded.PlayArrow else Icons.Rounded.Image,
                             contentDescription = null,
                             tint = Color(0xE6FFFFFF),
-                            modifier = Modifier.size(if (isVideo) 56.dp else 44.dp)
+                            modifier = Modifier.size(44.dp)
                         )
                     }
                 }
@@ -739,6 +758,48 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * A real video player for the full-screen viewer.
+ *
+ * `VideoView` is the standard platform player: it streams the URL the worker serves
+ * (`GET /media/file/<key>`, which answers byte ranges so scrubbing works), stops itself when the
+ * dialog closes, and reports an error instead of showing a silent black rectangle.
+ */
+@Composable
+private fun VideoPlayer(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    // A plain holder, not state: assigning during composition would recompose for nothing.
+    val view = remember(url) { arrayOfNulls<VideoView>(1) }
+
+    DisposableEffect(url) {
+        onDispose {
+            runCatching { view[0]?.stopPlayback() }
+            view[0] = null
+        }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            VideoView(ctx).apply {
+                setVideoURI(Uri.parse(url))
+                setOnPreparedListener { player ->
+                    player.isLooping = false
+                    start()
+                }
+                setOnErrorListener { _, _, _ ->
+                    NcToaster.show("Couldn't play this video")
+                    true
+                }
+                val controller = MediaController(ctx)
+                controller.setAnchorView(this)
+                setMediaController(controller)
+                view[0] = this
+            }
+        }
+    )
 }
 
 /** Compose-state edit sheet: prefilled body, Save disabled until something changes. */

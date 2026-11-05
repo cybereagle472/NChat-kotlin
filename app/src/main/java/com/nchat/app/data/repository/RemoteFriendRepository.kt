@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.cancellation.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -64,6 +67,12 @@ class RemoteFriendRepository(
     private val _actionError = MutableStateFlow<String?>(null)
     override val actionError: StateFlow<String?> = _actionError.asStateFlow()
 
+    private val _graphError = MutableStateFlow<String?>(null)
+    override val graphError: StateFlow<String?> = _graphError.asStateFlow()
+
+    /** One reload at a time: two overlapping loads used to fight over [_friends]. */
+    private val reloadMutex = Mutex()
+
     override fun clearActionError() {
         _actionError.value = null
     }
@@ -83,6 +92,19 @@ class RemoteFriendRepository(
                 when (event.type) {
                     "friend:request", "friend:accepted", "friend:declined", "friend:removed" -> refresh()
                 }
+            }
+        }
+        /*
+         * Reload whenever the realtime socket comes back up.
+         *
+         * The graph used to be fetched exactly once, in `init`. If that single request lost a
+         * race with the handshake (cold start, token refresh, flaky mobile data) the Friends tab
+         * stayed empty for the whole session — the socket reconnecting was the one signal the
+         * account was reachable again, and nothing was listening to it.
+         */
+        scope.launch {
+            socket.state.collect { state ->
+                if (state == com.nchat.app.network.ConnectionState.Connected) refresh()
             }
         }
         refresh()
@@ -236,12 +258,43 @@ class RemoteFriendRepository(
         }
     }
 
-    private suspend fun reload() {
-        val accepted = runCatching { api.friends().friends }.getOrDefault(emptyList())
+    /**
+     * Three attempts with a growing pause before the graph is called unreachable.
+     *
+     * A single `GET /friends` at start-up is the whole friend list; one hiccup (a 502 at the
+     * edge, a token refresh landing at the same moment) used to leave the tab empty until the
+     * app was restarted. Transient answers deserve a retry, and anything that survives three
+     * attempts is reported to the UI instead of being swallowed.
+     */
+    private suspend fun <T> withRetry(block: suspend () -> T): T {
+        var lastError: Throwable? = null
+        for (attempt in 1..3) {
+            try {
+                return block()
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                lastError = error
+                if (attempt < 3) delay(300L * attempt)
+            }
+        }
+        throw lastError ?: IllegalStateException("friend graph unreachable")
+    }
+
+    private suspend fun reload() = reloadMutex.withLock {
+        val acceptedResult = runCatching { withRetry { api.friends().friends } }
+        val accepted = acceptedResult.getOrDefault(emptyList())
         val requests = runCatching { api.friendRequests().requests }.getOrDefault(emptyList())
         val sent = runCatching { api.sentRequests() }.getOrNull()
-        val everyone = runCatching { api.allUsers().profiles }.getOrDefault(emptyList())
+        val everyoneResult = runCatching { api.allUsers().profiles }
+        val everyone = everyoneResult.getOrDefault(emptyList())
         val blocked = runCatching { api.blockedUsers().blocked }.getOrDefault(emptyList())
+
+        // Say what went wrong instead of drawing an empty list — see [graphError]. Only the
+        // `/friends` answer decides what the Friends tab shows, so only that one is reported
+        // there; a failing `/users` empties Find, not this list.
+        _graphError.value = acceptedResult.exceptionOrNull()?.let { error ->
+            "Couldn't load your friends — ${error.describeAction()}"
+        }
 
         incoming = requests
         outgoing = sent?.requests ?: emptyList()

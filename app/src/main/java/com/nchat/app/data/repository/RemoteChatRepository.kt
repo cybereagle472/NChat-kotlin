@@ -456,10 +456,13 @@ class RemoteChatRepository(
                 )
             )
             val created = sendWithRetry {
+                // `content` carries the URL as well: the reference's `sendVoiceMessage` sends
+                // only `content` (`ChatView.tsx:1911-1918`) and every client reads
+                // `media_url || content`, so both fields are filled here.
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
                         chatId,
-                        "Voice message",
+                        media.url,
                         type = "voice",
                         clientMessageId = localId,
                         mediaUrl = media.url,
@@ -468,7 +471,7 @@ class RemoteChatRepository(
                 } else {
                     api.sendMessage(
                         chatId,
-                        "Voice message",
+                        media.url,
                         type = "voice",
                         clientMessageId = localId,
                         mediaUrl = media.url,
@@ -526,7 +529,10 @@ class RemoteChatRepository(
                     return@launch
                 }
             val thumb = thumbnail?.let { preview ->
-                runCatching { api.uploadMedia("thumb-$fileName", "image/jpeg", preview) }
+                // `thumb-clip.mp4` would be served back as `image/jpeg` bytes behind an .mp4
+                // name, which confuses players and image loaders alike; give it a .jpg.
+                val stem = fileName.substringBeforeLast('.', fileName)
+                runCatching { api.uploadMedia("thumb-$stem.jpg", "image/jpeg", preview) }
                     .getOrNull()
                     ?.url
             }
@@ -545,10 +551,13 @@ class RemoteChatRepository(
                 )
             )
             val created = sendWithRetry {
+                // Same as voice: the URL goes in `content` too, so a client that only reads
+                // `content` (the reference web app) still finds the file.
+                val wireBody = media.url
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
                         chatId,
-                        body,
+                        wireBody,
                         type = kind.wireType(),
                         clientMessageId = localId,
                         mediaUrl = media.url,
@@ -558,7 +567,7 @@ class RemoteChatRepository(
                 } else {
                     api.sendMessage(
                         chatId,
-                        body,
+                        wireBody,
                         type = kind.wireType(),
                         clientMessageId = localId,
                         mediaUrl = media.url,
@@ -645,11 +654,14 @@ class RemoteChatRepository(
 
     private suspend fun deliver(entry: OutboxEntry) {
         val store = outbox ?: return
+        // A queued media row is replayed exactly like the live send: the URL travels in
+        // `content` as well as `media_url`.
+        val content = entry.mediaUrl?.takeIf { it.isNotBlank() } ?: entry.text
         val response = runCatching {
             if (entry.isGroup) {
                 api.sendGroupMessage(
                     entry.chatId,
-                    entry.text,
+                    content,
                     type = entry.type,
                     clientMessageId = entry.clientId,
                     replyTo = entry.replyTo,
@@ -660,7 +672,7 @@ class RemoteChatRepository(
             } else {
                 api.sendMessage(
                     entry.chatId,
-                    entry.text,
+                    content,
                     type = entry.type,
                     clientMessageId = entry.clientId,
                     replyTo = entry.replyTo,
@@ -1391,23 +1403,45 @@ class RemoteChatRepository(
 
     private fun MessageDto.toModel(chatId: String): Message {
         val mine = senderId == myId
+        val kind = kind()
+        /*
+         * Where the file lives.
+         *
+         * The reference front end never stores a `media_url`: `handleFileUpload` and
+         * `sendVoiceMessage` put the uploaded URL in **`content`** and send the type alongside it
+         * (`ChatView.tsx:1449-1455`, `:1911-1918`), so every bubble it renders reads
+         * `message.media_url || message.content` (`ChatView.tsx:432`, `:2184`, `:2194`).
+         *
+         * This client writes `media_url` *and* `content`, but a photo / video / voice note that
+         * came from the web app carries the URL only in `content`. Taking `media_url` alone left
+         * `mediaUrl` null for exactly those messages, which is what painted the empty gradient
+         * tile for their photos, a poster-less video and a voice note with nothing to play.
+         */
+        val media = mediaUrl?.takeIf { it.isNotBlank() }
+            ?: content.trim().takeIf { kind != MessageKind.Text && it.isRemoteUrl() }
+        // When `content` *is* the URL there is no caption to print under the bubble.
+        val caption = when {
+            isDeleted -> "This message was deleted"
+            media != null && content.trim() == media -> ""
+            else -> content
+        }
         return Message(
             id = id,
             chatId = chatId,
             authorId = senderId,
             authorName = if (mine) myName else nameOf(senderId),
-            text = if (isDeleted) "This message was deleted" else content,
+            text = caption,
             timestamp = isoMillis(createdAt),
             isMine = mine,
-            kind = kind(),
+            kind = kind,
             state = when {
                 !mine -> DeliveryState.Read
                 isRead -> DeliveryState.Read
                 else -> DeliveryState.Sent
             },
-            durationLabel = durationLabelOf(duration).takeIf { kind() == MessageKind.Voice } ?: duration,
+            durationLabel = durationLabelOf(duration).takeIf { kind == MessageKind.Voice } ?: duration,
             fileName = fileName,
-            mediaUrl = mediaUrl,
+            mediaUrl = media,
             thumbnailUrl = thumbnailUrl,
             reactions = reactions.toModel(),
             replyText = null,
@@ -1470,6 +1504,13 @@ class RemoteChatRepository(
         val seconds = value.toIntOrNull() ?: return value
         return "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
     }
+
+    /** Whether this string is something a media player / image loader can actually open. */
+    private fun String.isRemoteUrl(): Boolean =
+        startsWith("http://", ignoreCase = true) ||
+            startsWith("https://", ignoreCase = true) ||
+            startsWith("file://", ignoreCase = true) ||
+            startsWith("content://", ignoreCase = true)
 
     private fun MessageKind.wireType(): String = when (this) {
         MessageKind.Photo -> "image"

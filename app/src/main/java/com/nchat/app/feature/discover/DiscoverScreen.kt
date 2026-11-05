@@ -114,6 +114,14 @@ fun DiscoverScreen(
      * row for them, which is exactly the case when someone is being chatted with daily.
      */
     chatIds: Set<String> = emptySet(),
+    /**
+     * Why the friend graph could not be read, when it could not — see
+     * `FriendRepository.graphError`. Shown instead of "No friends yet", which used to mean both
+     * "you have no friends" and "the request failed".
+     */
+    loadError: String? = null,
+    /** Re-runs the friend-graph load (the empty state's Retry). */
+    onRetry: () -> Unit = {},
     onAddFriend: (String) -> Unit,
     onCancelRequest: (String) -> Unit,
     onAcceptRequest: (String) -> Unit,
@@ -180,15 +188,19 @@ fun DiscoverScreen(
 
                     if (visibleFriends.isEmpty()) {
                         item(key = "friends-empty") {
-                            EmptyCard(
-                                emoji = "👥",
-                                title = if (query.isBlank()) "No friends yet" else "No friends found",
-                                message = if (query.isBlank()) {
-                                    "Add friends to start chatting"
-                                } else {
-                                    "Try a different search"
-                                }
-                            )
+                            if (loadError != null && query.isBlank()) {
+                                LoadErrorCard(message = loadError, onRetry = onRetry)
+                            } else {
+                                EmptyCard(
+                                    emoji = "👥",
+                                    title = if (query.isBlank()) "No friends yet" else "No friends found",
+                                    message = if (query.isBlank()) {
+                                        "Add friends to start chatting"
+                                    } else {
+                                        "Try a different search"
+                                    }
+                                )
+                            }
                         }
                     } else {
                         items(
@@ -893,6 +905,50 @@ private fun GlassCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         content = content
     )
+}
+
+/**
+ * The Friends tab's answer when the graph could not be loaded.
+ *
+ * WhatsApp/Telegram make the same distinction: "nobody is here" and "we could not ask" are
+ * different states, and only the second one offers a retry. The text is the server's own
+ * sentence (or the network error), so it says *what* went wrong.
+ */
+@Composable
+private fun LoadErrorCard(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0x99FFFFFF))
+            .border(1.dp, Color(0x99FFFFFF), RoundedCornerShape(16.dp))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
+    ) {
+        Text(text = "⚠️", fontSize = 26.sp)
+        Text(
+            text = "Couldn't load your friends",
+            color = Slate700,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = message,
+            color = Color(0xFF64748B),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center
+        )
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF7C3AED))
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+        ) {
+            Text(text = "Retry", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
 }
 
 @Composable

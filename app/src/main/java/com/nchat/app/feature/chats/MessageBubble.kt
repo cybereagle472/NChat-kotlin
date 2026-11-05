@@ -498,8 +498,13 @@ private fun VideoContent(
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    // A real clip shows its poster frame (usually the thumbnail the server stored).
-    val poster = thumbnailUrl ?: mediaUrl
+    /*
+     * The poster frame, when the sender produced one. It is deliberately *not* `?: mediaUrl`:
+     * an AsyncImage pointed at an .mp4 downloads the whole clip only to fail decoding it, which
+     * is why video bubbles from a client that sends no thumbnail looked empty. No thumbnail
+     * means the dark tile below, which is the honest state.
+     */
+    val poster = thumbnailUrl?.takeIf { it.isNotBlank() }
     Box(
         modifier = Modifier
             .width(210.dp)
@@ -534,11 +539,24 @@ private fun VideoContent(
     }
 }
 
+/**
+ * Which voice note is playing right now.
+ *
+ * The reference pauses every other clip when one starts (`pauseOtherVoiceMessages`,
+ * `ChatView.tsx:2209-2211`); two notes talking over each other is the sort of thing that makes
+ * a messenger feel broken. Compose state at file scope, so every bubble sees the same value.
+ */
+private object VoicePlayback {
+    var current by mutableStateOf<String?>(null)
+}
+
 @Composable
 private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = null) {
     var playing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var prepared by remember { mutableStateOf(false) }
+    /** `prepareAsync()` is in flight — a second tap must not call `setDataSource` again. */
+    var preparing by remember { mutableStateOf(false) }
     val totalMs = remember(duration) { parseVoiceDuration(duration) }
 
     // A player per bubble, created only when the message actually carries audio. Media is
@@ -558,7 +576,19 @@ private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = nu
         }
     }
     DisposableEffect(player) {
-        onDispose { runCatching { player?.release() } }
+        onDispose {
+            if (mediaUrl != null && VoicePlayback.current == mediaUrl) VoicePlayback.current = null
+            runCatching { player?.release() }
+        }
+    }
+
+    // Exclusive playback: another bubble started, so this one stops where it is.
+    val playingUrl = VoicePlayback.current
+    LaunchedEffect(playingUrl) {
+        if (playing && playingUrl != mediaUrl) {
+            runCatching { player?.pause() }
+            playing = false
+        }
     }
 
     // Real position while the player runs; the old timer is kept only for messages that
@@ -594,14 +624,19 @@ private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = nu
     fun toggle() {
         val current = player
         if (current == null) {
-            playing = !playing
+            // No file behind this bubble: say so instead of pretending to play silence.
+            NcToaster.show("This voice message has no audio attached")
             return
         }
         if (playing) {
             runCatching { current.pause() }
             playing = false
+            if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
             return
         }
+        // Tapped twice while the first `prepareAsync()` is still buffering: ignore, otherwise
+        // `setDataSource` runs on a player that is already preparing and throws.
+        if (preparing) return
         val started = runCatching {
             if (!prepared) {
                 current.setDataSource(mediaUrl)
@@ -609,25 +644,34 @@ private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = nu
                     it.start()
                     prepared = true
                     playing = true
+                    preparing = false
+                    VoicePlayback.current = mediaUrl
                 }
                 current.setOnCompletionListener {
                     progress = 0f
                     playing = false
+                    if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
                 }
                 current.setOnErrorListener { _, _, _ ->
                     playing = false
+                    preparing = false
                     progress = 0f
+                    if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
+                    NcToaster.show("Couldn't play this voice message")
                     true
                 }
+                preparing = true
                 current.prepareAsync()
             } else {
                 if (current.currentPosition >= current.duration) current.seekTo(0)
+                VoicePlayback.current = mediaUrl
                 current.start()
                 playing = true
             }
         }
         if (started.isFailure) {
             playing = false
+            preparing = false
             NcToaster.show("Couldn't play this voice message")
         }
     }
