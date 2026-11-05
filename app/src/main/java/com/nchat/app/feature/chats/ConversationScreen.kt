@@ -211,7 +211,7 @@ fun ConversationScreen(
     // guessed from whoever spoke last, which credited the wrong person most of the time.
     val typingMember = remember(chat?.isTyping, chat?.typingUserId, isGroupChat, groupFriends) {
         if (chat?.isTyping == true && isGroupChat) {
-            val who = chat.typingUserId
+            val who = chat?.typingUserId
             groupFriends.firstOrNull { it.id == who }?.name
                 ?: group?.members?.firstOrNull { it.userId == who }?.name
                 ?: groupFriends.firstOrNull()?.name
