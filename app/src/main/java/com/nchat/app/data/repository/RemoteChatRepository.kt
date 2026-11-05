@@ -81,7 +81,9 @@ class RemoteChatRepository(
      * messages are. So the peers below are recovered from `GET /messages/with/:id?limit=1`.
      */
     private var historyPeers: List<Chat> = emptyList()
-    private var historyProbed = false
+
+    /** Which account [historyPeers] belong to; a different sign-in must probe again. */
+    private var historyProbedFor: String? = null
 
     /** Pins and mutes are client-side, exactly like the reference (no server column). */
     private val pinned = mutableSetOf<String>()
@@ -94,6 +96,24 @@ class RemoteChatRepository(
         // Disk first (instant list), then the server's copy replaces it.
         _chats.value = cache?.load().orEmpty()
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
+        // Signing out must not leave the previous account's threads in memory: after a new
+        // sign-in on the same process they would be "kept" by the merge above and shown to
+        // somebody who never had them.
+        scope.launch {
+            tokens.signedIn.collect { signedIn ->
+                if (signedIn) return@collect
+                _chats.value = emptyList()
+                _groups.value = emptyList()
+                names.clear()
+                historyPeers = emptyList()
+                historyProbedFor = null
+                synchronized(conversations) {
+                    conversations.clear()
+                    requested.clear()
+                    groupIds.clear()
+                }
+            }
+        }
         refresh()
     }
 
@@ -180,13 +200,13 @@ class RemoteChatRepository(
      * already and their messages are being held back on purpose.
      */
     private suspend fun recoverFromHistory(knownIds: Set<String>): List<Chat> {
-        if (historyProbed) return historyPeers.filterNot { it.id in knownIds }
         val me = myId
+        if (historyProbedFor == me) return historyPeers.filterNot { it.id in knownIds }
         val usersResult = runCatching { api.allUsers().profiles }
         // A failed directory call must not burn the single attempt: try again next refresh.
         val everyone = usersResult.getOrDefault(emptyList())
         if (usersResult.isFailure) return emptyList()
-        historyProbed = true
+        historyProbedFor = me
         val candidates = everyone.filter { profile ->
             profile.id.isNotEmpty() && profile.id != me && profile.id !in knownIds &&
                 profile.id !in blockedIds()
