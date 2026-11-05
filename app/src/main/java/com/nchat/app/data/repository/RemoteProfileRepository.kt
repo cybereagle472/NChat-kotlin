@@ -33,7 +33,10 @@ class RemoteProfileRepository(
             fullName = tokens.fullName.orEmpty(),
             handle = tokens.username?.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(),
             about = "",
-            phoneNumber = ""
+            phoneNumber = "",
+            // Straight from the last known identity, so the header/avatar shows the real photo
+            // on the very first frame after a cold start instead of waiting for the network.
+            avatarUrl = tokens.avatarUrl
         )
     )
     override val profile: StateFlow<UserProfile> = _profile.asStateFlow()
@@ -125,7 +128,8 @@ class RemoteProfileRepository(
             fullName = remote.fullName.orEmpty(),
             handle = remote.username?.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(),
             about = remote.bio.orEmpty(),
-            phoneNumber = ""
+            phoneNumber = "",
+            avatarUrl = remote.avatarUrl
         )
         tokens.saveIdentity(
             id = remote.id,

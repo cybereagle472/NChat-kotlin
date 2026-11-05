@@ -1,6 +1,6 @@
 {
-  "versionCode": 34,
-  "versionName": "1.0.26",
+  "versionCode": 35,
+  "versionName": "1.0.27",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.26 — profile photos now appear everywhere they belong (chats, friends, requests, Find, statuses and the profile viewer). When a load fails the chat list says so and offers Retry instead of looking empty. New Settings ▸ Sync check shows exactly what the server answers for every endpoint, with a Copy button, so a loading problem can be reported in one tap."
+  "releaseNotes": "NChat 1.0.27 — the Friends, Requests and Find tabs are wired to the server the way the reference app is. Requests and Find suggestions are no longer filtered away before they reach the screen, requests you sent now show under Requests with Cancel, and Find performs a real server-side search as you type instead of only searching people already on the phone. Your own profile photo now loads from the server on every launch. Settings ▸ Sync check can now tell you whether a second account exists for your email and whether old conversations are still on the server for people you are no longer friends with."
 }

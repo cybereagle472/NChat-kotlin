@@ -122,7 +122,10 @@ class RemoteChatRepository(
             }
             .sortedByDescending { it.lastMessageAt }
         _chats.value = merged
-        cache?.save(merged)
+        // Only persist a complete answer. Saving a half-failed refresh used to overwrite the
+        // cache with just the groups, so one bad `/messages/chats` and every 1:1 row was gone
+        // from disk for good.
+        if (directResult.isSuccess && groupResult.isSuccess) cache?.save(merged)
     }
 
     private suspend fun loadConversation(chatId: String) {

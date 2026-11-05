@@ -134,5 +134,13 @@ data class UserProfile(
     val fullName: String,
     val handle: String,
     val about: String,
-    val phoneNumber: String
+    val phoneNumber: String,
+    /**
+     * The account's own photo, exactly as `GET /users/me` returns it.
+     *
+     * The picked-in-this-session bitmap ([com.nchat.app.data.repository.ProfileRepository.avatar])
+     * only exists until the process dies, so without this the app fell back to initials on every
+     * launch even though the server had the picture all along.
+     */
+    val avatarUrl: String? = null
 )

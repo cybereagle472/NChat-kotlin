@@ -87,6 +87,53 @@ object SyncCheck {
             "${api.callHistory(limit = 20).history.size} calls"
         }
 
+        // ---------------------------------------------------------------- audit
+        //
+        // Everything above answers "did the request work". These answer "is the data under
+        // *this* account", which is the question that decides whether a fix belongs in the app
+        // at all: a second row for the same email means the friends/messages live under an id
+        // this session is not signed into, and a message count for someone who is no longer in
+        // `/friends` means only the friendship link was lost — the history is still there.
+        val me = runCatching { api.myProfile().profile }.getOrNull()
+        val everyone = runCatching { api.allUsers().profiles }.getOrDefault(emptyList())
+        val friendIds = runCatching { api.friends().friends.map { it.id } }
+            .getOrDefault(emptyList())
+            .toSet()
+
+        probe("Account duplication", "/users") {
+            val myEmail = me?.email?.lowercase()?.takeIf { it.isNotBlank() }
+            val myHandle = me?.username?.lowercase()?.takeIf { it.isNotBlank() }
+            val twins = everyone.filter { person ->
+                person.id != me?.id && (
+                    (myEmail != null && person.email?.lowercase() == myEmail) ||
+                        (myHandle != null && person.username?.lowercase() == myHandle)
+                    )
+            }
+            if (twins.isEmpty()) {
+                "one account only (${everyone.size} other people on the server)"
+            } else {
+                twins.joinToString("; ") { twin ->
+                    "SECOND account ${twin.id} · ${twin.fullName ?: twin.email ?: "?"}"
+                }
+            }
+        }
+
+        val calls = runCatching { api.callHistory(limit = 20).history }.getOrDefault(emptyList())
+        val counterparts = calls
+            .mapNotNull { call -> call.otherProfile?.let { it.id to it } }
+            .distinctBy { it.first }
+            .take(3)
+
+        // A plain loop, not forEach: `probe` suspends, so its call site has to be suspend too.
+        for ((otherId, profile) in counterparts) {
+            val label = profile.fullName ?: profile.username ?: otherId.take(8)
+            probe("Old chat · $label", "/messages/with/${otherId.take(8)}") {
+                val count = api.conversation(otherId, limit = 200).messages.size
+                val linked = if (otherId in friendIds) "still a friend" else "NOT in /friends"
+                "$count messages · $linked"
+            }
+        }
+
         return rows
     }
 }

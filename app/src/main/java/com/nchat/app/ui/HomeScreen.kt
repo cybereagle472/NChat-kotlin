@@ -55,6 +55,7 @@ fun HomeScreen(
     val friends = remember(friendGraph) {
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
+    val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
     var profileTarget by remember { mutableStateOf<ProfileTarget?>(null) }
     BackHandler(enabled = profileTarget != null) { profileTarget = null }
     val chatsListState = rememberLazyListState()
@@ -100,8 +101,13 @@ fun HomeScreen(
                     )
 
                     HomeTab.Discover -> DiscoverScreen(
-                        friends = friends,
+                        // The *whole* graph, not just accepted friends: the screen derives the
+                        // Requests and Find tabs from it, so filtering here silently emptied
+                        // both of them.
+                        friends = friendGraph,
                         listState = discoverListState,
+                        searchResults = findResults,
+                        onSearch = { ServiceLocator.friendRepository.search(it) },
                         onAddFriend = { ServiceLocator.friendRepository.sendRequest(it) },
                         onCancelRequest = { ServiceLocator.friendRepository.cancelRequest(it) },
                         onAcceptRequest = { ServiceLocator.friendRepository.accept(it) },

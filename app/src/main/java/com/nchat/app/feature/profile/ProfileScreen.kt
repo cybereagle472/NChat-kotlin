@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.nchat.app.core.designsystem.NcBackdrop
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
@@ -165,7 +166,8 @@ fun ProfileScreen(
                         ProfileAvatar(
                             name = profile.fullName,
                             image = avatar,
-                            size = 106.dp
+                            size = 106.dp,
+                            imageUrl = profile.avatarUrl
                         )
                     }
                     Box(
@@ -286,7 +288,13 @@ fun ProfileAvatar(
     name: String,
     image: ImageBitmap?,
     size: androidx.compose.ui.unit.Dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * The photo the server has for this account. Only used when [image] is null — a picture
+     * picked in this session paints instantly while it uploads, but the persisted one is what
+     * makes the avatar survive a restart.
+     */
+    imageUrl: String? = null
 ) {
     Box(
         modifier = modifier
@@ -298,6 +306,13 @@ fun ProfileAvatar(
         if (image != null) {
             Image(
                 bitmap = image,
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (!imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = imageUrl,
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
