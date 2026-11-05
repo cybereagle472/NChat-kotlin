@@ -538,7 +538,9 @@ class WebRtcEngine private constructor(
                     runCatching {
                         val builder = PeerConnection.IceServer.builder(url)
                         if (username != null) builder.setUsername(username)
-                        if (credential != null) builder.setCredential(credential)
+                        // The worker (and the JS client) call this `credential`; libwebrtc's
+                        // Java builder names the same field `password`.
+                        if (credential != null) builder.setPassword(credential)
                         servers.add(builder.createIceServer())
                     }
                 }
