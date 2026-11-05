@@ -48,6 +48,8 @@ class RemoteChatRepository(
     private val tokens: TokenStore,
     private val socket: NChatSocket,
     private val scope: CoroutineScope,
+    /** Ids this device has blocked; their live messages are held back, never deleted. */
+    private val blockedIds: () -> Set<String> = { emptySet() },
     /** Last known chat list, painted before the network answers. */
     private val cache: ChatListCache? = null
 ) : ChatRepository {
@@ -615,6 +617,9 @@ class RemoteChatRepository(
                 val row = event.objectOrNull("message") ?: return
                 val dto = decodeMessage(row)
                 if (dto.senderId == myId) return
+                // A blocked contact's messages are not shown while the block lasts. Nothing is
+                // deleted — the message stays on the server and is there again after Unblock.
+                if (dto.senderId in blockedIds()) return
                 val chatId = dto.senderId
                 ingest(chatId, dto)
                 bumpPreview(chatId, dto)

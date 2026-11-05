@@ -1,5 +1,7 @@
 package com.nchat.app.data.repository
 
+import com.nchat.app.data.local.BlockedContactsStore
+import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.network.FriendRequestDto
@@ -35,14 +37,19 @@ class RemoteFriendRepository(
     private val api: NChatApi,
     private val tokens: TokenStore,
     private val socket: NChatSocket,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /** The device's own block list — see the class comment on [BlockedContactsStore]. */
+    private val blockedStore: BlockedContactsStore
 ) : FriendRepository {
 
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
     override val friends: StateFlow<List<Friend>> = _friends.asStateFlow()
 
-    private val _blockedNames = MutableStateFlow<Set<String>>(emptySet())
-    override val blockedNames: StateFlow<Set<String>> = _blockedNames.asStateFlow()
+    private val _blockedPeople = MutableStateFlow<List<BlockedContact>>(emptyList())
+    override val blockedPeople: StateFlow<List<BlockedContact>> = _blockedPeople.asStateFlow()
+
+    private val _blockedIds = MutableStateFlow<Set<String>>(emptySet())
+    override val blockedIds: StateFlow<Set<String>> = _blockedIds.asStateFlow()
 
     private val _searchResults = MutableStateFlow<List<Friend>>(emptyList())
     override val searchResults: StateFlow<List<Friend>> = _searchResults.asStateFlow()
@@ -67,6 +74,9 @@ class RemoteFriendRepository(
     private val myId: String get() = tokens.userId.orEmpty()
 
     init {
+        // The block list survives restarts (it lives on the device, not on the server).
+        _blockedPeople.value = blockedStore.load().sortedByDescending { it.blockedAt }
+        _blockedIds.value = _blockedPeople.value.map { it.id }.toSet()
         scope.launch {
             socket.events.collect { event ->
                 when (event.type) {
@@ -129,20 +139,49 @@ class RemoteFriendRepository(
         }
     }
 
-    override fun block(name: String) {
-        val target = resolveId(name) ?: return
-        scope.launch {
-            runCatching { api.blockUser(target) }
-            refresh()
+    /**
+     * Blocks somebody **locally and reversibly**.
+     *
+     * `POST /friends/block` is deliberately not called: on the reference worker that route
+     * also runs `DELETE FROM friendships`, which is what makes a blocked-then-unblocked
+     * contact come back with no chat and no history. Keeping the block here means the
+     * friendship and every message stay untouched, so unblocking restores the conversation
+     * exactly where it was left.
+     */
+    override fun block(id: String, name: String, avatarUrl: String?) {
+        val target = id.trim()
+        if (target.isEmpty()) return
+        persistBlocked(
+            _blockedPeople.value
+                .filterNot { it.id == target } +
+                BlockedContact(
+                    id = target,
+                    name = name.trim().ifBlank { "NChat user" },
+                    avatarUrl = avatarUrl,
+                    blockedAt = System.currentTimeMillis()
+                )
+        )
+        // Their chat keeps its place in the list; the conversation screen shows the block and
+        // offers Unblock, and the socket stops appending their new messages.
+    }
+
+    override fun unblock(id: String) {
+        val target = id.trim()
+        if (target.isEmpty()) return
+        persistBlocked(_blockedPeople.value.filterNot { it.id == target })
+        // Clear a legacy server-side block too — `/friends/unblock` only deletes the row in
+        // `blocked_users`, so this can never touch the friendship or the history.
+        if (blockedUsers.any { it.id == target }) {
+            scope.launch { runCatching { api.unblockUser(target) } }
         }
     }
 
-    override fun unblock(name: String) {
-        val target = blockedUsers.firstOrNull { it.displayName() == name.trim() }?.id ?: return
-        scope.launch {
-            runCatching { api.unblockUser(target) }
-            refresh()
-        }
+    /** Writes the list to disk and mirrors it into the two flows the UI reads. */
+    private fun persistBlocked(contacts: List<BlockedContact>) {
+        val ordered = contacts.sortedByDescending { it.blockedAt }
+        _blockedPeople.value = ordered
+        _blockedIds.value = ordered.map { it.id }.toSet()
+        blockedStore.save(ordered)
     }
 
     override fun search(query: String) {
@@ -182,7 +221,19 @@ class RemoteFriendRepository(
         val confirmed = outgoing.map { it.receiverId }.toSet()
         if (confirmed.isNotEmpty()) _pendingSent.update { it - confirmed }
         blockedUsers = blocked
-        _blockedNames.value = blocked.map { it.displayName() }.toSet()
+        // Legacy blocks that were made on the server (before blocking became local) still have
+        // to be visible and undoable from Settings, so they are merged into the device list.
+        // Anything already known locally keeps its stored name/photo.
+        val knownLocally = _blockedPeople.value.associateBy { it.id }
+        val merged = blocked.map { profile ->
+            knownLocally[profile.id] ?: BlockedContact(
+                id = profile.id,
+                name = profile.displayName(),
+                avatarUrl = profile.avatarUrl,
+                blockedAt = 0L
+            )
+        } + _blockedPeople.value.filter { local -> blocked.none { it.id == local.id } }
+        persistBlocked(merged)
 
         val rows = mutableListOf<Friend>()
         val known = mutableSetOf<String>()
@@ -222,12 +273,6 @@ class RemoteFriendRepository(
         is com.nchat.app.network.ApiException -> "server said $status: $message"
         is java.io.IOException -> "network: ${message ?: javaClass.simpleName}"
         else -> message ?: javaClass.simpleName
-    }
-
-    private fun resolveId(name: String): String? {
-        val key = name.trim()
-        if (key.isEmpty()) return null
-        return _friends.value.firstOrNull { it.name == key || it.id == key }?.id
     }
 
     private fun UserDto.toFriend(relation: FriendRelation, requestedAt: Long? = null) = Friend(

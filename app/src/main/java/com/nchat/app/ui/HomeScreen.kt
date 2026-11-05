@@ -54,8 +54,14 @@ fun HomeScreen(
     val statuses by ServiceLocator.statusRepository.statuses.collectAsStateWithLifecycle()
     val calls by ServiceLocator.callRepository.history.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
-    val friends = remember(friendGraph) {
-        friendGraph.filter { it.relation == FriendRelation.Friend }
+    val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
+    // Blocked contacts are hidden from Friends/Requests/Find (their chat row stays put, so the
+    // conversation is right where you left it when you unblock).
+    val visibleGraph = remember(friendGraph, blockedIds) {
+        friendGraph.filterNot { it.id in blockedIds }
+    }
+    val friends = remember(visibleGraph) {
+        visibleGraph.filter { it.relation == FriendRelation.Friend }
     }
     val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
@@ -136,9 +142,11 @@ fun HomeScreen(
                         // The *whole* graph, not just accepted friends: the screen derives the
                         // Requests and Find tabs from it, so filtering here silently emptied
                         // both of them.
-                        friends = friendGraph,
+                        friends = visibleGraph,
                         listState = discoverListState,
-                        searchResults = findResults,
+                        // A blocked contact is hidden from Find too; unblock them from
+                        // Settings ▸ Privacy ▸ Blocked users or from the chat itself.
+                        searchResults = findResults.filterNot { it.id in blockedIds },
                         onSearch = { ServiceLocator.friendRepository.search(it) },
                         sentRequestIds = pendingSent,
                         chatIds = chatPeerIds,
@@ -228,6 +236,7 @@ fun HomeScreen(
             if (shown != null) {
                 ProfileViewScreen(
                     name = shown.name,
+                    id = shown.id,
                     handle = shown.handle.removePrefix("@"),
                     about = if (shown.isOnline) "Online now" else "Hey there! I am using NChat.",
                     isOnline = shown.isOnline,

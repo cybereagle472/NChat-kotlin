@@ -1,5 +1,6 @@
 package com.nchat.app.data.repository
 
+import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.data.model.Friend
 import kotlinx.coroutines.flow.StateFlow
 
@@ -10,15 +11,28 @@ import kotlinx.coroutines.flow.StateFlow
 interface FriendRepository {
     val friends: StateFlow<List<Friend>>
 
-    /** Display names the user has blocked; drives the Settings ▸ Blocked Users pane. */
-    val blockedNames: StateFlow<Set<String>>
+    /** Everyone this account has blocked, with a name and photo — Settings ▸ Blocked Users. */
+    val blockedPeople: StateFlow<List<BlockedContact>>
+
+    /** Just the ids, for every screen that has to hide or gate somebody. */
+    val blockedIds: StateFlow<Set<String>>
     fun accept(id: String)
     fun decline(id: String)
     fun sendRequest(id: String)
     fun cancelRequest(id: String)
     fun unfriend(id: String)
-    fun block(name: String)
-    fun unblock(name: String)
+    /**
+     * Block somebody **without destroying anything**.
+     *
+     * Id-based, and local: the friendship row and the whole conversation stay on the server
+     * exactly as they were, so unblocking restores the chat from the exact message you left
+     * off at. Only the id ever identifies the person here — the old name-based lookup could
+     * hit the wrong contact when two people shared a display name.
+     */
+    fun block(id: String, name: String, avatarUrl: String? = null)
+
+    /** Undo a block. Local list only; any legacy server-side block is cleared too. */
+    fun unblock(id: String)
 
     /**
      * Server-side search for the Find tab (`GET /users/search`).

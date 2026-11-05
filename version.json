@@ -1,6 +1,6 @@
 {
-  "versionCode": 38,
-  "versionName": "1.0.30",
+  "versionCode": 39,
+  "versionName": "1.0.31",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.30 — voice messages are real. Holding the mic now records through MediaRecorder (AAC/.m4a), uploads the clip, and sends it with its media_url and duration, so the other side actually hears it; bubbles play back through MediaPlayer with a real progress bar and can be paused, on both 1:1 and group chats. Chats tab is 1:1 only (groups stay in Groups), ongoing conversations survive a refresh, and Find shows Message instead of Add for anyone you already talk to, with an instant Cancel after you tap Add."
+  "releaseNotes": "NChat 1.0.31 — blocking is now a pause, not a delete. Blocking someone keeps their chat and your entire history exactly where it is (the chat stays in the list, their messages stay on screen), hides them from Friends/Find, and swaps the message box for an Unblock banner; incoming messages are held back until you unblock. Unblocking drops you back into the conversation at the exact message you left off — nothing is ever deleted, on either side. The block list lives on your phone, and Settings ▸ Blocked Users lets you undo it any time."
 }

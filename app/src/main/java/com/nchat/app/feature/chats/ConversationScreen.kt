@@ -48,6 +48,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Close
@@ -170,6 +171,14 @@ fun ConversationScreen(
     val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
+    // Blocking is a pause, not a deletion: the chat and every message stay exactly as they
+    // were, the composer is replaced by an Unblock banner, and nothing is removed from the list.
+    val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
+    val blockedPeople by ServiceLocator.friendRepository.blockedPeople.collectAsStateWithLifecycle()
+    val blockedPerson = remember(blockedPeople, chatId) {
+        blockedPeople.firstOrNull { it.id == chatId }
+    }
+    val isBlocked = chatId in blockedIds
     val groupFriends = remember(friendGraph) {
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
@@ -364,6 +373,15 @@ fun ConversationScreen(
             }
             }
 
+            if (isBlocked) {
+                BlockedComposerBar(
+                    name = blockedPerson?.name ?: chatTitle,
+                    onUnblock = {
+                        ServiceLocator.friendRepository.unblock(chatId)
+                        NcToaster.show("Unblocked — you can pick up where you left off")
+                    }
+                )
+            } else {
             ComposerBar(
                 textFlow = viewModel.composerText,
                 replyTo = replyTo,
@@ -400,6 +418,7 @@ fun ConversationScreen(
                 },
                 onSendVoice = viewModel::onSendVoice
             )
+            }
         }
 
         AnimatedVisibility(
@@ -494,6 +513,7 @@ fun ConversationScreen(
         if (profileOpen) {
             ProfileViewScreen(
                 name = chatTitle,
+                id = if (chat?.isGroup == true) "" else chatId,
                 handle = chatTitle.lowercase().replace(" ", ""),
                 about = if (chat?.isGroup == true) "Group conversation" else "Hey there! I am using NChat.",
                 isOnline = chat?.isOnline == true,
@@ -1135,6 +1155,58 @@ private fun HeaderAction(
             contentDescription = label,
             tint = Color.White,
             modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * What replaces the composer while a contact is blocked.
+ *
+ * The messages above stay exactly where they were — nothing is deleted when you block, so
+ * unblocking drops you back into the same conversation at the same message (WhatsApp,
+ * Telegram and Messenger all behave this way). New messages from them are held back by
+ * [com.nchat.app.data.repository.RemoteChatRepository] and reappear on the next load.
+ */
+@Composable
+private fun BlockedComposerBar(name: String, onUnblock: () -> Unit) {
+    val extra = NcTheme.extra
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(horizontal = NcSpace.lg, vertical = NcSpace.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NcSpace.md)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Block,
+            contentDescription = null,
+            tint = extra.textTertiary,
+            modifier = Modifier.size(20.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "You blocked $name",
+                color = extra.textPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Your chat and history are kept. Unblock to continue.",
+                color = extra.textTertiary,
+                fontSize = 11.sp
+            )
+        }
+        Text(
+            text = "Unblock",
+            color = Color(0xFF7C3AED),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFFF3E8FF))
+                .clickable(onClick = onUnblock)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         )
     }
 }

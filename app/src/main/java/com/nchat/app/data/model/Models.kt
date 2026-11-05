@@ -98,6 +98,26 @@ data class StatusViewer(
     val viewedAt: Long = 0L
 )
 
+/**
+ * Somebody this account has blocked.
+ *
+ * Blocking is deliberately **non-destructive** here: the friendship row and both sides of the
+ * message history stay exactly where they are, and unblocking puts everything back the way it
+ * was — the WhatsApp/Telegram/Messenger model, where a block pauses a relationship instead of
+ * deleting it. (The reference worker's `POST /friends/block` also runs
+ * `DELETE FROM friendships`, which is why this app keeps the block on the device and never
+ * calls that route.)
+ */
+@Immutable
+@Serializable
+data class BlockedContact(
+    val id: String,
+    val name: String,
+    val avatarUrl: String? = null,
+    /** When the block was applied; used only to keep the list stable in the UI. */
+    val blockedAt: Long = 0L
+)
+
 /** One row of a group's member list, straight from `GET /groups`'s `members[]`. */
 @Immutable
 data class GroupMember(

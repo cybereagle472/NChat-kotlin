@@ -104,7 +104,7 @@ fun SettingsScreen(
     val preferences = ServiceLocator.preferencesRepository
     val privacy by preferences.privacy.collectAsStateWithLifecycle()
     val notifications by preferences.notifications.collectAsStateWithLifecycle()
-    val blockedNames by ServiceLocator.friendRepository.blockedNames.collectAsStateWithLifecycle()
+    val blockedPeople by ServiceLocator.friendRepository.blockedPeople.collectAsStateWithLifecycle()
 
     when (section) {
         SettingsPane.Privacy -> {
@@ -134,11 +134,11 @@ fun SettingsScreen(
 
         SettingsPane.Blocked -> {
             BlockedUsersPane(
-                blockedNames = blockedNames.toList().sorted(),
+                blockedPeople = blockedPeople,
                 onBack = { section = SettingsPane.Main },
-                onUnblock = { name ->
-                    ServiceLocator.friendRepository.unblock(name)
-                    NcToaster.show("$name unblocked")
+                onUnblock = { person ->
+                    ServiceLocator.friendRepository.unblock(person.id)
+                    NcToaster.show("${person.name} unblocked — your chat is back")
                 }
             )
             return
@@ -205,10 +205,10 @@ fun SettingsScreen(
                             tone = MenuTone.Red,
                             icon = Icons.Rounded.Block,
                             title = "Blocked Users",
-                            subtitle = if (blockedNames.isEmpty()) {
+                            subtitle = if (blockedPeople.isEmpty()) {
                                 "Manage blocked contacts"
                             } else {
-                                "${blockedNames.size} blocked"
+                                "${blockedPeople.size} blocked"
                             },
                             onClick = { section = SettingsPane.Blocked },
                             last = true

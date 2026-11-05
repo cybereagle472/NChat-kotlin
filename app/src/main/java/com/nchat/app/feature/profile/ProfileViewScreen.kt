@@ -61,6 +61,8 @@ import com.nchat.app.core.designsystem.pressFeedback
 @Composable
 fun ProfileViewScreen(
     name: String,
+    /** The person's user id. Blocking is keyed on this, never on the display name. */
+    id: String = "",
     handle: String,
     about: String,
     isOnline: Boolean,
@@ -74,9 +76,11 @@ fun ProfileViewScreen(
 ) {
     val extra = NcTheme.extra
     var menuOpen by remember { mutableStateOf(false) }
-    // Blocking is real state now: the same set feeds Settings ▸ Blocked Users.
-    val blockedNames by ServiceLocator.friendRepository.blockedNames.collectAsStateWithLifecycle()
-    val blocked = name in blockedNames
+    // Same device block list Settings ▸ Blocked Users shows. Keyed by id, so two contacts with
+    // the same display name can never be confused — and blocking never deletes the friendship
+    // or the conversation.
+    val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
+    val blocked = id in blockedIds
 
     Column(modifier = modifier.fillMaxSize().background(Color.White)) {
         Box(
@@ -132,7 +136,8 @@ fun ProfileViewScreen(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false }
                 ) {
-                    DropdownMenuItem(
+                    // Groups have no 1:1 block; only real people do.
+                    if (id.isNotBlank()) DropdownMenuItem(
                         text = {
                             Text(
                                 text = if (blocked) "Unblock user" else "Block user",
@@ -150,10 +155,14 @@ fun ProfileViewScreen(
                         },
                         onClick = {
                             if (blocked) {
-                                ServiceLocator.friendRepository.unblock(name)
-                                NcToaster.show("$name unblocked")
+                                ServiceLocator.friendRepository.unblock(id)
+                                NcToaster.show("$name unblocked — your chat is back")
                             } else {
-                                ServiceLocator.friendRepository.block(name)
+                                ServiceLocator.friendRepository.block(
+                                    id = id,
+                                    name = name,
+                                    avatarUrl = imageUrl
+                                )
                                 NcToaster.show("$name blocked")
                             }
                             menuOpen = false
