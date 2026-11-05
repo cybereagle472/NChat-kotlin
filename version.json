@@ -1,6 +1,6 @@
 {
-  "versionCode": 41,
-  "versionName": "1.0.33",
+  "versionCode": 42,
+  "versionName": "1.0.34",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.33 — old chats come back. A thread is now listed because its messages exist, not because a friends row does: the app asks the server for the newest message with every account it can see, so a conversation whose friendship was lost (a block in an early build deleted that row server-side) returns to the Chats tab with its whole history, appears in Friends, and shows Message in Find instead of an Add button. Tapping Add on somebody the server already considers a friend no longer raises a 409 error — the app takes that answer and switches the row to Message."
+  "releaseNotes": "NChat 1.0.34 — a small but important follow-up to 1.0.33: signing out now clears every in-memory conversation, chat row and recovered thread, so the next account that signs in on the same launch starts with its own data only. The history search that brings back a lost chat is also scoped to the account it ran for, instead of being reused for whoever signs in next."
 }
