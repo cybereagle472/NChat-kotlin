@@ -2,6 +2,7 @@ package com.nchat.app.feature.chats
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -31,7 +32,9 @@ fun rememberCallPermissionGate(): (Boolean, () -> Unit) -> Unit {
     ) { grants ->
         val action = pending.value
         pending.value = null
-        if (grants.isNotEmpty() && grants.values.all { it }) {
+        // Bluetooth is best-effort (see the launch below), so it is not part of this verdict.
+        val blocking = grants.filterKeys { it != Manifest.permission.BLUETOOTH_CONNECT }
+        if (blocking.isNotEmpty() && blocking.values.all { it }) {
             action?.invoke()
         } else {
             NcToaster.show("Calls need the microphone — and the camera for video")
@@ -52,7 +55,16 @@ fun rememberCallPermissionGate(): (Boolean, () -> Unit) -> Unit {
                 onGranted()
             } else {
                 pending.value = onGranted
-                launcher.launch(missing.toTypedArray())
+                // Bluetooth is asked for alongside, but never *required*: a headset is a
+                // nicety, and denying it must not block the call.
+                val ask = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    !granted(context, Manifest.permission.BLUETOOTH_CONNECT)
+                ) {
+                    missing + Manifest.permission.BLUETOOTH_CONNECT
+                } else {
+                    missing
+                }
+                launcher.launch(ask.toTypedArray())
             }
         }
         gate

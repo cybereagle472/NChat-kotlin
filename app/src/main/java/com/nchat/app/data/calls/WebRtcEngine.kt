@@ -93,7 +93,15 @@ class WebRtcEngine private constructor(
         fun onError(message: String)
     }
 
-    val eglContext: EglBase.Context get() = eglBase.eglBaseContext
+    /**
+     * The context the call screen's renderers initialise with.
+     *
+     * Deliberately the *factory's* long-lived EGL base, not this call's: a renderer creates its
+     * own EGL surface sharing this context, and it is released by Compose a frame or two after
+     * the call ends — by which point a per-call context would already be gone, which is a
+     * native crash rather than an exception.
+     */
+    val eglContext: EglBase.Context? get() = WebRtcFactory.renderContext
 
     var localVideoTrack: VideoTrack? = null
         private set
@@ -580,7 +588,11 @@ private object WebRtcFactory {
         private set
 
     /** Kept alive for the process: the encoder/decoder factories hold its EGL context. */
+    @Volatile
     private var eglBase: EglBase? = null
+
+    /** Shared by every call-screen renderer; see [WebRtcEngine.eglContext]. */
+    val renderContext: EglBase.Context? get() = eglBase?.eglBaseContext
 
     fun ensure(context: Context): Boolean {
         factory?.let { return true }

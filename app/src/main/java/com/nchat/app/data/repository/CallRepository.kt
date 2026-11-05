@@ -163,6 +163,25 @@ class RemoteCallRepository(
         context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     }
 
+    /** Takes the audio route for the duration of a call and hands it back afterwards. */
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { }
+
+    @Suppress("DEPRECATION")
+    private fun requestAudioFocus() {
+        runCatching {
+            audioManager?.requestAudioFocus(
+                focusListener,
+                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun abandonAudioFocus() {
+        runCatching { audioManager?.abandonAudioFocus(focusListener) }
+    }
+
     init {
         scope.launch {
             socket.events.collect { event -> handleCallEvent(event.type, event) }
@@ -220,6 +239,7 @@ class RemoteCallRepository(
                 speakerOn = video
             )
             applyAudioRoute(video)
+            requestAudioFocus()
             // No voicemail: nobody picked up within the ring window, so record it as missed.
             ringJob = scope.launch {
                 delay(RING_TIMEOUT_MS)
@@ -273,6 +293,7 @@ class RemoteCallRepository(
             callId = call.id
             terminated = false
             drainPendingCandidates()
+            requestAudioFocus()
             armConnectingTimeout()
         }
     }
@@ -445,15 +466,19 @@ class RemoteCallRepository(
     }
 
     private fun closeMedia() {
+        val dying = engine
+        engine = null
+        // Compose removes the video sinks when these become null; give it a frame or two before
+        // the tracks and capturer are disposed underneath it.
         _localVideoTrack.value = null
         _remoteVideoTrack.value = null
-        engine?.close()
-        engine = null
+        if (dying != null) scope.launch { delay(SINK_DETACH_MS); dying.close() }
         pendingOffer = null
         callId = null
         synchronized(pendingCandidates) { pendingCandidates.clear() }
         everConnected = false
         applyAudioRoute(null)
+        abandonAudioFocus()
     }
 
     private fun scheduleDismiss() {
@@ -581,8 +606,9 @@ class RemoteCallRepository(
 
     private fun resetCallState() {
         stopTimeouts()
-        engine?.close()
+        val dying = engine
         engine = null
+        if (dying != null) scope.launch { delay(SINK_DETACH_MS); dying.close() }
         callId = null
         pendingOffer = null
         synchronized(pendingCandidates) { pendingCandidates.clear() }
@@ -644,6 +670,9 @@ class RemoteCallRepository(
         const val CONNECTING_TIMEOUT_MS = 20_000L
         const val DISCONNECT_GRACE_MS = 6_000L
         const val TURN_TTL_MS = 100 * 60_000L
+
+        /** How long the UI gets to detach video sinks before the media is torn down. */
+        const val SINK_DETACH_MS = 400L
 
         val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
