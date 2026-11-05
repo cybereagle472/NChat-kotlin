@@ -95,6 +95,11 @@ class ConversationViewModel(
         repository.editMessage(chatId, messageId, text)
     }
 
+    /** Tapping the warning on a bubble that never reached the server. */
+    fun onRetrySend(messageId: String) {
+        repository.retrySend(chatId, messageId)
+    }
+
     fun onDeleteMessage(messageId: String, forEveryone: Boolean) {
         repository.deleteMessage(chatId, messageId, forEveryone)
         if (_activeMessageId.value == messageId) _activeMessageId.value = null
@@ -156,21 +161,6 @@ class ConversationViewModel(
             mimeType = file.mimeType,
             bytes = file.bytes,
             thumbnail = file.thumbnail
-        )
-    }
-
-    fun onSendAttachment(kind: MessageKind) {
-        repository.sendAttachment(
-            chatId = chatId,
-            kind = kind,
-            label = when (kind) {
-                MessageKind.Photo -> "Photo"
-                MessageKind.Video -> "Video"
-                MessageKind.Document -> "document.pdf"
-                MessageKind.Voice -> "Voice message"
-                MessageKind.Location -> "Location"
-                MessageKind.Text -> ""
-            }
         )
     }
 

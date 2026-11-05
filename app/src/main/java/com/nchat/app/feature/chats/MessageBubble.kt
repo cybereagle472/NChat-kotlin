@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Image
@@ -118,7 +119,9 @@ fun MessageBubble(
     modifier: Modifier = Modifier,
     showAuthor: Boolean = false,
     showAvatar: Boolean = false,
-    onMediaClick: () -> Unit = {}
+    onMediaClick: () -> Unit = {},
+    /** Tapping the warning on a message the server never accepted resends it. */
+    onRetrySend: () -> Unit = {}
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -263,7 +266,19 @@ fun MessageBubble(
                         color = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta
                     )
                 }
-                if (mine) {
+                if (mine && message.failed) {
+                    // The send gave up: say so on the bubble itself and make it the retry target
+                    // (a message stuck on the clock forever with no explanation is the bug).
+                    Icon(
+                        imageVector = Icons.Rounded.ErrorOutline,
+                        contentDescription = "Not sent — tap to retry",
+                        tint = Color(0xFFFCA5A5),
+                        modifier = Modifier
+                            .size(15.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onRetrySend)
+                    )
+                } else if (mine) {
                     Icon(
                         imageVector = if (message.state == DeliveryState.Read) {
                             Icons.Rounded.DoneAll

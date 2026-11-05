@@ -41,6 +41,16 @@ data class Message(
     val isEdited: Boolean = false,
     val forwarded: Boolean = false,
     val systemEvent: Boolean = false,
+    /**
+     * The id this client generated for the send (`client_message_id` on the wire).
+     *
+     * It is what reconciles the optimistic bubble with the row the server stored: the HTTP
+     * answer, the realtime echo of our own message and a later history fetch all carry it, so
+     * the same message can never be shown twice or dropped by a refresh.
+     */
+    val clientMessageId: String? = null,
+    /** The send failed for good (after retries); tapping the bubble's warning resends it. */
+    val failed: Boolean = false,
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
     val deleted: Boolean = false
 )
