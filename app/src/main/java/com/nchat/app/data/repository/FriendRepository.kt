@@ -16,6 +16,9 @@ interface FriendRepository {
 
     /** Just the ids, for every screen that has to hide or gate somebody. */
     val blockedIds: StateFlow<Set<String>>
+
+    /** Re-read the graph from the server (also how the empty-home Retry refreshes it). */
+    fun refresh()
     fun accept(id: String)
     fun decline(id: String)
     fun sendRequest(id: String)

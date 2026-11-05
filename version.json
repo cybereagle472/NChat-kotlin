@@ -1,6 +1,6 @@
 {
-  "versionCode": 39,
-  "versionName": "1.0.31",
+  "versionCode": 40,
+  "versionName": "1.0.32",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.31 — blocking is now a pause, not a delete. Blocking someone keeps their chat and your entire history exactly where it is (the chat stays in the list, their messages stay on screen), hides them from Friends/Find, and swaps the message box for an Unblock banner; incoming messages are held back until you unblock. Unblocking drops you back into the conversation at the exact message you left off — nothing is ever deleted, on either side. The block list lives on your phone, and Settings ▸ Blocked Users lets you undo it any time."
+  "releaseNotes": "NChat 1.0.32 — an empty app is never silent again. If a screen has nothing to show, the reason is on screen: the failing request and its status, with Retry and Sign out. A refused refresh token (expired, revoked, or rotated by another client) now sends you back to sign in with a message instead of leaving you on a home screen that looks wiped — nothing was deleted, and one sign-in brings the whole account back. Token refreshes are also written to disk synchronously, so an app update or force-stop can no longer lose the rotated credential that keeps you signed in."
 }

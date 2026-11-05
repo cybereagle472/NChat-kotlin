@@ -7,18 +7,32 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nchat.app.core.designsystem.NcBackdrop
@@ -27,6 +41,8 @@ import com.nchat.app.core.navigation.HomeTab
 import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
+import com.nchat.app.network.ApiLog
+import kotlinx.coroutines.delay
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
@@ -71,6 +87,42 @@ fun HomeScreen(
     // Everyone this account already has a 1:1 conversation with: Find offers them Message
     // instead of Add, even when the server holds no friendship row for them.
     val chatPeerIds = remember(chats) { chats.filterNot { it.isGroup }.map { it.id }.toSet() }
+
+    /*
+     * A completely empty home screen is the worst thing this app can show, because a failed
+     * request, an expired session and an account with no data all look the same. Once the first
+     * load has settled with nothing on screen, say which one it was — the last failing call and
+     * its status, or that the server answered fine and simply has nothing for this account — and
+     * offer Retry and Sign out right there.
+     */
+    var syncDiag by remember { mutableStateOf<String?>(null) }
+    var retryTick by remember { mutableStateOf(0) }
+    // The realtime socket coming up means the account is reachable again: pull everything once
+    // more instead of leaving the user on the empty state they were shown while it was down.
+    val connection by ServiceLocator.connection.collectAsStateWithLifecycle()
+    LaunchedEffect(connection) {
+        if (connection != com.nchat.app.network.ConnectionState.Connected) return@LaunchedEffect
+        if (chats.isNotEmpty() || friendGraph.isNotEmpty()) return@LaunchedEffect
+        ServiceLocator.chatRepository.refresh()
+        ServiceLocator.friendRepository.refresh()
+        ServiceLocator.statusRepository.refresh()
+        ServiceLocator.callRepository.refresh()
+    }
+    LaunchedEffect(chats.size, friendGraph.size, retryTick) {
+        if (chats.isNotEmpty() || friendGraph.isNotEmpty()) {
+            syncDiag = null
+            return@LaunchedEffect
+        }
+        delay(2_500)
+        val failure = ApiLog.lastFailure()
+        syncDiag = if (failure != null) {
+            val outcome = failure.status?.let { "HTTP $it" } ?: (failure.error ?: "no answer")
+            "Can't load your account: ${failure.method} ${failure.path} → $outcome"
+        } else {
+            "Signed in as ${ServiceLocator.tokens.email ?: "this account"}, but the server " +
+                "returned no chats, groups or friends."
+        }
+    }
 
     // A friend action that the server refused (409 already friends, network, …) is shown
     // once instead of vanishing — the reference reverts its optimistic state in the same case.
@@ -226,6 +278,25 @@ fun HomeScreen(
         }
         }
 
+        syncDiag?.let { text ->
+            HomeSyncBanner(
+                text = text,
+                onRetry = {
+                    syncDiag = null
+                    ServiceLocator.chatRepository.refresh()
+                    ServiceLocator.friendRepository.refresh()
+                    ServiceLocator.statusRepository.refresh()
+                    ServiceLocator.callRepository.refresh()
+                    retryTick++
+                },
+                onSignOut = { ServiceLocator.authRepository.signOut() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+
         val shown = profileTarget
         AnimatedVisibility(
             visible = shown != null,
@@ -278,3 +349,60 @@ private data class ProfileTarget(
     val isOnline: Boolean,
     val avatarUrl: String? = null
 )
+
+/**
+ * Shown over the tab content when nothing loaded: the reason, a Retry, and a way out.
+ *
+ * Deliberately loud — an empty NChat is never a normal state, and the previous silence is what
+ * made "the session expired" look like "all my chats were deleted".
+ */
+@Composable
+private fun HomeSyncBanner(
+    text: String,
+    onRetry: () -> Unit,
+    onSignOut: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFFFFF7ED))
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = "Nothing loaded from the server",
+            color = Color(0xFF9A3412),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = text,
+            color = Color(0xFF7C2D12),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            BannerAction(text = "Retry", background = Color(0xFFFED7AA), onClick = onRetry)
+            BannerAction(text = "Sign out", background = Color(0xFFE7E5E4), onClick = onSignOut)
+        }
+    }
+}
+
+@Composable
+private fun BannerAction(text: String, background: Color, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = Color(0xFF7C2D12),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
+}

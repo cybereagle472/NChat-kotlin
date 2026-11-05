@@ -35,6 +35,22 @@ class RemoteAuthRepository(
     private val _profileComplete = MutableStateFlow(tokens.profileComplete)
     override val profileComplete: StateFlow<Boolean> = _profileComplete.asStateFlow()
 
+    init {
+        // If the backend ever refuses our refresh token (revoked, expired, rotated by another
+        // client) the transport clears the pair. The stored e-mail used to survive that, so the
+        // app stayed on the home screen with every list empty — indistinguishable from "my data
+        // is gone". Dropping the session sends the user to the sign-in screen instead, and one
+        // sign-in brings the whole account back, because nothing was ever deleted server-side.
+        scope.launch {
+            tokens.sessionLost.collect { lost ->
+                if (!lost) return@collect
+                cache?.clear()
+                _session.value = null
+                _profileComplete.value = false
+            }
+        }
+    }
+
     override suspend fun isEmailRegistered(email: String): Boolean {
         val trimmed = email.trim()
         if (trimmed.isEmpty()) return false

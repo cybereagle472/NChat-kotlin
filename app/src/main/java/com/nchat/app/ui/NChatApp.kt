@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.NChatTheme
 import com.nchat.app.core.designsystem.NcToastHost
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
@@ -49,6 +50,14 @@ fun NChatApp() {
         val auth = ServiceLocator.authRepository
         val session by auth.session.collectAsStateWithLifecycle()
         val profileComplete by auth.profileComplete.collectAsStateWithLifecycle()
+        // The backend refused our refresh token: say so, then let the sign-in screen take over.
+        val sessionLost by ServiceLocator.tokens.sessionLost.collectAsStateWithLifecycle()
+        LaunchedEffect(sessionLost) {
+            if (sessionLost) {
+                NcToaster.show("Session expired — sign in again, nothing was deleted")
+                ServiceLocator.tokens.acknowledgeSessionLost()
+            }
+        }
 
         val stage = when {
             session == null -> LaunchStage.Auth

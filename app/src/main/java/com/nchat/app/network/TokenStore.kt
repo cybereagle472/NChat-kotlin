@@ -22,6 +22,21 @@ class TokenStore(context: Context) {
     private val _signedIn = MutableStateFlow(!prefs.getString(KEY_ACCESS).isNullOrEmpty())
     val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
 
+    /**
+     * True when the credential pair was thrown away while the app was still signed in — i.e. the
+     * server refused our refresh token (revoked, already rotated by another client, expired).
+     *
+     * Without this the app kept the stored e-mail, stayed on the home screen and showed every
+     * tab as empty, which looks exactly like "all my chats were deleted". Watching this flow
+     * lets the UI go back to the sign-in screen and say what happened instead.
+     */
+    private val _sessionLost = MutableStateFlow(false)
+    val sessionLost: StateFlow<Boolean> = _sessionLost.asStateFlow()
+
+    fun acknowledgeSessionLost() {
+        _sessionLost.value = false
+    }
+
     var accessToken: String?
         get() = prefs.getString(KEY_ACCESS)
         set(value) {
@@ -71,11 +86,19 @@ class TokenStore(context: Context) {
             prefs.putBoolean(KEY_PROFILE_DONE, value)
         }
 
-    /** The whole token pair from `POST /auth/login`, `/auth/signup` or `/auth/refresh`. */
+    /**
+     * The whole token pair from `POST /auth/login`, `/auth/signup` or `/auth/refresh`.
+     *
+     * Written synchronously: the server single-uses refresh tokens, so losing this write means
+     * losing the session (see [SecurePrefs.putStringSync]).
+     */
     fun saveTokens(access: String?, refresh: String?) {
-        prefs.putString(KEY_ACCESS, access)
-        prefs.putString(KEY_REFRESH, refresh)
-        _signedIn.value = !access.isNullOrEmpty()
+        val hadSession = _signedIn.value
+        prefs.putStringSync(KEY_ACCESS, access)
+        prefs.putStringSync(KEY_REFRESH, refresh)
+        val signedIn = !access.isNullOrEmpty()
+        _signedIn.value = signedIn
+        if (hadSession && !signedIn) _sessionLost.value = true
     }
 
     fun saveIdentity(id: String?, email: String?, fullName: String?, username: String?, avatarUrl: String?) {
@@ -98,6 +121,7 @@ class TokenStore(context: Context) {
             KEY_PROFILE_DONE
         )
         _signedIn.value = false
+        _sessionLost.value = false
     }
 
     private companion object {

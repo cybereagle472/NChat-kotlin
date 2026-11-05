@@ -87,7 +87,7 @@ class RemoteFriendRepository(
         refresh()
     }
 
-    fun refresh() {
+    override fun refresh() {
         scope.launch { runCatching { reload() } }
     }
 
