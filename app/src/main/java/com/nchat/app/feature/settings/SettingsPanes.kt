@@ -55,6 +55,7 @@ import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.core.diagnostics.CheckRow
 import com.nchat.app.core.diagnostics.SyncCheck
 import com.nchat.app.data.ServiceLocator
+import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.network.ApiLog
 import kotlinx.coroutines.launch
 import com.nchat.app.data.repository.NotificationSettings
@@ -418,16 +419,16 @@ fun NotificationsPane(
 /** Settings ▸ Blocked users: everyone the user has blocked, with a one-tap unblock. */
 @Composable
 fun BlockedUsersPane(
-    blockedNames: List<String>,
+    blockedPeople: List<BlockedContact>,
     onBack: () -> Unit,
-    onUnblock: (String) -> Unit
+    onUnblock: (BlockedContact) -> Unit
 ) {
     SettingsPaneScaffold(
         title = "Blocked Users",
         subtitle = "Manage blocked contacts",
         onBack = onBack
     ) {
-        if (blockedNames.isEmpty()) {
+        if (blockedPeople.isEmpty()) {
             item(key = "blocked-empty") {
                 Column(
                     modifier = Modifier
@@ -460,7 +461,8 @@ fun BlockedUsersPane(
                         modifier = Modifier.padding(top = NcSpace.md)
                     )
                     Text(
-                        text = "People you block can no longer message or call you",
+                        text = "Blocking pauses the conversation — nothing is deleted. " +
+                            "Unblock and you both continue exactly where you left off.",
                         color = PaneBody,
                         fontSize = 11.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -471,21 +473,21 @@ fun BlockedUsersPane(
         } else {
             item(key = "blocked-list") {
                 PaneSection {
-                    blockedNames.forEachIndexed { index, name ->
+                    blockedPeople.forEachIndexed { index, person ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            NcAvatar(name = name, size = 40.dp)
+                            NcAvatar(name = person.name, imageUrl = person.avatarUrl, size = 40.dp)
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
                                     .padding(start = NcSpace.md)
                             ) {
                                 Text(
-                                    text = name,
+                                    text = person.name,
                                     color = PaneTitle,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
@@ -493,7 +495,7 @@ fun BlockedUsersPane(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "Blocked",
+                                    text = "Blocked — chat and history kept",
                                     color = PaneBody,
                                     fontSize = 11.sp,
                                     maxLines = 1
@@ -506,11 +508,11 @@ fun BlockedUsersPane(
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .clickable { onUnblock(name) }
+                                    .clickable { onUnblock(person) }
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
-                        if (index != blockedNames.lastIndex) {
+                        if (index != blockedPeople.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 66.dp),
                                 thickness = 1.dp,

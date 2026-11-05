@@ -3,6 +3,7 @@ package com.nchat.app.data
 import android.content.Context
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
+import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
@@ -114,6 +115,9 @@ object ServiceLocator {
     /** Disk cache of the chat list; wiped on sign-out. */
     private val chatCache by lazy { ChatListCache(requireContext()) }
 
+    /** Device-side block list; blocking never touches the server's friendship rows. */
+    private val blockedStore by lazy { BlockedContactsStore(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(api, tokens, appScope, chatCache)
@@ -122,10 +126,17 @@ object ServiceLocator {
         RemoteProfileRepository(api, tokens, appScope)
     }
     val chatRepository: ChatRepository by lazy {
-        RemoteChatRepository(api, tokens, socket, appScope, chatCache)
+        RemoteChatRepository(
+            api = api,
+            tokens = tokens,
+            socket = socket,
+            scope = appScope,
+            cache = chatCache,
+            blockedIds = { friendRepository.blockedIds.value }
+        )
     }
     val friendRepository: FriendRepository by lazy {
-        RemoteFriendRepository(api, tokens, socket, appScope)
+        RemoteFriendRepository(api, tokens, socket, appScope, blockedStore)
     }
     val statusRepository: StatusRepository by lazy {
         RemoteStatusRepository(api, tokens, socket, appScope)

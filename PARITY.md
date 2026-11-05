@@ -102,7 +102,8 @@ push) plus the status composer and group member administration.
 | **Load earlier messages / pagination** | ❌ | reference loads 50 at a time, group has a button |
 | **Unread "resume here" divider + jump to first unread** | ✅ | 1.0.15 — marker captured before `markRead`, viewport parks there |
 | **Scroll-to-bottom affordance** | ✅ | 1.0.15 — jump-to-latest pill + smart auto-scroll |
-| **Block user from the chat menu** | ❌ | only reachable from `ProfileView` |
+| **Block user from the chat menu** | 🟡 | 1.0.31 — from `ProfileView` and the conversation's Unblock banner; a "Block" row inside the message menu is still missing |
+| **Blocking stays non-destructive** | ✅ | 1.0.31 — device block list; chat row, history and friendship untouched; unblock resumes at the same message |
 | **Empty conversation state ("Start the conversation")** | ✅ | 1.0.15 |
 | **Marquee presence line** for long "last seen …" text | ❌ | reference slides it |
 | Typing indicator (contact typing dots) | ✅ | |
@@ -206,7 +207,7 @@ push) plus the status composer and group member administration.
 | **Chats / Appearance / Language / Help / About rows** | ✅ | *also inert in the reference* — 1:1, dead ends in both |
 | **Privacy pane** (last seen, profile photo, read receipts, online status) | ✅ | 1.0.16 — persisted in SharedPreferences |
 | **Notifications pane** (messages, calls, preview, sound, vibrate, ringtone) | 🟡 | 1.0.16 — five toggles persisted; ringtone row still missing |
-| **Blocked users pane** (list, unblock, "No blocked users") | ✅ | 1.0.16 — shared block state between profile view and settings |
+| **Blocked users pane** (list, unblock, "No blocked users") | ✅ | 1.0.16, rebuilt 1.0.31 — `blockedPeople` rows with name/photo from the device block list |
 | **Admin pane** (System info: version, build, users, groups, messages, online) | ❌ | |
 | Update check + install | ✅ | Android-only extra |
 | Log out (clears session) | ✅ | |
