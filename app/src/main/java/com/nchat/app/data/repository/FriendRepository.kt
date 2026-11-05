@@ -30,4 +30,18 @@ interface FriendRepository {
      */
     val searchResults: StateFlow<List<Friend>>
     fun search(query: String)
+
+    /**
+     * Friend requests this device sent that the server has not confirmed yet.
+     *
+     * The reference flips the button to "requested" the instant it is tapped and only rolls
+     * back if the call fails (`localSentRequestIds` in `Discover.tsx`); without that, a tap
+     * that is silently rejected (409 already friends / already pending) looks like a dead
+     * button.
+     */
+    val pendingSent: StateFlow<Set<String>>
+
+    /** Last action failure, for a one-shot toast. Cleared by [clearActionError]. */
+    val actionError: StateFlow<String?>
+    fun clearActionError()
 }

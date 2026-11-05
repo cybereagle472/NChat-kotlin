@@ -50,6 +50,16 @@ class RemoteFriendRepository(
     /** In-flight search, so a fast typist never sees an older answer beat a newer one. */
     private var searchJob: Job? = null
 
+    private val _pendingSent = MutableStateFlow<Set<String>>(emptySet())
+    override val pendingSent: StateFlow<Set<String>> = _pendingSent.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    override val actionError: StateFlow<String?> = _actionError.asStateFlow()
+
+    override fun clearActionError() {
+        _actionError.value = null
+    }
+
     private var incoming: List<FriendRequestDto> = emptyList()
     private var outgoing: List<FriendRequestDto> = emptyList()
     private var blockedUsers: List<UserDto> = emptyList()
@@ -88,16 +98,26 @@ class RemoteFriendRepository(
     }
 
     override fun sendRequest(id: String) {
+        if (id.isBlank()) return
+        // Flip to "Cancel" now (reference behaviour); roll back only if the server refuses.
+        _pendingSent.update { it + id }
         scope.launch {
             runCatching { api.sendFriendRequest(id) }
+                .onFailure { error ->
+                    _pendingSent.update { it - id }
+                    _actionError.value = "Couldn't send the request — ${error.describeAction()}"
+                }
             refresh()
         }
     }
 
     override fun cancelRequest(id: String) {
-        val request = outgoing.firstOrNull { it.receiverId == id } ?: return
+        val request = outgoing.firstOrNull { it.receiverId == id }
+        _pendingSent.update { it - id }
+        if (request == null) return
         scope.launch {
             runCatching { api.cancelRequest(request.id) }
+                .onFailure { error -> _actionError.value = "Couldn't cancel — ${error.describeAction()}" }
             refresh()
         }
     }
@@ -158,6 +178,9 @@ class RemoteFriendRepository(
 
         incoming = requests
         outgoing = sent?.requests ?: emptyList()
+        // Anything the server now lists as sent is confirmed; stop drawing it as pending.
+        val confirmed = outgoing.map { it.receiverId }.toSet()
+        if (confirmed.isNotEmpty()) _pendingSent.update { it - confirmed }
         blockedUsers = blocked
         _blockedNames.value = blocked.map { it.displayName() }.toSet()
 
@@ -192,6 +215,13 @@ class RemoteFriendRepository(
         }
 
         _friends.value = rows
+    }
+
+    /** Turns an HTTP/network failure into the sentence a toast shows. */
+    private fun Throwable.describeAction(): String = when (this) {
+        is com.nchat.app.network.ApiException -> "server said $status: $message"
+        is java.io.IOException -> "network: ${message ?: javaClass.simpleName}"
+        else -> message ?: javaClass.simpleName
     }
 
     private fun resolveId(name: String): String? {

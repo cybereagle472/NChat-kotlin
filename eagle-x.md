@@ -6,7 +6,7 @@ bottom before touching code. It is the only document that describes *intent*; th
 describes the result.
 
 - Repository: `cybereagle472/NChat-kotlin`
-- Current version: **1.0.28** (`versionCode 36`)
+- Current version: **1.0.29** (`versionCode 37`)
 - Package: `com.nchat.app`
 - Stack: Kotlin, Jetpack Compose (BOM 2024.09), Material 3 1.2.0, single-module `:app`,
   AGP 8.1, Gradle 8.2, JDK 17, minSdk 24, targetSdk 34 — plus a Rust backend in `server/`
