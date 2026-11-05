@@ -1446,9 +1446,19 @@ private fun ComposerBar(
                                                 change.consume()
                                             }
                                             if (!locked) {
-                                                val cancelled = cancelProgress >= 0.9f ||
-                                                    elapsedMs < minVoiceMs
-                                                if (!cancelled) sendVoice() else discardVoice()
+                                                val cancelled = cancelProgress >= 0.9f
+                                                val tooShort = elapsedMs < minVoiceMs
+                                                when {
+                                                    !cancelled && !tooShort -> sendVoice()
+                                                    tooShort && !cancelled -> {
+                                                        // A tap (or a very short hold) is almost always an
+                                                        // accident; say so instead of swallowing it, which
+                                                        // is what made the mic feel broken.
+                                                        discardVoice()
+                                                        NcToaster.show("Hold the mic to record, slide up to lock")
+                                                    }
+                                                    else -> discardVoice()
+                                                }
                                             }
                                         }
                                     }
