@@ -1,6 +1,6 @@
 {
-  "versionCode": 48,
-  "versionName": "1.0.40",
+  "versionCode": 49,
+  "versionName": "1.0.41",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.40 — the wiring audit. Calls were never really wired: the call screen was an animation that said \"connected\" after 1.6 seconds, the other phone never rang, and answering was impossible. Calls now follow the real protocol — your phone rings with Answer/Decline, the caller sees Declined or a live timer, and both sides get a History row. Also fixed: status views never reached the server (viewer counts stayed at zero), the other side never saw you recording a voice note, and the name shown for \"is typing\" in a group was a guess. Group-chat calls are now labelled as unavailable instead of opening a screen that could not connect. Call audio/video itself is the next release — the call screen says so rather than pretending the line is live. New: docs/BACKEND-WIRING.md lists every backend route and what in the app answers it."
+  "releaseNotes": "NChat 1.0.41 — calls have audio and video. 1.0.40 made the phones ring; this release connects the line: real WebRTC media between the two devices, with the offer/answer and ICE candidates travelling over the same backend calls the reference web app uses, plus the worker's short-lived TURN credentials for networks where a direct path is impossible. Video calls show the other person full-screen with your own camera in the corner; mute, speaker and camera-flip all work, and the call can no longer sit on \"Connecting…\" forever — if the media never connects or drops, it says so and closes cleanly. Microphone and camera are requested before the call starts (and before answering), so a call never opens into silence."
 }

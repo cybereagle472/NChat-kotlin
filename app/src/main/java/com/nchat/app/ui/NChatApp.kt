@@ -33,6 +33,7 @@ import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.settings.SettingsScreen
 import com.nchat.app.feature.chats.CallOverlay
+import com.nchat.app.feature.chats.rememberCallPermissionGate
 import kotlinx.coroutines.delay
 
 /** Where the app is in the reference's launch flow. */
@@ -161,13 +162,25 @@ private fun HomeRoot() {
          * looking at. The state comes from `CallRepository`, which is driven by the worker
          * (`call:incoming` / `call:answered` / `call:ended`), so this overlay is the call.
          */
-        val activeCall by ServiceLocator.callRepository.active.collectAsStateWithLifecycle()
+        val callRepository = ServiceLocator.callRepository
+        val activeCall by callRepository.active.collectAsStateWithLifecycle()
+        val localVideo by callRepository.localVideoTrack.collectAsStateWithLifecycle()
+        val remoteVideo by callRepository.remoteVideoTrack.collectAsStateWithLifecycle()
+        val callGate = rememberCallPermissionGate()
         activeCall?.let { call ->
             CallOverlay(
                 call = call,
-                onAnswer = { ServiceLocator.callRepository.answer() },
-                onDecline = { ServiceLocator.callRepository.decline() },
-                onHangUp = { ServiceLocator.callRepository.hangUp() }
+                localTrack = localVideo,
+                remoteTrack = remoteVideo,
+                eglContext = callRepository.eglContext,
+                // Answering needs the microphone/camera just as much as dialling does — the
+                // peer connection opens them while it applies the caller's offer.
+                onAnswer = { callGate(call.isVideo) { callRepository.answer() } },
+                onDecline = { callRepository.decline() },
+                onHangUp = { callRepository.hangUp() },
+                onToggleMute = { callRepository.setMicMuted(!call.micMuted) },
+                onToggleSpeaker = { callRepository.setSpeaker(!call.speakerOn) },
+                onFlipCamera = { callRepository.flipCamera() }
             )
         }
     }

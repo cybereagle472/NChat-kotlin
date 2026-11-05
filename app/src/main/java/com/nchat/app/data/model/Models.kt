@@ -56,14 +56,28 @@ data class Message(
 )
 
 /** Where a call on screen currently is. */
-enum class CallState { Ringing, Connected, Ended }
+enum class CallState {
+    /** The other side's phone is ringing (or ours is). */
+    Ringing,
+
+    /** Answered and negotiated, waiting for ICE/DTLS to finish — "Connecting…". */
+    Connecting,
+
+    /** Media is actually flowing: this is the only state where audio exists. */
+    Live,
+
+    /** Over, for one of the reasons in [ActiveCall.note]. */
+    Ended
+}
 
 /**
  * One call, as the call screen shows it.
  *
- * Every field is decided by the server — the id comes from `POST /calls`, [state] moves on
- * `call:answered` / `call:ended`, and [startedAt] is the moment the other side actually
- * answered, so the timer counts from the truth rather than from a local animation.
+ * Every field is decided by the server or by the media engine — the id comes from
+ * `POST /calls`, [state] moves on `call:answered` / `call:ended` / ICE, and [startedAt] is the
+ * moment media connected, so the timer counts from the truth rather than from a local
+ * animation. [localVideo] / [remoteVideo] are the engine's, not the intent: a video call whose
+ * camera failed says so instead of showing a black rectangle.
  */
 @Immutable
 data class ActiveCall(
@@ -75,13 +89,24 @@ data class ActiveCall(
     /** True when the other person called us — the screen offers Answer/Decline. */
     val incoming: Boolean = false,
     val state: CallState = CallState.Ringing,
-    /** `System.currentTimeMillis()` of the answer; 0 while ringing. */
+    /** `System.currentTimeMillis()` of the media connect; 0 until [CallState.Live]. */
     val startedAt: Long = 0L,
-    /** How it finished ("Declined", "Missed"), shown for a moment before the screen closes. */
-    val note: String? = null
-)
+    /** How it finished ("Declined", "Missed", "Couldn't connect"), shown before closing. */
+    val note: String? = null,
+    val micMuted: Boolean = false,
+    val speakerOn: Boolean = false,
+    /** The engine is publishing our camera. */
+    val localVideo: Boolean = false,
+    /** The far end's camera is arriving. */
+    val remoteVideo: Boolean = false,
+    val frontCamera: Boolean = true,
+    /** Why media is missing, when it is — the call still runs as signalling-only. */
+    val mediaError: String? = null
+) {
+    val answered: Boolean get() = state == CallState.Connecting || state == CallState.Live
+}
 
-/** A row in the Chats tab. */
+/** A row in the Chats tab. *//** A row in the Chats tab. */
 @Immutable
 @Serializable
 data class Chat(

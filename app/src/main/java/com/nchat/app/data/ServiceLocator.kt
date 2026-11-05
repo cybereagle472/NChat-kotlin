@@ -159,7 +159,9 @@ object ServiceLocator {
         RemoteStatusRepository(api, tokens, socket, appScope)
     }
     val callRepository: CallRepository by lazy {
-        RemoteCallRepository(api, tokens, socket, appScope)
+        // The context is only for the media engine (audio routing, camera enumeration) — the
+        // signalling half is exactly what it was in 1.0.40.
+        RemoteCallRepository(api, tokens, socket, appScope, requireContext())
     }
     val preferencesRepository: PreferencesRepository by lazy {
         RemotePreferencesRepository(requireContext(), api, appScope)

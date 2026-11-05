@@ -12,8 +12,8 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 48
-        versionName "1.0.40"
+        versionCode 49
+        versionName "1.0.41"
         resourceConfigurations += ['en']
 
         // The backend this build talks to, resolved once and baked into BuildConfig.
@@ -46,6 +46,13 @@ android {
             logger.lifecycle("NCHAT_API_BASE resolved from build configuration")
         }
         buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\""
+
+        // libwebrtc ships native code for four architectures (~15 MB each). Every Android
+        // phone is arm64 or armv7; including the x86 emulator builds would double the APK
+        // for nobody.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
     }
 
     signingConfigs {
@@ -116,6 +123,9 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.5.0'
     // Reads the camera's EXIF orientation before a photo is re-encoded.
     implementation 'androidx.exifinterface:exifinterface:1.3.7'
+    // Call media: `org.webrtc` itself (the maintained Maven Central build of libwebrtc).
+    // Signalling was already real in 1.0.40; this is what carries the voice and video.
+    implementation 'io.github.webrtc-sdk:android:150.7871.01'
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }
