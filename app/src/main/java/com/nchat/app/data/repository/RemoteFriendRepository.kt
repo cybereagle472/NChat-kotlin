@@ -8,6 +8,8 @@ import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +43,12 @@ class RemoteFriendRepository(
 
     private val _blockedNames = MutableStateFlow<Set<String>>(emptySet())
     override val blockedNames: StateFlow<Set<String>> = _blockedNames.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<Friend>>(emptyList())
+    override val searchResults: StateFlow<List<Friend>> = _searchResults.asStateFlow()
+
+    /** In-flight search, so a fast typist never sees an older answer beat a newer one. */
+    private var searchJob: Job? = null
 
     private var incoming: List<FriendRequestDto> = emptyList()
     private var outgoing: List<FriendRequestDto> = emptyList()
@@ -114,6 +122,30 @@ class RemoteFriendRepository(
         scope.launch {
             runCatching { api.unblockUser(target) }
             refresh()
+        }
+    }
+
+    override fun search(query: String) {
+        val term = query.trim()
+        searchJob?.cancel()
+        if (term.isEmpty()) {
+            _searchResults.value = emptyList()
+            return
+        }
+        searchJob = scope.launch {
+            // Same ~250 ms debounce the reference search bars use; short enough to feel live,
+            // long enough that typing a handle is one request, not eight.
+            delay(250)
+            val rows = runCatching { api.searchUsers(term, limit = 30).profiles }
+                .getOrDefault(emptyList())
+            _searchResults.value = rows
+                .filter { it.id.isNotEmpty() && it.id != myId }
+                .map { profile ->
+                    // Anyone already in the graph keeps their real relation (friend / incoming /
+                    // outgoing) so the row shows Accept / Cancel / Message instead of "Add".
+                    _friends.value.firstOrNull { it.id == profile.id }
+                        ?: profile.toFriend(FriendRelation.None)
+                }
         }
     }
 

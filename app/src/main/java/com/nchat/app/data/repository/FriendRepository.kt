@@ -19,4 +19,15 @@ interface FriendRepository {
     fun unfriend(id: String)
     fun block(name: String)
     fun unblock(name: String)
+
+    /**
+     * Server-side search for the Find tab (`GET /users/search`).
+     *
+     * [friends] only ever carries the people the client already knows about — the suggestion
+     * page plus the friend graph — which is exactly the limitation the reference worker calls
+     * out: a search bar must ask the server as the user types. This is that call, debounced in
+     * the implementation. An empty query clears the results.
+     */
+    val searchResults: StateFlow<List<Friend>>
+    fun search(query: String)
 }

@@ -496,7 +496,12 @@ private fun SettingsHeader(
                     .clip(CircleShape)
                     .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
             ) {
-                ProfileAvatar(name = profile.fullName, image = avatar, size = 56.dp)
+                ProfileAvatar(
+                    name = profile.fullName,
+                    image = avatar,
+                    size = 56.dp,
+                    imageUrl = profile.avatarUrl
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(

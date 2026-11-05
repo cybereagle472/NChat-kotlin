@@ -98,6 +98,13 @@ private val Red500 = Color(0xFFEF4444)
 fun DiscoverScreen(
     friends: List<Friend>,
     listState: LazyListState,
+    /**
+     * Live results of `GET /users/search` for whatever is typed in the Find tab. The screen
+     * cannot produce these from [friends]: that list is only the people already known to the
+     * client, so anyone outside it is unfindable without a server round trip.
+     */
+    searchResults: List<Friend> = emptyList(),
+    onSearch: (String) -> Unit = {},
     onAddFriend: (String) -> Unit,
     onCancelRequest: (String) -> Unit,
     onAcceptRequest: (String) -> Unit,
@@ -115,6 +122,8 @@ fun DiscoverScreen(
 
     val friendRows = remember(friends) { friends.filter { it.relation == FriendRelation.Friend } }
     val requests = remember(friends) { friends.filter { it.relation == FriendRelation.Incoming } }
+    /** Requests this user sent that nobody has answered yet (`GET /friends/sent`). */
+    val sent = remember(friends) { friends.filter { it.relation == FriendRelation.Outgoing } }
     val suggestions = remember(friends) {
         friends.filter { it.relation == FriendRelation.Outgoing || it.relation == FriendRelation.None }
     }
@@ -173,7 +182,7 @@ fun DiscoverScreen(
                 }
 
                 DiscoverTab.Requests -> {
-                    if (requests.isEmpty()) {
+                    if (requests.isEmpty() && sent.isEmpty()) {
                         item(key = "requests-empty") {
                             EmptyCard(
                                 emoji = "📬",
@@ -201,6 +210,33 @@ fun DiscoverScreen(
                             )
                         }
                     }
+
+                    // Requests this account sent and nobody has answered yet — the reference
+                    // shows them in the same tab, with Cancel, instead of losing them in Find.
+                    if (sent.isNotEmpty()) {
+                        item(key = "sent-label") {
+                            Text(
+                                text = "Sent requests",
+                                color = Slate500,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(items = sent, key = { "sent-${it.id}" }) { friend ->
+                            UserCard(
+                                friend = friend,
+                                busy = busyId == friend.id,
+                                onOpenProfile = { onViewProfile(friend) },
+                                onAdd = { },
+                                onCancel = {
+                                    busyId = friend.id
+                                    onCancelRequest(friend.id)
+                                },
+                                onUnfriendClick = { confirming = friend }
+                            )
+                        }
+                    }
                 }
 
                 DiscoverTab.Find -> {
@@ -208,11 +244,21 @@ fun DiscoverScreen(
                         SearchField(
                             value = query,
                             placeholder = "Search by username or name...",
-                            onValueChange = { query = it }
+                            onValueChange = {
+                                query = it
+                                onSearch(it)
+                            }
                         )
                     }
 
-                    val visibleUsers = suggestions.filter { it.matches(query) }
+                    // While typing, the server's answer is authoritative — it searches every
+                    // account, not just the ones already on this device. With an empty query the
+                    // tab falls back to the suggestions page, exactly like the reference.
+                    val visibleUsers = if (query.isBlank()) {
+                        suggestions
+                    } else {
+                        searchResults.ifEmpty { suggestions.filter { it.matches(query) } }
+                    }
 
                     if (visibleUsers.isEmpty()) {
                         item(key = "find-empty") {
