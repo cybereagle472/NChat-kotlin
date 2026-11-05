@@ -61,6 +61,11 @@ class OutboxStore(context: Context) {
     private fun read(): List<OutboxEntry> = runCatching {
         if (!file.exists()) return emptyList()
         json.decodeFromString(SERIALIZER, file.readText())
+            // Builds before 1.0.37 numbered sends per launch ("local-1", "local-2", …), which
+            // collide with the worker's `client_message_id` idempotency key and would be
+            // answered with an old message instead of being delivered. Those entries are dead
+            // weight; dropping them is safer than replaying them.
+            .filterNot { LEGACY_ID.matches(it.clientId) }
     }.getOrDefault(emptyList())
 
     private fun write(rows: List<OutboxEntry>) {
@@ -76,5 +81,6 @@ class OutboxStore(context: Context) {
 
     private companion object {
         val SERIALIZER = ListSerializer(OutboxEntry.serializer())
+        val LEGACY_ID = Regex("^local-.*")
     }
 }

@@ -1,6 +1,6 @@
 {
-  "versionCode": 44,
-  "versionName": "1.0.36",
+  "versionCode": 45,
+  "versionName": "1.0.37",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.36 — no message can be lost again. Every send is written to a queue on the phone before it leaves (the same outbox the reference keeps in IndexedDB): if the network, the login token or the app itself drops mid-send, the message is retried automatically — at startup, whenever the realtime connection returns, and up to five times — and the server de-duplicates by client id so a retry can never post it twice. Messages still waiting are restored into the chat when you reopen it, even after a restart. Group chats now name every sender (member profiles are seeded instead of showing \"NChat user\") and read receipts turn your ticks blue when a member reads the group."
+  "releaseNotes": "NChat 1.0.37 — the reason messages stopped going, fixed at the root. Every send carried an id like \"local-1\", \"local-2\"… that restarted from one on each launch, and the server uses that id as its duplicate key: from the second session onwards every message matched an older message from the same account, so the server answered with that old row, stored nothing and delivered nothing. Ids are now real UUIDs (exactly what the web client generates), so every message is new and actually goes out — in 1:1 chats and in groups, whose duplicate key also includes the group id, which is why groups kept working longer. Pending messages can no longer be edited or deleted as if they had a server id, and a queue left over from an older build is discarded instead of replayed."
 }
