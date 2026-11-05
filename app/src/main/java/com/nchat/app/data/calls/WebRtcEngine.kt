@@ -313,7 +313,7 @@ class WebRtcEngine private constructor(
         if (closed) return
         closed = true
         mainHandler.removeCallbacksAndMessages(null)
-        worker.execute {
+        runCatching { worker.execute {
             runCatching { capturer?.stopCapture() }
             runCatching { capturer?.dispose() }
             capturer = null
@@ -332,7 +332,7 @@ class WebRtcEngine private constructor(
             peerConnection = null
             runCatching { eglBase.release() }
             worker.shutdown()
-        }
+        } }
     }
 
     // ----------------------------------------------------------------- observer
@@ -421,14 +421,23 @@ class WebRtcEngine private constructor(
         mainHandler.post { if (!closed) runCatching(block) }
     }
 
-    private suspend fun <T> withWorker(block: () -> T): T =
+    /**
+     * Runs [block] on the WebRTC thread and suspends the caller until it returns.
+     *
+     * The result is nullable by construction: a failure anywhere in the media stack becomes
+     * "no offer / no answer", which the repository turns into a clear message, instead of an
+     * exception escaping into the app-wide coroutine scope.
+     */
+    private suspend fun <T : Any> withWorker(block: () -> T?): T? =
         suspendCancellableCoroutine { continuation ->
-            worker.execute {
-                val result = runCatching(block)
-                    .onFailure { Log.w(TAG, "media task failed", it) }
-                    .getOrNull()
-                if (continuation.isActive) continuation.resume(result as T)
-            }
+            runCatching {
+                worker.execute {
+                    val result = runCatching(block)
+                        .onFailure { Log.w(TAG, "media task failed", it) }
+                        .getOrNull()
+                    if (continuation.isActive) continuation.resume(result)
+                }
+            }.onFailure { Log.w(TAG, "media thread is gone", it) }
         }
 
     private fun sdpJson(type: String, sdp: String): JsonObject = buildJsonObject {
