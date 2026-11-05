@@ -1,6 +1,7 @@
 package com.nchat.app.data.repository
 
 import com.nchat.app.data.local.BlockedContactsStore
+import com.nchat.app.network.ApiException
 import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
@@ -112,11 +113,38 @@ class RemoteFriendRepository(
         // Flip to "Cancel" now (reference behaviour); roll back only if the server refuses.
         _pendingSent.update { it + id }
         scope.launch {
-            runCatching { api.sendFriendRequest(id) }
-                .onFailure { error ->
+            val error = runCatching { api.sendFriendRequest(id) }.exceptionOrNull()
+            when {
+                error == null -> Unit
+
+                /*
+                 * `409 Already friends` / `409 Request already pending` are not failures — they
+                 * are the server telling us the relationship it wants already exists. The friend
+                 * graph can disagree with that answer (an older build's block deleted the
+                 * `friendships` row while the accepted request stayed behind), which is exactly
+                 * how a friend ended up listed in Find behind an Add button that could only ever
+                 * raise an error. Trust the 409 instead of showing it: a pending request keeps
+                 * its Cancel, and an existing friendship is promoted to Friend right here.
+                 */
+                error is ApiException && error.status == 409 -> {
+                    val message = error.message.lowercase()
+                    if (message.contains("already friend")) {
+                        _pendingSent.update { it - id }
+                        _friends.update { rows ->
+                            rows.map { row ->
+                                if (row.id == id) row.copy(relation = FriendRelation.Friend) else row
+                            }
+                        }
+                    }
+                    // "Request already pending": the Cancel button is the correct state, keep it.
+                    _actionError.value = null
+                }
+
+                else -> {
                     _pendingSent.update { it - id }
                     _actionError.value = "Couldn't send the request — ${error.describeAction()}"
                 }
+            }
             refresh()
         }
     }

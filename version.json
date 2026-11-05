@@ -1,6 +1,6 @@
 {
-  "versionCode": 40,
-  "versionName": "1.0.32",
+  "versionCode": 41,
+  "versionName": "1.0.33",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.32 — an empty app is never silent again. If a screen has nothing to show, the reason is on screen: the failing request and its status, with Retry and Sign out. A refused refresh token (expired, revoked, or rotated by another client) now sends you back to sign in with a message instead of leaving you on a home screen that looks wiped — nothing was deleted, and one sign-in brings the whole account back. Token refreshes are also written to disk synchronously, so an app update or force-stop can no longer lose the rotated credential that keeps you signed in."
+  "releaseNotes": "NChat 1.0.33 — old chats come back. A thread is now listed because its messages exist, not because a friends row does: the app asks the server for the newest message with every account it can see, so a conversation whose friendship was lost (a block in an early build deleted that row server-side) returns to the Chats tab with its whole history, appears in Friends, and shows Message in Find instead of an Add button. Tapping Add on somebody the server already considers a friend no longer raises a 409 error — the app takes that answer and switches the row to Message."
 }

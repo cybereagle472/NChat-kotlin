@@ -19,6 +19,9 @@ import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +70,18 @@ class RemoteChatRepository(
     private val groupIds = mutableSetOf<String>()
     private val names = mutableMapOf<String, String>()
     private val typingJobs = mutableMapOf<String, Job>()
+
+    /**
+     * Conversations found in the message history itself, and whether the search has run.
+     *
+     * `/messages/chats` is a *friends-only* view (`SELECT … FROM friendships`), so anyone whose
+     * friendship row is missing — an older build's block deleted it server-side while the
+     * accepted request stayed behind — had a full history and no row in the list: the
+     * conversation simply vanished. The relationship is not what makes a conversation; the
+     * messages are. So the peers below are recovered from `GET /messages/with/:id?limit=1`.
+     */
+    private var historyPeers: List<Chat> = emptyList()
+    private var historyProbed = false
 
     /** Pins and mutes are client-side, exactly like the reference (no server column). */
     private val pinned = mutableSetOf<String>()
@@ -142,6 +157,72 @@ class RemoteChatRepository(
         // cache with just the groups, so one bad `/messages/chats` and every 1:1 row was gone
         // from disk for good.
         if (directResult.isSuccess && groupResult.isSuccess) cache?.save(merged)
+
+        // Then, and only after the real list is on screen, look for conversations the server's
+        // friendship view forgot. Runs once per process: every peer it finds lands in the list
+        // (and in the cache), so the next refresh already knows about them.
+        val covered = merged.map { it.id }.toSet() + synchronized(conversations) { groupIds.toSet() }
+        val recovered = recoverFromHistory(covered)
+        if (recovered.isNotEmpty()) {
+            val withHistory = (merged + recovered).sortedByDescending { it.lastMessageAt }
+            _chats.value = withHistory
+            cache?.save(withHistory)
+        }
+    }
+
+    /**
+     * Rebuilds chat rows from the message history of accounts the friend view does not cover.
+     *
+     * WhatsApp, Telegram and Messenger all keep a thread because the messages exist, never
+     * because a "friendship" row does — this is the same rule: ask `GET /messages/with/:id`
+     * (one message, the newest) for every account the app can already see and keep the ones
+     * that answer with something. Blocked contacts are skipped: their thread is in the list
+     * already and their messages are being held back on purpose.
+     */
+    private suspend fun recoverFromHistory(knownIds: Set<String>): List<Chat> {
+        if (historyProbed) return historyPeers.filterNot { it.id in knownIds }
+        val me = myId
+        val usersResult = runCatching { api.allUsers().profiles }
+        // A failed directory call must not burn the single attempt: try again next refresh.
+        val everyone = usersResult.getOrDefault(emptyList())
+        if (usersResult.isFailure) return emptyList()
+        historyProbed = true
+        val candidates = everyone.filter { profile ->
+            profile.id.isNotEmpty() && profile.id != me && profile.id !in knownIds &&
+                profile.id !in blockedIds()
+        }
+        if (candidates.isEmpty()) return emptyList()
+
+        val found = coroutineScope {
+            candidates.map { profile ->
+                async {
+                    val last = runCatching { api.conversation(profile.id, limit = 1).messages.lastOrNull() }
+                        .getOrNull()
+                    profile to last
+                }
+            }.awaitAll()
+        }
+
+        historyPeers = found.mapNotNull { (profile, dto) ->
+            if (dto == null) return@mapNotNull null
+            rememberName(profile.id, profile)
+            Chat(
+                id = profile.id,
+                title = profile.displayName(),
+                avatarUrl = profile.avatarUrl,
+                isOnline = profile.isOnline,
+                lastMessage = dto.previewText(),
+                lastMessageAt = isoMillis(dto.createdAt),
+                lastMessageKind = dto.kind(),
+                lastMessageMine = dto.senderId == me,
+                lastMessageState = if (dto.senderId == me) {
+                    if (dto.isRead) DeliveryState.Read else DeliveryState.Sent
+                } else {
+                    null
+                }
+            )
+        }
+        return historyPeers.filterNot { it.id in knownIds }
     }
 
     private suspend fun loadConversation(chatId: String) {
