@@ -128,6 +128,41 @@ data class BlockedContact(
     val blockedAt: Long = 0L
 )
 
+/**
+ * A message that still has to reach the server.
+ *
+ * The reference keeps exactly this queue in IndexedDB (`queuePendingMessage` /
+ * `processPendingQueue`): a send is written down *before* it goes out, retried a few times with
+ * backoff, and flushed again when the socket reconnects. Without it a send that lands in a dead
+ * spot — the app is backgrounded, the token is being refreshed, the network blips — is simply
+ * lost, which is what "my messages aren't going" means in practice.
+ *
+ * `client_message_id` makes every retry idempotent: the worker returns the existing row instead
+ * of creating a second one, so resending the same entry is always safe.
+ */
+@Immutable
+@Serializable
+data class OutboxEntry(
+    /** The id this device generated; becomes `client_message_id`. */
+    val clientId: String,
+    /** DM peer id, or group id when [isGroup]. */
+    val chatId: String,
+    val isGroup: Boolean = false,
+    /** The account this message belongs to; never delivered from another sign-in. */
+    val ownerId: String = "",
+    val text: String,
+    val type: String = "text",
+    val mediaUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val duration: String? = null,
+    val fileName: String? = null,
+    val fileSize: String? = null,
+    val replyTo: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    /** How many delivery attempts have failed so far. */
+    val attempts: Int = 0
+)
+
 /** One row of a group's member list, straight from `GET /groups`'s `members[]`. */
 @Immutable
 data class GroupMember(

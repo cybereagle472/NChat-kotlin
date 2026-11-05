@@ -5,6 +5,7 @@ import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
@@ -118,6 +119,9 @@ object ServiceLocator {
     /** Device-side block list; blocking never touches the server's friendship rows. */
     private val blockedStore by lazy { BlockedContactsStore(requireContext()) }
 
+    /** Messages that still have to reach the server; survives restarts and reconnects. */
+    private val outboxStore by lazy { OutboxStore(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(api, tokens, appScope, chatCache)
@@ -132,7 +136,8 @@ object ServiceLocator {
             socket = socket,
             scope = appScope,
             cache = chatCache,
-            blockedIds = { friendRepository.blockedIds.value }
+            blockedIds = { friendRepository.blockedIds.value },
+            outbox = outboxStore
         )
     }
     val friendRepository: FriendRepository by lazy {
