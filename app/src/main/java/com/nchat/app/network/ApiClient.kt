@@ -90,12 +90,21 @@ class ApiClient(
             .setType(okhttp3.MultipartBody.FORM)
             .addFormDataPart("file", fileName, bytes.toRequestBody(media))
             .build()
-        val request = Request.Builder()
+        fun request(token: String?) = Request.Builder()
             .url(url(path, emptyMap()))
-            .apply { tokens.accessToken?.let { header("authorization", "Bearer $it") } }
+            .apply { if (token != null) header("authorization", "Bearer $token") }
             .post(body)
             .build()
-        return ensureSuccess(execute(request))
+
+        // Uploads expire exactly like every other call: the access token lives 15 minutes, and
+        // without this branch a voice note recorded after that simply failed with 401 — the
+        // recorder finished, the bubble appeared and nothing was ever uploaded.
+        val first = execute(request(tokens.accessToken))
+        if (first.status == 401) {
+            val refreshed = refreshAccessToken()
+            if (refreshed != null) return ensureSuccess(execute(request(refreshed)))
+        }
+        return ensureSuccess(first)
     }
 
     private suspend fun send(

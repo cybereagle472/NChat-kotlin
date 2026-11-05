@@ -31,7 +31,6 @@ interface ChatRepository {
         replyAuthor: String? = null,
         replyText: String? = null
     )
-    fun sendAttachment(chatId: String, kind: MessageKind, label: String)
 
     /**
      * Uploads [bytes] to `POST /media/upload` and sends the resulting message — the real
@@ -57,6 +56,14 @@ interface ChatRepository {
         fileName: String,
         durationLabel: String
     )
+    /**
+     * Resend a bubble whose send failed for good (the warning icon on the message).
+     *
+     * Voice/photo/document messages that already uploaded reuse their `media_url`, so pressing
+     * the warning is the same request again — no second upload, no duplicate file.
+     */
+    fun retrySend(chatId: String, messageId: String)
+
     /** Rewrites the body of my own text message and flags it as edited. */
     fun editMessage(chatId: String, messageId: String, text: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)

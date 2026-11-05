@@ -321,6 +321,9 @@ fun ConversationScreen(
                             val onMediaClick = remember(message.id) {
                                 { mediaViewer = message }
                             }
+                            val onRetrySend = remember(message.id) {
+                                { viewModel.onRetrySend(message.id) }
+                            }
                             Box(
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     anchors[message.id] = coordinates.boundsInWindow()
@@ -330,6 +333,7 @@ fun ConversationScreen(
                                     message = message,
                                     onLongPress = onLongPress,
                                     onMediaClick = onMediaClick,
+                                    onRetrySend = onRetrySend,
                                     showAuthor = isGroupChat,
                                     showAvatar = item.showSender
                                 )
@@ -413,7 +417,8 @@ fun ConversationScreen(
                             documentPicker.launch(arrayOf("*/*"))
                         }
 
-                        else -> viewModel.onSendAttachment(kind)
+                        // Every option in the popup opens a real picker above.
+                        else -> Unit
                     }
                 },
                 onSendVoice = viewModel::onSendVoice

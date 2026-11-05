@@ -79,18 +79,15 @@ class VoiceRecorder(private val context: Context) {
         recorder = null
         val output = file
         file = null
-        return try {
-            current.stop()
-            current.release()
-            val bytes = output?.takeIf { it.length() > 0 }?.readBytes()
-            output?.delete()
-            if (bytes == null || bytes.isEmpty()) null
-            else Clip(bytes = bytes, mimeType = "audio/mp4", fileName = "voice.m4a")
-        } catch (error: Throwable) {
-            runCatching { current.release() }
-            output?.delete()
-            null
-        }
+        // `MediaRecorder.stop()` throws a RuntimeException when it captured too few frames, and
+        // on several devices it also throws for a recording that is perfectly playable. The file
+        // is the source of truth: stop/release best-effort, then read whatever was written.
+        runCatching { current.stop() }
+        runCatching { current.release() }
+        val bytes = output?.takeIf { it.length() > 0 }?.readBytes()
+        output?.delete()
+        if (bytes == null || bytes.isEmpty()) return null
+        return Clip(bytes = bytes, mimeType = "audio/mp4", fileName = "voice.m4a")
     }
 
     /** Uses up and deletes the in-progress recording without sending it. */

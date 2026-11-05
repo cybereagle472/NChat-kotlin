@@ -1,5 +1,6 @@
 package com.nchat.app.data.repository
 
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.GroupMember
@@ -8,6 +9,7 @@ import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
+import com.nchat.app.network.ApiException
 import com.nchat.app.network.ChatDto
 import com.nchat.app.network.GroupDto
 import com.nchat.app.network.MessageDto
@@ -23,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +62,7 @@ class RemoteChatRepository(
 
     private val localIds = AtomicLong(0L)
 
+    /** How many messages a conversation keeps in memory; matches the server's page size. */
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
     override val chats: StateFlow<List<Chat>> = _chats.asStateFlow()
 
@@ -252,7 +256,39 @@ class RemoteChatRepository(
             else api.conversation(chatId, limit = 100).messages
         }.getOrDefault(emptyList())
 
-        stream(chatId).value = rows.map { it.toModel(chatId) }
+        // Merge, never replace — the reference's `mergeMessages`. Swapping the whole list for
+        // the server's snapshot is what made a message the user had just sent disappear again:
+        // the fetch was answered *before* the send landed, so the pending bubble was thrown away
+        // and the chat looked frozen until the next reload.
+        val server = rows.map { it.toModel(chatId) }
+        stream(chatId).update { local -> mergeMessages(local, server) }
+    }
+
+    /**
+     * Local-first merge of two message lists, keyed by `clientMessageId || id` exactly like the
+     * reference: the server's row wins (it has the real id, read state and reactions) while a
+     * message only the client knows about — anything still in flight — is kept instead of being
+     * silently dropped.
+     */
+    private fun mergeMessages(local: List<Message>, server: List<Message>): List<Message> {
+        if (server.isEmpty()) return local
+        val merged = LinkedHashMap<String, Message>()
+        local.forEach { message -> merged[message.clientMessageId ?: message.id] = message }
+        server.forEach { row ->
+            val key = row.clientMessageId ?: row.id
+            val pending = merged[key]
+            merged[key] = if (pending == null || row.id.isNotEmpty()) {
+                // Keep a locally known media URL when the server row carries none.
+                row.copy(
+                    mediaUrl = row.mediaUrl ?: pending?.mediaUrl,
+                    thumbnailUrl = row.thumbnailUrl ?: pending?.thumbnailUrl,
+                    failed = false
+                )
+            } else {
+                pending
+            }
+        }
+        return merged.values.sortedBy { it.timestamp }.takeLast(MESSAGE_PAGE)
     }
 
     // ---------------------------------------------------------- conversation
@@ -332,11 +368,11 @@ class RemoteChatRepository(
         scope.launch {
             // Upload first: without a `media_url` the receiver gets an audio row with no file,
             // which is exactly the "it arrives but it is silent" bug.
-            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
-            if (media == null) {
-                // Leave the bubble in "sending" — the same thing a failed text send does — but
-                // stop pretending the chat preview is still in flight.
-                preview(chatId, "Voice message ($durationLabel)", DeliveryState.Sending)
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrElse { error ->
+                // Say so. A silent failure here looked like "voice messages don't work": the
+                // recording UI finished and no bubble ever became playable.
+                markFailed(chatId, localId)
+                NcToaster.show("Voice message not uploaded — ${error.describeSend()}")
                 return@launch
             }
             // The sender can play their own clip straight away from the uploaded URL.
@@ -351,7 +387,10 @@ class RemoteChatRepository(
                     state = DeliveryState.Sending
                 )
             )
-            val response = runCatching {
+            // `duration` travels as whole seconds, the same field the reference sends, so the
+            // bubble shows the right length on either client.
+            val seconds = durationSeconds(durationLabel)
+            val created = sendWithRetry {
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
                         chatId,
@@ -359,7 +398,7 @@ class RemoteChatRepository(
                         type = "voice",
                         clientMessageId = localId,
                         mediaUrl = media.url,
-                        duration = durationLabel
+                        duration = seconds
                     )
                 } else {
                     api.sendMessage(
@@ -368,14 +407,16 @@ class RemoteChatRepository(
                         type = "voice",
                         clientMessageId = localId,
                         mediaUrl = media.url,
-                        duration = durationLabel,
+                        duration = seconds,
                         fileName = fileName,
                         fileSize = media.fileSize?.toString()
                     )
                 }
-            }.getOrNull()
-            val created = response?.message
-            if (created == null) return@launch
+            }
+            if (created == null) {
+                markFailed(chatId, localId)
+                return@launch
+            }
             replaceLocal(
                 chatId,
                 localId,
@@ -389,25 +430,6 @@ class RemoteChatRepository(
         }
     }
 
-    override fun sendAttachment(chatId: String, kind: MessageKind, label: String) {
-        val localId = "local-${localIds.incrementAndGet()}"
-        appendLocal(
-            chatId = chatId,
-            message = baseMessage(chatId, localId, label).copy(
-                kind = kind,
-                fileName = if (kind == MessageKind.Document) "document.pdf" else null
-            )
-        )
-        preview(chatId, label, DeliveryState.Sending)
-        dispatch(chatId, localId, label) { clientId ->
-            val type = kind.wireType()
-            if (isGroup(chatId)) {
-                api.sendGroupMessage(chatId, label, type = type, clientMessageId = clientId)
-            } else {
-                api.sendMessage(chatId, label, type = type, clientMessageId = clientId)
-            }
-        }
-    }
 
     override fun sendMedia(
         chatId: String,
@@ -431,14 +453,18 @@ class RemoteChatRepository(
 
         scope.launch {
             // 1) upload the file (and its preview), 2) send a message that points at both.
-            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
-                ?: return@launch
+            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }
+                .getOrElse { error ->
+                    markFailed(chatId, localId)
+                    NcToaster.show("Upload failed — ${error.describeSend()}")
+                    return@launch
+                }
             val thumb = thumbnail?.let { preview ->
                 runCatching { api.uploadMedia("thumb-$fileName", "image/jpeg", preview) }
                     .getOrNull()
                     ?.url
             }
-            val response = runCatching {
+            val created = sendWithRetry {
                 if (isGroup(chatId)) {
                     api.sendGroupMessage(
                         chatId,
@@ -461,8 +487,11 @@ class RemoteChatRepository(
                         fileSize = media.fileSize?.toString()
                     )
                 }
-            }.getOrNull()
-            val created = response?.message ?: return@launch
+            }
+            if (created == null) {
+                markFailed(chatId, localId)
+                return@launch
+            }
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             preview(chatId, body.ifBlank { fileName }, DeliveryState.Sent)
         }
@@ -481,15 +510,117 @@ class RemoteChatRepository(
         send: suspend (clientId: String) -> com.nchat.app.network.MessageEnvelope
     ) {
         scope.launch {
-            val response = runCatching { send(localId) }.getOrNull()
-            val created = response?.message
+            val created = sendWithRetry { send(localId) }
             if (created == null) {
-                // Keep the bubble; it stays in the "sending" state until the next reload,
-                // which is what the reference shows when a send fails.
+                markFailed(chatId, localId)
                 return@launch
             }
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             preview(chatId, body, DeliveryState.Sent)
+        }
+    }
+
+    /**
+     * Three attempts with a growing pause — the reference's `retry({maxRetries: 3, backoff})`.
+     *
+     * Only transient answers are retried: a 4xx is the server saying no (bad receiver, blocked,
+     * rate-limited for real), and repeating it just delays the warning the user needs to see.
+     */
+    private suspend fun sendWithRetry(
+        send: suspend () -> com.nchat.app.network.MessageEnvelope?
+    ): MessageDto? {
+        var attempt = 0
+        while (true) {
+            val result = runCatching { send() }
+            result.getOrNull()?.message?.let { return it }
+            if (result.isSuccess) return null
+            val error = result.exceptionOrNull()
+            val transient = when (error) {
+                is ApiException -> error.status >= 500 || error.status == 429
+                is IOException -> true
+                else -> true
+            }
+            attempt += 1
+            if (!transient || attempt >= SEND_ATTEMPTS) return null
+            delay(1_000L * attempt)
+        }
+    }
+
+    /** Marks a pending bubble as failed and says so — a stuck clock with no message is the bug. */
+    private fun markFailed(chatId: String, localId: String) {
+        updateMessages(chatId) { messages ->
+            messages.map { if (it.id == localId) it.copy(failed = true) else it }
+        }
+        NcToaster.show("Message not sent — tap the warning on it to try again")
+    }
+
+    /**
+     * Reconciles our own message coming back over the socket with the bubble already on screen.
+     *
+     * Keyed by `client_message_id`, so the echo replaces the pending row instead of appearing as
+     * a second copy — and a send whose HTTP answer was lost still ends up looking delivered.
+     */
+    private fun reconcileOwn(chatId: String, dto: MessageDto) {
+        if (chatId.isEmpty()) return
+        val model = dto.toModel(chatId).copy(state = DeliveryState.Sent, failed = false)
+        val key = dto.clientMessageId
+        updateMessages(chatId) { messages ->
+            val index = messages.indexOfFirst { message ->
+                message.id == dto.id || (key != null && message.clientMessageId == key)
+            }
+            when {
+                index >= 0 -> messages.toMutableList().also { it[index] = model }.sortedBy { it.timestamp }
+                else -> (messages + model).sortedBy { it.timestamp }
+            }
+        }
+        preview(chatId, model.text, DeliveryState.Sent)
+    }
+
+    /**
+     * Resend a bubble the server never accepted.
+     *
+     * Voice and media already uploaded keep their URL, so the retry is just the message again;
+     * a clip whose *upload* failed has no file to point at and is reported instead of pretending.
+     */
+    override fun retrySend(chatId: String, messageId: String) {
+        val message = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+        if (!message.failed) return
+        val localId = message.id
+        val resendUrl = message.mediaUrl
+        updateMessages(chatId) { list -> list.map { if (it.id == localId) it.copy(failed = false) else it } }
+        scope.launch {
+            val created = sendWithRetry {
+                when {
+                    resendUrl != null -> api.sendMessage(
+                        chatId,
+                        message.text,
+                        type = message.kind.wireType(),
+                        clientMessageId = localId,
+                        mediaUrl = resendUrl,
+                        thumbnailUrl = message.thumbnailUrl,
+                        duration = message.durationLabel?.let { durationSeconds(it) },
+                        fileName = message.fileName
+                    )
+                    message.kind == MessageKind.Voice || message.kind == MessageKind.Document -> {
+                        // Nothing was uploaded, so there is nothing to re-send.
+                        markFailed(chatId, localId)
+                        return@sendWithRetry null
+                    }
+                    isGroup(chatId) -> api.sendGroupMessage(
+                        chatId,
+                        message.text,
+                        type = message.kind.wireType(),
+                        clientMessageId = localId
+                    )
+                    else -> api.sendMessage(chatId, message.text, clientMessageId = localId)
+                }
+            }
+            if (created == null) {
+                if (stream(chatId).value.firstOrNull { it.id == localId }?.failed != true) markFailed(chatId, localId)
+                return@launch
+            }
+            replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
+            preview(chatId, message.text, DeliveryState.Sent)
         }
     }
 
@@ -717,7 +848,14 @@ class RemoteChatRepository(
             "message:new" -> {
                 val row = event.objectOrNull("message") ?: return
                 val dto = decodeMessage(row)
-                if (dto.senderId == myId) return
+                // Our own message coming back over the socket is the server's acknowledgement
+                // (the worker broadcasts to both participants). The reference uses exactly this
+                // to flip a pending bubble to sent, so a lost or slow HTTP answer can no longer
+                // leave the message stuck on the clock.
+                if (dto.senderId == myId) {
+                    reconcileOwn(dto.receiverId.orEmpty(), dto)
+                    return
+                }
                 // A blocked contact's messages are not shown while the block lasts. Nothing is
                 // deleted — the message stays on the server and is there again after Unblock.
                 if (dto.senderId in blockedIds()) return
@@ -778,8 +916,11 @@ class RemoteChatRepository(
             "group-message:new" -> {
                 val row = event.objectOrNull("message") ?: return
                 val dto = decodeMessage(row)
-                if (dto.senderId == myId) return
                 val chatId = dto.groupId ?: return
+                if (dto.senderId == myId) {
+                    reconcileOwn(chatId, dto)
+                    return
+                }
                 ingest(chatId, dto)
                 bumpPreview(chatId, dto)
             }
@@ -853,7 +994,8 @@ class RemoteChatRepository(
         text = text,
         timestamp = System.currentTimeMillis(),
         isMine = true,
-        state = DeliveryState.Sending
+        state = DeliveryState.Sending,
+        clientMessageId = id
     )
 
     private fun appendLocal(chatId: String, message: Message) {
@@ -1054,13 +1196,14 @@ class RemoteChatRepository(
                 isRead -> DeliveryState.Read
                 else -> DeliveryState.Sent
             },
-            durationLabel = duration,
+            durationLabel = durationLabelOf(duration).takeIf { kind() == MessageKind.Voice } ?: duration,
             fileName = fileName,
             mediaUrl = mediaUrl,
             thumbnailUrl = thumbnailUrl,
             reactions = reactions.toModel(),
             replyText = null,
             isEdited = isEdited,
+            clientMessageId = clientMessageId,
             deleted = isDeleted
         )
     }
@@ -1082,6 +1225,32 @@ class RemoteChatRepository(
         type.equals("document", true) || type.equals("file", true) -> "📎 ${fileName ?: "Document"}"
         type.equals("location", true) -> "📍 Location"
         else -> content
+    }
+
+    /** One short sentence for a toast: what the server said, or why the network did not. */
+    private fun Throwable.describeSend(): String = when (this) {
+        is ApiException -> "server said $status: $message"
+        is IOException -> "no connection"
+        else -> message ?: javaClass.simpleName
+    }
+
+    /** `02:07` → `"127"`. The wire carries seconds, like the reference's `duration`. */
+    private fun durationSeconds(label: String): String {
+        val parts = label.split(":")
+        val seconds = if (parts.size == 2) {
+            (parts[0].toIntOrNull() ?: 0) * 60 + (parts[1].toIntOrNull() ?: 0)
+        } else {
+            parts.lastOrNull()?.toIntOrNull() ?: 0
+        }
+        return seconds.toString()
+    }
+
+    /** Wire seconds → the `m:ss` label the bubble prints. */
+    private fun durationLabelOf(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        if (value.contains(':')) return value
+        val seconds = value.toIntOrNull() ?: return value
+        return "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
     }
 
     private fun MessageKind.wireType(): String = when (this) {
@@ -1153,6 +1322,10 @@ class RemoteChatRepository(
     }
 
     private companion object {
+        /** Messages kept per conversation in memory; matches the page the server returns. */
+        const val MESSAGE_PAGE = 100
+        const val SEND_ATTEMPTS = 3
+
         val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
