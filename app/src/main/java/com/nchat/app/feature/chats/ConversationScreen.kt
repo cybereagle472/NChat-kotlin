@@ -153,6 +153,25 @@ fun ConversationScreen(
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
+
+    /*
+     * Liveness fallback.
+     *
+     * While the realtime socket is up, every message arrives as an event and this does
+     * nothing. The moment it is not — a network handover, a slept socket, a dropped frame —
+     * an open conversation re-reads itself every few seconds, so the screen is never more than
+     * a beat behind the server instead of silently frozen until something else triggers a
+     * refresh. Three seconds is short enough to feel live and long enough to be invisible to
+     * the battery; the loop stops the instant the socket is back and on leaving the screen.
+     */
+    val connection by ServiceLocator.connection.collectAsStateWithLifecycle()
+    LaunchedEffect(chatId, connection) {
+        if (connection == com.nchat.app.network.ConnectionState.Connected) return@LaunchedEffect
+        while (true) {
+            delay(3_000)
+            ServiceLocator.chatRepository.refreshConversation(chatId)
+        }
+    }
     val activeMessageId by viewModel.activeMessageId.collectAsStateWithLifecycle()
     val replyTo by viewModel.replyTo.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current

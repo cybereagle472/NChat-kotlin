@@ -1,6 +1,6 @@
 {
-  "versionCode": 46,
-  "versionName": "1.0.38",
+  "versionCode": 47,
+  "versionName": "1.0.39",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.38 — friends, voice and video. The Friends tab no longer shows \"No friends yet\" when the request itself failed: it retries three times, reloads the list whenever the realtime connection comes back, and prints the reason with a Retry button if it still cannot read it. Media now works in both directions: photos, videos and voice notes sent from the web client store the file URL in the message text rather than a separate media field, so those messages used to arrive as an empty tile or a voice note with nothing to play — both are read now. Tapping a video plays it (real playback with pause and seek instead of a still frame), a clip you send carries its own poster frame, and only one voice note plays at a time."
+  "releaseNotes": "NChat 1.0.39 — built for instant. The realtime socket could previously give up for good (an empty token ended its retry loop) or stall for up to 30 seconds between attempts, and nothing caught up on what was broadcast while it was down — which is why changes showed up a few seconds late. It now reconnects immediately, renews its own login before handshaking, wakes the moment the app comes to the foreground, and re-reads the chat list and open conversations after any gap. Friend requests, accepted invites, new groups, group renames and new statuses are applied straight from the event instead of reloading everything. Typing indicators expire instead of sticking, an open chat keeps itself fresh whenever realtime is down, and a small \"Connecting…\" pill shows the real state."
 }

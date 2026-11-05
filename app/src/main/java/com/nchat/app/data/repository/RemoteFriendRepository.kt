@@ -6,6 +6,7 @@ import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.network.FriendRequestDto
+import com.nchat.app.network.NcJson
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
@@ -19,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
 import java.text.SimpleDateFormat
@@ -89,8 +92,44 @@ class RemoteFriendRepository(
         _blockedIds.value = _blockedPeople.value.map { it.id }.toSet()
         scope.launch {
             socket.events.collect { event ->
+                /*
+                 * Applied from the payload, not by reloading.
+                 *
+                 * Every one of these events already carries what changed (see
+                 * `worker/src/routes/friends.ts`: `friend:request` → `{ request }` with the
+                 * sender's profile, `:105` `friend:accepted` → `{ friend }`, `:216`
+                 * `friend:removed` → `{ userId }`). Calling `refresh()` meant three round
+                 * trips before an incoming request appeared, so a request that arrived while
+                 * the app was open looked late. Only an event we cannot parse falls back to a
+                 * reload.
+                 */
                 when (event.type) {
-                    "friend:request", "friend:accepted", "friend:declined", "friend:removed" -> refresh()
+                    "friend:request" -> {
+                        val row = event.objectOrNull("request")
+                        val dto = row?.let { runCatching { decode<FriendRequestDto>(it) }.getOrNull() }
+                        if (dto == null) refresh() else applyIncoming(dto)
+                    }
+
+                    "friend:accepted" -> {
+                        val row = event.objectOrNull("friend")
+                        val profile = row?.let { runCatching { decode<UserDto>(it) }.getOrNull() }
+                        if (profile == null) refresh() else applyAccepted(profile)
+                    }
+
+                    "friend:declined" -> {
+                        val id = event.string("userId") ?: event.string("user_id")
+                        if (id == null) refresh() else {
+                            _friends.update { rows -> rows.filterNot { it.id == id } }
+                            _pendingSent.update { it - id }
+                        }
+                    }
+
+                    "friend:removed" -> {
+                        val id = event.string("userId") ?: event.string("user_id")
+                        if (id == null) refresh() else {
+                            _friends.update { rows -> rows.filterNot { it.id == id } }
+                        }
+                    }
                 }
             }
         }
@@ -347,6 +386,30 @@ class RemoteFriendRepository(
         }
 
         _friends.value = rows
+    }
+
+    private inline fun <reified T> decode(row: JsonObject): T =
+        NcJson.format.decodeFromJsonElement(row)
+
+    /** Somebody asked to be your friend: show them in Requests immediately. */
+    private fun applyIncoming(request: FriendRequestDto) {
+        val profile = request.senderProfile ?: run { refresh(); return }
+        if (profile.id == myId) return
+        incoming = incoming.filterNot { it.id == request.id } + request
+        _friends.update { rows ->
+            rows.filterNot { it.id == profile.id } +
+                profile.toFriend(FriendRelation.Incoming, requestedAt = isoMillis(request.createdAt))
+        }
+    }
+
+    /** They accepted: they are a friend now, without waiting for a round trip. */
+    private fun applyAccepted(profile: UserDto) {
+        if (profile.id == myId || profile.id.isEmpty()) return
+        _pendingSent.update { it - profile.id }
+        outgoing = outgoing.filterNot { it.receiverId == profile.id }
+        _friends.update { rows ->
+            rows.filterNot { it.id == profile.id } + profile.toFriend(FriendRelation.Friend)
+        }
     }
 
     /** Turns an HTTP/network failure into the sentence a toast shows. */

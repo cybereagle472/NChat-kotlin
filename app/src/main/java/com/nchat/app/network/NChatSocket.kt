@@ -2,6 +2,8 @@ package com.nchat.app.network
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
@@ -22,7 +24,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import kotlin.math.min
 
 enum class ConnectionState { Disconnected, Connecting, Connected }
 
@@ -71,12 +72,39 @@ class NChatSocket(
     val events: SharedFlow<RealtimeEvent> = _events.asSharedFlow()
 
     private var loop: Job? = null
-    private var socket: WebSocket? = null
+    @Volatile private var socket: WebSocket? = null
+
+    /**
+     * Wakes the reconnect loop out of its backoff wait.
+     *
+     * CONFLATED: several nudges in a row collapse into one, and `trySend` never blocks the
+     * caller — [ensureConnected] is called from the UI thread when the app comes back to the
+     * foreground, where a suspend call would be a bug.
+     */
+    private val nudge = Channel<Unit>(Channel.CONFLATED)
 
     fun connect() {
         if (!api.isConfigured) return
         if (loop?.isActive == true) return
         loop = scope.launch { runLoop() }
+    }
+
+    /**
+     * "Be connected now."
+     *
+     * Called when the app returns to the foreground or the network changes. A healthy socket
+     * is left alone; a sleeping one (or one parked in a long backoff after a failure) is
+     * woken immediately instead of waiting out the delay — that wait is invisible to the user
+     * but it is exactly the difference between "instant" and "it arrives a few seconds later".
+     */
+    fun ensureConnected() {
+        if (!api.isConfigured) return
+        if (_state.value == ConnectionState.Connected && socket != null) return
+        if (loop?.isActive != true) {
+            connect()
+            return
+        }
+        nudge.trySend(Unit)
     }
 
     fun disconnect() {
@@ -91,14 +119,28 @@ class NChatSocket(
         var attempt = 0
         while (currentCoroutineContext().isActive) {
             val userId = tokens.userId
-            val token = tokens.accessToken
-            if (userId.isNullOrEmpty() || token.isNullOrEmpty()) {
+            if (userId.isNullOrEmpty()) {
+                // Signed out (or mid-sign-in). Wait instead of dying: this loop used to return
+                // here, and nothing ever restarted it, so the app stayed offline after a single
+                // refresh race at exactly the wrong moment.
                 _state.value = ConnectionState.Disconnected
-                return
+                delay(1_000)
+                continue
+            }
+
+            var token = tokens.accessToken
+            if (token.isNullOrEmpty()) {
+                _state.value = ConnectionState.Connecting
+                token = api.renewAccessToken()
+                if (token.isNullOrEmpty()) {
+                    delay(1_000)
+                    continue
+                }
             }
 
             _state.value = ConnectionState.Connecting
             val closed = CompletableDeferred<Unit>()
+            var unauthorized = false
             val request = Request.Builder()
                 .url("${api.socketRoot}/realtime/connect?room=user:$userId&token=$token")
                 .build()
@@ -124,6 +166,10 @@ class NChatSocket(
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        // The handshake is the one place the access token is checked: a 401 here
+                        // means the 15-minute token had expired, and retrying with the same one
+                        // would loop until the user restarted the app. Renew first.
+                        if (response?.code == 401) unauthorized = true
                         closed.complete(Unit)
                     }
                 }
@@ -133,10 +179,34 @@ class NChatSocket(
             socket = null
             if (!currentCoroutineContext().isActive) break
 
+            if (unauthorized) {
+                // Renew once; if the refresh token is gone this signs the session out and the
+                // `tokens.userId` check above parks the loop instead of hammering the server.
+                api.renewAccessToken()
+            }
+
             _state.value = ConnectionState.Connecting
             attempt += 1
-            val backoff = min(30_000L, 1_000L shl min(attempt, 5))
-            delay(backoff)
+            /*
+             * Fast first, patient later.
+             *
+             * This used to start at 2 s and climb to 30 s, so a socket that dropped for any
+             * reason — app backgrounded, tunnel, wifi handover — left the account receiving
+             * nothing for tens of seconds, and every missed message had to be discovered by a
+             * manual refresh. WhatsApp's first reconnect attempt is immediate; only a genuinely
+             * unreachable server earns a long wait. Capped at 8 s so a dead network costs the
+             * user one missed tick, not a stall.
+             */
+            val backoff = when (attempt) {
+                1 -> 0L
+                2 -> 250L
+                3 -> 500L
+                4 -> 1_000L
+                5 -> 2_000L
+                else -> 8_000L
+            }
+            // A foreground nudge (or a network change) skips the wait entirely.
+            if (backoff > 0L) withTimeoutOrNull(backoff) { nudge.receive() }
         }
         _state.value = ConnectionState.Disconnected
     }

@@ -25,6 +25,16 @@ interface ChatRepository {
     /** Reloads chats + groups now (used by the retry button). */
     fun refresh()
     fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>>
+
+    /**
+     * Re-reads one conversation from the server.
+     *
+     * Real-time normally means the socket pushes the change; this is the safety net for the
+     * moments it cannot (the connection is down, or a frame was lost). An open chat calls it
+     * while realtime is offline, so the screen falls back to "a couple of seconds" instead of
+     * "whenever something else happens to refresh".
+     */
+    fun refreshConversation(chatId: String)
     fun sendMessage(
         chatId: String,
         text: String,
