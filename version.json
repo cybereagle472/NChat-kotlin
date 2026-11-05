@@ -1,6 +1,6 @@
 {
-  "versionCode": 45,
-  "versionName": "1.0.37",
+  "versionCode": 46,
+  "versionName": "1.0.38",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.37 — the reason messages stopped going, fixed at the root. Every send carried an id like \"local-1\", \"local-2\"… that restarted from one on each launch, and the server uses that id as its duplicate key: from the second session onwards every message matched an older message from the same account, so the server answered with that old row, stored nothing and delivered nothing. Ids are now real UUIDs (exactly what the web client generates), so every message is new and actually goes out — in 1:1 chats and in groups, whose duplicate key also includes the group id, which is why groups kept working longer. Pending messages can no longer be edited or deleted as if they had a server id, and a queue left over from an older build is discarded instead of replayed."
+  "releaseNotes": "NChat 1.0.38 — friends, voice and video. The Friends tab no longer shows \"No friends yet\" when the request itself failed: it retries three times, reloads the list whenever the realtime connection comes back, and prints the reason with a Retry button if it still cannot read it. Media now works in both directions: photos, videos and voice notes sent from the web client store the file URL in the message text rather than a separate media field, so those messages used to arrive as an empty tile or a voice note with nothing to play — both are read now. Tapping a video plays it (real playback with pause and seek instead of a still frame), a clip you send carries its own poster frame, and only one voice note plays at a time."
 }

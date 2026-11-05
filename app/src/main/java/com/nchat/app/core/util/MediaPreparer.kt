@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayOutputStream
@@ -44,6 +45,26 @@ object MediaPreparer {
 
     /** True when the pick is an image we can re-encode (everything else is sent untouched). */
     fun canCompress(mimeType: String): Boolean = mimeType.startsWith("image/")
+
+    /**
+     * The first frame of a picked video, as a small JPEG — the clip's poster.
+     *
+     * `thumbnail_url` is what a bubble paints before (and instead of) streaming the file, so a
+     * video sent without one showed as a black rectangle until it was played. Android can read
+     * the frame without decoding the whole clip, so this is cheap enough to run on send.
+     * Returns null when the file cannot be read; the bubble then falls back to its dark tile.
+     */
+    fun videoPoster(context: Context, uri: Uri): ByteArray? = runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: return@runCatching null
+            encode(scaleDown(frame, THUMB_DIMENSION), THUMB_QUALITY)
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }.getOrNull()
 
     /**
      * Decodes [uri], applies its EXIF rotation, downscales it and returns JPEG bytes plus a

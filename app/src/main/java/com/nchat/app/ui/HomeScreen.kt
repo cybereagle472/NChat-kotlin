@@ -108,6 +108,7 @@ fun HomeScreen(
     val discoverGraph = remember(visibleGraph, chatOnlyFriends) {
         visibleGraph + chatOnlyFriends
     }
+    val friendGraphError by ServiceLocator.friendRepository.graphError.collectAsStateWithLifecycle()
     val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
@@ -130,11 +131,19 @@ fun HomeScreen(
     val connection by ServiceLocator.connection.collectAsStateWithLifecycle()
     LaunchedEffect(connection) {
         if (connection != com.nchat.app.network.ConnectionState.Connected) return@LaunchedEffect
-        if (chats.isNotEmpty() || friendGraph.isNotEmpty()) return@LaunchedEffect
-        ServiceLocator.chatRepository.refresh()
+        /*
+         * Each source is checked on its own.
+         *
+         * This used to bail out entirely as soon as *anything* was on screen
+         * (`if (chats.isNotEmpty() || friendGraph.isNotEmpty()) return`), so an account whose
+         * chats loaded but whose friend list did not never retried the friend list — the one
+         * combination that leaves the Friends tab empty forever while everything else looks
+         * fine.
+         */
+        if (chats.isEmpty()) ServiceLocator.chatRepository.refresh()
         ServiceLocator.friendRepository.refresh()
-        ServiceLocator.statusRepository.refresh()
-        ServiceLocator.callRepository.refresh()
+        if (statuses.isEmpty()) ServiceLocator.statusRepository.refresh()
+        if (calls.isEmpty()) ServiceLocator.callRepository.refresh()
     }
     LaunchedEffect(chats.size, friendGraph.size, retryTick) {
         if (chats.isNotEmpty() || friendGraph.isNotEmpty()) {
@@ -230,6 +239,11 @@ fun HomeScreen(
                         onSearch = { ServiceLocator.friendRepository.search(it) },
                         sentRequestIds = pendingSent,
                         chatIds = chatPeerIds,
+                        loadError = friendGraphError,
+                        onRetry = {
+                            ServiceLocator.friendRepository.refresh()
+                            ServiceLocator.chatRepository.refresh()
+                        },
                         onAddFriend = { ServiceLocator.friendRepository.sendRequest(it) },
                         onCancelRequest = { ServiceLocator.friendRepository.cancelRequest(it) },
                         onAcceptRequest = { ServiceLocator.friendRepository.accept(it) },

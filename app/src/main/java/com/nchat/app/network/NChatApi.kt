@@ -508,5 +508,24 @@ class NChatApi(private val client: ApiClient) {
 
     private fun body(block: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject(block)
 
-    private inline fun <reified T> decode(raw: String): T = NcJson.format.decodeFromString<T>(raw)
+    /**
+     * JSON → DTO, with a parse failure written to [ApiLog].
+     *
+     * A `SerializationException` here never reaches the screen: every repository wraps its
+     * call in `runCatching { … }.getOrDefault(emptyList())`, so a shape mismatch looks exactly
+     * like an empty account. Recording it means Settings ▸ Sync check names the type that
+     * failed instead of showing a healthy `200` for a request nothing could read.
+     */
+    private inline fun <reified T> decode(raw: String): T = try {
+        NcJson.format.decodeFromString<T>(raw)
+    } catch (error: Throwable) {
+        ApiLog.record(
+            method = "PARSE",
+            path = T::class.simpleName ?: "payload",
+            status = null,
+            millis = 0L,
+            error = error.message?.take(200) ?: error.javaClass.simpleName
+        )
+        throw error
+    }
 }

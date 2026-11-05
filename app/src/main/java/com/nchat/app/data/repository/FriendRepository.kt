@@ -61,4 +61,13 @@ interface FriendRepository {
     /** Last action failure, for a one-shot toast. Cleared by [clearActionError]. */
     val actionError: StateFlow<String?>
     fun clearActionError()
+
+    /**
+     * Why the friend graph could not be read, or null when the last load worked.
+     *
+     * The Friends tab used to answer every failure with "No friends yet" — an empty array and a
+     * broken request looked identical, and the only way to tell them apart was Settings ▸ Sync
+     * check. This carries the reason to the screen that shows the empty state.
+     */
+    val graphError: StateFlow<String?>
 }
