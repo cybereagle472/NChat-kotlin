@@ -29,6 +29,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,7 +40,6 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * `ChatRepository` against the Rust backend.
@@ -65,7 +65,6 @@ class RemoteChatRepository(
     private val outbox: OutboxStore? = null
 ) : ChatRepository {
 
-    private val localIds = AtomicLong(0L)
 
     /** How many messages a conversation keeps in memory; matches the server's page size. */
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
@@ -97,6 +96,29 @@ class RemoteChatRepository(
     /** Pins and mutes are client-side, exactly like the reference (no server column). */
     private val pinned = mutableSetOf<String>()
     private val localMutes = mutableSetOf<String>()
+
+    /**
+     * A fresh id for one send — a UUID, exactly what the reference's `generateClientMessageId()`
+     * (src/utils/offlineStorage.ts:118) returns.
+     *
+     * This id is `client_message_id`, and the worker treats it as an **idempotency key**
+     * (`worker/src/routes/messages.ts:147-152`):
+     *
+     * ```sql
+     * SELECT * FROM messages WHERE sender_id = ? AND client_message_id = ?
+     * ```
+     *
+     * If it matches anything, the server answers with that old row, stores nothing and
+     * broadcasts nothing. The app used to number sends from 1 again on every launch
+     * ("local-1", "local-2", …), so from the second session onwards *every* send matched an
+     * older message from the same account: the server returned an old message, the recipient
+     * never got anything, and the bubble flipped to whatever that old row was — messages that
+     * simply never "went". Group sends collide less often because their key also includes the
+     * group id, which is why groups kept working longer than 1:1.
+     */
+    private fun newClientId(): String =
+        runCatching { "c-" + UUID.randomUUID().toString() }
+            .getOrElse { "c-${System.currentTimeMillis()}-${(0..1_000_000).random()}" }
 
     private val myId: String get() = tokens.userId.orEmpty()
     private val myName: String get() = tokens.fullName ?: "You"
@@ -349,7 +371,7 @@ class RemoteChatRepository(
     ) {
         val body = text.trim()
         if (body.isEmpty()) return
-        val localId = "local-${localIds.incrementAndGet()}"
+        val localId = newClientId()
         appendLocal(
             chatId = chatId,
             message = baseMessage(chatId, localId, body).copy(
@@ -383,7 +405,7 @@ class RemoteChatRepository(
         fileName: String,
         durationLabel: String
     ) {
-        val localId = "local-${localIds.incrementAndGet()}"
+        val localId = newClientId()
         appendLocal(
             chatId = chatId,
             message = baseMessage(chatId, localId, "Voice message").copy(
@@ -484,7 +506,7 @@ class RemoteChatRepository(
         caption: String?,
         thumbnail: ByteArray?
     ) {
-        val localId = "local-${localIds.incrementAndGet()}"
+        val localId = newClientId()
         val body = caption?.trim().orEmpty()
         appendLocal(
             chatId = chatId,
@@ -691,6 +713,18 @@ class RemoteChatRepository(
         }
     }
 
+    /**
+     * True while a bubble exists only on this device.
+     *
+     * A pending message's `id` *is* the id we minted for the send (`clientMessageId`); once the
+     * server answers, the bubble carries the server's id and the client id separately. Edit /
+     * react / delete must not be sent to the API before that.
+     */
+    private fun isPending(chatId: String, messageId: String): Boolean {
+        val message = stream(chatId).value.firstOrNull { it.id == messageId } ?: return true
+        return message.clientMessageId == message.id
+    }
+
     /** Marks a pending bubble as failed and says so — a stuck clock with no message is the bug. */
     private fun markFailed(chatId: String, localId: String) {
         updateMessages(chatId) { messages ->
@@ -800,7 +834,7 @@ class RemoteChatRepository(
                 else message.copy(text = body, isEdited = true)
             }
         }
-        if (messageId.startsWith("local-")) return
+        if (isPending(chatId, messageId)) return
         scope.launch {
             val response = runCatching { api.editMessage(messageId, body) }.getOrNull()
             val updated = response?.message ?: return@launch
@@ -818,7 +852,7 @@ class RemoteChatRepository(
                 else message.copy(reactions = message.reactions.toggle(emoji))
             }
         }
-        if (messageId.startsWith("local-")) return
+        if (isPending(chatId, messageId)) return
         scope.launch {
             val response = runCatching {
                 if (isGroup(chatId)) api.reactToGroupMessage(messageId, emoji)
@@ -841,7 +875,7 @@ class RemoteChatRepository(
                 messages.filterNot { it.id == messageId }
             }
         }
-        if (messageId.startsWith("local-")) return
+        if (isPending(chatId, messageId)) return
         scope.launch {
             runCatching {
                 when {
@@ -858,7 +892,7 @@ class RemoteChatRepository(
 
     override fun createGroup(name: String, description: String, memberIds: List<String>): Group {
         val placeholder = Group(
-            id = "local-group-${localIds.incrementAndGet()}",
+            id = newClientId(),
             name = name,
             description = description,
             memberCount = memberIds.size + 1,
