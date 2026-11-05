@@ -55,6 +55,32 @@ data class Message(
     val deleted: Boolean = false
 )
 
+/** Where a call on screen currently is. */
+enum class CallState { Ringing, Connected, Ended }
+
+/**
+ * One call, as the call screen shows it.
+ *
+ * Every field is decided by the server — the id comes from `POST /calls`, [state] moves on
+ * `call:answered` / `call:ended`, and [startedAt] is the moment the other side actually
+ * answered, so the timer counts from the truth rather than from a local animation.
+ */
+@Immutable
+data class ActiveCall(
+    val id: String,
+    val peerId: String,
+    val peerName: String,
+    val peerAvatarUrl: String? = null,
+    val isVideo: Boolean = false,
+    /** True when the other person called us — the screen offers Answer/Decline. */
+    val incoming: Boolean = false,
+    val state: CallState = CallState.Ringing,
+    /** `System.currentTimeMillis()` of the answer; 0 while ringing. */
+    val startedAt: Long = 0L,
+    /** How it finished ("Declined", "Missed"), shown for a moment before the screen closes. */
+    val note: String? = null
+)
+
 /** A row in the Chats tab. */
 @Immutable
 @Serializable
@@ -74,6 +100,14 @@ data class Chat(
     val unreadCount: Int = 0,
     val isTyping: Boolean = false,
     val isRecording: Boolean = false,
+    /**
+     * Who is typing, for group chats.
+     *
+     * The worker sends it (`groups.ts:575` → `{ type:'group-typing', group_id, sender_id,
+     * is_typing }`) but only the boolean was kept, so the UI had to *guess* the name — it
+     * credited whoever spoke last. Null for 1:1 chats, where the other side is implicit.
+     */
+    val typingUserId: String? = null,
     val pinned: Boolean = false,
     val muted: Boolean = false
 )

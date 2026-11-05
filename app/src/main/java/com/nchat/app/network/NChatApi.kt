@@ -255,8 +255,6 @@ class NChatApi(private val client: ApiClient) {
         client.delete("/groups/$id")
     }
 
-    suspend fun groupMembers(id: String): MembersEnvelope = decode(client.get("/groups/$id/members"))
-
     suspend fun addGroupMembers(id: String, memberIds: List<String>): GroupEnvelope =
         decode(
             client.post(

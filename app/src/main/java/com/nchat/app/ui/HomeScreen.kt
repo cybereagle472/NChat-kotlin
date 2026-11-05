@@ -250,7 +250,8 @@ fun HomeScreen(
                         mutedAuthorIds = mutedAuthors,
                         onMuteAuthor = { ServiceLocator.statusRepository.mute(it) },
                         onUnmuteAuthor = { ServiceLocator.statusRepository.unmute(it) },
-                        loadViewers = { id -> ServiceLocator.statusRepository.viewers(id) }
+                        loadViewers = { id -> ServiceLocator.statusRepository.viewers(id) },
+                        onMarkViewed = { id -> ServiceLocator.statusRepository.markViewed(id) }
                     )
 
                     HomeTab.Groups -> GroupsScreen(
