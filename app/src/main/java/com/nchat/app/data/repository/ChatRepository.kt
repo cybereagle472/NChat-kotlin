@@ -58,6 +58,16 @@ interface ChatRepository {
         thumbnail: ByteArray? = null
     )
     /**
+     * Shares a position as a `location` message.
+     *
+     * The worker has no column for coordinates: a location is `type = "location"` with the
+     * position in `content`, which is exactly how the reference web app writes it and reads it
+     * back. Six decimals is ~11 cm — more than a phone's GPS can justify, and it keeps the
+     * message readable as `lat,lng` on every client.
+     */
+    fun sendLocation(chatId: String, latitude: Double, longitude: Double)
+
+    /**
      * Sends a recorded voice message: the clip is uploaded and the message carries its
      * `media_url`, which is what makes the other side actually hear something.
      *

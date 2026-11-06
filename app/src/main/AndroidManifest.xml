@@ -12,11 +12,17 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- New-message notifications (`NcNotifications`). Android 13+ asks the user at runtime. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- "Send my location" (`Locator`). Coarse is enough to place somebody in a city; fine is
+         asked for as well so the fix can be the accurate one when the user allows it. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- A phone without a camera can still make voice calls; a tablet without a mic cannot
          call at all, but it can still chat, so neither feature is required. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <queries>
         <intent>

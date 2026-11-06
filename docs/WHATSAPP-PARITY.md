@@ -28,7 +28,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | Pin a message in the chat | ✅ | ❌ planned 1.0.51 | — |
 | Per-message info ("read by") | ✅ | ❌ planned 1.0.51 | — |
 | In-app camera capture | ✅ | ❌ planned 1.0.51 (only pickers today) | — |
-| Send a location | ✅ | 🟡 model + bubble exist, no producer | `MessageKind.Location` |
+| Send a location | ✅ | ✅ 1.0.53 — `Locator` (cached fix, else one fresh fix, 9 s budget), `type=location` + `lat,lng`, queued offline, tap opens Maps | `Locator` |
 | View-once media | ✅ | ❌ later | — |
 | Disappearing messages | ✅ | ⛔ server has no TTL column | — |
 

@@ -252,6 +252,11 @@ class ConversationViewModel(
         _replyTo.value = null
     }
 
+    /** Shares a position the composer resolved (`Locator`). */
+    fun onSendLocation(latitude: Double, longitude: Double) {
+        repository.sendLocation(chatId, latitude, longitude)
+    }
+
     /** A real attachment: the bytes are uploaded, then the message points at them. */
     fun onSendMedia(kind: MessageKind, file: PickedFile) {
         repository.sendMedia(

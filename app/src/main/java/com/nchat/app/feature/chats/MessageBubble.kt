@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -339,7 +340,7 @@ fun MessageBubble(
                     name = message.fileName ?: "document.pdf",
                     mine = mine
                 )
-                MessageKind.Location -> LocationContent(mine = mine)
+                MessageKind.Location -> LocationContent(mine = mine, raw = message.text)
                 MessageKind.Video -> VideoContent(
                     mine = mine,
                     mediaUrl = message.mediaUrl,
@@ -1370,13 +1371,35 @@ private fun DocumentContent(name: String, mine: Boolean) {
     }
 }
 
+/**
+ * A shared position.
+ *
+ * The wire format is `type = "location"` with `lat,lng` in `content` (the same thing the reference
+ * web app writes), so the bubble parses those numbers and offers the only action that makes a
+ * location useful: open it in a map. A `location` message that carries a URL or free text instead
+ * still renders, just without the map hand-off.
+ */
 @Composable
-private fun LocationContent(mine: Boolean) {
+private fun LocationContent(mine: Boolean, raw: String) {
+    val context = LocalContext.current
+    val coords = remember(raw) { parseCoordinates(raw) }
+    val label = remember(raw, coords) {
+        coords?.let { (lat, lon) -> String.format(java.util.Locale.US, "%.5f, %.5f", lat, lon) }
+            ?: raw.ifBlank { "Shared location" }
+    }
     Row(
         modifier = Modifier
-            .width(200.dp)
+            .width(210.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (mine) Color(0x26FFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .clickable(enabled = coords != null) {
+                val (lat, lon) = coords ?: return@clickable
+                val intent = android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("geo:$lat,$lon?q=$lat,$lon")
+                )
+                runCatching { context.startActivity(intent) }
+            }
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1386,11 +1409,35 @@ private fun LocationContent(mine: Boolean) {
             tint = if (mine) Color.White else MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
-        Text(
-            text = "Shared live location",
-            fontSize = 12.sp,
-            color = if (mine) Color.White else NcTheme.extra.bubbleIncomingText,
-            modifier = Modifier.padding(start = 8.dp)
-        )
+        Column(modifier = Modifier.padding(start = 8.dp)) {
+            Text(
+                text = "Location",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (mine) Color.White else NcTheme.extra.bubbleIncomingText
+            )
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = if (mine) Color.White else NcTheme.extra.bubbleIncomingText
+            )
+            if (coords != null) {
+                Text(
+                    text = "Tap to open in Maps",
+                    fontSize = 10.sp,
+                    color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.bubbleMeta
+                )
+            }
+        }
     }
+}
+
+/** `lat,lng` out of a location message, or null when the content is not a position. */
+private fun parseCoordinates(raw: String): Pair<Double, Double>? {
+    val match = Regex("(-?\\d{1,3}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)")
+        .find(raw) ?: return null
+    val latitude = match.groupValues[1].toDoubleOrNull() ?: return null
+    val longitude = match.groupValues[2].toDoubleOrNull() ?: return null
+    if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return null
+    return latitude to longitude
 }
