@@ -370,3 +370,35 @@ Rules this section exists to protect:
   so the old freeze-the-timer version produced clips containing exactly what the user thought
   they had paused. `stop()` resumes first, because an MP4 that never leaves the paused
   substate is not finalised.
+
+## 16. Messages: previews, deletion, replies, reactions, forwarding (1.0.46)
+
+| Behaviour | Wire | Where |
+|---|---|---|
+| Delete for everyone (1:1) | `DELETE /messages/:id` — sender only, no time limit; broadcasts `message:delete` | `RemoteChatRepository.deleteMessage` |
+| Delete for me (1:1) | `POST /messages/:id/delete-for-me` — appends to `deleted_for`; **not** broadcast | same |
+| Delete for everyone (group) | `POST /groups/messages/:id/delete-for-everyone` — **one-hour window**, `403`/`400` otherwise; broadcasts `group-message:delete` | same |
+| Delete for me (group) | `POST /groups/messages/:id/delete-for-me` | same |
+| Reply | `reply_to` on `POST /messages` and `POST /groups/:id/messages` | `Message.replyToId`, resolved by `linkQuotes()` |
+| React | `POST /messages/:id/reaction`, `POST /groups/messages/:id/reaction` — broadcasts `message:reaction` / `group-message:reaction` | `toggleReaction` |
+| Forward | plain `POST /messages` / `POST /groups/:id/messages` with the original `type`, `media_url`, `thumbnail_url`, `fileName`, `duration` (`chatService.ts:697-737`) | `forwardMessage` |
+
+Rules this section exists to protect:
+
+- **A preview is derived, never written by hand.** `Message.snippet()` is the only description
+  of a message: the chat list, the reply quote and the group's last activity all read it. A
+  hand-written string per call site is how a photo row ended up printing its URL.
+- **`deleted_for` is filtered on the client too.** `GET /messages/with/:id` drops rows the
+  requester deleted; `GET /groups/:id/messages` does not, so the merge filters it — otherwise a
+  group message deleted "for me" returns on the next refresh.
+- **Deleting a queued message cancels the send.** `OutboxStore.remove(clientId)` plus (for voice)
+  `VoiceClipStore.delete` — otherwise the next flush delivers it.
+- **A refused delete is undone out loud.** The bubble is restored and the server's reason shown;
+  a tombstone the server never accepted is a lie that a refresh corrects at random.
+- **Deletion is a tombstone on both sides.** The live event and the history row must render the
+  same thing, or the message appears to come back a second later.
+- **A reply carries an id, not a copy.** Only `reply_to` travels; the author and text are
+  resolved from the conversation on each device, so an edited (or deleted) quoted message reads
+  correctly everywhere.
+- **Forwarding copies the message, not its description.** The file URL and type travel with it;
+  a forwarded photo is a photo.

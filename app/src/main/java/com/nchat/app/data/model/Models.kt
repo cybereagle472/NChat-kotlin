@@ -167,6 +167,14 @@ data class Chat(
     val lastMessageKind: MessageKind = MessageKind.Text,
     val lastMessageMine: Boolean = false,
     val lastMessageState: DeliveryState? = null,
+    /**
+     * The newest message never reached the server.
+     *
+     * The list used to keep showing a sending tick for a message that had already given up, so
+     * the row said "sent" while the bubble inside said "not sent". A failed send now reads as
+     * failed in both places.
+     */
+    val lastMessageFailed: Boolean = false,
     val unreadCount: Int = 0,
     val isTyping: Boolean = false,
     val isRecording: Boolean = false,

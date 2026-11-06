@@ -823,9 +823,14 @@ class RemoteChatRepository(
      * `:697-737`), which is the only way the recipient gets a photo and not a caption.
      */
     override fun forwardMessage(targetChatId: String, source: Message) {
+        // A tombstone has nothing to forward — it would arrive as the words "This message was
+        // deleted", which is the one thing forwarding must never do.
+        if (source.deleted) return
         val media = source.mediaUrl?.takeIf { it.isRemoteUrl() }
-        if (media == null || source.kind == MessageKind.Text) {
-            sendMessage(targetChatId, source.text.ifBlank { "Forwarded message" })
+        if (source.kind != MessageKind.Text && media == null) {
+            // The file is not on the server (a clip whose upload never finished): forward what
+            // can be forwarded instead of a bubble with nothing behind it.
+            sendMessage(targetChatId, source.snippet().ifBlank { "Forwarded message" })
             return
         }
         val localId = newClientId()
@@ -1091,6 +1096,8 @@ class RemoteChatRepository(
                 // Not uploaded yet: play it from the phone. The author hears their own note
                 // straight away, offline included, instead of tapping a bubble with no audio.
                 mediaUrl = entry.mediaUrl ?: entry.localFile?.let { "file://$it" },
+                // A queued reply keeps its quote across a restart; `linkQuotes` fills the text.
+                replyToId = entry.replyTo,
                 clientMessageId = entry.clientId
             )
         }
@@ -1122,6 +1129,8 @@ class RemoteChatRepository(
         updateMessages(chatId) { messages ->
             messages.map { if (it.id == localId) it.copy(failed = true) else it }
         }
+        // The chat list quotes this message; it has to say "not sent" too.
+        previewFromLast(chatId)
         val reason = detail?.takeIf { it.isNotBlank() }
         NcToaster.show(
             if (reason != null) "Message not sent — $reason"
@@ -1784,7 +1793,14 @@ class RemoteChatRepository(
     private fun replaceLocal(chatId: String, localId: String, message: Message) {
         updateMessages(chatId) { messages ->
             val withoutLocal = messages.filterNot { it.id == localId }
-            (withoutLocal + message).distinctBy { it.id }.sortedBy { it.timestamp }
+            /*
+             * The server has no `forwarded` column (0001_init.sql), so the flag only ever
+             * exists on the device that did the forwarding — keep it across the swap, or the
+             * label vanishes the moment the send is acknowledged.
+             */
+            val wasForwarded = messages.firstOrNull { it.id == localId }?.forwarded == true
+            val merged = if (wasForwarded && !message.forwarded) message.copy(forwarded = true) else message
+            (withoutLocal + merged).distinctBy { it.id }.sortedBy { it.timestamp }
         }
     }
 
@@ -1837,6 +1853,7 @@ class RemoteChatRepository(
                     lastMessageKind = message.kind,
                     lastMessageMine = true,
                     lastMessageState = state,
+                    lastMessageFailed = false,
                     isTyping = false,
                     isRecording = false
                 )
@@ -1899,7 +1916,8 @@ class RemoteChatRepository(
                         lastMessage = "",
                         lastMessageKind = MessageKind.Text,
                         lastMessageMine = false,
-                        lastMessageState = null
+                        lastMessageState = null,
+                        lastMessageFailed = false
                     )
                 }
             }
@@ -1914,7 +1932,8 @@ class RemoteChatRepository(
                     lastMessageAt = newest.timestamp,
                     lastMessageKind = newest.kind,
                     lastMessageMine = newest.isMine,
-                    lastMessageState = if (newest.isMine) newest.state else null
+                    lastMessageState = if (newest.isMine) newest.state else null,
+                    lastMessageFailed = newest.isMine && newest.failed
                 )
             }
         }

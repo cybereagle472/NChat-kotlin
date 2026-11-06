@@ -516,7 +516,11 @@ fun ConversationScreen(
                 NcToaster.show("Message copied")
             },
             onForward = {
-                forwardingId = activeMessage.id
+                if (activeMessage.deleted) {
+                    NcToaster.show("This message was deleted")
+                } else {
+                    forwardingId = activeMessage.id
+                }
                 viewModel.onSelectMessage(null)
             },
             onDelete = {
@@ -614,7 +618,7 @@ fun ConversationScreen(
 
     pendingDelete?.let { doomed ->
         DeleteMessageDialog(
-            canDeleteForEveryone = canDeleteForEveryone(doomed),
+            canDeleteForEveryone = canDeleteForEveryone(doomed, isGroupChat),
             onDismiss = { pendingDelete = null },
             // The confirmation is the server's, not the tap's: `deleteMessage` reports what
             // actually happened (and puts the message back if the worker refused it).
@@ -1008,11 +1012,19 @@ private fun EmptyConversation(title: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** The reference lets you recall your own message for everyone within an hour. */
-private fun canDeleteForEveryone(message: Message): Boolean =
+/**
+ * Whether "delete for everyone" is offered.
+ *
+ * The two backends do not agree, and the UI has to follow each of them: a **group** message can
+ * be recalled for an hour (`groups.ts:513-521` rejects anything older with a 400), while a
+ * **1:1** message has no window at all — `messages.ts:247` only checks that the caller is the
+ * sender. The old code applied the group's hour to both, so a direct message older than an hour
+ * was unrecallable on the phone while the web app happily recalled it.
+ */
+private fun canDeleteForEveryone(message: Message, isGroup: Boolean): Boolean =
     message.isMine &&
         !message.deleted &&
-        System.currentTimeMillis() - message.timestamp < 60 * 60 * 1000L
+        (!isGroup || System.currentTimeMillis() - message.timestamp < 60 * 60 * 1000L)
 
 /**
  * `GroupMessageActions` delete confirmation: pick "Delete for Everyone" (own message,

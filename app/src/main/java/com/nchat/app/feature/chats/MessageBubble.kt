@@ -761,9 +761,16 @@ private fun VoiceContent(
     }
 
     val accent = if (mine) Color.White else MaterialTheme.colorScheme.primary
+    /*
+     * Width grows with the clip, like the reference bubble (`width = min(284, 176 + seconds*2.6)`):
+     * a two-second "ok" is a stub, a two-minute note is a bar big enough to scrub. Capped a little
+     * under the reference because the bubble's own padding sits inside a 300 dp container.
+     */
+    val widthSeconds = (labelledMs / 1000f).coerceAtLeast(1f)
+    val voiceWidth = (176f + widthSeconds * 2.6f).coerceIn(176f, 264f).dp
     Row(
         modifier = Modifier
-            .width(190.dp)
+            .width(voiceWidth)
             .clip(RoundedCornerShape(12.dp))
             .clickable { toggle() }
             .padding(vertical = 2.dp),
@@ -819,6 +826,7 @@ private fun VoiceContent(
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
@@ -828,7 +836,9 @@ private fun VoiceContent(
                     val played = (index + 1).toFloat() / levels.size <= progress + 0.001f
                     Box(
                         modifier = Modifier
-                            .width(2.dp)
+                            // Shares the bar's width, so a longer clip draws wider bars instead
+                            // of the same 96 dp cluster in a wider box.
+                            .weight(1f)
                             .height(barHeight)
                             .clip(RoundedCornerShape(1.dp))
                             .background(
