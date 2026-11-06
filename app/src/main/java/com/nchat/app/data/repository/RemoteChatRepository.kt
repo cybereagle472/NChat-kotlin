@@ -489,7 +489,9 @@ class RemoteChatRepository(
     private fun stream(chatId: String): MutableStateFlow<List<Message>> =
         synchronized(conversations) {
             conversations.getOrPut(chatId) {
-                MutableStateFlow(emptyList()).also { flow -> mirrorToDisk(chatId, flow) }
+                // Explicit type argument: `.also {}` breaks the expected-type inference that
+                // `getOrPut` would otherwise give `emptyList()`.
+                MutableStateFlow<List<Message>>(emptyList()).also { flow -> mirrorToDisk(chatId, flow) }
             }
         }
 
