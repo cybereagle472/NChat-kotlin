@@ -4,12 +4,14 @@ import android.content.Context
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import com.nchat.app.data.local.BlockedContactsStore
+import com.nchat.app.data.local.DraftStore
 import com.nchat.app.core.network.NetworkMonitor
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
@@ -211,9 +213,24 @@ object ServiceLocator {
      */
     private val voiceClips by lazy { VoiceClipStore(requireContext()) }
 
+    /** Unfinished composer text per conversation, restored when the chat is reopened. */
+    val drafts: DraftStore by lazy { DraftStore(requireContext()) }
+
+    /** Private, per-device starred messages behind "Starred messages". */
+    val stars: StarredStore by lazy { StarredStore(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
-        RemoteAuthRepository(api, tokens, appScope, chatCache)
+        RemoteAuthRepository(
+            api = api,
+            tokens = tokens,
+            scope = appScope,
+            cache = chatCache,
+            clearLocalState = {
+                drafts.clearAll()
+                stars.clearAll()
+            }
+        )
     }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)

@@ -8,18 +8,25 @@ import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.core.util.PickedFile
+import com.nchat.app.data.local.DraftStore
 import com.nchat.app.data.repository.ChatRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.stateIn
 
 class ConversationViewModel(
     val chatId: String,
     val chatTitle: String,
-    private val repository: ChatRepository
+    private val repository: ChatRepository,
+    /** Restores the half-written message a previous visit left in this chat. */
+    private val drafts: DraftStore? = null
 ) : ViewModel() {
 
     val messages: StateFlow<List<Message>> = repository.conversation(chatId, chatTitle)
@@ -45,7 +52,22 @@ class ConversationViewModel(
     private val _replyTo = MutableStateFlow<Message?>(null)
     val replyTo: StateFlow<Message?> = _replyTo.asStateFlow()
 
+    /**
+     * Messages ticked for a bulk action (forward / delete / copy).
+     *
+     * Long-pressing a bubble opens the action menu, and **Select** from that menu puts the
+     * conversation into selection mode — the same two-step WhatsApp uses, so a long press never
+     * surprise-ticks anything.
+     */
+    private val _selection = MutableStateFlow<Set<String>>(emptySet())
+    val selection: StateFlow<Set<String>> = _selection.asStateFlow()
+
+    private var draftJob: Job? = null
+
     init {
+        // The draft is restored *before* anything can render, so the composer opens on the
+        // paragraph the user walked away from.
+        drafts?.get(chatId)?.takeIf { it.isNotBlank() }?.let { _composerText.value = it }
         val unread = repository.chats.value.firstOrNull { it.id == chatId }?.unreadCount ?: 0
         val history = messages.value
         if (unread > 0 && history.isNotEmpty()) {
@@ -59,6 +81,22 @@ class ConversationViewModel(
         _composerText.value = value
         // Stream "typing" to the other side.
         repository.setTyping(chatId, value.isNotEmpty())
+        /*
+         * Saved 350 ms after the last keystroke: every character would mean a file write per
+         * character, and `onCleared` flushes whatever the timer has not reached yet, so leaving
+         * the chat keeps the last thing typed either way.
+         */
+        draftJob?.cancel()
+        draftJob = viewModelScope.launch {
+            delay(350)
+            drafts?.set(chatId, value)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        draftJob?.cancel()
+        drafts?.set(chatId, _composerText.value)
     }
 
     fun onSend() {
@@ -75,6 +113,13 @@ class ConversationViewModel(
         _composerText.value = ""
         _replyTo.value = null
         repository.setTyping(chatId, false)
+        draftJob?.cancel()
+        drafts?.clear(chatId)
+    }
+
+    /** Quotes [messageId] straight from a swipe, without going through the menu. */
+    fun quote(messageId: String) {
+        _replyTo.value = messages.value.firstOrNull { it.id == messageId }
     }
 
     fun onReply() {
@@ -104,6 +149,42 @@ class ConversationViewModel(
     fun onDeleteMessage(messageId: String, forEveryone: Boolean) {
         repository.deleteMessage(chatId, messageId, forEveryone)
         if (_activeMessageId.value == messageId) _activeMessageId.value = null
+    }
+
+    // ---------------------------------------------------------------- selection
+
+    fun startSelection(messageId: String) {
+        _selection.value = setOf(messageId)
+        _activeMessageId.value = null
+    }
+
+    fun toggleSelection(messageId: String) {
+        _selection.update { if (messageId in it) it - messageId else it + messageId }
+    }
+
+    fun clearSelection() {
+        _selection.value = emptySet()
+    }
+
+    fun selectAllMessages() {
+        _selection.value = messages.value.filterNot { it.deleted }.map { it.id }.toSet()
+    }
+
+    /** Deletes every ticked message; `forEveryone` also removes them from the other side. */
+    fun deleteSelectedMessages(forEveryone: Boolean) {
+        val ids = _selection.value
+        _selection.value = emptySet()
+        ids.forEach { id -> repository.deleteMessage(chatId, id, forEveryone) }
+    }
+
+    /** Forwards every ticked message to [targetChatIds], one copy per message and target. */
+    fun forwardSelectedMessages(targetChatIds: List<String>) {
+        if (targetChatIds.isEmpty()) return
+        val selected = messages.value.filter { it.id in _selection.value }
+        _selection.value = emptySet()
+        selected.forEach { source ->
+            targetChatIds.forEach { target -> repository.forwardMessage(target, source) }
+        }
     }
 
     fun onForward(messageId: String, targetChatIds: List<String>) {
@@ -194,9 +275,13 @@ class ConversationViewModel(
     }
 
     companion object {
-        fun factory(chatId: String, chatTitle: String, repository: ChatRepository) =
-            viewModelFactory {
-                initializer { ConversationViewModel(chatId, chatTitle, repository) }
-            }
+        fun factory(
+            chatId: String,
+            chatTitle: String,
+            repository: ChatRepository,
+            drafts: DraftStore? = null
+        ) = viewModelFactory {
+            initializer { ConversationViewModel(chatId, chatTitle, repository, drafts) }
+        }
     }
 }
