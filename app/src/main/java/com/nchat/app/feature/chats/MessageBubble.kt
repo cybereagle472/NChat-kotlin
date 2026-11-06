@@ -218,7 +218,8 @@ fun MessageBubble(
                 MessageKind.Photo -> PhotoContent(
                     mediaUrl = message.mediaUrl,
                     onClick = onMediaClick,
-                    onLongPress = onLongPress
+                    onLongPress = onLongPress,
+                    uploadProgress = message.uploadProgress
                 )
                 MessageKind.Voice -> VoiceContent(
                     messageId = message.id,
@@ -226,6 +227,7 @@ fun MessageBubble(
                     mine = mine,
                     mediaUrl = message.mediaUrl,
                     storedWaveform = message.thumbnailUrl,
+                    uploadProgress = message.uploadProgress,
                     onLongPress = onLongPress
                 )
                 MessageKind.Document -> DocumentContent(
@@ -238,7 +240,8 @@ fun MessageBubble(
                     mediaUrl = message.mediaUrl,
                     thumbnailUrl = message.thumbnailUrl,
                     onClick = onMediaClick,
-                    onLongPress = onLongPress
+                    onLongPress = onLongPress,
+                    uploadProgress = message.uploadProgress
                 )
                 MessageKind.Text -> Unit
             }
@@ -476,13 +479,49 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
     }
 }
 
+/**
+ * The ring a bubble wears while its file is still going up.
+ *
+ * WhatsApp draws the same thing: a dimmed frame with a progress ring, held until the server has
+ * the media, then gone. `progress` is the fraction already written to the socket, so it moves even
+ * on a slow connection instead of looping forever.
+ */
 @Composable
-private fun PhotoContent(mediaUrl: String?, onClick: () -> Unit, onLongPress: () -> Unit) {
+private fun UploadRing(progress: Float, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(Color(0x66000000)),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            color = Color.White,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(26.dp)
+        )
+    }
+}
+
+@Composable
+private fun PhotoContent(
+    mediaUrl: String?,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    uploadProgress: Float? = null
+) {
     val frame = Modifier
         .width(210.dp)
         .height(140.dp)
         .clip(RoundedCornerShape(12.dp))
         .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+
+    if (uploadProgress != null) {
+        // Still uploading: the local preview is not on the server yet, so there is nothing to
+        // draw but the frame and its ring — exactly what the sender expects to see.
+        Box(modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))) {
+            UploadRing(progress = uploadProgress, modifier = Modifier.fillMaxSize())
+        }
+        return
+    }
 
     if (mediaUrl != null) {
         /*
@@ -538,7 +577,8 @@ private fun VideoContent(
     mediaUrl: String?,
     thumbnailUrl: String?,
     onClick: () -> Unit,
-    onLongPress: () -> Unit
+    onLongPress: () -> Unit,
+    uploadProgress: Float? = null
 ) {
     /*
      * The poster frame, when the sender produced one. It is deliberately *not* `?: mediaUrl`:
@@ -578,6 +618,9 @@ private fun VideoContent(
                 modifier = Modifier.size(24.dp)
             )
         }
+        if (uploadProgress != null) {
+            UploadRing(progress = uploadProgress, modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
@@ -609,6 +652,8 @@ private fun VoiceContent(
      * so a voice note keeps the shape of what was actually said wherever it is read.
      */
     storedWaveform: String? = null,
+    /** 0f…1f while the clip is still going up to the server; null once it has arrived. */
+    uploadProgress: Float? = null,
     /** Long press on the waveform opens the message menu, the way the rest of the bubble does. */
     onLongPress: () -> Unit = {}
 ) {
@@ -940,6 +985,14 @@ private fun VoiceContent(
                     color = Color.White,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(16.dp)
+                )
+                // The clip is still on its way up: the button doubles as the transfer indicator
+                // (WhatsApp's clock), and it keeps working — the local file is already playable.
+                uploadProgress != null && !playing -> CircularProgressIndicator(
+                    progress = { uploadProgress.coerceIn(0f, 1f) },
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp)
                 )
                 playing -> Icon(
                     imageVector = Icons.Rounded.Pause,

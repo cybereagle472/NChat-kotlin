@@ -437,3 +437,7 @@ Rules this section exists to protect:
 - **Media should be ready before the tap.** Voice clips are fetched when the bubble appears
   (`MediaFiles`) with a spinner in the button, so play starts from a local file; a photo shows a
   spinner until Coil has decoded it.
+- **An upload is a progress bar, not a spinner.** `ApiClient.upload` takes an `onProgress`
+  callback fed by a `ForwardingSink` around the file part; the value rides `Message.uploadProgress`
+  (marked `@Transient`, so it is never written to the message cache) and the bubble draws a
+  determinate ring. A send with no visible progress is indistinguishable from a stuck one.

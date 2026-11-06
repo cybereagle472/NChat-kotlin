@@ -472,8 +472,13 @@ class NChatApi(private val client: ApiClient) {
 
     // ----------------------------------------------------------------- media
 
-    suspend fun uploadMedia(fileName: String, mimeType: String, bytes: ByteArray): MediaDto =
-        decode(client.upload("/media/upload", fileName, mimeType, bytes))
+    suspend fun uploadMedia(
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        onProgress: ((Float) -> Unit)? = null
+    ): MediaDto =
+        decode(client.upload("/media/upload", fileName, mimeType, bytes, onProgress))
 
     // --------------------------------------------------------------- privacy
 

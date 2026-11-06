@@ -762,19 +762,39 @@ class RemoteChatRepository(
         val body = caption?.trim().orEmpty()
         val local = baseMessage(chatId, localId, body).copy(
             kind = kind,
-            fileName = fileName
+            fileName = fileName,
+            // The bubble carries a ring from the first byte, so a photo on a slow link looks
+            // like something that is happening instead of a message stuck on its clock.
+            uploadProgress = 0f
         )
         appendLocal(chatId, local)
         preview(chatId, local, DeliveryState.Sending)
 
         scope.launch {
             // 1) upload the file (and its preview), 2) send a message that points at both.
-            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }
-                .getOrElse { error ->
-                    markFailed(chatId, localId)
-                    NcToaster.show("Upload failed — ${error.describeSend()}")
-                    return@launch
+            val media = runCatching {
+                api.uploadMedia(fileName, mimeType, bytes) { fraction ->
+                    setUploadProgress(chatId, localId, fraction)
                 }
+            }.getOrElse { error ->
+                setUploadProgress(chatId, localId, null)
+                markFailed(chatId, localId)
+                NcToaster.show("Upload failed — ${error.describeSend()}")
+                return@launch
+            }
+            // The file is on the server; what is left is a small JSON post, not worth a ring.
+            //
+            // The bubble switches to the uploaded file immediately instead of waiting for the
+            // message row: the sender sees their photo the moment it lands, the same second the
+            // ring disappears, rather than a grey gradient until the acknowledgement arrives.
+            setUploadProgress(chatId, localId, null)
+            if (media.url.isNotBlank()) {
+                updateMessages(chatId) { messages ->
+                    messages.map {
+                        if (it.id == localId) it.copy(mediaUrl = media.url) else it
+                    }
+                }
+            }
             val thumb = thumbnail?.let { preview ->
                 // `thumb-clip.mp4` would be served back as `image/jpeg` bytes behind an .mp4
                 // name, which confuses players and image loaders alike; give it a .jpg.
@@ -985,6 +1005,7 @@ class RemoteChatRepository(
         if (row.mediaUrl.isNullOrBlank() && !row.localFile.isNullOrBlank()) {
             val upload = uploadClip(row)
             val media = upload.getOrNull()
+            setUploadProgress(row.chatId, row.clientId, null)
             if (media == null) {
                 onDeliveryFailure(row, upload.exceptionOrNull(), live)
                 return
@@ -1056,7 +1077,11 @@ class RemoteChatRepository(
             return Result.failure(IOException("The recording is empty"))
         }
         return runCatching {
-            api.uploadMedia(entry.fileName ?: "voice.m4a", entry.mimeType ?: "audio/mp4", bytes)
+            api.uploadMedia(
+                entry.fileName ?: "voice.m4a",
+                entry.mimeType ?: "audio/mp4",
+                bytes
+            ) { fraction -> setUploadProgress(entry.chatId, entry.clientId, fraction) }
         }.mapCatching { media ->
             if (media.url.isBlank()) throw IOException("The upload returned no file URL")
             media
@@ -1148,7 +1173,8 @@ class RemoteChatRepository(
      */
     private fun markFailed(chatId: String, localId: String, detail: String? = null) {
         updateMessages(chatId) { messages ->
-            messages.map { if (it.id == localId) it.copy(failed = true) else it }
+            // A failed send has no upload in flight: the ring must not survive the failure.
+            messages.map { if (it.id == localId) it.copy(failed = true, uploadProgress = null) else it }
         }
         // The chat list quotes this message; it has to say "not sent" too.
         previewFromLast(chatId)
@@ -1764,6 +1790,20 @@ class RemoteChatRepository(
         val model = dto.toModel(chatId)
         if (stream(chatId).value.any { it.id == model.id }) return
         updateMessages(chatId) { (it + model).sortedBy { message -> message.timestamp } }
+    }
+
+    /**
+     * Sets (or clears) the upload percentage on one bubble.
+     *
+     * Called from OkHttp's writer thread through `ApiClient.upload`; the conversation flow is a
+     * `StateFlow`, so the value crosses threads safely and Compose collects it on the main one.
+     */
+    private fun setUploadProgress(chatId: String, messageId: String, value: Float?) {
+        updateMessages(chatId) { messages ->
+            messages.map { message ->
+                if (message.id == messageId) message.copy(uploadProgress = value) else message
+            }
+        }
     }
 
     private fun replaceMessage(chatId: String, dto: MessageDto) {
