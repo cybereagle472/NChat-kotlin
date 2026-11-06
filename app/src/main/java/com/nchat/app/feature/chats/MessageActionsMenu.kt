@@ -31,7 +31,9 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Forward
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Mood
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Reply
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
@@ -97,6 +99,11 @@ fun MessageActionMenu(
     isStarred: Boolean = false,
     /** Puts the chat into selection mode with this message already ticked. */
     onSelect: () -> Unit = {},
+    /** Pin this message as the conversation's banner; the label flips with [isPinned]. */
+    onPin: () -> Unit = {},
+    isPinned: Boolean = false,
+    /** Delivery details for this one message. */
+    onInfo: () -> Unit = {},
     reactedEmojis: Set<String> = emptySet(),
     onShowAllReactions: () -> Unit = {}
 ) {
@@ -116,7 +123,7 @@ fun MessageActionMenu(
             val density = LocalDensity.current
             val cardWidth = 248.dp
             // Rows: reply?/forward/copy?/star/select/edit?/delete under a ~50 dp reaction strip.
-            val rowCount = 3 +
+            val rowCount = 5 +
                 (if (showReply) 1 else 0) +
                 (if (showCopy) 1 else 0) +
                 (if (showEdit) 1 else 0)
@@ -183,10 +190,22 @@ fun MessageActionMenu(
                             onClick = onStar
                         )
                         MenuAction(
+                            icon = Icons.Rounded.PushPin,
+                            label = if (isPinned) "Unpin" else "Pin",
+                            tint = extra.textSecondary,
+                            onClick = onPin
+                        )
+                        MenuAction(
                             icon = Icons.Rounded.Checklist,
                             label = "Select",
                             tint = extra.textSecondary,
                             onClick = onSelect
+                        )
+                        MenuAction(
+                            icon = Icons.Rounded.Info,
+                            label = "Info",
+                            tint = extra.textSecondary,
+                            onClick = onInfo
                         )
                         if (showEdit) {
                             MenuAction(Icons.Rounded.Edit, "Edit", extra.textSecondary, onClick = onEdit)

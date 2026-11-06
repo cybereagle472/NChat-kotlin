@@ -80,6 +80,7 @@ import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.BubbleShapeMine
 import com.nchat.app.core.designsystem.BubbleShapeTheirs
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.util.chatFormatted
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.network.MediaFiles
 import com.nchat.app.data.model.DeliveryState
@@ -363,8 +364,11 @@ fun MessageBubble(
             if (message.kind != MessageKind.Voice &&
                 (message.kind == MessageKind.Text || message.text.isNotBlank())
             ) {
+                // `*bold*`, `_italic_`, `~strike~`, `` `mono` `` — parsed once per text, not per
+                // frame, and remembered so scrolling a long conversation stays cheap.
+                val body = remember(message.text) { chatFormatted(message.text) }
                 Text(
-                    text = message.text,
+                    text = body,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (mine) Color.White else extra.bubbleIncomingText
                 )

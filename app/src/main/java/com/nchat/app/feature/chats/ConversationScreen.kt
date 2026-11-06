@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +74,7 @@ import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -140,12 +142,14 @@ import com.nchat.app.core.util.PickedFile
 import com.nchat.app.core.util.readPickedFile
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.util.TimeFormat
+import com.nchat.app.core.util.chatFormatted
 import com.nchat.app.data.ServiceLocator
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
 import com.nchat.app.data.local.StarredMessage
 import com.nchat.app.data.model.Chat
+import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
@@ -236,6 +240,11 @@ fun ConversationScreen(
     val starredIds = remember(starredAll, chatId) {
         starredAll.filter { it.chatId == chatId }.map { it.messageId }.toSet()
     }
+    val pins by ServiceLocator.pinned.pins.collectAsStateWithLifecycle()
+    val pinnedMessage = remember(messages, pins, chatId) {
+        pins[chatId]?.let { id -> messages.firstOrNull { it.id == id } }
+    }
+    var infoMessage by remember { mutableStateOf<Message?>(null) }
     /*
      * While this screen is up, this chat's notifications are pointless — the messages are right
      * here. The marker also cancels whatever was already in the shade, so opening a chat from a
@@ -406,6 +415,31 @@ fun ConversationScreen(
                         }
                     },
                     onDelete = { bulkDeleteOpen = true }
+                )
+            }
+
+            /*
+             * The pinned banner, right under the header where WhatsApp puts it. It is a banner,
+             * not a list: one message per chat, replaced when another is pinned, and tap-to-jump
+             * so it is useful rather than decorative.
+             */
+            val pinned = pinnedMessage
+            if (pinned != null) {
+                PinnedBanner(
+                    message = pinned,
+                    onOpen = {
+                        val index = timeline.indexOfFirst {
+                            it is TimelineItem.Bubble && it.message.id == pinned.id
+                        }
+                        if (index >= 0) {
+                            highlightId = pinned.id
+                            scope.launch { listState.animateScrollToItem(index) }
+                        }
+                    },
+                    onClose = {
+                        ServiceLocator.pinned.unpin(chatId)
+                        NcToaster.show("Message unpinned")
+                    }
                 )
             }
 
@@ -634,6 +668,16 @@ fun ConversationScreen(
                 NcToaster.show(if (wasStarred) "Removed from starred" else "Message starred")
             },
             onSelect = { viewModel.startSelection(activeMessage.id) },
+            isPinned = pins[chatId] == activeMessage.id,
+            onPin = {
+                val nowPinned = ServiceLocator.pinned.toggle(chatId, activeMessage.id)
+                viewModel.onSelectMessage(null)
+                NcToaster.show(if (nowPinned) "Message pinned" else "Message unpinned")
+            },
+            onInfo = {
+                infoMessage = activeMessage
+                viewModel.onSelectMessage(null)
+            },
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
                 viewModel.onSelectMessage(null)
@@ -770,6 +814,16 @@ fun ConversationScreen(
                 reactionTargetId = null
             },
             onDismiss = { reactionTargetId = null }
+        )
+    }
+
+    infoMessage?.let { message ->
+        MessageInfoDialog(
+            message = message,
+            chatTitle = chatTitle,
+            isStarred = message.id in starredIds,
+            isPinned = pins[chatId] == message.id,
+            onDismiss = { infoMessage = null }
         )
     }
 
@@ -1619,6 +1673,182 @@ private fun SelectionHeader(
         }
         HeaderAction(Icons.Rounded.SelectAll, "Select all", onClick = onSelectAll)
         HeaderAction(Icons.Rounded.Delete, "Delete", onClick = onDelete)
+    }
+}
+
+/**
+ * The one-line banner for the chat's pinned message.
+ *
+ * Tapping it jumps to the message; the ✕ unpins. The body is formatted the same way the bubble is,
+ * so a pinned `*bold*` line does not suddenly show its asterisks.
+ */
+@Composable
+private fun PinnedBanner(message: Message, onOpen: () -> Unit, onClose: () -> Unit) {
+    val extra = NcTheme.extra
+    val body = remember(message.text) {
+        val text = message.text.ifBlank { message.snippet() }
+        chatFormatted(text)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF5F3FF))
+            .clickable(onClick = onOpen)
+            .padding(start = NcSpace.md, end = NcSpace.sm, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(30.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Pinned message",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = body,
+                color = extra.textSecondary,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onClose),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Unpin message",
+                tint = extra.textTertiary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+/**
+ * "Message info" — what we actually know about one message.
+ *
+ * The worker keeps no per-recipient read table, so a truthful sheet shows the message's own
+ * delivery state rather than inventing a "read by 3 of 5" list: sender, chat, kind, the exact
+ * time, the tick state, and the flags (edited / forwarded / starred / pinned) that are real.
+ */
+@Composable
+private fun MessageInfoDialog(
+    message: Message,
+    chatTitle: String,
+    isStarred: Boolean,
+    isPinned: Boolean,
+    onDismiss: () -> Unit
+) {
+    val extra = NcTheme.extra
+    val stamp = remember(message.timestamp) {
+        java.text.SimpleDateFormat("d MMMM yyyy, HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(message.timestamp))
+    }
+    val status = when {
+        message.failed -> "Not sent"
+        message.state == DeliveryState.Read -> "Read"
+        message.state == DeliveryState.Sent -> "Delivered"
+        else -> "Sending"
+    }
+    val kindLabel = when (message.kind) {
+        MessageKind.Text -> "Text message"
+        MessageKind.Photo -> "Photo"
+        MessageKind.Video -> "Video"
+        MessageKind.Voice -> "Voice message"
+        MessageKind.Document -> "Document"
+        MessageKind.Location -> "Location"
+    }
+    val flags = buildList {
+        if (message.isEdited) add("Edited")
+        if (message.forwarded) add("Forwarded")
+        if (isStarred) add("Starred")
+        if (isPinned) add("Pinned")
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(NcSpace.lg)
+        ) {
+            Text(
+                text = "Message info",
+                color = extra.textPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            InfoRow("From", if (message.isMine) "You" else message.authorName)
+            InfoRow("Chat", chatTitle)
+            InfoRow("Type", kindLabel)
+            InfoRow("Sent", stamp)
+            InfoRow("Status", status)
+            if (flags.isNotEmpty()) InfoRow("Flags", flags.joinToString(" · "))
+            if (message.text.isNotBlank()) {
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = extra.divider,
+                    modifier = Modifier.padding(vertical = 10.dp)
+                )
+                Text(
+                    text = chatFormatted(message.text),
+                    color = extra.textSecondary,
+                    fontSize = 13.sp,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = "Close",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 14.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            color = NcTheme.extra.textTertiary,
+            fontSize = 12.sp,
+            modifier = Modifier.width(64.dp)
+        )
+        Text(
+            text = value,
+            color = NcTheme.extra.textPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

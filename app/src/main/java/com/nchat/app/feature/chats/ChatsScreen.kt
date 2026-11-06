@@ -1,6 +1,12 @@
 package com.nchat.app.feature.chats
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +15,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,12 +25,16 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.MarkChatRead
+import androidx.compose.material.icons.rounded.MarkChatUnread
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsOff
@@ -41,15 +53,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcGlassEmptyState
@@ -88,6 +108,19 @@ fun ChatsScreen(
     val deviceOnline by ServiceLocator.network.collectAsStateWithLifecycle()
     // Drafts: a chat with unsent text says so on its row, exactly like WhatsApp's red "Draft".
     val drafts by ServiceLocator.drafts.drafts.collectAsStateWithLifecycle()
+    // Archive is device-side (`ArchivedStore`): the worker has no column for it.
+    val archivedIds by ServiceLocator.archived.ids.collectAsStateWithLifecycle()
+    var filter by remember { mutableStateOf(ChatFilter.All) }
+    var archiveOpen by remember { mutableStateOf(false) }
+
+    val archivedChats = remember(state.chats, archivedIds) {
+        state.chats.filter { it.id in archivedIds }
+    }
+    val visibleChats = remember(state.chats, archivedIds, filter) {
+        state.chats
+            .filter { it.id !in archivedIds }
+            .filter { chat -> filter == ChatFilter.All || chat.unreadCount > 0 }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         NcTabHeader(
@@ -104,14 +137,24 @@ fun ChatsScreen(
             SyncErrorBanner(message = message, onRetry = viewModel::retry)
         }
 
-        if (state.isEmpty) {
+        ChatFilterRow(filter = filter, onFilter = { filter = it })
+
+        if (visibleChats.isEmpty()) {
             NcGlassEmptyState(
-                emoji = if (state.query.isNotEmpty()) "🔍" else "💬",
-                title = if (state.query.isNotEmpty()) "No chats found" else "No chats yet",
-                message = if (state.query.isNotEmpty()) {
-                    "Try a different search"
-                } else {
-                    "Start a conversation with your friends"
+                emoji = when {
+                    state.query.isNotEmpty() -> "🔍"
+                    filter == ChatFilter.Unread -> "✅"
+                    else -> "💬"
+                },
+                title = when {
+                    state.query.isNotEmpty() -> "No chats found"
+                    filter == ChatFilter.Unread -> "No unread chats"
+                    else -> "No chats yet"
+                },
+                message = when {
+                    state.query.isNotEmpty() -> "Try a different search"
+                    filter == ChatFilter.Unread -> "You are all caught up"
+                    else -> "Start a conversation with your friends"
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -121,7 +164,30 @@ fun ChatsScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(NcSpace.md)
             ) {
-                items(items = state.chats, key = { it.id }) { chat ->
+                if (archivedChats.isNotEmpty()) {
+                    item(key = "archived") {
+                        ArchivedRow(count = archivedChats.size) { archiveOpen = true }
+                    }
+                }
+                items(items = visibleChats, key = { it.id }) { chat ->
+                    SwipeableChatRow(
+                        chat = chat,
+                        onArchive = {
+                            ServiceLocator.archived.archive(chat.id)
+                            NcToaster.show("Archived")
+                        },
+                        onToggleRead = {
+                            if (chat.unreadCount > 0) {
+                                viewModel.markRead(chat.id)
+                                ServiceLocator.notifications.cancel(chat.id)
+                                NcToaster.show("Marked as read")
+                            } else {
+                                // There is no "unread" flag on the server, so this is the honest
+                                // version WhatsApp also uses when it cannot mark unread: say so.
+                                NcToaster.show("Only unread chats can be marked read")
+                            }
+                        }
+                    ) {
                     ChatRow(
                         chat = chat,
                         draft = drafts[chat.id],
@@ -147,9 +213,26 @@ fun ChatsScreen(
                         },
                         onDelete = { pendingDelete = chat }
                     )
+                    }
                 }
             }
         }
+    }
+
+    if (archiveOpen) {
+        ArchivedChatsDialog(
+            chats = archivedChats,
+            onDismiss = { archiveOpen = false },
+            onUnarchive = { chat ->
+                ServiceLocator.archived.unarchive(chat.id)
+                NcToaster.show("Unarchived")
+            },
+            onOpen = { chat ->
+                archiveOpen = false
+                viewModel.markRead(chat.id)
+                onOpenChat(chat)
+            }
+        )
     }
 
     pendingDelete?.let { doomed ->
@@ -179,6 +262,233 @@ fun ChatsScreen(
                 }
             }
         )
+    }
+}
+
+/** All / Unread — the two filters the Chats tab can honestly offer (groups live in their own tab). */
+private enum class ChatFilter(val label: String) {
+    All("All"),
+    Unread("Unread")
+}
+
+@Composable
+private fun ChatFilterRow(filter: ChatFilter, onFilter: (ChatFilter) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = NcSpace.md, end = NcSpace.md, bottom = NcSpace.sm),
+        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+    ) {
+        ChatFilter.values().forEach { entry ->
+            val selected = entry == filter
+            Text(
+                text = entry.label,
+                color = if (selected) Color.White else NcTheme.extra.textSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        if (selected) {
+                            Brush.linearGradient(NcTheme.extra.brandGradient)
+                        } else {
+                            Brush.linearGradient(listOf(Color.White, Color.White))
+                        }
+                    )
+                    .clickable { onFilter(entry) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            )
+        }
+    }
+}
+
+/** The "Archived" entry that sits above the list while the archive has anything in it. */
+@Composable
+private fun ArchivedRow(count: Int, onOpen: () -> Unit) {
+    val extra = NcTheme.extra
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = NcSpace.sm)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.7f))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = NcSpace.md, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Archive,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = "Archived",
+            color = extra.textPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = if (count == 1) "1" else "$count",
+            color = extra.textTertiary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/**
+ * A chat row that answers to a swipe.
+ *
+ * Right reveals **Archive**, left reveals **Mark read** — one axis, claimed only after a
+ * horizontal drag, so tapping and scrolling are untouched. The action fires on release past 72 dp
+ * and the row springs back; the list itself decides what happens next (the archived row simply
+ * disappears, which reads exactly like WhatsApp's row flying away).
+ */
+@Composable
+private fun SwipeableChatRow(
+    chat: Chat,
+    onArchive: () -> Unit,
+    onToggleRead: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val animation = remember(chat.id) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val threshold = with(density) { 72.dp.toPx() }
+    val ceiling = with(density) { 120.dp.toPx() }
+    val offset = animation.value
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // Hints live behind the row: archive on the left, read state on the right.
+        if (offset > 4f) {
+            SwipeHint(
+                icon = Icons.Rounded.Archive,
+                label = "Archive",
+                color = Color(0xFF6D28D9),
+                progress = (offset / threshold).coerceIn(0f, 1f),
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = NcSpace.md),
+                mirrored = false
+            )
+        } else if (offset < -4f) {
+            SwipeHint(
+                icon = if (chat.unreadCount > 0) Icons.Rounded.MarkChatRead else Icons.Rounded.MarkChatUnread,
+                label = if (chat.unreadCount > 0) "Read" else "Unread",
+                color = Color(0xFF059669),
+                progress = (-offset / threshold).coerceIn(0f, 1f),
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = NcSpace.md),
+                mirrored = true
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offset.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        scope.launch { animation.snapTo((animation.value + delta).coerceIn(-ceiling, ceiling)) }
+                    },
+                    onDragStopped = {
+                        if (animation.value >= threshold) onArchive()
+                        else if (animation.value <= -threshold) onToggleRead()
+                        scope.launch { animation.animateTo(0f, tween(180)) }
+                    }
+                )
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SwipeHint(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    progress: Float,
+    modifier: Modifier = Modifier,
+    mirrored: Boolean
+) {
+    Row(
+        modifier = modifier.graphicsLayer { alpha = 0.35f + 0.65f * progress },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (mirrored) {
+            Text(text = label, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(19.dp))
+        } else {
+            Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(19.dp))
+            Text(text = label, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** The archive, as a sheet: open a chat or put it back into the main list. */
+@Composable
+private fun ArchivedChatsDialog(
+    chats: List<Chat>,
+    onDismiss: () -> Unit,
+    onUnarchive: (Chat) -> Unit,
+    onOpen: (Chat) -> Unit
+) {
+    val extra = NcTheme.extra
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(vertical = NcSpace.md),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Archived",
+                color = extra.textPrimary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Tap a chat to open it, or Unarchive to move it back.",
+                color = extra.textTertiary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = NcSpace.lg, vertical = 6.dp)
+            )
+            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                items(items = chats, key = { it.id }) { chat ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpen(chat) }
+                            .padding(horizontal = NcSpace.lg, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+                    ) {
+                        Text(
+                            text = chat.title,
+                            color = extra.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Unarchive",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onUnarchive(chat) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
