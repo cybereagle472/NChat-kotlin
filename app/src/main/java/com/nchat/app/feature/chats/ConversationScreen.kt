@@ -1731,6 +1731,9 @@ private fun ConversationHeader(
 
         Row(
             modifier = Modifier
+                // `weight` is what keeps video/voice/search on screen: without it a long name
+                // pushed the action buttons out of the window instead of truncating the title.
+                .weight(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onOpenProfile)
                 .padding(end = NcSpace.xs),

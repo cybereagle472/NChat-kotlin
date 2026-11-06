@@ -3,6 +3,8 @@ package com.nchat.app.feature.chats
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -273,31 +275,42 @@ private enum class ChatFilter(val label: String) {
 
 @Composable
 private fun ChatFilterRow(filter: ChatFilter, onFilter: (ChatFilter) -> Unit) {
+    val extra = NcTheme.extra
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = NcSpace.md, end = NcSpace.md, bottom = NcSpace.sm),
-        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+            // The row used to sit flush against the header's shadow, which made the pills read as
+            // part of the header rather than as a control of their own.
+            .padding(start = NcSpace.md, end = NcSpace.md, top = NcSpace.md, bottom = NcSpace.sm),
+        horizontalArrangement = Arrangement.spacedBy(NcSpace.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         ChatFilter.values().forEach { entry ->
             val selected = entry == filter
-            Text(
-                text = entry.label,
-                color = if (selected) Color.White else NcTheme.extra.textSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(50))
                     .background(
                         if (selected) {
-                            Brush.linearGradient(NcTheme.extra.brandGradient)
+                            Brush.linearGradient(extra.brandGradient)
                         } else {
                             Brush.linearGradient(listOf(Color.White, Color.White))
                         }
                     )
+                    .then(
+                        if (selected) Modifier.shadow(6.dp, RoundedCornerShape(50))
+                        else Modifier.border(1.dp, Color(0x14000000), RoundedCornerShape(50))
+                    )
                     .clickable { onFilter(entry) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp)
-            )
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = entry.label,
+                    color = if (selected) Color.White else extra.textSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }

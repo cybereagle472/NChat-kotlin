@@ -3,6 +3,16 @@ package com.nchat.app.data
 import android.content.Context
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import androidx.core.graphics.drawable.toBitmap
+import coil.request.SuccessResult
+import coil.request.ImageRequest
+import android.graphics.Bitmap
 import com.nchat.app.data.local.ArchivedStore
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.DraftStore
@@ -17,6 +27,7 @@ import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
 import com.nchat.app.data.notifications.NcNotifications
 import com.nchat.app.data.push.BackgroundSyncService
+import com.nchat.app.data.push.BatteryExemption
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.UserProfile
@@ -35,6 +46,7 @@ import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
+import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.MediaFiles
 import com.nchat.app.network.MediaImages
@@ -98,6 +110,10 @@ object ServiceLocator {
         startNetworkWatch()
         // Channels must exist before the first message can arrive, not on the first notification.
         runCatching { notifications.ensureChannels() }
+        // Requests, group invites and calls get a notification too — not just messages.
+        startSystemNotifications()
+        // First launch after installing an update: ask Android to stop freezing us, once.
+        runCatching { maybeAskBatteryOnce() }
     }
 
     private fun requireContext(): Context =
@@ -250,7 +266,24 @@ object ServiceLocator {
     val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext()) }
 
     /** System notifications: per-chat channels, MessagingStyle, inline reply. */
-    val notifications: NcNotifications by lazy { NcNotifications(requireContext()) }
+    val notifications: NcNotifications by lazy {
+        NcNotifications(requireContext(), appScope) { url -> avatarBitmap(url) }
+    }
+
+    /**
+     * A sender's picture for a notification, through the same authenticated image loader the UI
+     * uses (the backend requires the session token, so a bare URL would 401).
+     */
+    private suspend fun avatarBitmap(url: String): Bitmap? = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = ImageRequest.Builder(requireContext())
+                .data(url)
+                .size(128)
+                .allowHardware(false)
+                .build()
+            (images.execute(request) as? SuccessResult)?.drawable?.toBitmap(128, 128)
+        }.getOrNull()
+    }
 
     /**
      * A conversation a notification tap asked for, consumed by `HomeRoot`.
@@ -260,6 +293,131 @@ object ServiceLocator {
      */
     val pendingOpen = MutableStateFlow<Pair<String, String>?>(null)
 
+
+    // ------------------------------------------------------- system notifications
+
+    @Volatile
+    private var systemNotificationsStarted = false
+
+    /** Calls that rang while this device was not on the call screen, so it can report a miss. */
+    private val ringingCalls = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Requests, group changes and calls, as notifications.
+     *
+     * Messages were the only thing that notified, which meant a friend request, being added to a
+     * group, or a call while the app was closed simply never showed. One collector on the socket
+     * covers all of them, so there is a single place that decides what is worth interrupting
+     * somebody for, and the repositories stay free of Android notification code.
+     */
+    private fun startSystemNotifications() {
+        if (systemNotificationsStarted) return
+        systemNotificationsStarted = true
+        appScope.launch {
+            socket.events.collect { event ->
+                runCatching { handleSystemEvent(event) }
+            }
+        }
+    }
+
+    private fun handleSystemEvent(event: RealtimeEvent) {
+        when (event.type) {
+            "friend:request" -> {
+                val request = event.objectOrNull("request") ?: return
+                val profile = request.objectOrNull("sender_profile") ?: request
+                val name = profile.string("full_name") ?: profile.string("username") ?: "Somebody"
+                notifications.showEvent(
+                    key = "friend-request",
+                    title = "Friend request",
+                    body = "$name wants to connect with you",
+                    avatarUrl = profile.string("avatar_url")
+                )
+            }
+
+            "friend:accepted" -> {
+                val friend = event.objectOrNull("friend") ?: return
+                val name = friend.string("full_name") ?: friend.string("username") ?: "Your contact"
+                notifications.showEvent(
+                    key = "friend-accepted",
+                    title = "Request accepted",
+                    body = "$name accepted your request",
+                    avatarUrl = friend.string("avatar_url"),
+                    highPriority = false
+                )
+            }
+
+            "group:created" -> {
+                val group = event.objectOrNull("group") ?: return
+                val name = group.string("name") ?: "A group"
+                val id = group.string("id")
+                notifications.showEvent(
+                    key = "group-$id",
+                    title = "Added to $name",
+                    body = "You are now a member of this group",
+                    chatId = id,
+                    chatTitle = name,
+                    avatarUrl = group.string("avatar_url")
+                )
+            }
+
+            // A call ringing while the call screen is not already up.
+            "call:incoming" -> {
+                if (callRepository.active.value != null) return
+                val call = event.objectOrNull("call") ?: return
+                val id = call.string("id") ?: return
+                val profile = call.objectOrNull("caller_profile")
+                val name = profile?.string("full_name") ?: profile?.string("username") ?: "Someone"
+                val video = call.string("call_type") == "video"
+                ringingCalls[id] = name
+                notifications.showEvent(
+                    key = "call-$id",
+                    title = if (video) "Incoming video call" else "Incoming call",
+                    body = "$name is calling — open NChat to answer",
+                    avatarUrl = profile?.string("avatar_url")
+                )
+            }
+
+            "call:ended" -> {
+                val id = event.string("callId") ?: event.string("call_id") ?: return
+                val name = ringingCalls.remove(id) ?: return
+                notifications.cancelEvent("call-$id")
+                // It rang and nobody picked up on this device: that is a missed call, and it is
+                // the one thing a call notification must not stay silent about.
+                if (callRepository.active.value == null) {
+                    notifications.showEvent(
+                        key = "missed-$id",
+                        title = "Missed call",
+                        body = "You missed a call from $name",
+                        highPriority = false
+                    )
+                }
+            }
+        }
+    }
+
+    private fun JsonObject?.string(key: String): String? =
+        (this?.get(key) as? JsonPrimitive)?.contentOrNull
+
+    private fun JsonObject?.objectOrNull(key: String): JsonObject? = this?.get(key) as? JsonObject
+
+    /**
+     * Asks once, on the first run after an update, for the battery exemption.
+     *
+     * It used to live only behind a row in Settings, which is not where a messenger asks: without
+     * it Android freezes the connection and messages stop arriving until the app is opened. Asked
+     * once per version code, so a refusal is respected and never nagged about again.
+     */
+    private fun maybeAskBatteryOnce() {
+        val prefs = requireContext().getSharedPreferences("nchat_prefs", Context.MODE_PRIVATE)
+        val asked = runCatching { prefs.getInt("battery_asked_version", 0) }.getOrDefault(0)
+        if (asked >= BuildConfig.VERSION_CODE) return
+        prefs.edit().putInt("battery_asked_version", BuildConfig.VERSION_CODE).apply()
+        if (BatteryExemption.granted(requireContext())) return
+        appScope.launch {
+            delay(2_500)
+            runCatching { BatteryExemption.request(requireContext()) }
+        }
+    }
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(
