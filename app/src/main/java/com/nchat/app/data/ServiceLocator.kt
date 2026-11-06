@@ -10,6 +10,7 @@ import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.local.VoiceClipStore
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.UserProfile
@@ -188,6 +189,12 @@ object ServiceLocator {
     /** Last known group list and rosters, so the Groups tab opens offline — see [GroupListCache]. */
     private val groupCache by lazy { GroupListCache(requireContext()) }
 
+    /**
+     * Voice clips waiting to be uploaded, so a recording made without a network is queued with
+     * its audio instead of being lost — see [VoiceClipStore].
+     */
+    private val voiceClips by lazy { VoiceClipStore(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(api, tokens, appScope, chatCache)
@@ -206,7 +213,8 @@ object ServiceLocator {
             outbox = outboxStore,
             messages = messageStore,
             online = { networkMonitor.online.value },
-            groupCache = groupCache
+            groupCache = groupCache,
+            voiceClips = voiceClips
         )
     }
     val friendRepository: FriendRepository by lazy {
