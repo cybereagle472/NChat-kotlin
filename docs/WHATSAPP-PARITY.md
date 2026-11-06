@@ -40,7 +40,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | Create / rename / description / avatar | ✅ | ✅ | `GroupInfoScreen` |
 | Add / remove members, promote / demote, leave, delete | ✅ | ✅ | `GroupInfoScreen` |
 | Typing per member, sender avatars, member count | ✅ | ✅ | `ConversationHeader` |
-| **Group voice call** | ✅ | ✅ 1.0.56 — mesh: one `PeerConnection` per participant, perfect-negotiation glare handling, roster overlay | `GroupCallSession` |
+| **Group voice call** | ✅ | ✅ 1.0.56/1.0.57 — mesh: one `PeerConnection` per participant, perfect-negotiation glare handling, roster overlay, incoming-call card (`group-call:incoming`) | `GroupCallSession`, `GroupCallInviteDialog` |
 | Group **video** call | ✅ | ❌ next — one camera feeding several encoders is its own problem | — |
 | Invite link / QR | ✅ | ❌ needs a backend endpoint (only "add existing friends") | — |
 | @mentions / @all | ✅ | 🟡 1.0.54 — picker + `@Name` highlighting from the roster (wire stays plain text, so no "you were mentioned" ring) | `ChatTextFormat` |
@@ -80,7 +80,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
-- **1.0.56 — shipped.** Group **voice** calls (mesh, perfect negotiation, roster overlay).
+- **1.0.56/1.0.57 — shipped.** Group **voice** calls (mesh, perfect negotiation, roster overlay), aligned to the worker's real `group-call:*` shapes, plus the incoming-call card.
 - **Next (1.0.57).** Group **video** calls (shared camera into several encoders + tile grid), then
   media auto-download rules.
 - **Then.** Media auto-download rules + storage manager; and the rows marked ⛔, which need the

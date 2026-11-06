@@ -33,6 +33,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import org.webrtc.EglBase
@@ -40,6 +41,9 @@ import org.webrtc.VideoTrack
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+
+/** How long a group-call invite stays on screen before it gives up on its own. */
+private const val GROUP_INVITE_TTL_MS = 45_000L
 
 /**
  * Calls, both directions, against the Cloudflare worker — signalling **and** media.
@@ -64,6 +68,16 @@ import java.util.TimeZone
  * A call that never connects is reported as failed instead of sitting on "Connecting…".
  */
 /** One participant of a group call, as the overlay draws them. */
+/** A ringing group call — rendered by [com.nchat.app.feature.chats.GroupCallInviteDialog]. */
+@Immutable
+data class GroupCallInvite(
+    val callId: String,
+    val groupId: String,
+    val groupName: String,
+    val fromName: String,
+    val video: Boolean = false
+)
+
 @Immutable
 data class GroupCallPeer(
     val id: String,
@@ -103,6 +117,19 @@ interface CallRepository {
      * on this server" instead of ringing into nothing.
      */
     fun startGroupCall(groupId: String, groupName: String, video: Boolean)
+
+    /**
+     * A group call somebody else started, waiting for an answer — `group-call:incoming` from the
+     * worker's `routes/groupCalls.ts`. Unlike 1:1 calling this is not a phone-style ring: joining
+     * is a tap, and there is nothing to answer if you'd rather stay in the chat.
+     */
+    val groupInvite: StateFlow<GroupCallInvite?>
+
+    /** Joins the call behind [groupInvite] (`POST /group-calls/:id/join`) and clears the invite. */
+    fun joinInvitedGroupCall()
+
+    /** Ignores the invite. The call goes on without us. */
+    fun dismissGroupInvite()
 
     /** Leaves the group call: tells the server, closes every peer, and clears the screen. */
     fun leaveGroupCall()
@@ -195,6 +222,8 @@ class RemoteCallRepository(
     // ---------------------------------------------------------------- group calls
 
     private val _groupCall = MutableStateFlow<GroupCallUi?>(null)
+    private val _groupInvite = MutableStateFlow<GroupCallInvite?>(null)
+    override val groupInvite: StateFlow<GroupCallInvite?> = _groupInvite.asStateFlow()
     override val groupCall: StateFlow<GroupCallUi?> = _groupCall.asStateFlow()
 
     private var groupSession: GroupCallSession? = null
@@ -428,6 +457,8 @@ class RemoteCallRepository(
             NcToaster.show("You're already on a call")
             return
         }
+        // Answering our own outgoing call: whatever was ringing is irrelevant now.
+        _groupInvite.value = null
         scope.launch {
             val envelope = runCatching { api.startGroupCall(groupId, if (video) "video" else "audio") }
                 .getOrElse { error ->
@@ -483,6 +514,7 @@ class RemoteCallRepository(
                 GroupCallPeer(
                     id = participant.userId,
                     name = participant.profile?.fullName
+                        ?: participant.fullName
                         ?: participant.profile?.username
                         ?: "Participant"
                 )
@@ -565,16 +597,26 @@ class RemoteCallRepository(
      * participant. Nothing here ever throws — an unrecognised event is ignored.
      */
     private fun handleGroupEvent(event: RealtimeEvent) {
+        if (event.type.lowercase().let { it.contains("incoming") && it.contains("group") }) {
+            ringGroupCall(event)
+            return
+        }
         val callId = groupCallId ?: return
         val eventCall = event.string("callId")
             ?: event.string("call_id")
             ?: event.string("groupCallId")
             ?: event.string("group_call_id")
         if (eventCall != null && eventCall != callId) return
+        /*
+         * The worker names the sender three different ways depending on the event: signals carry
+         * `from`, participant-joined/left carry `user_id`. Reading only `from` used to mean a
+         * joiner never appeared in the roster and a leaver was never removed.
+         */
         val from = event.string("from")
             ?: event.string("from_id")
             ?: event.string("senderId")
             ?: event.string("sender_id")
+            ?: event.string("user_id")
         val type = event.type.lowercase()
         val payload = event.objectOrNull("payload") ?: event.objectOrNull("data") ?: event.json
 
@@ -609,10 +651,82 @@ class RemoteCallRepository(
         }
     }
 
+    /**
+     * `group-call:incoming` — `{ call: { id, group_id, group_name, call_type, caller_profile } }`.
+     *
+     * Not a phone ring: a group call has no single callee, so this only offers a way in. It is
+     * dropped when we are already on a call (1:1 or group), and it expires on its own, because an
+     * invite to a call that finished ten minutes ago is noise.
+     */
+    private fun ringGroupCall(event: RealtimeEvent) {
+        if (_active.value != null || _groupCall.value != null) return
+        val call = event.objectOrNull("call") ?: return
+        val id = call.stringOrNull("id") ?: return
+        val groupId = call.stringOrNull("group_id") ?: return
+        val caller = call.objectOrNull("caller_profile")
+        _groupInvite.value = GroupCallInvite(
+            callId = id,
+            groupId = groupId,
+            groupName = call.stringOrNull("group_name") ?: "Group call",
+            fromName = caller?.stringOrNull("full_name") ?: caller?.stringOrNull("username") ?: "Someone",
+            video = call.stringOrNull("call_type") == "video"
+        )
+        scope.launch {
+            delay(GROUP_INVITE_TTL_MS)
+            _groupInvite.update { current -> if (current?.callId == id) null else current }
+        }
+    }
+
+    override fun joinInvitedGroupCall() {
+        val invite = _groupInvite.value ?: return
+        _groupInvite.value = null
+        if (_groupCall.value != null || _active.value != null) return
+        scope.launch {
+            val envelope = runCatching { api.joinGroupCall(invite.callId) }.getOrElse { error ->
+                val gone = (error as? ApiException)?.let { it.status == 404 || it.status == 409 } == true
+                NcToaster.show(if (gone) "That call has ended" else "Couldn't join the call")
+                return@launch
+            }
+            val call = envelope.call ?: return@launch
+            joinGroupSession(
+                callId = call.id,
+                groupId = invite.groupId,
+                groupName = call.groupName ?: invite.groupName,
+                participants = envelope.participants,
+                video = call.callType == "video"
+            )
+        }
+    }
+
+    override fun dismissGroupInvite() {
+        _groupInvite.value = null
+    }
+
+    private fun JsonObject.stringOrNull(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull
+
+    private fun JsonObject.objectOrNull(key: String): JsonObject? = this[key] as? JsonObject
+
     private fun addGroupPeer(peerId: String, name: String) {
         val current = _groupCall.value ?: return
         if (current.peers.any { it.id == peerId }) return
         _groupCall.value = current.copy(peers = current.peers + GroupCallPeer(id = peerId, name = name))
+        /*
+         * `group-call:participant-joined` carries the id but not the name (the join *response*
+         * carries names, the broadcast doesn't). Fetch it once so the roster doesn't read
+         * "Participant" for half the call; a failed lookup just leaves the placeholder.
+         */
+        if (name == "Participant") {
+            scope.launch {
+                val looked = runCatching { api.user(peerId).profile }.getOrNull() ?: return@launch
+                val display = looked.fullName ?: looked.username ?: return@launch
+                _groupCall.update { call ->
+                    call?.copy(
+                        peers = call.peers.map { if (it.id == peerId) it.copy(name = display) else it }
+                    )
+                }
+            }
+        }
         // The newcomer will offer to us; a peer connection is created when its first signal lands.
     }
 

@@ -270,7 +270,15 @@ data class GroupCallInfoDto(
 data class GroupCallParticipantDto(
     @SerialName("user_id") val userId: String = "",
     val state: String = "joined",
+    /** Nested profile (1:1 call history shape). */
     val profile: UserDto? = null,
+    /**
+     * The worker's group-call routes flatten the name onto the participant (`SELECT user_id,
+     * full_name, avatar_url …`) instead of nesting a profile — read both, because the client
+     * should not care which of the two the server picked.
+     */
+    @SerialName("full_name") val fullName: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 @Serializable

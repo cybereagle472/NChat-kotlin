@@ -33,6 +33,7 @@ import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.settings.SettingsScreen
 import com.nchat.app.feature.chats.CallOverlay
+import com.nchat.app.feature.chats.GroupCallInviteDialog
 import com.nchat.app.feature.chats.GroupCallOverlay
 import com.nchat.app.feature.chats.rememberCallPermissionGate
 import kotlinx.coroutines.delay
@@ -201,6 +202,15 @@ private fun HomeRoot() {
 
         // A group call lives in the same repository and is drawn once, for the same reason: it
         // must survive leaving the chat (you can read another conversation on the line).
+        val groupInvite by callRepository.groupInvite.collectAsStateWithLifecycle()
+        groupInvite?.let { invite ->
+            GroupCallInviteDialog(
+                invite = invite,
+                onJoin = { callRepository.joinInvitedGroupCall() },
+                onDismiss = { callRepository.dismissGroupInvite() }
+            )
+        }
+
         val groupCall by callRepository.groupCall.collectAsStateWithLifecycle()
         groupCall?.let { call ->
             GroupCallOverlay(

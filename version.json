@@ -1,6 +1,6 @@
 {
-  "versionCode": 64,
-  "versionName": "1.0.56",
+  "versionCode": 65,
+  "versionName": "1.0.57",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.56 — group voice calls. Calling a group from its header now opens a real call: the app creates it on the server, joins, and connects to everybody already on the line with one WebRTC connection per participant (a mesh), sharing a single microphone. The screen lists who is in the call, who is connected and who is muted, with a running timer and mute / speaker / leave. Two people offering at the same instant are resolved by the polite-peer rule instead of deadlocking, a participant who drops is shown as reconnecting, and leaving closes every connection. If the server doesn't expose the group-call routes, the app says exactly that instead of ringing into nothing. Video in group calls is the next step — this release is voice only."
+  "releaseNotes": "NChat 1.0.57 — group calls, aligned with the server that actually exists. The worker's group-call routes were merged on 3 November and speak a slightly different shape than the app expected: participant names arrive flat (full_name/avatar_url) instead of nested, and join/leave events name the person as user_id instead of from. Both are now read, so the roster shows real names and a participant who hangs up disappears from the list. New: when someone starts a group call, the others get a card — \"Nasir started a voice call\" — with Join / Not now, instead of having to open the group and hope they noticed. The card expires on its own after 45 seconds and never interrupts a call you are already on."
 }
