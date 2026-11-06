@@ -33,6 +33,7 @@ import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.settings.SettingsScreen
 import com.nchat.app.feature.chats.CallOverlay
+import com.nchat.app.feature.chats.GroupCallOverlay
 import com.nchat.app.feature.chats.rememberCallPermissionGate
 import kotlinx.coroutines.delay
 
@@ -195,6 +196,22 @@ private fun HomeRoot() {
                 onToggleMute = { callRepository.setMicMuted(!call.micMuted) },
                 onToggleSpeaker = { callRepository.setSpeaker(!call.speakerOn) },
                 onFlipCamera = { callRepository.flipCamera() }
+            )
+        }
+
+        // A group call lives in the same repository and is drawn once, for the same reason: it
+        // must survive leaving the chat (you can read another conversation on the line).
+        val groupCall by callRepository.groupCall.collectAsStateWithLifecycle()
+        groupCall?.let { call ->
+            GroupCallOverlay(
+                call = call,
+                onHangUp = { callRepository.leaveGroupCall() },
+                onToggleMic = { callRepository.toggleGroupMic() },
+                onToggleSpeaker = {
+                    // The mesh has one audio sink per peer but one route for the device; the
+                    // repository owns the route so the 1:1 and group calls cannot disagree.
+                    callRepository.setSpeaker(!call.speakerOn)
+                }
             )
         }
     }

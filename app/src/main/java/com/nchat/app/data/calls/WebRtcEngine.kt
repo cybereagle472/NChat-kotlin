@@ -588,7 +588,7 @@ class WebRtcEngine private constructor(
  * shared by every call and never torn down — unlike a per-call engine, which is created when a
  * call starts and released when it ends.
  */
-private object WebRtcFactory {
+internal object WebRtcFactory {
 
     private const val TAG = "NChatWebRtc"
 

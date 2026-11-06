@@ -1,6 +1,6 @@
 {
-  "versionCode": 63,
-  "versionName": "1.0.55",
+  "versionCode": 64,
+  "versionName": "1.0.56",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.55 — two screens WhatsApp users look for. Settings now has Storage and data: every row is measured from a directory this app owns (photos and avatars, voice notes and videos, camera captures, message history, recorded notes, downloaded updates, drafts/stars/cached lists), with a Clear button each and one Clear all. Rows whose loss you would notice — message history, drafts — ask first and say exactly what goes. In a chat, ⋮ → Media, links and docs opens every photo and video shared there as a grid, every document, and every link, each with who sent it and when; tapping a photo opens the full-screen viewer you already know, with swiping and zoom."
+  "releaseNotes": "NChat 1.0.56 — group voice calls. Calling a group from its header now opens a real call: the app creates it on the server, joins, and connects to everybody already on the line with one WebRTC connection per participant (a mesh), sharing a single microphone. The screen lists who is in the call, who is connected and who is muted, with a running timer and mute / speaker / leave. Two people offering at the same instant are resolved by the polite-peer rule instead of deadlocking, a participant who drops is shown as reconnecting, and leaving closes every connection. If the server doesn't expose the group-call routes, the app says exactly that instead of ringing into nothing. Video in group calls is the next step — this release is voice only."
 }
