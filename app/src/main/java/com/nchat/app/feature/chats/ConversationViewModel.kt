@@ -77,6 +77,11 @@ class ConversationViewModel(
         repository.setTyping(chatId, false)
     }
 
+    /** Quotes [messageId] straight from a swipe, without going through the menu. */
+    fun quote(messageId: String) {
+        _replyTo.value = messages.value.firstOrNull { it.id == messageId }
+    }
+
     fun onReply() {
         _activeMessageId.value?.let { id ->
             _replyTo.value = messages.value.firstOrNull { it.id == id }

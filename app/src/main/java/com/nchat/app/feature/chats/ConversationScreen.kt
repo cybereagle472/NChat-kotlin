@@ -368,6 +368,12 @@ fun ConversationScreen(
                             val onRetrySend = remember(message.id) {
                                 { viewModel.onRetrySend(message.id) }
                             }
+                            val onSwipeReply = remember(message.id) {
+                                { viewModel.quote(message.id) }
+                            }
+                            val onQuickReact = remember(message.id) {
+                                { viewModel.reactTo(message.id, "\u2764\uFE0F") }
+                            }
                             Box(
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     anchors[message.id] = coordinates.boundsInWindow()
@@ -378,6 +384,8 @@ fun ConversationScreen(
                                     onLongPress = onLongPress,
                                     onMediaClick = onMediaClick,
                                     onRetrySend = onRetrySend,
+                                    onSwipeReply = onSwipeReply,
+                                    onQuickReact = onQuickReact,
                                     showAuthor = isGroupChat,
                                     showAvatar = item.showSender
                                 )

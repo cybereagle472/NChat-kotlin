@@ -7,6 +7,11 @@ import android.media.MediaPlayer
 import com.nchat.app.core.audio.VoiceWaveform
 import java.util.Locale
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +42,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Reply
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +69,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
@@ -76,6 +86,8 @@ import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.math.abs
 
 /** 30dp gradient circle with the sender's initial, shown beside the first bubble of a run. */
@@ -133,7 +145,11 @@ fun MessageBubble(
     showAvatar: Boolean = false,
     onMediaClick: () -> Unit = {},
     /** Tapping the warning on a message the server never accepted resends it. */
-    onRetrySend: () -> Unit = {}
+    onRetrySend: () -> Unit = {},
+    /** Swiping the bubble to the right quotes it in the composer, like WhatsApp. */
+    onSwipeReply: () -> Unit = {},
+    /** Double tap drops the default quick reaction on the bubble. */
+    onQuickReact: () -> Unit = {}
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -153,6 +169,21 @@ fun MessageBubble(
         return
     }
 
+    /*
+     * Swipe to reply.
+     *
+     * A right drag moves the whole bubble and uncovers a reply arrow behind it; past 56 dp the
+     * release quotes the message. Only the horizontal axis is claimed (`draggable` with
+     * `Orientation.Horizontal`), so the conversation still scrolls normally when the finger moves
+     * up or down — the same split WhatsApp makes.
+     */
+    val swipe = remember(message.id) { Animatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val swipeTrigger = with(density) { 56.dp.toPx() }
+    val swipeCeiling = with(density) { 88.dp.toPx() }
+    val reveal = (swipe.value / swipeCeiling).coerceIn(0f, 1f)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -167,6 +198,47 @@ fun MessageBubble(
                 GroupSenderAvatar(message.authorName)
             } else {
                 Spacer(modifier = Modifier.size(38.dp))
+            }
+        }
+    /*
+     * The bubble itself is the swipe surface, in a Box of its own so the reply arrow can sit
+     * immediately at its leading edge — the arrow is a sibling of the bubble, not something
+     * measured against the row, which is why it lines up for a right-aligned bubble and a
+     * left-aligned one alike.
+     */
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(swipe.value.roundToInt(), 0) }
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { delta ->
+                    swipeScope.launch {
+                        swipe.snapTo((swipe.value + delta).coerceIn(0f, swipeCeiling))
+                    }
+                },
+                onDragStopped = {
+                    val quoted = swipe.value >= swipeTrigger
+                    if (quoted) onSwipeReply()
+                    swipeScope.launch { swipe.animateTo(0f, tween(160)) }
+                }
+            )
+    ) {
+        if (reveal > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset { IntOffset(-34.dp.roundToPx(), 0) }
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f * reveal)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Reply,
+                    contentDescription = "Reply",
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = reveal),
+                    modifier = Modifier.size(15.dp)
+                )
             }
         }
     Column(
@@ -201,7 +273,12 @@ fun MessageBubble(
                 .then(
                     if (mine) Modifier else Modifier.border(1.dp, Color(0x120F172A), bubbleShape)
                 )
-                .combinedClickable(onClick = onLongPress, onLongClick = onLongPress)
+                .combinedClickable(
+                    onClick = onLongPress,
+                    onLongClick = onLongPress,
+                    // Double tap = the default quick reaction, the gesture WhatsApp users expect.
+                    onDoubleClick = onQuickReact
+                )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             // A reply whose target is outside the loaded page still says *that* it is a reply
@@ -324,6 +401,7 @@ fun MessageBubble(
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
+    }
     }
     }
 }
@@ -722,6 +800,9 @@ private fun VoiceContent(
      */
     var playWhenReady by remember(mediaUrl) { mutableStateOf(false) }
 
+    /** Playback rate — WhatsApp's 1× / 1.5× / 2× for long notes, off for short ones. */
+    var speed by remember(mediaUrl) { mutableStateOf(1f) }
+
     val labelledMs = remember(duration) { parseVoiceDuration(duration) }
     val totalMs = if (realMs > 0) realMs else labelledMs
     val progress = if (totalMs > 0) (positionMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
@@ -839,6 +920,28 @@ private fun VoiceContent(
         if (prepared) runCatching { current.seekTo(bounded) } else pendingSeek = bounded
     }
 
+    /**
+     * Applies [speed] to a ready player.
+     *
+     * `playbackParams` is only touched when the rate is not 1× and the player is actually
+     * playing: assigning it to a paused `MediaPlayer` starts playback on several devices, which
+     * would make "1.5×" look like a random press of play.
+     */
+    fun applySpeed(current: MediaPlayer) {
+        if (speed == 1f) return
+        runCatching { current.playbackParams = current.playbackParams.setSpeed(speed) }
+    }
+
+    fun cycleSpeed() {
+        speed = when (speed) {
+            1f -> 1.5f
+            1.5f -> 2f
+            else -> 1f
+        }
+        val current = player ?: return
+        if (playing && prepared) runCatching { current.playbackParams = current.playbackParams.setSpeed(speed) }
+    }
+
     /** The millisecond a touch at [x] points at, clamped to the clip. */
     fun positionAt(x: Float, width: Float): Int {
         if (totalMs <= 0 || width <= 0f) return 0
@@ -882,6 +985,7 @@ private fun VoiceContent(
                 // Finished a moment ago? Start over instead of playing the last 200 ms.
                 current.seekTo(if (end > 0 && from >= end - 250) 0 else from)
                 current.start()
+                applySpeed(current)
             }
             if (started.isFailure) failPlayback("Couldn't play this voice message")
             return
@@ -902,6 +1006,7 @@ private fun VoiceContent(
                 pendingSeek = null
                 if (playWhenReady) {
                     runCatching { ready.start() }
+                    applySpeed(ready)
                     playing = true
                 } else {
                     playing = false
@@ -960,7 +1065,10 @@ private fun VoiceContent(
      * under the reference because the bubble's own padding sits inside a 300 dp container.
      */
     val widthSeconds = (labelledMs / 1000f).coerceAtLeast(1f)
-    val voiceWidth = (176f + widthSeconds * 2.6f).coerceIn(176f, 264f).dp
+    // A long note gets the speed chip, so it gets the room for it.
+    val showsSpeed = labelledMs >= 20_000
+    val voiceWidth = (176f + widthSeconds * 2.6f + if (showsSpeed) 26f else 0f)
+        .coerceIn(if (showsSpeed) 202f else 176f, 272f).dp
     Row(
         modifier = Modifier
             .width(voiceWidth)
@@ -1124,6 +1232,25 @@ private fun VoiceContent(
                     )
                 }
             }
+        }
+        if (showsSpeed) {
+            /*
+             * 1× → 1.5× → 2× → 1×, the same cycle WhatsApp puts on a long voice note. It sits
+             * beside the timer rather than on the waveform, so a tap here can never be mistaken
+             * for a seek.
+             */
+            Text(
+                text = if (speed == 1.5f) "1.5×" else "${speed.toInt()}×",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (mine) Color(0xCCFFFFFF) else MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (mine) Color(0x26FFFFFF) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    .clickable { cycleSpeed() }
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                    .padding(end = 2.dp)
+            )
         }
         /*
          * Elapsed once the playhead has moved, total at rest — the same thing the web bubble
