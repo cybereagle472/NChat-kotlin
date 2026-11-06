@@ -70,6 +70,7 @@ data class Message(
     val failed: Boolean = false,
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
     val deleted: Boolean = false
+) {
 
     /**
      * This message as one line of text — a chat-list row, or the quote inside a reply.
@@ -97,7 +98,7 @@ data class Message(
     }
 
     private fun oneLine(raw: String): String = raw.replace(SNIPPET_WHITESPACE, " ").trim()
-)
+}
 
 /** Where a call on screen currently is. */
 enum class CallState {
