@@ -58,7 +58,7 @@ class NetworkMonitor(context: Context) {
     fun start() {
         if (started || manager == null) return
         started = true
-        runCatching { manager.registerDefaultNetworkCallback(callback) }
+        runCatching { manager?.registerDefaultNetworkCallback(callback) }
         refresh()
     }
 

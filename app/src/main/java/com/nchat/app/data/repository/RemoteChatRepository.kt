@@ -760,7 +760,7 @@ class RemoteChatRepository(
             if (!online()) return@launch
 
             var failure: Throwable? = null
-            val created = sendWithRetry({ send(localId) }) { error -> failure = error }
+            val created = sendWithRetry(onFailure = { error -> failure = error }) { send(localId) }
             if (created == null) {
                 val transient = when (val error = failure) {
                     is ApiException -> error.status >= 500 || error.status == 429
@@ -785,8 +785,8 @@ class RemoteChatRepository(
      * rate-limited for real), and repeating it just delays the warning the user needs to see.
      */
     private suspend fun sendWithRetry(
-        send: suspend () -> com.nchat.app.network.MessageEnvelope?,
-        onFailure: (Throwable?) -> Unit = {}
+        onFailure: (Throwable?) -> Unit = {},
+        send: suspend () -> com.nchat.app.network.MessageEnvelope?
     ): MessageDto? {
         var attempt = 0
         while (true) {
