@@ -24,11 +24,37 @@ import androidx.compose.ui.text.withStyle
  * Parsing happens once per bubble (the result is remembered by the bubble against its text), so
  * this never runs during scrolling.
  */
-fun chatFormatted(raw: String): AnnotatedString = buildAnnotatedString {
-    appendFormatted(raw)
+fun chatFormatted(
+    raw: String,
+    /** Display names that should light up when they appear as `@Name` — the group's roster. */
+    mentions: List<String> = emptyList(),
+    /** How a mention is drawn. Null leaves `@Name` as ordinary text. */
+    mentionStyle: SpanStyle? = null
+): AnnotatedString = buildAnnotatedString {
+    appendFormatted(raw, mentions, mentionStyle)
 }
 
-private fun AnnotatedString.Builder.appendFormatted(text: String) {
+/**
+ * Names are matched longest-first, so `@Nasir Khan` wins over `@Nasir` when both exist, and only
+ * *known* names light up — a stray `@` followed by random words stays plain text, which is what
+ * keeps `@` usable in ordinary sentences.
+ */
+private fun mentionAt(text: String, index: Int, mentions: List<String>): String? {
+    if (text[index] != '@') return null
+    return mentions
+        .asSequence()
+        .filter { it.isNotBlank() }
+        .sortedByDescending { it.length }
+        .firstOrNull { name ->
+            text.regionMatches(index + 1, name, 0, name.length, ignoreCase = true)
+        }
+}
+
+private fun AnnotatedString.Builder.appendFormatted(
+    text: String,
+    mentions: List<String> = emptyList(),
+    mentionStyle: SpanStyle? = null
+) {
     var index = 0
     val plain = StringBuilder()
 
@@ -40,6 +66,16 @@ private fun AnnotatedString.Builder.appendFormatted(text: String) {
     }
 
     while (index < text.length) {
+        // A mention is checked before the formatting markers: `@` is never a marker, but the name
+        // after it must be consumed whole.
+        val mentionSpan = mentionStyle
+        val mention = if (mentionSpan != null) mentionAt(text, index, mentions) else null
+        if (mention != null && mentionSpan != null) {
+            flush()
+            withStyle(mentionSpan) { append(text.substring(index, index + 1 + mention.length)) }
+            index += 1 + mention.length
+            continue
+        }
         val marker = text[index]
         val style = styleFor(marker)
         if (style == null) {
@@ -61,7 +97,7 @@ private fun AnnotatedString.Builder.appendFormatted(text: String) {
             continue
         }
         flush()
-        withStyle(style) { appendFormatted(text.substring(index + 1, close)) }
+        withStyle(style) { appendFormatted(text.substring(index + 1, close), mentions, mentionStyle) }
         index = close + 1
     }
     flush()

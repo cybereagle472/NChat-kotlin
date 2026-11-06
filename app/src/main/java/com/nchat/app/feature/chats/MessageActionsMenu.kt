@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Mood
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Reply
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -104,6 +105,9 @@ fun MessageActionMenu(
     isPinned: Boolean = false,
     /** Delivery details for this one message. */
     onInfo: () -> Unit = {},
+    /** Groups only: send this message to its author in their direct chat. */
+    onReplyPrivately: () -> Unit = {},
+    showReplyPrivately: Boolean = false,
     reactedEmojis: Set<String> = emptySet(),
     onShowAllReactions: () -> Unit = {}
 ) {
@@ -124,6 +128,7 @@ fun MessageActionMenu(
             val cardWidth = 248.dp
             // Rows: reply?/forward/copy?/star/select/edit?/delete under a ~50 dp reaction strip.
             val rowCount = 5 +
+                (if (showReplyPrivately) 1 else 0) +
                 (if (showReply) 1 else 0) +
                 (if (showCopy) 1 else 0) +
                 (if (showEdit) 1 else 0)
@@ -189,6 +194,14 @@ fun MessageActionMenu(
                             tint = extra.textSecondary,
                             onClick = onStar
                         )
+                        if (showReplyPrivately) {
+                            MenuAction(
+                                icon = Icons.Rounded.Person,
+                                label = "Reply privately",
+                                tint = extra.textSecondary,
+                                onClick = onReplyPrivately
+                            )
+                        }
                         MenuAction(
                             icon = Icons.Rounded.PushPin,
                             label = if (isPinned) "Unpin" else "Pin",

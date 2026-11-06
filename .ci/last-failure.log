@@ -1,4 +1,4 @@
-run: 42206387000
+run: 42208562796
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -15,24 +15,25 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:checkReleaseAarMetadata
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources UP-TO-DATE
-> Task :app:packageReleaseResources
+> Task :app:mergeReleaseResources FROM-CACHE
+> Task :app:packageReleaseResources FROM-CACHE
+> Task :app:parseReleaseLocalResources FROM-CACHE
 > Task :app:createReleaseCompatibleScreenManifests
 > Task :app:extractDeepLinksRelease FROM-CACHE
-> Task :app:parseReleaseLocalResources
-> Task :app:mergeReleaseResources
 > Task :app:processReleaseMainManifest
 > Task :app:processReleaseManifest
 > Task :app:javaPreCompileRelease FROM-CACHE
 > Task :app:extractProguardFiles
 > Task :app:mergeReleaseJniLibFolders FROM-CACHE
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseNativeLibs
 > Task :app:desugarReleaseFileDependencies FROM-CACHE
-> Task :app:processReleaseManifestForPackage
 > Task :app:checkReleaseDuplicateClasses
 
 > Task :app:stripReleaseDebugSymbols
 Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
 
+> Task :app:mergeReleaseArtProfile
 > Task :app:extractReleaseNativeSymbolTables FROM-CACHE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
 > Task :app:mergeExtDexRelease FROM-CACHE
@@ -40,21 +41,20 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:mergeReleaseShaders FROM-CACHE
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
-> Task :app:mergeReleaseArtProfile
 > Task :app:mergeReleaseAssets FROM-CACHE
 > Task :app:compressReleaseAssets FROM-CACHE
 > Task :app:collectReleaseDependencies
 > Task :app:sdkReleaseDependencyData
 > Task :app:validateSigningRelease
-> Task :app:optimizeReleaseResources
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
+> Task :app:optimizeReleaseResources
 > Task :app:compileReleaseKotlin
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:398:9 Unresolved reference: scope
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:399:57 Suspend function 'current' should be called only from a coroutine or another suspend function
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/util/ChatTextFormat.kt:71:13 Conflicting declarations: val style: SpanStyle?, val style: SpanStyle?
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/util/ChatTextFormat.kt:80:13 Conflicting declarations: val style: SpanStyle?, val style: SpanStyle?
 
 > Task :app:compileReleaseKotlin FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793962582014.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793963606013.json
 
 FAILURE: Build failed with an exception.
 
@@ -260,5 +260,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 50s
-35 actionable tasks: 25 executed, 10 from cache
+BUILD FAILED in 45s
+35 actionable tasks: 22 executed, 13 from cache

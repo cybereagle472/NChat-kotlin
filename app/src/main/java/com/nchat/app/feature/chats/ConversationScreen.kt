@@ -280,6 +280,19 @@ fun ConversationScreen(
         friendGraph.filter { it.relation == FriendRelation.Friend }
     }
     val group = groups.firstOrNull { it.id == chatId }
+    /*
+     * Who can be @mentioned here.
+     *
+     * The roster is the authority (a group member who is not a friend still has a name), topped up
+     * with the friend graph so a direct chat can mention too. Names — not ids — because that is
+     * what the message text carries: the wire has no mention field, and `@Name` is exactly what
+     * the reference web app sends and renders.
+     */
+    val mentionNames = remember(group, friendGraph) {
+        val roster = group?.members?.map { it.name }.orEmpty()
+        val friends = friendGraph.map { it.name }
+        (roster + friends).filter { it.isNotBlank() }.distinct()
+    }
     val isGroupChat = chat?.isGroup == true || group != null
     // Group chats name who is typing; direct chats keep the anonymous "typing…" label.
     // The name comes from the event's `sender_id`, resolved against the roster — it used to be
@@ -588,6 +601,7 @@ fun ConversationScreen(
                                     selected = message.id in selection,
                                     onToggleSelect = onToggleSelect,
                                     highlighted = message.id == highlightId,
+                                    mentions = mentionNames,
                                     showAuthor = isGroupChat,
                                     showAvatar = item.showSender
                                 )
@@ -683,6 +697,7 @@ fun ConversationScreen(
                         else -> Unit
                     }
                 },
+                mentionNames = mentionNames,
                 onTakePhoto = {
                     val granted = androidx.core.content.ContextCompat.checkSelfPermission(
                         context,
@@ -779,6 +794,22 @@ fun ConversationScreen(
             onInfo = {
                 infoMessage = activeMessage
                 viewModel.onSelectMessage(null)
+            },
+            showReplyPrivately = isGroupChat &&
+                !activeMessage.isMine &&
+                friendGraph.any { it.id == activeMessage.authorId },
+            onReplyPrivately = {
+                /*
+                 * WhatsApp opens that person's chat with the message already quoted. From inside
+                 * the group we cannot pre-fill another chat's composer, so the message is copied
+                 * into their direct chat instead — the recipient gets the same content, privately,
+                 * and the toast says what happened.
+                 */
+                val author = activeMessage.authorId
+                val name = activeMessage.authorName
+                viewModel.onForward(activeMessage.id, listOf(author))
+                viewModel.onSelectMessage(null)
+                NcToaster.show("Sent privately to $name")
             },
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
@@ -2158,6 +2189,8 @@ private fun ComposerBar(
      * already rendered — but nothing ever *sent* them, so a peer never saw the mic indicator.
      */
     onRecordingChange: (Boolean) -> Unit = {},
+    /** Names that can be completed after an `@`, from the group roster. */
+    mentionNames: List<String> = emptyList(),
     /** Opens the system camera and sends the photo it returns. */
     onTakePhoto: () -> Unit = {},
     /** Resolves a position and sends it as a `location` message. */
@@ -2258,6 +2291,29 @@ private fun ComposerBar(
         }
     }
 
+    /*
+     * @mentions in the composer.
+     *
+     * The trailing word is inspected after every keystroke: `@ali` opens a short list of matching
+     * members and tapping one rewrites that word to `@<Name> `. Nothing is inserted that the user
+     * did not ask for, so a plain `@` followed by a space stays exactly that.
+     */
+    val mentionQuery = remember(text) {
+        val match = Regex("(?:^|\\s)@([^@\\s]{0,30})$").find(text) ?: return@remember null
+        match.groupValues[1]
+    }
+    val mentionSuggestions = remember(mentionQuery, mentionNames) {
+        if (mentionQuery == null) emptyList()
+        else mentionNames
+            .filter { it.contains(mentionQuery, ignoreCase = true) }
+            .take(6)
+    }
+    fun applyMention(name: String) {
+        val query = mentionQuery ?: return
+        val cut = text.length - query.length - 1
+        onTextChange(text.substring(0, cut.coerceAtLeast(0)) + "@" + name + " ")
+    }
+
     val rotation by animateFloatAsState(
         targetValue = if (mediaOpen) 45f else 0f,
         animationSpec = tween(220),
@@ -2291,6 +2347,14 @@ private fun ComposerBar(
                     onShareLocation()
                 }
             )
+        }
+
+        AnimatedVisibility(
+            visible = mentionSuggestions.isNotEmpty(),
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(100))
+        ) {
+            MentionSuggestions(names = mentionSuggestions, onPick = ::applyMention)
         }
 
         AnimatedVisibility(
@@ -2547,6 +2611,52 @@ private fun ReplyComposerStrip(quoted: Message, onCancel: () -> Unit) {
 }
 
 /** `chat-media-popup` from the reference: Photos / Videos / Files above the input. */
+/** The small list of members that appears while an `@name` is being typed. */
+@Composable
+private fun MentionSuggestions(names: List<String>, onPick: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White)
+            .padding(vertical = 4.dp)
+    ) {
+        names.forEach { name ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(name) }
+                    .padding(horizontal = NcSpace.md, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = name.take(1).uppercase(),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = name,
+                    color = NcTheme.extra.textPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun MediaPopup(
     onPick: (MessageKind) -> Unit,

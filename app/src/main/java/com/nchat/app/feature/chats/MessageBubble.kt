@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
@@ -160,7 +161,9 @@ fun MessageBubble(
     selected: Boolean = false,
     onToggleSelect: () -> Unit = {},
     /** Briefly ringed after a search result jumped here. */
-    highlighted: Boolean = false
+    highlighted: Boolean = false,
+    /** Group roster names; `@Name` in the body lights up when it is one of them. */
+    mentions: List<String> = emptyList()
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -367,7 +370,19 @@ fun MessageBubble(
             ) {
                 // `*bold*`, `_italic_`, `~strike~`, `` `mono` `` — parsed once per text, not per
                 // frame, and remembered so scrolling a long conversation stays cheap.
-                val body = remember(message.text) { chatFormatted(message.text) }
+                // Hoisted out of `remember`: a composable read inside the calculation is illegal.
+                val mentionColor = if (mine) Color.White else MaterialTheme.colorScheme.primary
+                val body = remember(message.text, mentions, mine, mentionColor) {
+                    chatFormatted(
+                        raw = message.text,
+                        mentions = mentions,
+                        mentionStyle = SpanStyle(
+                            color = mentionColor,
+                            fontWeight = FontWeight.SemiBold,
+                            background = if (mine) Color(0x33FFFFFF) else Color(0x14A855F7)
+                        )
+                    )
+                }
                 Text(
                     text = body,
                     style = MaterialTheme.typography.bodyLarge,
