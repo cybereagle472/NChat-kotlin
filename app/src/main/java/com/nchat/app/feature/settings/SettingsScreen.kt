@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -119,6 +120,10 @@ fun SettingsScreen(
             return
         }
 
+        SettingsPane.Storage -> {
+            StoragePane(onBack = { section = SettingsPane.Main })
+            return
+        }
         SettingsPane.Notifications -> {
             NotificationsPane(
                 settings = notifications,
@@ -218,6 +223,13 @@ fun SettingsScreen(
 
                 item(key = "chats") {
                     SettingsSection {
+                        SettingsMenuItem(
+                            tone = MenuTone.Orange,
+                            icon = Icons.Rounded.Storage,
+                            title = "Storage and data",
+                            subtitle = "Media, message history, downloads",
+                            onClick = { section = SettingsPane.Storage }
+                        )
                         SettingsMenuItem(MenuTone.Blue, Icons.Rounded.ChatBubbleOutline, "Chats", "Theme, wallpapers, chat history")
                         SettingsMenuItem(MenuTone.Teal, Icons.Rounded.Palette, "Appearance", "Theme, dark mode")
                         SettingsMenuItem(MenuTone.Indigo, Icons.Rounded.Language, "Language", "English", last = true)
@@ -643,7 +655,7 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 }
 
 /** Which pane of Settings is showing. */
-private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Sync }
+private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Storage, Sync }
 
 
 /**

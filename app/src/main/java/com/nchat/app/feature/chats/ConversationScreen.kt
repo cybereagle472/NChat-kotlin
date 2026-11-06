@@ -234,6 +234,7 @@ fun ConversationScreen(
     var searching by remember { mutableStateOf(false) }
     var optionsOpen by remember { mutableStateOf(false) }
     var starredOpen by remember { mutableStateOf(false) }
+    var mediaSheetOpen by remember { mutableStateOf(false) }
     var forwardingSelection by remember { mutableStateOf(false) }
     var bulkDeleteOpen by remember { mutableStateOf(false) }
     var highlightId by remember { mutableStateOf<String?>(null) }
@@ -970,6 +971,10 @@ fun ConversationScreen(
             onStarred = {
                 optionsOpen = false
                 starredOpen = true
+            },
+            onMedia = {
+                optionsOpen = false
+                mediaSheetOpen = true
             }
         )
     }
@@ -991,6 +996,18 @@ fun ConversationScreen(
                 }
             },
             onUnstar = { starred -> ServiceLocator.stars.unstar(starred.chatId, starred.messageId) }
+        )
+    }
+
+    if (mediaSheetOpen) {
+        ChatMediaSheet(
+            messages = messages,
+            onDismiss = { mediaSheetOpen = false },
+            onOpenMedia = { selected ->
+                mediaSheetOpen = false
+                // The same full-screen pager the bubbles open, over the chat's photos and videos.
+                mediaViewer = selected
+            }
         )
     }
 

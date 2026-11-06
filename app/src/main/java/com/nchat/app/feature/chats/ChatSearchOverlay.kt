@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
@@ -452,7 +453,8 @@ fun StarredMessagesSheet(
 fun ChatOptionsSheet(
     onDismiss: () -> Unit,
     onSearch: () -> Unit,
-    onStarred: () -> Unit
+    onStarred: () -> Unit,
+    onMedia: () -> Unit = {}
 ) {
     val extra = NcTheme.extra
     Dialog(
@@ -476,6 +478,7 @@ fun ChatOptionsSheet(
                     .padding(vertical = 4.dp)
             ) {
                 OptionRow("Search", Icons.Rounded.Search) { onSearch() }
+                OptionRow("Media, links and docs", Icons.Rounded.PhotoLibrary) { onMedia() }
                 OptionRow("Starred messages", Icons.Rounded.Star) { onStarred() }
             }
         }

@@ -23,8 +23,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -49,13 +54,16 @@ import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcBackdrop
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.NcToggle
 import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.core.diagnostics.CheckRow
 import com.nchat.app.core.diagnostics.SyncCheck
 import com.nchat.app.data.ServiceLocator
+import com.nchat.app.data.local.StorageEntry
 import com.nchat.app.data.model.BlockedContact
+import androidx.compose.foundation.lazy.items
 import com.nchat.app.network.ApiLog
 import kotlinx.coroutines.launch
 import com.nchat.app.data.repository.NotificationSettings
@@ -412,6 +420,181 @@ fun NotificationsPane(
                     last = true
                 )
             }
+        }
+    }
+}
+
+/**
+ * Settings ▸ Storage and data.
+ *
+ * Every row is measured from a directory this app owns (`StorageReport`), so the numbers are real
+ * instead of a guess, and clearing one only ever touches that directory. Rows whose loss is
+ * *invisible* — the message cache, the drafts-and-lists file — are marked and confirmed, because
+ * "free up 40 MB" should not quietly cost somebody their unsent paragraph.
+ */
+@Composable
+fun StoragePane(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var entries by remember { mutableStateOf<List<StorageEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var pendingClear by remember { mutableStateOf<StorageEntry?>(null) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        entries = com.nchat.app.data.local.StorageReport.scanAsync(context)
+        loading = false
+    }
+
+    val total = entries.sumOf { it.bytes }
+
+    SettingsPaneScaffold(
+        title = "Storage and data",
+        subtitle = if (loading) "Measuring…" else "${com.nchat.app.data.local.StorageReport.format(total)} on this device",
+        onBack = onBack
+    ) {
+        item(key = "summary") {
+            PaneSection(title = "Used by NChat") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = com.nchat.app.data.local.StorageReport.format(total),
+                            color = PaneTitle,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Media, message history and updates",
+                            color = PaneBody,
+                            fontSize = 11.sp
+                        )
+                    }
+                    if (total > 0L) {
+                        Text(
+                            text = "Clear all",
+                            color = Color(0xFFDC2626),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    scope.launch {
+                                        busy = "all"
+                                        entries.forEach { entry ->
+                                            com.nchat.app.data.local.StorageReport.clear(context, entry.key)
+                                        }
+                                        entries = com.nchat.app.data.local.StorageReport.scanAsync(context)
+                                        busy = null
+                                        NcToaster.show("Storage cleared")
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        items(items = entries, key = { it.key }) { entry ->
+            PaneSection {
+                StorageRow(
+                    entry = entry,
+                    busy = busy == entry.key,
+                    onClear = {
+                        if (entry.destructive) pendingClear = entry else {
+                            scope.launch {
+                                busy = entry.key
+                                com.nchat.app.data.local.StorageReport.clear(context, entry.key)
+                                entries = com.nchat.app.data.local.StorageReport.scanAsync(context)
+                                busy = null
+                                NcToaster.show("Cleared ${entry.label.lowercase()}")
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    pendingClear?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingClear = null },
+            title = { Text("Clear ${entry.label.lowercase()}?", fontWeight = FontWeight.SemiBold) },
+            text = { Text(entry.detail, fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingClear = null
+                        scope.launch {
+                            busy = entry.key
+                            com.nchat.app.data.local.StorageReport.clear(context, entry.key)
+                            entries = com.nchat.app.data.local.StorageReport.scanAsync(context)
+                            busy = null
+                            NcToaster.show("Cleared ${entry.label.lowercase()}")
+                        }
+                    }
+                ) {
+                    Text("Clear", color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingClear = null }) {
+                    Text("Cancel", color = PaneBody)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun StorageRow(entry: StorageEntry, busy: Boolean, onClear: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entry.label,
+                color = PaneTitle,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${com.nchat.app.data.local.StorageReport.format(entry.bytes)} · ${entry.detail}",
+                color = PaneBody,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Spacer(modifier = Modifier.size(NcSpace.sm))
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = PaneTitle
+            )
+        } else if (entry.bytes > 0L) {
+            Text(
+                text = "Clear",
+                color = if (entry.destructive) Color(0xFFDC2626) else MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClear)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
     }
 }

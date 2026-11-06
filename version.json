@@ -1,6 +1,6 @@
 {
-  "versionCode": 62,
-  "versionName": "1.0.54",
+  "versionCode": 63,
+  "versionName": "1.0.55",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.54 — groups get mentions and private replies. Type @ in a group and the member list appears; tap a name and it is inserted, and in the sent message every @Name from the roster is highlighted (stronger when it is you). A stray @ followed by ordinary words stays plain text, because only real member names light up. Long-press a group message from someone you are friends with and choose Reply privately: the message is copied into their direct chat, so the conversation moves out of the group without anyone else reading it. Long-press menus also stay inside the screen now — the card sizes itself from the actions it is actually showing."
+  "releaseNotes": "NChat 1.0.55 — two screens WhatsApp users look for. Settings now has Storage and data: every row is measured from a directory this app owns (photos and avatars, voice notes and videos, camera captures, message history, recorded notes, downloaded updates, drafts/stars/cached lists), with a Clear button each and one Clear all. Rows whose loss you would notice — message history, drafts — ask first and say exactly what goes. In a chat, ⋮ → Media, links and docs opens every photo and video shared there as a grid, every document, and every link, each with who sent it and when; tapping a photo opens the full-screen viewer you already know, with swiping and zoom."
 }
