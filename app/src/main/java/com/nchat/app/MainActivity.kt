@@ -38,6 +38,8 @@ class MainActivity : ComponentActivity() {
         // Composition root: the backend address comes from BuildConfig (see nchat.properties),
         // so there is nothing to configure here at runtime.
         ServiceLocator.init(applicationContext)
+        // Keeps messages arriving while the app is closed — see BackgroundSyncService.
+        ServiceLocator.applyBackgroundSync()
         requestNotificationPermission()
         // A notification tap that cold-started the app carries the chat to open.
         readChatTarget(intent)

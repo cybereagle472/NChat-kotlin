@@ -1,6 +1,6 @@
 {
-  "versionCode": 65,
-  "versionName": "1.0.57",
+  "versionCode": 66,
+  "versionName": "1.0.58",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.57 — group calls, aligned with the server that actually exists. The worker's group-call routes were merged on 3 November and speak a slightly different shape than the app expected: participant names arrive flat (full_name/avatar_url) instead of nested, and join/leave events name the person as user_id instead of from. Both are now read, so the roster shows real names and a participant who hangs up disappears from the list. New: when someone starts a group call, the others get a card — \"Nasir started a voice call\" — with Join / Not now, instead of having to open the group and hope they noticed. The card expires on its own after 45 seconds and never interrupts a call you are already on."
+  "releaseNotes": "NChat 1.0.58 — notifications while the app is closed, without Google. On Android the only channel that can wake an app on Google's behalf is Firebase, and this app deliberately has none of it. So NChat keeps its own connection instead: a foreground service holds the realtime socket the UI already uses, which means the existing notification code fires while the app is gone — sender name, message text, inline reply, tap opens that chat. No second transport, no push server, no Firebase, no per-message cost. There is one visible price, and it is the honest one: a quiet NChat line in the notification shade (Android requires it for a foreground service), collapsed at the bottom and silent, plus a small battery cost. Settings ▸ Notifications has a new switch for it and a Battery usage row that asks Android to leave NChat awake. Turning it off changes nothing else — messages simply wait until you open the app."
 }

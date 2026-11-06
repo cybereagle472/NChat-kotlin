@@ -12,8 +12,8 @@ android {
         applicationId "com.nchat.app"
         minSdk 24
         targetSdk 34
-        versionCode 65
-        versionName "1.0.57"
+        versionCode 66
+        versionName "1.0.58"
         resourceConfigurations += ['en']
 
         // The backend this build talks to, resolved once and baked into BuildConfig.

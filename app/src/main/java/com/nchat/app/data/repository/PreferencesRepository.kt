@@ -32,7 +32,16 @@ data class NotificationSettings(
     val calls: Boolean = true,
     val preview: Boolean = true,
     val sound: Boolean = true,
-    val vibrate: Boolean = true
+    val vibrate: Boolean = true,
+    /**
+     * Keep the realtime connection open while the app is in the background.
+     *
+     * This is what makes notifications arrive when NChat is not on screen, without Firebase:
+     * the app holds one websocket to the same backend the UI uses, and lets the existing
+     * [com.nchat.app.data.notifications.NcNotifications] path render the alert. Turning it off
+     * costs nothing except that nothing arrives until the app is opened again.
+     */
+    val background: Boolean = true
 )
 
 /**
@@ -58,6 +67,7 @@ interface PreferencesRepository {
     fun setShowPreview(enabled: Boolean)
     fun setSound(enabled: Boolean)
     fun setVibrate(enabled: Boolean)
+    fun setBackgroundNotifications(enabled: Boolean)
 }
 
 class LocalPreferencesRepository(context: Context) : PreferencesRepository {
@@ -91,7 +101,8 @@ class LocalPreferencesRepository(context: Context) : PreferencesRepository {
             calls = flag(KEY_NOTIF_CALLS, true),
             preview = flag(KEY_NOTIF_PREVIEW, true),
             sound = flag(KEY_NOTIF_SOUND, true),
-            vibrate = flag(KEY_NOTIF_VIBRATE, true)
+            vibrate = flag(KEY_NOTIF_VIBRATE, true),
+            background = flag(KEY_NOTIF_BACKGROUND, true)
         )
     )
     override val notifications: StateFlow<NotificationSettings> = _notifications.asStateFlow()
@@ -131,6 +142,9 @@ class LocalPreferencesRepository(context: Context) : PreferencesRepository {
     override fun setVibrate(enabled: Boolean) =
         updateNotifications(KEY_NOTIF_VIBRATE, enabled) { it.copy(vibrate = enabled) }
 
+    override fun setBackgroundNotifications(enabled: Boolean) =
+        updateNotifications(KEY_NOTIF_BACKGROUND, enabled) { it.copy(background = enabled) }
+
     private fun updateNotifications(
         key: String,
         enabled: Boolean,
@@ -156,6 +170,7 @@ class LocalPreferencesRepository(context: Context) : PreferencesRepository {
         const val KEY_NOTIF_PREVIEW = "notif_preview"
         const val KEY_NOTIF_SOUND = "notif_sound"
         const val KEY_NOTIF_VIBRATE = "notif_vibrate"
+        const val KEY_NOTIF_BACKGROUND = "notif_background"
     }
 }
 
@@ -224,6 +239,7 @@ class RemotePreferencesRepository(
     override fun setShowPreview(enabled: Boolean) = local.setShowPreview(enabled)
     override fun setSound(enabled: Boolean) = local.setSound(enabled)
     override fun setVibrate(enabled: Boolean) = local.setVibrate(enabled)
+    override fun setBackgroundNotifications(enabled: Boolean) = local.setBackgroundNotifications(enabled)
 
     private fun push(
         lastSeen: Visibility? = null,
