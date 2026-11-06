@@ -346,10 +346,27 @@ class RemoteChatRepository(
             }
             .sortedByDescending { it.lastMessageAt }
         _chats.value = merged
+
+        /*
+         * A message that is still queued — or one the server refused — is newer than anything
+         * `/messages/chats` can know about, because it has not been delivered. Re-derive those
+         * rows from the conversation, or every refresh put the tick back on a send that never
+         * happened and reset the row to the previous message.
+         */
+        val queuedChats = outbox?.all()?.map { it.chatId }?.toSet().orEmpty()
+        val stalePreviews = queuedChats.filter { id ->
+            val messages = stream(id).value
+            messages.isNotEmpty() && messages.any { it.failed || isPending(id, it.id) }
+        }
+        if (stalePreviews.isNotEmpty()) {
+            stalePreviews.forEach { previewFromLast(it) }
+            _chats.update { list -> list.sortedByDescending { it.lastMessageAt } }
+        }
+
         // Only persist a complete answer. Saving a half-failed refresh used to overwrite the
         // cache with just the groups, so one bad `/messages/chats` and every 1:1 row was gone
         // from disk for good.
-        if (directResult.isSuccess && groupResult.isSuccess) cache?.save(merged)
+        if (directResult.isSuccess && groupResult.isSuccess) cache?.save(_chats.value)
 
         // Then, and only after the real list is on screen, look for conversations the server's
         // friendship view forgot. Runs once per process: every peer it finds lands in the list
@@ -357,7 +374,11 @@ class RemoteChatRepository(
         val covered = merged.map { it.id }.toSet() + synchronized(conversations) { groupIds.toSet() }
         val recovered = recoverFromHistory(covered)
         if (recovered.isNotEmpty()) {
-            val withHistory = (merged + recovered).sortedByDescending { it.lastMessageAt }
+            // Append to what is on screen, not to the server's answer: the queued-message
+            // previews above were derived from the conversations and must survive recovery.
+            val withHistory = (_chats.value + recovered)
+                .distinctBy { it.id }
+                .sortedByDescending { it.lastMessageAt }
             _chats.value = withHistory
             cache?.save(withHistory)
         }
@@ -1279,6 +1300,8 @@ class RemoteChatRepository(
                 else message.copy(text = body, isEdited = true)
             }
         }
+        // Editing the newest message changes the chat-list row too; nothing else re-derives it.
+        previewFromLast(chatId)
         if (isPending(chatId, messageId)) return
         scope.launch {
             val response = runCatching { api.editMessage(messageId, body) }.getOrNull()
@@ -1286,6 +1309,7 @@ class RemoteChatRepository(
             updateMessages(chatId) { messages ->
                 messages.map { if (it.id == messageId) updated.toModel(chatId) else it }
             }
+            previewFromLast(chatId)
         }
     }
 

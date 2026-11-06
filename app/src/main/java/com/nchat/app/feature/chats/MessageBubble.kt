@@ -852,9 +852,13 @@ private fun VoiceContent(
                 }
             }
         }
-        // Total length at rest, elapsed while playing — the same thing the web bubble counts.
+        /*
+         * Elapsed once the playhead has moved, total at rest — the same thing the web bubble
+         * counts. Keying this on `playing` alone snapped back to the total the moment you
+         * paused, losing the position you had just scrubbed to.
+         */
         Text(
-            text = if (playing && totalMs > 0) {
+            text = if (totalMs > 0 && positionMs > 0) {
                 "%d:%02d".format(Locale.US, (positionMs / 60_000), (positionMs / 1_000) % 60)
             } else {
                 duration
