@@ -289,11 +289,20 @@ a normal app rather than an empty one.
 
 | What | Where it lives | Written | Read |
 |---|---|---|---|
-| Chat list | `ChatListCache` → `cache/chats.json` | after every successful `/messages/chats` + `/groups` | in `init`, before `refresh()` |
+| Chat list | `ChatListCache` → `cache/chats.json` | **mirrored on every change of the list** (debounced 700 ms) once a complete `/messages/chats` + `/groups` answer has been seen | in `init`, before `refresh()` |
+| Group list (+ rosters) | `GroupListCache` → `cache/groups.json` | same rule, guarded by `/groups` | in `init`, before `refresh()` |
 | Friend graph | `FriendGraphCache` → `cache/friends.json` (per account) | after every successful `/friends` | in `init`, before `refresh()` |
 | **Messages** | **`MessageStore` → `cache/messages/<owner>/<chat>.json`** | **whenever a conversation's flow changes (debounced 400 ms, atomic tmp+rename)** | **`conversation()` before the request; one file per chat, newest 300** |
 | Queued sends | `OutboxStore` → `outbox.json` | on send, before the request | at start-up and on every `ConnectionState.Connected` |
 | Block list | `BlockedContactsStore` → `blocked.json` | on block/unblock | in `init` |
+
+List-mirroring rule: the chat and group lists are written **only after a complete answer**
+(`chatsTrusted` / `groupsTrusted` in the repository). A failed refresh produces half a list —
+chats without groups, or groups without chats — and persisting that would delete the cached
+half of whichever endpoint failed, which is the bug the old "save only a complete reload"
+comment was guarding against. Everything that changes a list *between* reloads (a socket
+message, a rename, a pin, a delete, a conversation started with someone the friend view does
+not list) used to be memory-only and was lost on a kill; now it is on disk within a second.
 
 Message cache rules:
 

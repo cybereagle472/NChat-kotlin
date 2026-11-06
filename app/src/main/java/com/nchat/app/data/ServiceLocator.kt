@@ -7,6 +7,7 @@ import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.core.network.NetworkMonitor
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.local.FriendGraphCache
+import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.model.Friend
@@ -184,6 +185,9 @@ object ServiceLocator {
     /** Every conversation, per account, on disk — see [MessageStore]. */
     private val messageStore by lazy { MessageStore(requireContext()) }
 
+    /** Last known group list and rosters, so the Groups tab opens offline — see [GroupListCache]. */
+    private val groupCache by lazy { GroupListCache(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(api, tokens, appScope, chatCache)
@@ -201,7 +205,8 @@ object ServiceLocator {
             blockedIds = { friendRepository.blockedIds.value },
             outbox = outboxStore,
             messages = messageStore,
-            online = { networkMonitor.online.value }
+            online = { networkMonitor.online.value },
+            groupCache = groupCache
         )
     }
     val friendRepository: FriendRepository by lazy {

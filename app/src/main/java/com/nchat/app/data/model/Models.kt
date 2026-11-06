@@ -232,6 +232,7 @@ data class OutboxEntry(
 
 /** One row of a group's member list, straight from `GET /groups`'s `members[]`. */
 @Immutable
+@Serializable
 data class GroupMember(
     val userId: String,
     val name: String,
@@ -243,8 +244,15 @@ data class GroupMember(
     val isAdmin: Boolean get() = role == "admin"
 }
 
-/** Group entry for the Groups tab. */
+/**
+ * Group entry for the Groups tab.
+ *
+ * Serializable for the same reason [Friend] and [Message] are: the Groups tab is cached on
+ * disk (`GroupListCache`), so it does not go blank the moment the app is opened without a
+ * network.
+ */
 @Immutable
+@Serializable
 data class Group(
     val id: String,
     val name: String,

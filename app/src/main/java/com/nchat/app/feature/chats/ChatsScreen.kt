@@ -60,6 +60,7 @@ import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.NcTypingDots
 import com.nchat.app.core.designsystem.NcUnreadBadge
 import com.nchat.app.core.util.TimeFormat
+import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.MessageKind
@@ -77,6 +78,13 @@ fun ChatsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<Chat?>(null) }
+    /*
+     * While the phone has no network the failed request is not news, and the red banner that
+     * reports it sits on top of a perfectly usable list of saved chats. The home screen's
+     * "Waiting for network" pill already says the one thing worth saying, so the banner is
+     * reserved for answers the server actually gave (a 500, a 401, a bad response).
+     */
+    val deviceOnline by ServiceLocator.network.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize()) {
         NcTabHeader(
@@ -89,7 +97,7 @@ fun ChatsScreen(
             }
         )
 
-        state.error?.let { message ->
+        state.error?.takeIf { deviceOnline }?.let { message ->
             SyncErrorBanner(message = message, onRetry = viewModel::retry)
         }
 
