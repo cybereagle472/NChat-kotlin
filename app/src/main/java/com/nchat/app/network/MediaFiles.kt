@@ -30,16 +30,19 @@ import java.util.concurrent.TimeUnit
  *   range request.
  *
  * So the bytes come through the authenticated client (the same token + one-shot renew policy as
- * images), land in `cacheDir/voice/`, are sanity-checked to be audio, and are played from disk.
- * The cache is bounded and self-cleaning, and a cached clip plays offline.
+ * images), land in `cacheDir/media/`, are sanity-checked to be a media container, and are played
+ * from disk. The cache is bounded and self-cleaning, and a cached file plays offline.
+ *
+ * Video goes through the same path (`VideoPlayer` in `ConversationScreen`): `VideoView` has
+ * exactly the same two limits.
  */
 object MediaFiles {
 
-    /** A clip longer than this is not a voice note; refuse instead of filling the cache. */
-    private const val MAX_BYTES = 32L * 1024 * 1024
+    /** One clip or video this large is not something a chat bubble should pull; refuse. */
+    private const val MAX_BYTES = 96L * 1024 * 1024
 
     /** Everything downloaded here is disposable: cap it and evict oldest-first. */
-    private const val CACHE_BYTES = 64L * 1024 * 1024
+    private const val CACHE_BYTES = 192L * 1024 * 1024
 
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
@@ -184,7 +187,7 @@ object MediaFiles {
      * The point is to catch the case that used to reach "Couldn't play this voice message" with
      * no explanation: a `200` carrying an error page or a JSON body, saved and handed to the
      * player. `audio/mp4`, `audio/webm`, `audio/ogg`, `audio/mpeg`, `audio/wav` and `audio/amr`
-     * are all recognised.
+     * are all recognised, and so are the MP4/Matroska containers a video arrives in.
      */
     private fun looksLikeAudio(file: File): Boolean = runCatching {
         val head = ByteArray(12)
@@ -226,7 +229,7 @@ object MediaFiles {
 
     private fun cacheDir(): File? {
         val context = appContext ?: return null
-        return File(context.cacheDir, "voice").apply { mkdirs() }
+        return File(context.cacheDir, "media").apply { mkdirs() }
     }
 
     /** A stable file name per URL: the URL itself, hashed, so nothing user-visible leaks. */

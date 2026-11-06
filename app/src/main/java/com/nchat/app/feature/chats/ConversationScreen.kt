@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -101,6 +102,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nchat.app.network.MediaFiles
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
@@ -793,15 +795,30 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
 /**
  * A real video player for the full-screen viewer.
  *
- * `VideoView` is the standard platform player: it streams the URL the worker serves
- * (`GET /media/file/<key>`, which answers byte ranges so scrubbing works), stops itself when the
- * dialog closes, and reports an error instead of showing a silent black rectangle.
+ * `VideoView` is the standard platform player, but it takes a URL and opens it itself — with no
+ * `Authorization` header, on a backend whose media reads are private (`GET /media/file/<key>`
+ * answers only a signed-in caller). The same is true of the voice bubble, and it is fixed the
+ * same way: [MediaFiles] fetches the file through the authenticated connection and the player is
+ * handed a local path. A spinner covers the download, and a clip that cannot be fetched says so
+ * instead of showing a black rectangle.
  */
 @Composable
 private fun VideoPlayer(url: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+    var file by remember(url) { mutableStateOf(MediaFiles.existingLocal(url)) }
+    var failure by remember(url) { mutableStateOf<String?>(null) }
     // A plain holder, not state: assigning during composition would recompose for nothing.
     val view = remember(url) { arrayOfNulls<VideoView>(1) }
+
+    LaunchedEffect(url) {
+        if (file != null) return@LaunchedEffect
+        MediaFiles.local(url).fold(
+            onSuccess = { downloaded -> file = downloaded },
+            onFailure = { error ->
+                failure = error.message ?: "the download failed"
+                NcToaster.show("Couldn't play this video — $failure")
+            }
+        )
+    }
 
     DisposableEffect(url) {
         onDispose {
@@ -810,26 +827,43 @@ private fun VideoPlayer(url: String, modifier: Modifier = Modifier) {
         }
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            VideoView(ctx).apply {
-                setVideoURI(Uri.parse(url))
-                setOnPreparedListener { player ->
-                    player.isLooping = false
-                    start()
-                }
-                setOnErrorListener { _, _, _ ->
-                    NcToaster.show("Couldn't play this video")
-                    true
-                }
-                val controller = MediaController(ctx)
-                controller.setAnchorView(this)
-                setMediaController(controller)
-                view[0] = this
-            }
+    val local = file
+    when {
+        failure != null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                text = failure ?: "",
+                color = Color(0xE6FFFFFF),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(NcSpace.lg)
+            )
         }
-    )
+
+        local == null -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+        }
+
+        else -> AndroidView(
+            modifier = modifier,
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setVideoURI(Uri.fromFile(local))
+                    setOnPreparedListener { player ->
+                        player.isLooping = false
+                        start()
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        NcToaster.show("Couldn't play this video")
+                        true
+                    }
+                    val controller = MediaController(ctx)
+                    controller.setAnchorView(this)
+                    setMediaController(controller)
+                    view[0] = this
+                }
+            }
+        )
+    }
 }
 
 /** Compose-state edit sheet: prefilled body, Save disabled until something changes. */
