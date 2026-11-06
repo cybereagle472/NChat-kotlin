@@ -30,6 +30,7 @@ import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ConnectionState
+import com.nchat.app.network.MediaFiles
 import com.nchat.app.network.MediaImages
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
@@ -72,6 +73,21 @@ object ServiceLocator {
     /** Called once from [com.nchat.app.MainActivity] before the UI reads anything. */
     fun init(context: Context) {
         appContext = context.applicationContext
+        /*
+         * Voice playback downloads its clip first (see `MediaFiles`): a player cannot send the
+         * session token that a private `GET /media/file/…` requires, so the bytes are fetched
+         * here and played from disk. Wired next to the image loader, for the same reason and
+         * with the same failure policy — a broken token store must not stop the app from
+         * starting.
+         */
+        runCatching {
+            MediaFiles.install(
+                context = requireContext(),
+                rootUrl = serverUrl,
+                accessToken = { tokens.accessToken },
+                renewSession = { apiClient.renewAccessToken() }
+            )
+        }
         startNetworkWatch()
     }
 

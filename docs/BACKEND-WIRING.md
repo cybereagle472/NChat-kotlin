@@ -402,3 +402,20 @@ Rules this section exists to protect:
   correctly everywhere.
 - **Forwarding copies the message, not its description.** The file URL and type travel with it;
   a forwarded photo is a photo.
+
+### 16.1 Playing a media file (1.0.47)
+
+- **A player cannot authenticate.** `GET /media/file/…` is a private read (see
+  `server/src/routes/media.rs`); `MediaPlayer.setDataSource(url)` sends no `Authorization`
+  header and also does its socket work on the calling thread. Never hand a player a URL —
+  download the bytes through the authenticated client and play the local file (`MediaFiles`).
+- **Photos and videos have the same rule** and solve it with the same two helpers: `MediaImages`
+  (Coil + auth interceptor) for pictures and posters, `MediaFiles` (authenticated download →
+  local file) for anything a player opens — voice notes **and** the full-screen `VideoView`.
+  Anything new that fetches media must go through one of those two, never through a bare
+  `HttpURLConnection` or a player's own loader.
+- **Check what came back is audio.** A `200` carrying an error page or a JSON body reads as a
+  decode failure with no explanation; sniff the container header before playing.
+- **One icon per message in the list.** The row draws a type icon, so preview text must never
+  carry a type emoji of its own — `String.withoutKindMarkers()` enforces that on both fresh and
+  cached rows.

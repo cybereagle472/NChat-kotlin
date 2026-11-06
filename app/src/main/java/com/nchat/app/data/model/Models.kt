@@ -80,7 +80,9 @@ data class Message(
      * message goes through here, which is why the list, the reply quote and the message
      * preview can no longer drift apart.
      */
-    fun snippet(): String = when {
+    fun snippet(): String = render().withoutKindMarkers()
+
+    private fun render(): String = when {
         deleted -> "This message was deleted"
         kind == MessageKind.Voice ->
             durationLabel?.takeIf { it.isNotBlank() }?.let { "Voice message ($it)" } ?: "Voice message"
@@ -388,3 +390,34 @@ data class UserProfile(
 
 /** Newlines and runs of spaces have no place in a one-line snippet. */
 private val SNIPPET_WHITESPACE = Regex("\\s+")
+
+/**
+ * The type emoji builds before 1.0.46 prefixed to a chat-list preview.
+ *
+ * `"🎤 Voice message (0:07)"`, `"📷 Photo"`, `"🎥 Video"`, `"📎 Document"`, `"📍 Location"` —
+ * every one of those is drawn next to a type *icon* by the list itself, so the row showed two
+ * glyphs for one message (two microphones for a single voice note, one of them an emoji). The
+ * wording is gone from the code; these markers also have to be stripped from the previews an
+ * older build wrote to the on-disk cache, or the double glyph survives the upgrade.
+ */
+private val KIND_MARKERS = listOf(
+    "🎤", "🎙️", "🎙", "🎥", "📹", "📷", "📸", "📎", "📄", "📍", "🗺️", "🗺", "🖼️", "🖼"
+)
+
+/** This text without a leading type emoji, whatever whitespace sits around it. */
+fun String.withoutKindMarkers(): String {
+    var text = this
+    var stripped = true
+    while (stripped) {
+        stripped = false
+        val head = text.trimStart()
+        for (marker in KIND_MARKERS) {
+            if (head.startsWith(marker)) {
+                text = head.removePrefix(marker)
+                stripped = true
+                break
+            }
+        }
+    }
+    return text.trimStart()
+}
