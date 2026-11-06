@@ -689,6 +689,32 @@ class RemoteChatRepository(
         }
     }
 
+    override fun sendLocation(chatId: String, latitude: Double, longitude: Double) {
+        val coords = String.format(java.util.Locale.US, "%.6f,%.6f", latitude, longitude)
+        val localId = newClientId()
+        val local = baseMessage(chatId, localId, coords).copy(kind = MessageKind.Location)
+        appendLocal(chatId, local)
+        preview(chatId, local, DeliveryState.Sending)
+        // Queued like any other message: sharing a position in a tunnel must not be lost.
+        outbox?.add(
+            OutboxEntry(
+                clientId = localId,
+                chatId = chatId,
+                isGroup = isGroup(chatId),
+                ownerId = myId,
+                text = coords,
+                type = "location"
+            )
+        )
+        dispatch(chatId, localId) { clientId ->
+            if (isGroup(chatId)) {
+                api.sendGroupMessage(chatId, coords, type = "location", clientMessageId = clientId)
+            } else {
+                api.sendMessage(chatId, coords, type = "location", clientMessageId = clientId)
+            }
+        }
+    }
+
     /**
      * A recorded voice note: on disk first, then uploaded, then posted.
      *

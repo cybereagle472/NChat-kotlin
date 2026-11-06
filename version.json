@@ -1,6 +1,6 @@
 {
-  "versionCode": 60,
-  "versionName": "1.0.52",
+  "versionCode": 61,
+  "versionName": "1.0.53",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.52 — the chat list and the small WhatsApp details. Swipe a chat right to archive it, left to mark it read; the Archived row at the top opens the archive where any chat can be put back or opened. All / Unread filter chips keep the list honest. Messages now render *bold*, _italic_, ~strikethrough~ and `monospace` exactly like WhatsApp — and only when the markers really wrap text, so 2 * 3 * 4 stays arithmetic. Long-press any message for Pin (a banner under the header, tap it to jump, ✕ to unpin) or Info (from, chat, type, exact time, delivery state, edited/forwarded/starred)."
+  "releaseNotes": "NChat 1.0.53 — the composer's + now opens the camera and sends your position. Camera takes a photo with the phone's own camera UI, then it goes through the same path as a picked photo: EXIF (including the GPS tag) stripped, re-encoded, thumbnail generated, uploaded with a real progress ring. Location resolves a fix from the platform LocationManager — a recent cached one instantly, otherwise a single fresh fix with a nine-second budget — and sends lat,lng as a location message that stays queued when you are offline. Location bubbles show the coordinates and open in Maps on a tap; anything that is not a position still renders as a plain card instead of pretending."
 }

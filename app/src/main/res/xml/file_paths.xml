@@ -10,4 +10,7 @@
     <files-path name="internal_updates" path="updates/" />
     <external-files-path name="external_updates" path="updates/" />
     <cache-path name="update_cache" path="updates/" />
+    <!-- Where the system camera writes a photo taken from the composer ("Camera" in the
+         attachment sheet). Without this root, `FileProvider.getUriForFile` throws. -->
+    <cache-path name="captures" path="captures/" />
 </paths>

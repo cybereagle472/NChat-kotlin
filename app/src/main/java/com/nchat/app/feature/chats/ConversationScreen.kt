@@ -64,8 +64,10 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Forward
@@ -338,6 +340,80 @@ fun ConversationScreen(
     val documentPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> deliverPicked(uri) }
+
+    /*
+     * Camera capture.
+     *
+     * `TakePicture` hands the system camera a `FileProvider` URI to write into — the same picture
+     * path WhatsApp uses, without a CameraX preview: the phone's own camera UI already has flash,
+     * zoom, HDR and a working viewfinder on every device, and this app has no emulator to test a
+     * hand-rolled preview on. The file lands in `cacheDir/captures` (declared in `file_paths.xml`;
+     * without that root `getUriForFile` throws) and then takes the normal photo path: EXIF
+     * stripped, re-encoded, thumbnail generated, uploaded.
+     */
+    var cameraTarget by remember { mutableStateOf<Uri?>(null) }
+    val cameraCapture = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { captured ->
+        val uri = cameraTarget
+        if (captured && uri != null) {
+            deliverPicked(uri)
+        } else {
+            pendingKind = null
+        }
+    }
+    fun takePhoto() {
+        val directory = java.io.File(context.cacheDir, "captures").apply { mkdirs() }
+        val target = java.io.File(directory, "capture_${System.currentTimeMillis()}.jpg")
+        val uri = runCatching {
+            androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                target
+            )
+        }.getOrNull()
+        if (uri == null) {
+            NcToaster.show("The camera is not available on this device")
+            return
+        }
+        cameraTarget = uri
+        pendingKind = MessageKind.Photo
+        runCatching { cameraCapture.launch(uri) }.onFailure {
+            pendingKind = null
+            NcToaster.show("The camera is not available on this device")
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            takePhoto()
+        } else {
+            NcToaster.show("Camera permission is needed to take a photo")
+        }
+    }
+
+    fun shareLocation() {
+        NcToaster.show("Finding your location…")
+        scope.launch {
+            val point = com.nchat.app.core.util.Locator.current(context)
+            if (point == null) {
+                NcToaster.show("Couldn't get a location — check that location is on")
+            } else {
+                viewModel.onSendLocation(point.first, point.second)
+                NcToaster.show("Location shared")
+            }
+        }
+    }
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            shareLocation()
+        } else {
+            NcToaster.show("Location permission is needed to share your position")
+        }
+    }
     val firstUnreadId by viewModel.firstUnreadId.collectAsStateWithLifecycle()
     val timeline = remember(messages, firstUnreadId) { buildTimeline(messages, firstUnreadId) }
     val typingRow = if (chat?.isTyping == true) 1 else 0
@@ -603,6 +679,30 @@ fun ConversationScreen(
 
                         // Every option in the popup opens a real picker above.
                         else -> Unit
+                    }
+                },
+                onTakePhoto = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.CAMERA
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (granted) takePhoto() else cameraPermission.launch(android.Manifest.permission.CAMERA)
+                },
+                onShareLocation = {
+                    val fine = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val coarse = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (fine || coarse) {
+                        shareLocation()
+                    } else {
+                        // Ask for the accurate one; the manifest also declares coarse, so a
+                        // "approximate only" answer still allows a fix.
+                        locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 },
                 onSendVoice = viewModel::onSendVoice,
@@ -2055,7 +2155,11 @@ private fun ComposerBar(
      * The repository has had `setRecording` all along and the incoming `recording` events were
      * already rendered — but nothing ever *sent* them, so a peer never saw the mic indicator.
      */
-    onRecordingChange: (Boolean) -> Unit = {}
+    onRecordingChange: (Boolean) -> Unit = {},
+    /** Opens the system camera and sends the photo it returns. */
+    onTakePhoto: () -> Unit = {},
+    /** Resolves a position and sends it as a `location` message. */
+    onShareLocation: () -> Unit = {}
 ) {
     // Collected here, not in the screen: typing then only recomposes the composer.
     val text by textFlow.collectAsStateWithLifecycle()
@@ -2175,6 +2279,14 @@ private fun ComposerBar(
                 onPick = { kind ->
                     mediaOpen = false
                     onSendAttachment(kind)
+                },
+                onCamera = {
+                    mediaOpen = false
+                    onTakePhoto()
+                },
+                onLocation = {
+                    mediaOpen = false
+                    onShareLocation()
                 }
             )
         }
@@ -2434,7 +2546,11 @@ private fun ReplyComposerStrip(quoted: Message, onCancel: () -> Unit) {
 
 /** `chat-media-popup` from the reference: Photos / Videos / Files above the input. */
 @Composable
-private fun MediaPopup(onPick: (MessageKind) -> Unit) {
+private fun MediaPopup(
+    onPick: (MessageKind) -> Unit,
+    onCamera: () -> Unit = {},
+    onLocation: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .width(180.dp)
@@ -2442,6 +2558,13 @@ private fun MediaPopup(onPick: (MessageKind) -> Unit) {
             .clip(RoundedCornerShape(20.dp))
             .background(Color.White)
     ) {
+        MediaOption(
+            label = "Camera",
+            icon = Icons.Rounded.PhotoCamera,
+            tint = Color(0xFF0EA5E9),
+            background = Brush.linearGradient(listOf(Color(0xFFE0F2FE), Color(0xFFBAE6FD))),
+            onClick = onCamera
+        )
         MediaOption(
             label = "Photos",
             icon = Icons.Rounded.Image,
@@ -2462,6 +2585,13 @@ private fun MediaPopup(onPick: (MessageKind) -> Unit) {
             tint = Color(0xFF2563EB),
             background = Brush.linearGradient(listOf(Color(0xFFDBEAFE), Color(0xFFBFDBFE))),
             onClick = { onPick(MessageKind.Document) }
+        )
+        MediaOption(
+            label = "Location",
+            icon = Icons.Rounded.LocationOn,
+            tint = Color(0xFF059669),
+            background = Brush.linearGradient(listOf(Color(0xFFD1FAE5), Color(0xFFA7F3D0))),
+            onClick = onLocation
         )
     }
 }
