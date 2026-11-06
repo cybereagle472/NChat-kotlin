@@ -393,9 +393,11 @@ fun ConversationScreen(
         }
     }
 
+    // Its own scope: `scope` below is declared after the pickers, and this needs one now.
+    val locationScope = rememberCoroutineScope()
     fun shareLocation() {
         NcToaster.show("Finding your location…")
-        scope.launch {
+        locationScope.launch {
             val point = com.nchat.app.core.util.Locator.current(context)
             if (point == null) {
                 NcToaster.show("Couldn't get a location — check that location is on")
