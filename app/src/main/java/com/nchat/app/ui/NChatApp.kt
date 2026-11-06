@@ -31,6 +31,7 @@ import com.nchat.app.data.ServiceLocator
 import com.nchat.app.feature.auth.AuthScreen
 import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.chats.ConversationScreen
+import com.nchat.app.feature.update.StartupUpdateGate
 import com.nchat.app.feature.settings.SettingsScreen
 import com.nchat.app.feature.chats.CallOverlay
 import com.nchat.app.feature.chats.GroupCallInviteDialog
@@ -169,6 +170,9 @@ private fun HomeRoot() {
                 )
             }
         }
+
+        // A new build is announced once, on start-up — Settings used to be the only way to find out.
+        StartupUpdateGate()
 
         /*
          * The call screen, above everything.
