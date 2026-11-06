@@ -38,6 +38,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,7 +67,6 @@ import android.os.Handler
 import android.os.Looper
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
-import org.webrtc.TextureViewRenderer
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
 
@@ -262,15 +262,25 @@ fun CallOverlay(
                     horizontalArrangement = Arrangement.End
                 ) {
                     // Our own camera, mirrored like every camera app does.
-                    LocalPreview(
-                        track = localTrack,
-                        egl = eglContext,
-                        modifier = Modifier
-                            .width(104.dp)
-                            .height(148.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(18.dp))
-                    )
+                    // `key` recreates the tile whenever the far-end picture appears or goes
+                    // away. SurfaceViews in one window stack in creation order, so recreating
+                    // ours keeps it the newest — and therefore on top — without asking the
+                    // window manager for a separate compositor layer, which is what broke it.
+                    key(remoteTrack != null) {
+                        LocalPreview(
+                            track = localTrack,
+                            egl = eglContext,
+                            modifier = Modifier
+                                .width(104.dp)
+                                .height(148.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .border(
+                                    1.dp,
+                                    Color.White.copy(alpha = 0.25f),
+                                    RoundedCornerShape(18.dp)
+                                )
+                        )
+                    }
                 }
             }
 
@@ -514,13 +524,12 @@ private fun formatCallDuration(totalSeconds: Long): String {
 /**
  * Our own camera, in the corner of a video call.
  *
- * A [TextureViewRenderer] rather than a [SurfaceViewRenderer], and that is the fix. A SurfaceView
- * is composited by the window manager on a layer of its own: a small tile inside a clipped,
- * rounded, bordered Compose row becomes a perfectly-sized black hole, while the full-screen
- * far-end picture — a plain, unclipped SurfaceView — is fine. That is exactly the reported
- * symptom, and it is also why the other person could see us perfectly: capture, encoding and the
- * peer connection were never involved in this bug, only the drawing of our own preview. A
- * TextureView is an ordinary view, so Compose's clip, corners and z-order all apply to it.
+ * The self-view was reported as a black rectangle while the other person saw us perfectly — so
+ * capture, encoding and the peer connection were never involved; only the drawing of our own
+ * preview was. The tile had asked to be composited as a *media overlay* (`setZOrderMediaOverlay`,
+ * tied to `mirror` of all things), which in this dialog inside a clipped, rounded row is what
+ * produced the black hole. This renderer uses no compositor tricks at all, and it is recreated
+ * whenever the far end's picture comes or goes so that it stays the topmost plain surface.
  *
  * The tile stays covered until the renderer reports a genuine first frame, so a camera that is
  * still warming up says "Starting camera…" instead of showing black — a black rectangle is
@@ -539,7 +548,19 @@ private fun LocalPreview(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                TextureViewRenderer(ctx).apply {
+                /*
+                 * The most boring SurfaceViewRenderer possible, on purpose.
+                 *
+                 * The tile used to call `setZOrderMediaOverlay(true)` — derived from `mirror`,
+                 * which is a visual property, not a stacking decision — and that asks the window
+                 * manager to composite the self-view as a separate media-overlay layer. In this
+                 * dialog, inside a clipped and rounded row, that produced a perfectly-sized black
+                 * rectangle while the far end (a plain, unclipped SurfaceView) was fine. There is
+                 * no overlay flag here and no hardware scaler: the renderer draws the frames
+                 * itself into a surface sized to the view, which is the configuration every
+                 * ordinary WebRTC app ships.
+                 */
+                SurfaceViewRenderer(ctx).apply {
                     init(egl, FirstFrameWatcher { main.post { playing = true } })
                     setMirror(true)
                     setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
