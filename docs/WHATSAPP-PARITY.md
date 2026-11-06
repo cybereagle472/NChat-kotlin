@@ -30,6 +30,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | In-app camera capture | ✅ | ❌ planned 1.0.51 (only pickers today) | — |
 | Send a location | ✅ | ✅ 1.0.53 — `Locator` (cached fix, else one fresh fix, 9 s budget), `type=location` + `lat,lng`, queued offline, tap opens Maps | `Locator` |
 | View-once media | ✅ | ❌ later | — |
+| Media index per chat ("Media, links and docs") | ✅ | ✅ 1.0.55 — grid / docs / links, tap opens the pager | `ChatMediaSheet` |
 | Disappearing messages | ✅ | ⛔ server has no TTL column | — |
 
 ## Groups
@@ -64,7 +65,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | End-to-end encryption | ✅ | ❌ | The worker stores plaintext. This is a protocol project (key exchange, per-device sessions, group sender keys), not a screen — tracked separately. |
 | Multi-device / linked devices / Web | ✅ | ❌ | Needs server sessions per device. |
 | Backup & restore | ✅ | ❌ | Local caches only. |
-| Media auto-download rules, storage manager | ✅ | ❌ | next after group calls. |
+| Media auto-download rules, storage manager | ✅ | 🟡 1.0.55 — storage manager with real per-directory sizes and confirms; auto-download rules still missing | `StorageReport` |
 
 ## Where the waves stand
 
@@ -77,7 +78,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   All/Unread filters, pinned message banner, message info.
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
-- **Next (1.0.55).** Group voice/video calls — mesh over the existing `WebRtcEngine` plus an
+- **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
+- **Next (1.0.56).** Group voice/video calls — mesh over the existing `WebRtcEngine` plus an
   N-party `CallOverlay`; the API endpoints and the single-peer engine are already there, the
   work is multiple peer connections and the participant grid.
 - **Then.** Media auto-download rules + storage manager; and the rows marked ⛔, which need the
