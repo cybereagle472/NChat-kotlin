@@ -227,8 +227,7 @@ fun MessageBubble(
                     mine = mine,
                     mediaUrl = message.mediaUrl,
                     storedWaveform = message.thumbnailUrl,
-                    uploadProgress = message.uploadProgress,
-                    onLongPress = onLongPress
+                    uploadProgress = message.uploadProgress
                 )
                 MessageKind.Document -> DocumentContent(
                     name = message.fileName ?: "document.pdf",
@@ -653,9 +652,7 @@ private fun VoiceContent(
      */
     storedWaveform: String? = null,
     /** 0f…1f while the clip is still going up to the server; null once it has arrived. */
-    uploadProgress: Float? = null,
-    /** Long press on the waveform opens the message menu, the way the rest of the bubble does. */
-    onLongPress: () -> Unit = {}
+    uploadProgress: Float? = null
 ) {
     /*
      * The clip, as a file on this device.
@@ -1066,11 +1063,13 @@ private fun VoiceContent(
                         }
                         val held = System.currentTimeMillis() - startedAt
                         scrubbing = false
-                        when {
-                            // A long press that never moved is a menu, not a seek.
-                            !dragging && held >= 450L -> onLongPress()
-                            else -> seek(target)
-                        }
+                        /*
+                         * A hold that never moved is the bubble's long press, which opens the
+                         * message menu on its own (it does not need our help, and calling the
+                         * callback here as well would open it twice). Only a tap or a drag moves
+                         * the playhead.
+                         */
+                        if (dragging || held < 450L) seek(target)
                     }
                 },
             contentAlignment = Alignment.CenterStart
