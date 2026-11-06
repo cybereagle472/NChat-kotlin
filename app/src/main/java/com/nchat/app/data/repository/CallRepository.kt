@@ -747,7 +747,22 @@ class RemoteCallRepository(
         }
 
         override fun onConnected() {
-            if (terminated || everConnected) return
+            if (terminated) return
+            /*
+             * Recovery first, and before the `everConnected` guard below.
+             *
+             * `onDisconnected` arms a timer that ends the call. The cancel used to sit *after*
+             * that guard, so the second and every later "connected" — the one that matters, the
+             * one after a blip — never disarmed it: ICE would recover, the picture and audio
+             * would come back, and six seconds later the call would still be killed. That is a
+             * call dropping on its own with no user action and nothing in the UI to explain it.
+             */
+            disconnectJob?.cancel()
+            disconnectJob = null
+            _active.update { call ->
+                if (call?.reconnecting == true) call.copy(reconnecting = false) else call
+            }
+            if (everConnected) return
             val current = _active.value ?: return
             if (current.state == CallState.Ended) return
             everConnected = true
@@ -764,12 +779,23 @@ class RemoteCallRepository(
         override fun onDisconnected() {
             if (!everConnected || terminated) return
             disconnectJob?.cancel()
-            // A blip (wifi handover, a missed keepalive) usually recovers within a second or
-            // two — the reference waits 6 s before believing it (`CallModal.tsx:33`).
+            /*
+             * A blip is normal: a phone put down, a wifi → cellular handover, a screen that went
+             * to sleep, a NAT binding that expired. ICE usually heals on its own, and the first
+             * thing the user needs is the truth — "Reconnecting…" — not a hung-up call.
+             *
+             * The grace was 6 s, borrowed from the reference web client where the tab and the
+             * network never sleep. On a phone that is far too short: waking from doze alone can
+             * take longer, and the call would be ended — server-side, for both people — while it
+             * was about to recover.
+             */
+            _active.update { it?.copy(reconnecting = true) }
             disconnectJob = scope.launch {
-                delay(DISCONNECT_GRACE_MS)
+                delay(RECONNECT_GRACE_MS)
                 if (_active.value?.state == CallState.Live) {
-                    _active.update { it?.copy(state = CallState.Ended, note = "Connection lost") }
+                    _active.update {
+                        it?.copy(state = CallState.Ended, note = "Connection lost", reconnecting = false)
+                    }
                     finish(callId, "ended", 0L, media = false)
                 }
             }
@@ -1044,7 +1070,14 @@ class RemoteCallRepository(
         /** The reference's own numbers (`CallModal.tsx:18`, `:26`, `:33`). */
         const val RING_TIMEOUT_MS = 45_000L
         const val CONNECTING_TIMEOUT_MS = 20_000L
-        const val DISCONNECT_GRACE_MS = 6_000L
+        /**
+         * How long a live call may sit in `DISCONNECTED` before it is declared lost.
+         *
+         * 30 s is deliberately generous: ICE restarts, doze wake-ups and cellular handovers all
+         * take seconds to tens of seconds, and ending a call that would have recovered is a far
+         * worse failure than showing "Reconnecting…" for half a minute.
+         */
+        const val RECONNECT_GRACE_MS = 30_000L
         const val TURN_TTL_MS = 100 * 60_000L
 
         /** How long the UI gets to detach video sinks before the media is torn down. */

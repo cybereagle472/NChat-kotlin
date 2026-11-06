@@ -157,7 +157,15 @@ data class ActiveCall(
     val remoteVideo: Boolean = false,
     val frontCamera: Boolean = true,
     /** Why media is missing, when it is — the call still runs as signalling-only. */
-    val mediaError: String? = null
+    val mediaError: String? = null,
+    /**
+     * ICE dropped after the call was live and we are waiting for it to come back.
+     *
+     * Distinct from [CallState.Connecting] on purpose: the call is *not* over, the timer keeps
+     * running, and the screen says "Reconnecting…" instead of pretending everything is fine.
+     * Only after the grace period does it become "Connection lost".
+     */
+    val reconnecting: Boolean = false
 ) {
     val answered: Boolean get() = state == CallState.Connecting || state == CallState.Live
 }
