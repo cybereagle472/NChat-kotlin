@@ -370,12 +370,14 @@ fun MessageBubble(
             ) {
                 // `*bold*`, `_italic_`, `~strike~`, `` `mono` `` — parsed once per text, not per
                 // frame, and remembered so scrolling a long conversation stays cheap.
-                val body = remember(message.text, mentions, mine) {
+                // Hoisted out of `remember`: a composable read inside the calculation is illegal.
+                val mentionColor = if (mine) Color.White else MaterialTheme.colorScheme.primary
+                val body = remember(message.text, mentions, mine, mentionColor) {
                     chatFormatted(
                         raw = message.text,
                         mentions = mentions,
                         mentionStyle = SpanStyle(
-                            color = if (mine) Color.White else MaterialTheme.colorScheme.primary,
+                            color = mentionColor,
                             fontWeight = FontWeight.SemiBold,
                             background = if (mine) Color(0x33FFFFFF) else Color(0x14A855F7)
                         )
