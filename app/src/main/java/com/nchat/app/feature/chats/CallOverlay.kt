@@ -34,13 +34,17 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -59,7 +63,10 @@ import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.model.ActiveCall
 import com.nchat.app.data.model.CallState
 import kotlinx.coroutines.delay
+import android.os.Handler
+import android.os.Looper
 import org.webrtc.EglBase
+import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
 
@@ -88,6 +95,21 @@ fun CallOverlay(
     onToggleSpeaker: () -> Unit = {},
     onFlipCamera: () -> Unit = {}
 ) {
+    /*
+     * Keep the screen awake while this is on screen.
+     *
+     * Without it the display timed out a minute or two into a call, the app was throttled, the
+     * peer connection went to DISCONNECTED — and the call was then killed for being "lost". A
+     * call screen that lets the phone sleep is not a call screen. `keepScreenOn` on the view
+     * covers the dialog this overlay lives in, which a window flag on the activity would not.
+     */
+    val hostView = LocalView.current
+    DisposableEffect(hostView) {
+        val previous = hostView.keepScreenOn
+        hostView.keepScreenOn = true
+        onDispose { hostView.keepScreenOn = previous }
+    }
+
     // Live timer, anchored to the moment media connected.
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
     LaunchedEffect(call.state, call.startedAt) {
@@ -240,16 +262,25 @@ fun CallOverlay(
                     horizontalArrangement = Arrangement.End
                 ) {
                     // Our own camera, mirrored like every camera app does.
-                    VideoSurface(
-                        track = localTrack,
-                        egl = eglContext,
-                        mirror = true,
-                        modifier = Modifier
-                            .width(104.dp)
-                            .height(148.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(18.dp))
-                    )
+                    // `key` recreates the tile whenever the far-end picture appears or goes
+                    // away. SurfaceViews in one window stack in creation order, so recreating
+                    // ours keeps it the newest — and therefore on top — without asking the
+                    // window manager for a separate compositor layer, which is what broke it.
+                    key(remoteTrack != null) {
+                        LocalPreview(
+                            track = localTrack,
+                            egl = eglContext,
+                            modifier = Modifier
+                                .width(104.dp)
+                                .height(148.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .border(
+                                    1.dp,
+                                    Color.White.copy(alpha = 0.25f),
+                                    RoundedCornerShape(18.dp)
+                                )
+                        )
+                    }
                 }
             }
 
@@ -321,6 +352,7 @@ private fun statusLine(
     canAnswer: Boolean,
     elapsedSeconds: Long
 ): String = when {
+    live && call.reconnecting -> "Reconnecting…"
     live -> formatCallDuration(elapsedSeconds)
     call.state == CallState.Ended -> call.note ?: "Call ended"
     connecting -> "Connecting…"
@@ -351,7 +383,9 @@ private fun VideoSurface(
                 init(egl, null)
                 setEnableHardwareScaler(true)
                 setMirror(mirror)
-                setZOrderMediaOverlay(mirror)
+                // No `setZOrderMediaOverlay` here: that put this surface on a separate compositor
+                // layer, which is what turned the small self-view into a black hole. The
+                // full-screen far-end picture is the only SurfaceView left in this window.
             }
         },
         update = { view ->
@@ -485,4 +519,93 @@ private fun formatCallDuration(totalSeconds: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%02d:%02d".format(minutes, seconds)
+}
+
+/**
+ * Our own camera, in the corner of a video call.
+ *
+ * The self-view was reported as a black rectangle while the other person saw us perfectly — so
+ * capture, encoding and the peer connection were never involved; only the drawing of our own
+ * preview was. The tile had asked to be composited as a *media overlay* (`setZOrderMediaOverlay`,
+ * tied to `mirror` of all things), which in this dialog inside a clipped, rounded row is what
+ * produced the black hole. This renderer uses no compositor tricks at all, and it is recreated
+ * whenever the far end's picture comes or goes so that it stays the topmost plain surface.
+ *
+ * The tile stays covered until the renderer reports a genuine first frame, so a camera that is
+ * still warming up says "Starting camera…" instead of showing black — a black rectangle is
+ * indistinguishable from a broken camera, which is what this looked like.
+ */
+@Composable
+private fun LocalPreview(
+    track: VideoTrack?,
+    egl: EglBase.Context?,
+    modifier: Modifier = Modifier
+) {
+    if (track == null || egl == null) return
+    var playing by remember(track) { mutableStateOf(false) }
+    val main = remember { Handler(Looper.getMainLooper()) }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                /*
+                 * The most boring SurfaceViewRenderer possible, on purpose.
+                 *
+                 * The tile used to call `setZOrderMediaOverlay(true)` — derived from `mirror`,
+                 * which is a visual property, not a stacking decision — and that asks the window
+                 * manager to composite the self-view as a separate media-overlay layer. In this
+                 * dialog, inside a clipped and rounded row, that produced a perfectly-sized black
+                 * rectangle while the far end (a plain, unclipped SurfaceView) was fine. There is
+                 * no overlay flag here and no hardware scaler: the renderer draws the frames
+                 * itself into a surface sized to the view, which is the configuration every
+                 * ordinary WebRTC app ships.
+                 */
+                SurfaceViewRenderer(ctx).apply {
+                    init(egl, FirstFrameWatcher { main.post { playing = true } })
+                    setMirror(true)
+                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+                }
+            },
+            update = { view ->
+                val attached = view.tag as? VideoTrack
+                if (attached !== track) {
+                    attached?.let { previous -> runCatching { previous.removeSink(view) } }
+                    track.addSink(view)
+                    view.tag = track
+                }
+            },
+            // `onReset` is what makes a recycled view safe: without it a renderer can be reused
+            // by a later composition still bound to the previous track's frames.
+            onReset = { view ->
+                (view.tag as? VideoTrack)?.let { previous -> runCatching { previous.removeSink(view) } }
+                view.tag = null
+            },
+            onRelease = { view ->
+                (view.tag as? VideoTrack)?.let { previous -> runCatching { previous.removeSink(view) } }
+                view.tag = null
+                runCatching { view.release() }
+            }
+        )
+        if (!playing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF1A1F27)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Starting\ncamera…",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+/** The renderer's very first real frame, delivered on its own thread. */
+private class FirstFrameWatcher(private val onFirstFrame: () -> Unit) : RendererCommon.RendererEvents {
+    override fun onFirstFrameRendered() = onFirstFrame()
+    override fun onFrameResolutionChanged(videoWidth: Int, videoHeight: Int, rotation: Int) = Unit
 }
