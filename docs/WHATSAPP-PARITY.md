@@ -24,10 +24,10 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | Voice notes: waveform, scrub, slide-to-cancel, lock | ✅ | ✅ **better** — real waveform, drag head marker, slide-to-lock/cancel, offline queue, per-byte upload ring | `VoiceRecorder`, `VoiceContent` |
 | Typing indicator | ✅ | ✅ 1:1 + per member in groups | `ConversationHeader` |
 | Recording indicator | ✅ | ✅ mic row on the chat and in the header | `ChatsScreen` |
-| Text formatting (bold/italic/strike/mono) | ✅ | ❌ planned 1.0.51 | — |
-| Pin a message in the chat | ✅ | ❌ planned 1.0.51 | — |
-| Per-message info ("read by") | ✅ | ❌ planned 1.0.51 | — |
-| In-app camera capture | ✅ | ❌ planned 1.0.51 (only pickers today) | — |
+| Text formatting (bold/italic/strike/mono) | ✅ | ❌ next (1.0.52) | — |
+| Pin a message in the chat | ✅ | ❌ next (1.0.52) | — |
+| Per-message info ("read by") | ✅ | ❌ next (1.0.52) | — |
+| In-app camera capture | ✅ | ❌ next (only pickers today) | — |
 | Send a location | ✅ | 🟡 model + bubble exist, no producer | `MessageKind.Location` |
 | View-once media | ✅ | ❌ later | — |
 | Disappearing messages | ✅ | ⛔ server has no TTL column | — |
@@ -51,11 +51,11 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | --- | --- | --- | --- |
 | Type-aware previews, pinned chats, mute, unread badge | ✅ | ✅ | `ChatsScreen` |
 | Draft preview | ✅ | ✅ 1.0.50 | `ChatsScreen` |
-| **System notifications** | ✅ | ❌ none at all — planned 1.0.51: per-chat channels honouring mute, `MessagingStyle` with inline reply, group summaries, unread badge | — |
-| Archive | ✅ | ❌ planned 1.0.51 | — |
-| Swipe actions on rows | ✅ | ❌ planned 1.0.51 | — |
-| Unread / Groups filters | ✅ | ❌ planned 1.0.51 | — |
-| Background calls (foreground service, ringtone, lock screen) | ✅ | 🟡 call works only while the app is in the foreground — planned 1.0.51 | `CallOverlay` |
+| **System notifications** | ✅ | ✅ 1.0.51 — per-chat channels honouring mute, `MessagingStyle` with inline reply, silent summary + launcher badge, tap opens the chat | `NcNotifications` |
+| Archive | ✅ | ❌ next (1.0.52) | — |
+| Swipe actions on rows | ✅ | ❌ next (1.0.52) | — |
+| Unread / Groups filters | ✅ | ❌ next (1.0.52) | — |
+| Background calls (foreground service, ringtone, lock screen) | ✅ | 🟡 call works only while the app is in the foreground — next | `CallOverlay` |
 
 ## Platform and trust
 
@@ -69,9 +69,11 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 ## Where the waves stand
 
 - **1.0.49 — shipped.** Swipe to reply, double-tap ❤️, voice speed 1×/1.5×/2×.
-- **1.0.50 — this build.** In-chat search, multi-select, starred messages, per-chat drafts,
+- **1.0.50 — shipped.** In-chat search, multi-select, starred messages, per-chat drafts,
   photo viewer paging + zoom.
-- **Next (1.0.51).** Notifications (channels, `MessagingStyle`, inline reply, unread badge),
-  archive, swipe actions, Unread/Groups filters, text formatting, pin message, message info.
+- **1.0.51 — shipped.** System notifications: per-chat channels honouring mute, `MessagingStyle`
+  with inline reply, silent summary + launcher badge, tap opens that conversation.
+- **Next (1.0.52).** Archive, swipe actions on rows, Unread/Groups filters, text formatting,
+  pin a message, per-message info.
 - **Then (1.0.52+).** In-app camera, send location, group calls, and the backend-dependent rows
   (invite links, mentions, admin-restricted groups, disappearing messages).
