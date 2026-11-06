@@ -1,4 +1,4 @@
-run: 42208157489
+run: 42208562796
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -25,21 +25,21 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:javaPreCompileRelease FROM-CACHE
 > Task :app:extractProguardFiles
 > Task :app:mergeReleaseJniLibFolders FROM-CACHE
-> Task :app:desugarReleaseFileDependencies FROM-CACHE
 > Task :app:processReleaseManifestForPackage
-> Task :app:checkReleaseDuplicateClasses
 > Task :app:mergeReleaseNativeLibs
+> Task :app:desugarReleaseFileDependencies FROM-CACHE
+> Task :app:checkReleaseDuplicateClasses
 
 > Task :app:stripReleaseDebugSymbols
 Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
 
-> Task :app:processReleaseResources
-> Task :app:mergeExtDexRelease FROM-CACHE
+> Task :app:mergeReleaseArtProfile
 > Task :app:extractReleaseNativeSymbolTables FROM-CACHE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :app:mergeExtDexRelease FROM-CACHE
+> Task :app:processReleaseResources
 > Task :app:mergeReleaseShaders FROM-CACHE
 > Task :app:compileReleaseShaders NO-SOURCE
-> Task :app:mergeReleaseArtProfile
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets FROM-CACHE
 > Task :app:compressReleaseAssets FROM-CACHE
@@ -49,11 +49,12 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
 > Task :app:optimizeReleaseResources
+> Task :app:compileReleaseKotlin
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/util/ChatTextFormat.kt:71:13 Conflicting declarations: val style: SpanStyle?, val style: SpanStyle?
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/util/ChatTextFormat.kt:80:13 Conflicting declarations: val style: SpanStyle?, val style: SpanStyle?
 
 > Task :app:compileReleaseKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/util/ChatTextFormat.kt:74:23 Type mismatch: inferred type is SpanStyle? but SpanStyle was expected
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:378:78 Composable calls are not allowed inside the calculation parameter of inline fun <T> remember(key1: Any?, key2: Any?, key3: Any?, crossinline calculation: () -> TypeVariable(T)): TypeVariable(T)
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793963419706.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793963606013.json
 
 FAILURE: Build failed with an exception.
 
@@ -259,5 +260,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 34s
+BUILD FAILED in 45s
 35 actionable tasks: 22 executed, 13 from cache
