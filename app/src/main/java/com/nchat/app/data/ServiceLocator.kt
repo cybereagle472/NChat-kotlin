@@ -4,8 +4,10 @@ import android.content.Context
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import com.nchat.app.data.local.BlockedContactsStore
+import com.nchat.app.core.network.NetworkMonitor
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.local.FriendGraphCache
+import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
@@ -36,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /**
@@ -67,6 +70,7 @@ object ServiceLocator {
     /** Called once from [com.nchat.app.MainActivity] before the UI reads anything. */
     fun init(context: Context) {
         appContext = context.applicationContext
+        startNetworkWatch()
     }
 
     private fun requireContext(): Context =
@@ -100,6 +104,43 @@ object ServiceLocator {
     val isServerConfigured: Boolean get() = serverUrl.isNotEmpty()
 
     val connection: StateFlow<ConnectionState> get() = socket.state
+
+    /** The device's own internet state, straight from the platform — see [NetworkMonitor]. */
+    private val networkMonitor by lazy { NetworkMonitor(requireContext()) }
+    val network: StateFlow<Boolean> get() = networkMonitor.online
+    val networkTransport: StateFlow<String?> get() = networkMonitor.transport
+
+    private var networkWatchStarted = false
+
+    /**
+     * Follows the device's connectivity instead of inferring it from the socket.
+     *
+     * Two things happen the moment the network comes back: the socket is torn down and dialled
+     * again (`reconnectNow`) — because a socket that "survived" a wifi → cellular handover is
+     * usually a zombie — and presence is re-reported so the account is not shown offline to
+     * everybody else. Everything else follows from `ConnectionState.Connected`, which is the
+     * one sync path this app has always used: `flushOutbox()` for queued sends,
+     * `resyncAfterReconnect()` for the list and the open conversations, and the home screen's
+     * own refresh.
+     *
+     * While offline the socket parks (no handshake against a dead radio), the open chat stops
+     * polling, and sends stay in the outbox. Nothing is lost; it waits.
+     */
+    private fun startNetworkWatch() {
+        if (networkWatchStarted) return
+        networkWatchStarted = true
+        networkMonitor.start()
+        appScope.launch {
+            // The value at start-up is applied immediately: an app opened in airplane mode
+            // must not spend its first seconds dialling.
+            runCatching { socket.setNetworkAvailable(networkMonitor.online.value) }
+            networkMonitor.online.drop(1).collect { online ->
+                runCatching { socket.setNetworkAvailable(online) }
+                if (!online) return@collect
+                if (tokens.signedIn.value) reportPresence()
+            }
+        }
+    }
 
     fun connectRealtime() {
         socket.connect()
@@ -140,6 +181,9 @@ object ServiceLocator {
     /** Messages that still have to reach the server; survives restarts and reconnects. */
     private val outboxStore by lazy { OutboxStore(requireContext()) }
 
+    /** Every conversation, per account, on disk — see [MessageStore]. */
+    private val messageStore by lazy { MessageStore(requireContext()) }
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(api, tokens, appScope, chatCache)
@@ -155,7 +199,9 @@ object ServiceLocator {
             scope = appScope,
             cache = chatCache,
             blockedIds = { friendRepository.blockedIds.value },
-            outbox = outboxStore
+            outbox = outboxStore,
+            messages = messageStore,
+            online = { networkMonitor.online.value }
         )
     }
     val friendRepository: FriendRepository by lazy {

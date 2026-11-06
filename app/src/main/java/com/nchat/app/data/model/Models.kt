@@ -19,7 +19,15 @@ data class Reaction(
     val reactedByMe: Boolean = false
 )
 
+/**
+ * One bubble.
+ *
+ * `@Serializable` because conversations are cached on disk now (`MessageStore`): the whole
+ * history of a chat has to survive a restart and paint before the network answers, which is
+ * the difference between a messenger and a web page.
+ */
 @Immutable
+@Serializable
 data class Message(
     val id: String,
     val chatId: String,

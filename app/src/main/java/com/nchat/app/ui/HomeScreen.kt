@@ -162,7 +162,19 @@ fun HomeScreen(
      * so an ordinary reconnect — which is now immediate — never flashes it.
      */
     var showReconnect by remember { mutableStateOf(false) }
-    LaunchedEffect(connection) {
+    /*
+     * The device's own internet state, so the pill can say the true thing.
+     *
+     * "Reconnecting…" while the phone is in airplane mode is a lie the user can see through;
+     * WhatsApp says "Waiting for network" for exactly this case. It also shows immediately
+     * offline instead of after the 1.2 s grace, because there is no ambiguity to wait out.
+     */
+    val deviceOnline by ServiceLocator.network.collectAsStateWithLifecycle()
+    LaunchedEffect(connection, deviceOnline) {
+        if (!deviceOnline) {
+            showReconnect = true
+            return@LaunchedEffect
+        }
         if (connection == com.nchat.app.network.ConnectionState.Connected) {
             showReconnect = false
             return@LaunchedEffect
@@ -365,10 +377,10 @@ fun HomeScreen(
 
         if (showReconnect) {
             ReconnectPill(
-                label = if (connection == com.nchat.app.network.ConnectionState.Connecting) {
-                    "Connecting…"
-                } else {
-                    "Reconnecting…"
+                label = when {
+                    !deviceOnline -> "Waiting for network"
+                    connection == com.nchat.app.network.ConnectionState.Connecting -> "Connecting…"
+                    else -> "Reconnecting…"
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

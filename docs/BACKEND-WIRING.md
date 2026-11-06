@@ -280,3 +280,46 @@ branches that intentionally do nothing say so in code.
    - Call on mobile data with the other phone on Wi-Fi: ICE should relay through the worker's
      TURN credentials rather than failing.
 3. Airplane mode on one device, send, re-enable: the message flushes from the outbox once.
+
+## 14. Local store and connectivity (1.0.43)
+
+The worker is the source of truth; the device is the fast copy. Every list the user sees is
+painted from disk first and reconciled with the server second, so a launch with no network is
+a normal app rather than an empty one.
+
+| What | Where it lives | Written | Read |
+|---|---|---|---|
+| Chat list | `ChatListCache` → `cache/chats.json` | after every successful `/messages/chats` + `/groups` | in `init`, before `refresh()` |
+| Friend graph | `FriendGraphCache` → `cache/friends.json` (per account) | after every successful `/friends` | in `init`, before `refresh()` |
+| **Messages** | **`MessageStore` → `cache/messages/<owner>/<chat>.json`** | **whenever a conversation's flow changes (debounced 400 ms, atomic tmp+rename)** | **`conversation()` before the request; one file per chat, newest 300** |
+| Queued sends | `OutboxStore` → `outbox.json` | on send, before the request | at start-up and on every `ConnectionState.Connected` |
+| Block list | `BlockedContactsStore` → `blocked.json` | on block/unblock | in `init` |
+
+Message cache rules:
+
+- **Per account.** The owner id is the directory name, so a second sign-in cannot read the
+  previous account's conversations even if the process died before sign-out.
+- **Deleted with the chat.** `deleteChat`, `leaveGroup`, `deleteGroup` remove the file;
+  signing out clears the whole tree.
+- **Bounded.** Newest 300 per conversation (the in-memory page is the same 300, so a network
+  merge cannot shrink history the user was just looking at).
+- **Not authoritative.** The server's rows merge on top on every open; the cache only fills in
+  what the server does not answer (offline, or a failed request).
+
+### Connectivity
+
+`core/network/NetworkMonitor.kt` subscribes to `ConnectivityManager.registerDefaultNetworkCallback`
+and calls a connection "online" only when it has **both** `NET_CAPABILITY_INTERNET` and
+`NET_CAPABILITY_VALIDATED` — a captive portal that accepts connections and answers nothing is
+the case a naive `activeNetwork != null` gets wrong.
+
+What happens on each transition (`ServiceLocator.startNetworkWatch`):
+
+| Transition | Effect |
+|---|---|
+| offline → online | `NChatSocket.reconnectNow()` (the old socket is often a zombie after a handover) → `Connected` → `flushOutbox()` + `resyncAfterReconnect()` + home refresh; presence re-reported |
+| online → offline | the socket loop parks (no handshakes against a dead radio), the open chat stops its 3 s fallback poll, PresencePill says **"Waiting for network"** instead of "Reconnecting…" |
+| message sent while offline | stays in the outbox with its clock — **not** marked failed; delivered on the next `Connected`, reconciled by `client_message_id` |
+
+Group ids are seeded from the cached chat list at construction, so a group opened offline is
+still read/queued correctly instead of being treated as a 1:1 chat.
