@@ -4,6 +4,8 @@ package com.nchat.app.feature.chats
 
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import com.nchat.app.core.audio.VoiceWaveform
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -207,9 +209,10 @@ fun MessageBubble(
                     onLongPress = onLongPress
                 )
                 MessageKind.Voice -> VoiceContent(
-                    duration = message.durationLabel ?: "00:00",
+                    duration = message.durationLabel ?: "0:00",
                     mine = mine,
-                    mediaUrl = message.mediaUrl
+                    mediaUrl = message.mediaUrl,
+                    storedWaveform = message.thumbnailUrl
                 )
                 MessageKind.Document -> DocumentContent(
                     name = message.fileName ?: "document.pdf",
@@ -550,14 +553,44 @@ private object VoicePlayback {
     var current by mutableStateOf<String?>(null)
 }
 
+/** Bars drawn in a voice bubble; the stored array is resampled to this. */
+private const val VOICE_BARS = 24
+
 @Composable
-private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = null) {
-    var playing by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(0f) }
-    var prepared by remember { mutableStateOf(false) }
+private fun VoiceContent(
+    duration: String,
+    mine: Boolean,
+    mediaUrl: String? = null,
+    /**
+     * `thumbnail_url` when the sender recorded a waveform — a JSON array of normalised levels.
+     *
+     * Both clients write it (the reference's `downsampleWaveform`, this app's `VoiceWaveform`),
+     * so a voice note keeps the shape of what was actually said wherever it is read.
+     */
+    storedWaveform: String? = null
+) {
+    /*
+     * Keyed on the URL, not on nothing: a clip that was still being uploaded swaps its
+     * `file://` path for the public URL, `remember(mediaUrl)` builds a fresh player for it, and
+     * a `prepared = true` left over from the old one would have `start()` called on a player
+     * that never had a data source set.
+     */
+    var playing by remember(mediaUrl) { mutableStateOf(false) }
+    var progress by remember(mediaUrl) { mutableStateOf(0f) }
+    var prepared by remember(mediaUrl) { mutableStateOf(false) }
     /** `prepareAsync()` is in flight — a second tap must not call `setDataSource` again. */
-    var preparing by remember { mutableStateOf(false) }
+    var preparing by remember(mediaUrl) { mutableStateOf(false) }
     val totalMs = remember(duration) { parseVoiceDuration(duration) }
+    /*
+     * Real bars when the message carries them, and a stable shape otherwise (voice notes sent
+     * by an older build, or a clip that recorded nothing but silence). The placeholder is the
+     * same repeating pattern the bubble always drew, so old conversations look unchanged.
+     */
+    val levels = remember(storedWaveform) {
+        VoiceWaveform.parse(storedWaveform, VOICE_BARS).ifEmpty {
+            List(VOICE_BARS) { index -> (4 + (index * 5) % 12) / 16f }
+        }
+    }
 
     // A player per bubble, created only when the message actually carries audio. Media is
     // served publicly by the worker (with byte ranges), so the URL can be set directly.
@@ -708,14 +741,15 @@ private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = nu
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                repeat(22) { index ->
-                    val barHeight = (4 + (index * 5) % 12).dp
-                    val played = index / 22f <= progress
+                levels.forEachIndexed { index, level ->
+                    val barHeight = (4f + 12f * level.coerceIn(0f, 1f)).dp
+                    // The played/unplayed split follows the real position the player reports.
+                    val played = (index + 1).toFloat() / levels.size <= progress + 0.001f
                     Box(
                         modifier = Modifier
-                            .width(2.5.dp)
+                            .width(2.dp)
                             .height(barHeight)
-                            .clip(RoundedCornerShape(2.dp))
+                            .clip(RoundedCornerShape(1.dp))
                             .background(
                                 if (played) {
                                     accent
@@ -727,8 +761,14 @@ private fun VoiceContent(duration: String, mine: Boolean, mediaUrl: String? = nu
                 }
             }
         }
+        // Total length at rest, elapsed while playing — the same thing the web bubble counts.
         Text(
-            text = duration,
+            text = if (playing && totalMs > 0) {
+                val elapsed = (progress * totalMs).toInt().coerceIn(0, totalMs)
+                "%d:%02d".format(Locale.US, elapsed / 60_000, (elapsed / 1_000) % 60)
+            } else {
+                duration
+            },
             fontSize = 10.sp,
             color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.textMuted
         )

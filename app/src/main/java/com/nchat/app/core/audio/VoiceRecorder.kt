@@ -25,11 +25,26 @@ class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var file: File? = null
     private var startedAt: Long = 0L
+    /** True between [pause] and [resume]: the microphone is not capturing. */
+    private var paused = false
 
     val isRecording: Boolean get() = recorder != null
+    val isPaused: Boolean get() = paused
 
     /** Milliseconds since [start]; 0 when idle. */
     fun elapsedMs(): Long = if (recorder == null) 0L else System.currentTimeMillis() - startedAt
+
+    /**
+     * The loudest sample since the last call, `0..32767`; 0 when idle or unsupported.
+     *
+     * `MediaRecorder` resets this counter every time it is read, so calling it on a fixed tick
+     * (the composer's 100 ms one) yields one real amplitude per tick. That is what lets the
+     * recording strip and the bubble drawn by the other client show the *actual* shape of what
+     * was said instead of a decorative random pattern — the reference captures the same thing
+     * with an `AnalyserNode` (`ChatView.tsx:37-60`, `downsampleWaveform`).
+     */
+    @SuppressLint("MissingPermission")
+    fun peakAmplitude(): Int = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
 
     /**
      * Starts capturing. Returns false when the microphone is unavailable (permission denied,
@@ -58,6 +73,7 @@ class VoiceRecorder(private val context: Context) {
             recorder = created
             file = output
             startedAt = System.currentTimeMillis()
+            paused = false
             true
         } catch (error: Throwable) {
             // A device that refuses the encoder must not leave a half-open recorder behind.
@@ -70,6 +86,30 @@ class VoiceRecorder(private val context: Context) {
     }
 
     /**
+     * Stops capturing without ending the recording; [resume] continues it.
+     *
+     * The composer used to "pause" by freezing its own timer while the microphone kept
+     * recording: the strip said paused, and everything said in the meantime ended up in the
+     * clip at the wrong length. `MediaRecorder.pause()` is the real thing (API 24, which is
+     * this app's minimum). Returns false when the recorder refuses, so the UI can stay honest
+     * instead of showing a pause that is not happening.
+     */
+    fun pause(): Boolean {
+        val current = recorder ?: return false
+        if (paused) return true
+        return runCatching { current.pause() }.isSuccess.also { if (it) paused = true }
+    }
+
+    /** Continues a recording [pause]d earlier. */
+    fun resume(): Boolean {
+        val current = recorder ?: return false
+        if (!paused) return true
+        val resumed = runCatching { current.resume() }.isSuccess
+        if (resumed) paused = false
+        return resumed
+    }
+
+    /**
      * Stops and returns the clip, or null when nothing usable was captured (too short, the
      * recorder never started, or `stop()` threw — which MediaRecorder does when it recorded
      * no frames at all).
@@ -77,6 +117,11 @@ class VoiceRecorder(private val context: Context) {
     fun stop(): Clip? {
         val current = recorder ?: return null
         recorder = null
+        // A paused recorder has to be back in the recording state before `stop()`, which is
+        // what finalises the MP4 container (without it the file has no moov atom and nothing
+        // can play it).
+        if (paused) runCatching { current.resume() }
+        paused = false
         val output = file
         file = null
         // `MediaRecorder.stop()` throws a RuntimeException when it captured too few frames, and
@@ -94,6 +139,7 @@ class VoiceRecorder(private val context: Context) {
     fun cancel() {
         val current = recorder
         recorder = null
+        paused = false
         if (current != null) {
             runCatching { current.stop() }
             runCatching { current.release() }
@@ -105,6 +151,7 @@ class VoiceRecorder(private val context: Context) {
     private fun release() {
         recorder?.let { runCatching { it.release() } }
         recorder = null
+        paused = false
         file?.delete()
         file = null
     }

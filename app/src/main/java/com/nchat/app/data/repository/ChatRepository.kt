@@ -56,15 +56,25 @@ interface ChatRepository {
         thumbnail: ByteArray? = null
     )
     /**
-     * Sends a recorded voice message: the clip is uploaded first and the message carries its
+     * Sends a recorded voice message: the clip is uploaded and the message carries its
      * `media_url`, which is what makes the other side actually hear something.
+     *
+     * The clip is kept on disk until the server has the message, so a recording made without a
+     * network is queued (see `VoiceClipStore`) instead of being lost.
+     *
+     * @param waveform the recorded amplitude as a JSON array (see `VoiceWaveform`), stored in
+     *   `thumbnail_url` — the same column the reference puts its waveform in, so both clients
+     *   draw the real shape of the clip.
      */
     fun sendVoice(
         chatId: String,
         bytes: ByteArray,
         mimeType: String,
         fileName: String,
-        durationLabel: String
+        durationLabel: String,
+        replyAuthor: String? = null,
+        replyText: String? = null,
+        waveform: String? = null
     )
     /**
      * Resend a bubble whose send failed for good (the warning icon on the message).

@@ -118,6 +118,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.nchat.app.core.audio.VoiceRecorder
+import com.nchat.app.core.audio.VoiceWaveform
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.util.MediaPreparer
 import com.nchat.app.core.util.PickedFile
@@ -134,7 +135,6 @@ import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
-import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -1316,7 +1316,17 @@ private fun ComposerBar(
     onSend: () -> Unit,
     onCancelReply: () -> Unit,
     onSendAttachment: (MessageKind) -> Unit,
-    onSendVoice: (bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) -> Unit,
+    /**
+     * @param waveform the recorded amplitude as a JSON array (`VoiceWaveform`), stored in
+     *   `thumbnail_url` so the bubble — here and on the web — draws the real shape of the clip.
+     */
+    onSendVoice: (
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        durationLabel: String,
+        waveform: String?
+    ) -> Unit,
     /**
      * Live "recording a voice message" state for the other side
      * (`POST /messages/recording` / `POST /groups/:id/recording`).
@@ -1351,6 +1361,10 @@ private fun ComposerBar(
     var cancelProgress by remember { mutableStateOf(0f) }
     var lockProgress by remember { mutableStateOf(0f) }
     val bars = remember { mutableStateListOf<Float>() }
+    /** Raw `MediaRecorder` amplitudes, one per tick — the waveform the bubble is drawn from. */
+    val clipSamples = remember { mutableListOf<Int>() }
+    /** Loudest sample so far, so the live bars are scaled to this clip and not to the device. */
+    var clipPeak by remember { mutableStateOf(0) }
 
     val density = LocalDensity.current
     val lockThreshold = with(density) { 56.dp.toPx() }
@@ -1364,18 +1378,25 @@ private fun ComposerBar(
         cancelProgress = 0f
         lockProgress = 0f
         bars.clear()
+        clipSamples.clear()
+        clipPeak = 0
         onRecordingChange(false)
     }
 
     fun sendVoice() {
         val clip = recorder.stop()
         val duration = if (elapsedMs > 0L) elapsedMs else 0L
+        // Sampled before `discardVoice()` wipes them.
+        val waveform = VoiceWaveform.json(clipSamples.toList())
         discardVoice()
         if (clip == null) {
             NcToaster.show("Couldn't record — check the microphone and try again")
             return
         }
-        onSendVoice(clip.bytes, clip.mimeType, clip.fileName, formatVoiceDuration(duration))
+        // Never send 0:00: the label is what the other side shows, and a held-but-instant tap
+        // is already filtered above by `minVoiceMs`.
+        val label = formatVoiceDuration(duration.coerceAtLeast(1_000L))
+        onSendVoice(clip.bytes, clip.mimeType, clip.fileName, label, waveform)
     }
 
     // Tell the other side the moment the recorder is live, and only then.
@@ -1388,15 +1409,25 @@ private fun ComposerBar(
     LaunchedEffect(voicePhase) {
         val phase = voicePhase
         if (phase == null || phase == VoicePhase.Paused) return@LaunchedEffect
-        var tick = 0
         while (true) {
             delay(100)
             elapsedMs += 100
-            tick += 1
-            if (tick % 2 == 0) {
-                bars.add(0.22f + Random.nextFloat() * 0.78f)
-                if (bars.size > 20) bars.removeAt(0)
+            /*
+             * `getMaxAmplitude()` is the loudest sample since the previous read, so one read per
+             * tick is one real amplitude. The strip used to draw `Random.nextFloat()` — a
+             * decorative animation that had nothing to do with what was being said, and nothing
+             * to do with the waveform the other side saw, because there was none.
+             */
+            val amplitude = recorder.peakAmplitude()
+            clipSamples.add(amplitude)
+            if (amplitude > clipPeak) clipPeak = amplitude
+            val level = if (clipPeak > 0) {
+                (amplitude.toFloat() / clipPeak).coerceIn(0.08f, 1f)
+            } else {
+                0.08f
             }
+            bars.add(level)
+            if (bars.size > 20) bars.removeAt(0)
         }
     }
 
@@ -1520,6 +1551,8 @@ private fun ComposerBar(
                                             val startY = down.position.y
                                             elapsedMs = 0L
                                             bars.clear()
+                                            clipSamples.clear()
+                                            clipPeak = 0
                                             cancelProgress = 0f
                                             lockProgress = 0f
                                             val granted = ContextCompat.checkSelfPermission(
@@ -1606,8 +1639,14 @@ private fun ComposerBar(
                         lockProgress = lockProgress
                     ),
                     onDelete = { discardVoice() },
+                    // A real pause: the recorder stops capturing (the strip's timer already
+                    // only counts live time), and the phase only changes when it agrees.
                     onTogglePause = {
-                        voicePhase = if (phase == VoicePhase.Paused) VoicePhase.Locked else VoicePhase.Paused
+                        if (phase == VoicePhase.Paused) {
+                            if (recorder.resume()) voicePhase = VoicePhase.Locked
+                        } else if (recorder.pause()) {
+                            voicePhase = VoicePhase.Paused
+                        }
                     },
                     onSend = { sendVoice() }
                 )

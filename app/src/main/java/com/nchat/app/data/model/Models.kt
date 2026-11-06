@@ -225,6 +225,17 @@ data class OutboxEntry(
     val fileName: String? = null,
     val fileSize: String? = null,
     val replyTo: String? = null,
+    /**
+     * A recorded voice clip that still has to be uploaded, as an absolute path inside
+     * `filesDir/voice-out` (see `VoiceClipStore`).
+     *
+     * `mediaUrl` is empty until that upload succeeds, so delivery knows to do it first: a voice
+     * note recorded with no network is queued with its audio, not thrown away. Entries written
+     * by older builds simply have no path and are delivered the old way.
+     */
+    val localFile: String? = null,
+    /** MIME type of [localFile] (`audio/mp4` from the recorder). */
+    val mimeType: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     /** How many delivery attempts have failed so far. */
     val attempts: Int = 0

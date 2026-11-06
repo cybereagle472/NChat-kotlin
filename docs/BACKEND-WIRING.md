@@ -332,3 +332,41 @@ What happens on each transition (`ServiceLocator.startNetworkWatch`):
 
 Group ids are seeded from the cached chat list at construction, so a group opened offline is
 still read/queued correctly instead of being treated as a 1:1 chat.
+
+## 15. Voice notes (1.0.45)
+
+A voice note is three things that must all survive each other: the clip, the message that points
+at it, and a bubble that can be played from either side.
+
+| Step | Code | Wire |
+|---|---|---|
+| Capture | `core/audio/VoiceRecorder` — AAC in MP4 (`.m4a`), mono, 44.1 kHz, 64 kbps | — |
+| Waveform | `core/audio/VoiceWaveform` — `peakAmplitude()` per 100 ms tick → 27 normalised bars | `thumbnail_url` (JSON array, the reference's `downsampleWaveform`) |
+| Queue | `data/local/VoiceClipStore` → `filesDir/voice-out/<client_message_id>.m4a`, entry in `OutboxStore` | — |
+| Upload | `RemoteChatRepository.uploadClip` | `POST /media/upload` (multipart `file`), returns the absolute `/media/file/:key` URL |
+| Send | `RemoteChatRepository.deliver` | `POST /messages` or `POST /groups/:id/messages` with `type: "voice"`, `content` **and** `media_url` = the URL, `duration` in seconds, `thumbnail_url` = the waveform |
+| Play | `MessageBubble.VoiceContent` — one `MediaPlayer` per bubble, exclusive across bubbles | `GET /media/file/:key` (public, byte ranges) |
+
+Rules this section exists to protect:
+
+- **`type` is `voice`, never `audio`.** The web client keys its entire voice bubble off
+  `message.type === 'voice'` (`ChatView.tsx:130`, `:2207`); an `audio` row falls through to the
+  text branch and prints the media URL as the message body. `ChatRepository` reads both, so old
+  rows still render.
+- **The clip is on disk before the network is touched.** A voice note recorded offline is a
+  queued send, not a failed one: `deliver()` uploads it when there is a connection and the
+  bubble's clock keeps running until then. `restorePending` gives a pending clip a `file://`
+  URL so its author can play it in the meantime.
+- **A local path is never a `media_url`.** `retrySend` re-queues the file instead of posting
+  `file://…`; only the URL `POST /media/upload` answers with is ever written to the message.
+- **Nothing is silently dropped.** An upload or post that the server refuses marks the bubble
+  with the server's own reason; a transient answer stays queued. A recording shorter than 1 s
+  is discarded with a toast rather than sent as a 0:00 sliver.
+- **The player matches the URL.** `VoiceContent`'s player *and* its `prepared`/`playing` state
+  are keyed on `mediaUrl`, because a clip swaps `file://…` for its public URL the moment the
+  upload lands.
+- **Pause stops the microphone.** `VoiceRecorder.pause()`/`resume()` wrap
+  `MediaRecorder.pause()`/`resume()` (API 24+); the strip's timer only ever counted live time,
+  so the old freeze-the-timer version produced clips containing exactly what the user thought
+  they had paused. `stop()` resumes first, because an MP4 that never leaves the paused
+  substate is not finalised.

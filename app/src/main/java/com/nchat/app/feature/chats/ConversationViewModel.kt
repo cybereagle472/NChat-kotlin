@@ -141,15 +141,32 @@ class ConversationViewModel(
         repository.deleteGroup(chatId)
     }
 
-    fun onSendVoice(bytes: ByteArray, mimeType: String, fileName: String, durationLabel: String) {
+    /**
+     * Sends a recorded voice note.
+     *
+     * The reply stays attached while recording, exactly like it does for text — a quote the user
+     * picked before holding the mic used to be dropped on the floor the moment they spoke.
+     */
+    fun onSendVoice(
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        durationLabel: String,
+        waveform: String? = null
+    ) {
         if (bytes.isEmpty()) return
+        val quoted = _replyTo.value
         repository.sendVoice(
             chatId = chatId,
             bytes = bytes,
             mimeType = mimeType,
             fileName = fileName,
-            durationLabel = durationLabel
+            durationLabel = durationLabel,
+            replyAuthor = quoted?.authorName,
+            replyText = quoted?.text,
+            waveform = waveform
         )
+        _replyTo.value = null
     }
 
     /** A real attachment: the bytes are uploaded, then the message points at them. */
