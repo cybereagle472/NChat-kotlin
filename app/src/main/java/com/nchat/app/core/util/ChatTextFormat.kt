@@ -68,11 +68,11 @@ private fun AnnotatedString.Builder.appendFormatted(
     while (index < text.length) {
         // A mention is checked before the formatting markers: `@` is never a marker, but the name
         // after it must be consumed whole.
-        val style = mentionStyle
-        val mention = if (style != null) mentionAt(text, index, mentions) else null
-        if (mention != null && style != null) {
+        val mentionSpan = mentionStyle
+        val mention = if (mentionSpan != null) mentionAt(text, index, mentions) else null
+        if (mention != null && mentionSpan != null) {
             flush()
-            withStyle(style) { append(text.substring(index, index + 1 + mention.length)) }
+            withStyle(mentionSpan) { append(text.substring(index, index + 1 + mention.length)) }
             index += 1 + mention.length
             continue
         }
