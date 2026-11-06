@@ -26,7 +26,12 @@ class RemoteAuthRepository(
     private val tokens: TokenStore,
     private val scope: CoroutineScope,
     /** On-device caches that must not survive a sign-out. */
-    private val cache: ChatListCache? = null
+    private val cache: ChatListCache? = null,
+    /**
+     * Everything else that is private to the account and lives on the device — drafts and
+     * starred messages. The next person to sign in on this phone must not find them.
+     */
+    private val clearLocalState: () -> Unit = {}
 ) : AuthRepository {
 
     private val _session = MutableStateFlow(tokens.email)
@@ -45,6 +50,7 @@ class RemoteAuthRepository(
             tokens.sessionLost.collect { lost ->
                 if (!lost) return@collect
                 cache?.clear()
+                clearLocalState()
                 _session.value = null
                 _profileComplete.value = false
             }
@@ -114,6 +120,7 @@ class RemoteAuthRepository(
         // Forget the session immediately: signing out must never depend on the network.
         tokens.clear()
         cache?.clear()
+        clearLocalState()
         _session.value = null
         _profileComplete.value = false
         if (refresh != null) {

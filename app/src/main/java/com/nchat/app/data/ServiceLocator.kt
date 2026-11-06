@@ -221,7 +221,16 @@ object ServiceLocator {
 
 
     val authRepository: AuthRepository by lazy {
-        RemoteAuthRepository(api, tokens, appScope, chatCache)
+        RemoteAuthRepository(
+            api = api,
+            tokens = tokens,
+            scope = appScope,
+            cache = chatCache,
+            clearLocalState = {
+                drafts.clearAll()
+                stars.clearAll()
+            }
+        )
     }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -508,7 +509,15 @@ fun ConversationScreen(
             }
             }
 
-            if (isBlocked) {
+            if (selection.isNotEmpty()) {
+                // Selection mode owns the whole screen: no composer, no accidental send while
+                // messages are ticked (WhatsApp hides it too).
+                SelectionFooter(
+                    count = selection.size,
+                    onDelete = { bulkDeleteOpen = true },
+                    onForward = { forwardingSelection = true }
+                )
+            } else if (isBlocked) {
                 BlockedComposerBar(
                     name = blockedPerson?.name ?: chatTitle,
                     onUnblock = {
@@ -1600,6 +1609,59 @@ private fun SelectionHeader(
         }
         HeaderAction(Icons.Rounded.SelectAll, "Select all", onClick = onSelectAll)
         HeaderAction(Icons.Rounded.Delete, "Delete", onClick = onDelete)
+    }
+}
+
+/** The bar that replaces the composer while messages are ticked. */
+@Composable
+private fun SelectionFooter(count: Int, onDelete: () -> Unit, onForward: () -> Unit) {
+    val extra = NcTheme.extra
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .navigationBarsPadding()
+            .padding(horizontal = NcSpace.lg, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        FooterAction(Icons.Rounded.Forward, "Forward", onForward)
+        FooterAction(Icons.Rounded.Delete, "Delete", onDelete)
+        Text(
+            text = if (count == 1) "1 selected" else "$count selected",
+            color = extra.textTertiary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun FooterAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(17.dp)
+        )
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

@@ -441,3 +441,22 @@ Rules this section exists to protect:
   callback fed by a `ForwardingSink` around the file part; the value rides `Message.uploadProgress`
   (marked `@Transient`, so it is never written to the message cache) and the bubble draws a
   determinate ring. A send with no visible progress is indistinguishable from a stuck one.
+
+## 17. State that is deliberately local (1.0.50)
+
+Three things a WhatsApp user expects have **no wire format** in the worker, and adding one would be
+the wrong fix:
+
+- **Drafts** (`drafts.json`, `DraftStore`). A draft is not a message; `POST /messages` would deliver
+  it. It is per-device by definition, so it stays in `filesDir` and is restored by
+  `ConversationViewModel.init`.
+- **Starred messages** (`starred.json`, `StarredStore`). `starred_by` does not exist on the server,
+  and in a group the star must stay private. The store copies author/text/timestamp so the list
+  still works after the original is deleted or paged out.
+- **In-chat search** (`ChatSearchOverlay`). Filtering the messages already in memory is instant and
+  works offline; a `GET /messages/search` would be slower, need a full-text index and still miss
+  media names.
+
+Both stores are cleared on sign-out with the other caches. Anything that *must* be visible to other
+people (reactions, edits, deletes, typing, recording) continues to go through the API — the rule
+from §8 still holds: if the other side has to see it, it is a server call, not local state.
