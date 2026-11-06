@@ -1,4 +1,4 @@
-run: 42227910332
+run: 42252398376
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -28,11 +28,11 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:mergeReleaseNativeLibs
 > Task :app:desugarReleaseFileDependencies FROM-CACHE
 > Task :app:checkReleaseDuplicateClasses
-> Task :app:processReleaseManifestForPackage
 
 > Task :app:stripReleaseDebugSymbols
 Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
 
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseArtProfile
 > Task :app:extractReleaseNativeSymbolTables FROM-CACHE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
@@ -46,27 +46,24 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:collectReleaseDependencies
 > Task :app:sdkReleaseDependencyData
 > Task :app:validateSigningRelease
+> Task :app:optimizeReleaseResources
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
-> Task :app:optimizeReleaseResources
 > Task :app:compileReleaseKotlin
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:460:9 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:460:22 Variable expected
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:666:9 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:666:22 Variable expected
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:675:13 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:675:35 Cannot infer a type for this parameter. Please specify it explicitly.
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:680:22 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:681:9 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:681:22 Variable expected
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:684:67 Unresolved reference: callId
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:692:34 Unresolved reference: groupId
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:693:54 Unresolved reference: groupName
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:701:9 Unresolved reference: _groupInvite
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:701:22 Variable expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:69:19 Unresolved reference: TextureViewRenderer
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:542:17 Unresolved reference: TextureViewRenderer
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:543:21 Unresolved reference: init
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:544:21 Unresolved reference: setMirror
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:545:21 Unresolved reference: setScalingType
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:548:24 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:553:26 Variable expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:558:25 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:560:22 Variable expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:562:27 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:564:22 Variable expected
 
 > Task :app:compileReleaseKotlin FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793972692744.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793982448097.json
 
 FAILURE: Build failed with an exception.
 
@@ -272,5 +269,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 49s
+BUILD FAILED in 46s
 35 actionable tasks: 22 executed, 13 from cache
