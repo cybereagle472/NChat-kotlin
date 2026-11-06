@@ -404,7 +404,7 @@ class RemoteChatRepository(
                 title = profile.displayName(),
                 avatarUrl = profile.avatarUrl,
                 isOnline = profile.isOnline,
-                lastMessage = dto.previewText(),
+                lastMessage = previewOf(dto, profile.id, isGroup = false),
                 lastMessageAt = isoMillis(dto.createdAt),
                 lastMessageKind = dto.kind(),
                 lastMessageMine = dto.senderId == me,
@@ -429,8 +429,17 @@ class RemoteChatRepository(
         // the server's snapshot is what made a message the user had just sent disappear again:
         // the fetch was answered *before* the send landed, so the pending bubble was thrown away
         // and the chat looked frozen until the next reload.
-        val server = rows.map { it.toModel(chatId) }
-        stream(chatId).update { local -> mergeMessages(local, server) }
+        /*
+         * `deleted_for` is filtered here as well as on the server.
+         *
+         * `GET /messages/with/:id` already drops them, but `GET /groups/:id/messages` does not
+         * (`worker/src/routes/groups.ts:370-391` maps every row), so a group message deleted
+         * "for me" came back on the next refresh — and stayed back, because the client had
+         * nothing left to tell it apart.
+         */
+        val me = myId
+        val server = rows.filterNot { me.isNotEmpty() && me in it.deletedFor }.map { it.toModel(chatId) }
+        updateMessages(chatId) { local -> mergeMessages(local, server) }
     }
 
     /**
@@ -490,7 +499,7 @@ class RemoteChatRepository(
             runCatching { store.load(owner, chatId) }.getOrDefault(emptyList())
         }
         if (cached.isEmpty()) return
-        stream(chatId).update { local ->
+        updateMessages(chatId) { local ->
             if (local.isEmpty()) {
                 cached
             } else {
@@ -622,33 +631,34 @@ class RemoteChatRepository(
         chatId: String,
         text: String,
         replyAuthor: String?,
-        replyText: String?
+        replyText: String?,
+        replyToId: String?
     ) {
         val body = text.trim()
         if (body.isEmpty()) return
         val localId = newClientId()
-        appendLocal(
-            chatId = chatId,
-            message = baseMessage(chatId, localId, body).copy(
-                replyAuthor = replyAuthor,
-                replyText = replyText
-            )
+        val local = baseMessage(chatId, localId, body).copy(
+            replyToId = replyToId,
+            replyAuthor = replyAuthor,
+            replyText = replyText
         )
-        preview(chatId, body, DeliveryState.Sending)
+        appendLocal(chatId, local)
+        preview(chatId, local, DeliveryState.Sending)
         outbox?.add(
             OutboxEntry(
                 clientId = localId,
                 chatId = chatId,
                 isGroup = isGroup(chatId),
                 ownerId = myId,
-                text = body
+                text = body,
+                replyTo = replyToId
             )
         )
-        dispatch(chatId, localId, body) { clientId ->
+        dispatch(chatId, localId) { clientId ->
             if (isGroup(chatId)) {
-                api.sendGroupMessage(chatId, body, clientMessageId = clientId, replyTo = null)
+                api.sendGroupMessage(chatId, body, clientMessageId = clientId, replyTo = replyToId)
             } else {
-                api.sendMessage(chatId, body, clientMessageId = clientId, replyTo = null)
+                api.sendMessage(chatId, body, clientMessageId = clientId, replyTo = replyToId)
             }
         }
     }
@@ -670,7 +680,8 @@ class RemoteChatRepository(
         durationLabel: String,
         replyAuthor: String?,
         replyText: String?,
-        waveform: String?
+        waveform: String?,
+        replyToId: String?
     ) {
         if (bytes.isEmpty()) return
         val localId = newClientId()
@@ -678,31 +689,27 @@ class RemoteChatRepository(
         // A pending clip is playable by its own author straight away (`MediaPlayer` reads a
         // `file://` path exactly like an https one); the uploaded URL replaces it below.
         val localUri = localFile?.let { "file://$it" }
-        appendLocal(
-            chatId = chatId,
-            message = baseMessage(chatId, localId, "Voice message").copy(
-                kind = MessageKind.Voice,
-                durationLabel = durationLabel,
-                fileName = fileName,
-                // The reference keeps the waveform in `thumbnail_url` (`ChatView.tsx:37-60`),
-                // so a voice note recorded here draws a real waveform there too.
-                thumbnailUrl = waveform,
-                mediaUrl = localUri,
-                replyAuthor = replyAuthor,
-                replyText = replyText
-            )
+        val local = baseMessage(chatId, localId, "Voice message").copy(
+            kind = MessageKind.Voice,
+            durationLabel = durationLabel,
+            fileName = fileName,
+            // The reference keeps the waveform in `thumbnail_url` (`ChatView.tsx:37-60`),
+            // so a voice note recorded here draws a real waveform there too.
+            thumbnailUrl = waveform,
+            mediaUrl = localUri,
+            replyToId = replyToId,
+            replyAuthor = replyAuthor,
+            replyText = replyText
         )
-        // The same wording the chat list uses for a received one (`previewText()`), so a voice
-        // note reads the same whichever side of it you are on.
-        val previewText = "🎤 Voice message ($durationLabel)"
-        preview(chatId, previewText, DeliveryState.Sending)
+        appendLocal(chatId, local)
+        preview(chatId, local, DeliveryState.Sending)
 
         val entry = OutboxEntry(
             clientId = localId,
             chatId = chatId,
             isGroup = isGroup(chatId),
             ownerId = myId,
-            text = previewText,
+            text = "Voice message",
             // `voice`, not `audio`: the web client only recognises `message.type === 'voice'`
             // (`ChatView.tsx:130`, `:2207`), so an `audio` row arrives there as a text bubble
             // showing the raw URL.
@@ -711,7 +718,8 @@ class RemoteChatRepository(
             fileName = fileName,
             thumbnailUrl = waveform,
             localFile = localFile,
-            mimeType = mimeType
+            mimeType = mimeType,
+            replyTo = replyToId
         )
         outbox?.add(entry)
         // Offline is not a failure — the entry above *is* the send, and `flushOutbox()` (on the
@@ -731,14 +739,12 @@ class RemoteChatRepository(
     ) {
         val localId = newClientId()
         val body = caption?.trim().orEmpty()
-        appendLocal(
-            chatId = chatId,
-            message = baseMessage(chatId, localId, body).copy(
-                kind = kind,
-                fileName = fileName
-            )
+        val local = baseMessage(chatId, localId, body).copy(
+            kind = kind,
+            fileName = fileName
         )
-        preview(chatId, body.ifBlank { fileName }, DeliveryState.Sending)
+        appendLocal(chatId, local)
+        preview(chatId, local, DeliveryState.Sending)
 
         scope.launch {
             // 1) upload the file (and its preview), 2) send a message that points at both.
@@ -803,20 +809,57 @@ class RemoteChatRepository(
             }
             outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
-            preview(chatId, body.ifBlank { fileName }, DeliveryState.Sent)
+            previewFromLast(chatId)
         }
     }
 
+    /**
+     * Forwards a message.
+     *
+     * Text used to be the only thing that survived: a forwarded photo arrived as an empty
+     * bubble, a forwarded voice note as the word "Voice message", because this copied
+     * `source.text` and called it a day. The reference re-sends `content`, `type`, `media_url`,
+     * `thumbnail_url`, `fileName` and `duration` untouched (`chatService.forwardToUsers`,
+     * `:697-737`), which is the only way the recipient gets a photo and not a caption.
+     */
     override fun forwardMessage(targetChatId: String, source: Message) {
-        val body = source.text.ifBlank { "Forwarded message" }
-        sendMessage(targetChatId, body)
+        val media = source.mediaUrl?.takeIf { it.isRemoteUrl() }
+        if (media == null || source.kind == MessageKind.Text) {
+            sendMessage(targetChatId, source.text.ifBlank { "Forwarded message" })
+            return
+        }
+        val localId = newClientId()
+        val local = baseMessage(targetChatId, localId, source.text).copy(
+            kind = source.kind,
+            fileName = source.fileName,
+            mediaUrl = media,
+            thumbnailUrl = source.thumbnailUrl,
+            durationLabel = source.durationLabel,
+            forwarded = true
+        )
+        appendLocal(targetChatId, local)
+        preview(targetChatId, local, DeliveryState.Sending)
+        val entry = OutboxEntry(
+            clientId = localId,
+            chatId = targetChatId,
+            isGroup = isGroup(targetChatId),
+            ownerId = myId,
+            text = source.text,
+            type = source.kind.wireType(),
+            mediaUrl = media,
+            thumbnailUrl = source.thumbnailUrl,
+            duration = source.durationLabel?.let { durationSeconds(it) },
+            fileName = source.fileName
+        )
+        outbox?.add(entry)
+        if (!online()) return
+        scope.launch { deliver(entry, live = true) }
     }
 
-    /** Sends [body], then swaps the optimistic row for the server's. */
+    /** Sends the queued row, then swaps the optimistic bubble for the server's. */
     private fun dispatch(
         chatId: String,
         localId: String,
-        body: String,
         send: suspend (clientId: String) -> com.nchat.app.network.MessageEnvelope
     ) {
         scope.launch {
@@ -848,7 +891,7 @@ class RemoteChatRepository(
             }
             outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
-            preview(chatId, body, DeliveryState.Sent)
+            previewFromLast(chatId)
         }
     }
 
@@ -973,7 +1016,7 @@ class RemoteChatRepository(
                     state = DeliveryState.Sent
                 )
             )
-            preview(row.chatId, row.text, DeliveryState.Sent)
+            preview(row.chatId, previewOf(row), DeliveryState.Sent)
             return
         }
         onDeliveryFailure(row, failure, live)
@@ -1106,7 +1149,9 @@ class RemoteChatRepository(
                 else -> (messages + model).sortedBy { it.timestamp }
             }
         }
-        preview(chatId, model.text, DeliveryState.Sent)
+        // The echo carries the server's row: re-derive the list line from the conversation so
+        // a voice note keeps its length and a group keeps its "You:".
+        previewFromLast(chatId)
     }
 
     /**
@@ -1210,7 +1255,7 @@ class RemoteChatRepository(
             }
             outbox?.remove(localId)
             replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
-            preview(chatId, message.text, DeliveryState.Sent)
+            previewFromLast(chatId)
         }
     }
 
@@ -1237,6 +1282,7 @@ class RemoteChatRepository(
 
     override fun toggleReaction(chatId: String, messageId: String, emoji: String) {
         // Optimistic toggle first — the bubble reacts under the finger, no round trip.
+        val before = stream(chatId).value.firstOrNull { it.id == messageId }?.reactions ?: emptyList()
         updateMessages(chatId) { messages ->
             messages.map { message ->
                 if (message.id != messageId) message
@@ -1248,27 +1294,54 @@ class RemoteChatRepository(
             val response = runCatching {
                 if (isGroup(chatId)) api.reactToGroupMessage(messageId, emoji)
                 else api.reactToMessage(messageId, emoji)
-            }.getOrNull() ?: return@launch
+            }
+            val updated = response.getOrNull()
+            if (updated == null) {
+                // The server refused (the message is gone, or the group no longer exists):
+                // put the reaction back instead of showing one nobody else can see.
+                updateMessages(chatId) { messages ->
+                    messages.map { message ->
+                        if (message.id != messageId) message
+                        else message.copy(reactions = before)
+                    }
+                }
+                NcToaster.show("Couldn't react — ${response.exceptionOrNull()?.describeSend()}")
+                return@launch
+            }
             updateMessages(chatId) { messages ->
                 messages.map { message ->
                     if (message.id != messageId) message
-                    else message.copy(reactions = response.reactions.toModel())
+                    else message.copy(reactions = updated.reactions.toModel())
                 }
             }
         }
     }
 
     override fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean) {
-        updateMessages(chatId) { messages ->
-            if (forEveryone) {
-                messages.map { if (it.id == messageId) it.tombstone() else it }
-            } else {
-                messages.filterNot { it.id == messageId }
-            }
+        val target = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+        /*
+         * A bubble that never reached the server is deleted here and nowhere else — but its
+         * outbox entry has to go with it. It used to be left behind, so the very next flush
+         * (a reconnect, a foreground) delivered the message the user had just deleted.
+         */
+        if (isPending(chatId, messageId)) {
+            val queued = outbox?.all()?.firstOrNull { it.clientId == messageId }
+            outbox?.remove(messageId)
+            // A voice note that was still waiting to upload has its audio on disk — that file
+            // is part of the message, so deleting the bubble deletes the recording too.
+            voiceClips?.delete(queued?.localFile)
+            updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
+            previewFromLast(chatId)
+            NcToaster.show(if (forEveryone) "Message deleted" else "Message deleted for you")
+            return
         }
-        if (isPending(chatId, messageId)) return
+        updateMessages(chatId) { messages ->
+            if (forEveryone) messages.map { if (it.id == messageId) it.tombstone() else it }
+            else messages.filterNot { it.id == messageId }
+        }
+        previewFromLast(chatId)
         scope.launch {
-            runCatching {
+            val response = runCatching {
                 when {
                     isGroup(chatId) && forEveryone -> api.deleteGroupMessageForEveryone(messageId)
                     isGroup(chatId) -> api.deleteGroupMessageForMe(messageId)
@@ -1276,6 +1349,22 @@ class RemoteChatRepository(
                     else -> api.deleteMessageForMe(messageId)
                 }
             }
+            val error = response.exceptionOrNull() ?: run {
+                NcToaster.show(if (forEveryone) "Message deleted for everyone" else "Message deleted for you")
+                return@launch
+            }
+            /*
+             * The server said no — a group message older than the worker's one-hour window
+             * (`groups.ts:513-521`), or a row that is not mine. Put the message back exactly as
+             * it was and say why: a tombstone that a refresh silently undoes is worse than a
+             * delete that never happened.
+             */
+            updateMessages(chatId) { messages ->
+                if (forEveryone) messages.map { if (it.id == messageId) target else it }
+                else (messages + target).sortedBy { it.timestamp }
+            }
+            previewFromLast(chatId)
+            NcToaster.show("Couldn't delete — ${error.describeSend()}")
         }
     }
 
@@ -1463,13 +1552,21 @@ class RemoteChatRepository(
                 val dto = decodeMessage(row)
                 val chatId = if (dto.senderId == myId) dto.receiverId.orEmpty() else dto.senderId
                 replaceMessage(chatId, dto)
+                previewFromLast(chatId)
             }
 
             "message:delete" -> {
+                /*
+                 * A message deleted for everyone keeps its slot with a tombstone, exactly like
+                 * the row the next history fetch answers with (`is_deleted` → `deleted = true`).
+                 * Removing the bubble here instead made the two views disagree: the live screen
+                 * closed the gap, and a second later a refresh put an empty tombstone in it.
+                 */
                 val id = event.string("messageId") ?: return
-                val chatId = event.string("sender_id").orEmpty()
-                removeMessage(chatId, id)
-                removeMessage(event.string("receiver_id").orEmpty(), id)
+                val sender = event.string("sender_id").orEmpty()
+                val receiver = event.string("receiver_id").orEmpty()
+                val chatId = if (sender == myId) receiver else sender
+                tombstoneMessage(chatId, id)
             }
 
             "message:reaction" -> {
@@ -1533,7 +1630,7 @@ class RemoteChatRepository(
             "group-message:delete" -> {
                 val id = event.string("message_id") ?: return
                 val groupId = event.string("group_id") ?: return
-                removeMessage(groupId, id)
+                tombstoneMessage(groupId, id)
             }
 
             "group-message:reaction" -> {
@@ -1631,10 +1728,9 @@ class RemoteChatRepository(
         runCatching { NcJson.format.decodeFromJsonElement<GroupDto>(row) }.getOrNull()
 
     private fun ingest(chatId: String, dto: MessageDto) {
-        val stream = stream(chatId)
         val model = dto.toModel(chatId)
-        if (stream.value.any { it.id == model.id }) return
-        stream.update { (it + model).sortedBy { message -> message.timestamp } }
+        if (stream(chatId).value.any { it.id == model.id }) return
+        updateMessages(chatId) { (it + model).sortedBy { message -> message.timestamp } }
     }
 
     private fun replaceMessage(chatId: String, dto: MessageDto) {
@@ -1647,9 +1743,21 @@ class RemoteChatRepository(
         }
     }
 
-    private fun removeMessage(chatId: String, messageId: String) {
+    /** "Deleted for everyone", applied to the bubble that is on screen right now. */
+    private fun tombstoneMessage(chatId: String, messageId: String) {
         if (chatId.isEmpty()) return
-        updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
+        var hit = false
+        updateMessages(chatId) { messages ->
+            messages.map { message ->
+                if (message.id == messageId && !message.deleted) {
+                    hit = true
+                    message.tombstone()
+                } else {
+                    message
+                }
+            }
+        }
+        if (hit) previewFromLast(chatId)
     }
 
     // --------------------------------------------------------------- helpers
@@ -1670,7 +1778,7 @@ class RemoteChatRepository(
     )
 
     private fun appendLocal(chatId: String, message: Message) {
-        stream(chatId).update { it + message }
+        updateMessages(chatId) { it + message }
     }
 
     private fun replaceLocal(chatId: String, localId: String, message: Message) {
@@ -1680,39 +1788,153 @@ class RemoteChatRepository(
         }
     }
 
+    /**
+     * The single funnel every conversation mutation goes through.
+     *
+     * Quotes are resolved here rather than at each call site, so it does not matter whether a
+     * message arrived over the socket, from history, from disk or from the composer: a reply
+     * always ends up with the author and text of the message it points at.
+     */
     private fun updateMessages(chatId: String, transform: (List<Message>) -> List<Message>) {
         if (chatId.isEmpty()) return
-        stream(chatId).update(transform)
+        stream(chatId).update { current -> linkQuotes(transform(current)) }
     }
 
-    private fun preview(chatId: String, body: String, state: DeliveryState) {
+    /**
+     * Fills in the quote each reply points at.
+     *
+     * A reply carries only `reply_to` (an id). The conversation it belongs to is right here, so
+     * the author and a one-line version of the quoted message can be filled in locally — that is
+     * what makes a reply readable instead of an empty "Replying to" strip. A quote whose target
+     * is outside the loaded page stays unresolved and renders as a plain "Replied message".
+     */
+    private fun linkQuotes(messages: List<Message>): List<Message> {
+        if (messages.none { it.replyToId != null && it.replyText == null }) return messages
+        val byId = messages.associateBy { it.id }
+        return messages.map { message ->
+            val id = message.replyToId ?: return@map message
+            if (message.replyText != null) return@map message
+            val quoted = byId[id] ?: return@map message
+            message.copy(replyAuthor = quoted.authorName, replyText = quoted.previewBody())
+        }
+    }
+
+    /**
+     * The chat-list line for one of my own sends.
+     *
+     * Everything the list shows is derived from the *message* now, not from a hand-written
+     * string per call site. That is what stops a photo reading "https://…", a voice note
+     * saying nothing about its length, and a group never saying who spoke.
+     */
+    private fun preview(chatId: String, message: Message, state: DeliveryState) {
+        val line = previewLine(message, isGroup(chatId))
         _chats.update { list ->
             list.map { chat ->
                 if (chat.id != chatId) chat
                 else chat.copy(
-                    lastMessage = body,
+                    lastMessage = line,
                     lastMessageAt = System.currentTimeMillis(),
+                    lastMessageKind = message.kind,
                     lastMessageMine = true,
                     lastMessageState = state,
-                    isTyping = false
+                    isTyping = false,
+                    isRecording = false
+                )
+            }
+        }
+    }
+
+    /** The chat-list line for a message row that arrived over the socket or in a reload. */
+    private fun previewOf(dto: MessageDto, chatId: String, isGroup: Boolean): String =
+        previewLine(dto.toModel(chatId), isGroup)
+
+    /** An outbox row replayed from disk, as a message, so previews read the same as live ones. */
+    private fun previewOf(entry: OutboxEntry): Message = Message(
+        id = entry.clientId,
+        chatId = entry.chatId,
+        authorId = myId,
+        authorName = myName,
+        text = entry.text,
+        timestamp = entry.createdAt,
+        isMine = true,
+        kind = kindOf(entry.type),
+        durationLabel = durationLabelOf(entry.duration),
+        fileName = entry.fileName,
+        mediaUrl = entry.mediaUrl,
+        thumbnailUrl = entry.thumbnailUrl,
+        clientMessageId = entry.clientId
+    )
+
+    /**
+     * One line of text for the chat list.
+     *
+     * The row already draws a type icon (`KindIcon`), so the text carries only what the icon
+     * cannot say: a voice note's length, a photo's caption, a document's name. Groups are
+     * prefixed with who spoke — "You" for our own — the way every messenger does.
+     */
+    private fun previewLine(message: Message, isGroup: Boolean): String {
+        val body = message.previewBody()
+        if (!isGroup || message.systemEvent) return body
+        return if (message.isMine) "You: $body" else "${message.authorName}: $body"
+    }
+
+    /** The message's own text, without the group prefix — the model owns the wording. */
+    private fun Message.previewBody(): String = snippet()
+
+    /**
+     * Rebuilds a chat's list row from its newest remaining message.
+     *
+     * Deleting or editing the message the list was quoting used to leave the row describing
+     * something that no longer exists — the conversation said "This message was deleted"
+     * while the list still showed what had been said.
+     */
+    private fun previewFromLast(chatId: String) {
+        val chat = _chats.value.firstOrNull { it.id == chatId } ?: return
+        val newest = stream(chatId).value.maxByOrNull { it.timestamp }
+        if (newest == null) {
+            _chats.update { list ->
+                list.map {
+                    if (it.id != chatId) it
+                    else it.copy(
+                        lastMessage = "",
+                        lastMessageKind = MessageKind.Text,
+                        lastMessageMine = false,
+                        lastMessageState = null
+                    )
+                }
+            }
+            return
+        }
+        val line = previewLine(newest, chat.isGroup)
+        _chats.update { list ->
+            list.map {
+                if (it.id != chatId) it
+                else it.copy(
+                    lastMessage = line,
+                    lastMessageAt = newest.timestamp,
+                    lastMessageKind = newest.kind,
+                    lastMessageMine = newest.isMine,
+                    lastMessageState = if (newest.isMine) newest.state else null
                 )
             }
         }
     }
 
     private fun bumpPreview(chatId: String, dto: MessageDto) {
+        val isGroupChat = isGroup(chatId)
+        val line = previewOf(dto, chatId, isGroupChat)
         _chats.update { list ->
             if (list.none { it.id == chatId }) {
                 // A message from somebody the server does not list as a friend still deserves
                 // a row — `/messages/chats` only knows friends, so without this an incoming
                 // chat from anyone else never appeared in the list at all.
-                val isGroupChat = synchronized(conversations) { chatId in groupIds }
                 list + Chat(
                     id = chatId,
                     title = nameOf(chatId),
                     isGroup = isGroupChat,
-                    lastMessage = dto.previewText(),
+                    lastMessage = line,
                     lastMessageAt = isoMillis(dto.createdAt),
+                    lastMessageMine = false,
                     lastMessageKind = dto.kind(),
                     unreadCount = 1
                 )
@@ -1720,12 +1942,14 @@ class RemoteChatRepository(
                 list.map { chat ->
                     if (chat.id != chatId) chat
                     else chat.copy(
-                        lastMessage = dto.previewText(),
+                        lastMessage = line,
                         lastMessageAt = isoMillis(dto.createdAt),
                         lastMessageMine = false,
                         lastMessageState = null,
                         lastMessageKind = dto.kind(),
-                        unreadCount = chat.unreadCount + 1
+                        unreadCount = chat.unreadCount + 1,
+                        isTyping = false,
+                        isRecording = false
                     )
                 }
             }
@@ -1815,7 +2039,7 @@ class RemoteChatRepository(
             avatarUrl = profile?.avatarUrl,
             isOnline = profile?.isOnline == true,
             isGroup = false,
-            lastMessage = last?.previewText().orEmpty(),
+            lastMessage = last?.let { previewOf(it, userId, isGroup = false) }.orEmpty(),
             lastMessageAt = isoMillis(last?.createdAt),
             lastMessageKind = last?.kind() ?: MessageKind.Text,
             lastMessageMine = last?.senderId == myId,
@@ -1834,7 +2058,7 @@ class RemoteChatRepository(
         avatarEmoji = "👥",
         avatarUrl = avatarUrl,
         isGroup = true,
-        lastMessage = lastMessage?.previewText().orEmpty(),
+        lastMessage = lastMessage?.let { previewOf(it, id, isGroup = true) }.orEmpty(),
         lastMessageAt = isoMillis(lastMessage?.createdAt ?: createdAt),
         lastMessageKind = lastMessage?.kind() ?: MessageKind.Text,
         lastMessageMine = lastMessage?.senderId == myId,
@@ -1865,7 +2089,7 @@ class RemoteChatRepository(
             memberCount = if (roster.isEmpty()) 1 else roster.size,
             unreadCount = unreadCount,
             avatarEmoji = "👥",
-            lastActivity = lastMessage?.previewText().orEmpty(),
+            lastActivity = lastMessage?.let { previewOf(it, id, isGroup = true) }.orEmpty(),
             lastActivityAt = isoMillis(lastMessage?.createdAt ?: createdAt),
             // `/groups` already returns every member with their profile; the UI used to
             // ignore it and guess the roster from the friend list instead.
@@ -1918,6 +2142,10 @@ class RemoteChatRepository(
             mediaUrl = media,
             thumbnailUrl = thumbnailUrl,
             reactions = reactions.toModel(),
+            // `reply_to` used to be decoded and thrown away, which is why a reply sent from the
+            // web arrived here as a bare message. It is kept and resolved against the
+            // conversation (`linkQuotes`), so the quote renders on every device.
+            replyToId = replyTo,
             replyText = null,
             isEdited = isEdited,
             clientMessageId = clientMessageId,
@@ -1941,16 +2169,6 @@ class RemoteChatRepository(
         "document", "file" -> MessageKind.Document
         "location" -> MessageKind.Location
         else -> MessageKind.Text
-    }
-
-    private fun MessageDto.previewText(): String = when {
-        isDeleted -> "This message was deleted"
-        type.equals("image", true) || type.equals("photo", true) -> "📷 Photo"
-        type.equals("video", true) -> "🎥 Video"
-        type.equals("audio", true) || type.equals("voice", true) -> "🎤 Voice message"
-        type.equals("document", true) || type.equals("file", true) -> "📎 ${fileName ?: "Document"}"
-        type.equals("location", true) -> "📍 Location"
-        else -> content
     }
 
     /** One short sentence for a toast: what the server said, or why the network did not. */

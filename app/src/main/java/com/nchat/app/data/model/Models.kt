@@ -44,6 +44,15 @@ data class Message(
     val mediaUrl: String? = null,
     val thumbnailUrl: String? = null,
     val reactions: List<Reaction> = emptyList(),
+    /**
+     * The message this one replies to (`reply_to` on the wire).
+     *
+     * Replies used to be a *display* thing only: the composer kept the quoted author and text
+     * and `reply_to` was never sent, so a reply arrived on the other phone as an ordinary
+     * message with no idea what it was answering. The id is stored now, sent with the message,
+     * and resolved back into [replyAuthor]/[replyText] from the conversation itself.
+     */
+    val replyToId: String? = null,
     val replyAuthor: String? = null,
     val replyText: String? = null,
     val isEdited: Boolean = false,
@@ -61,6 +70,33 @@ data class Message(
     val failed: Boolean = false,
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
     val deleted: Boolean = false
+
+    /**
+     * This message as one line of text — a chat-list row, or the quote inside a reply.
+     *
+     * The list already draws a type icon, so the words carry what the icon cannot: a voice
+     * note's length, a photo's caption, a document's name. Everything that needs to describe a
+     * message goes through here, which is why the list, the reply quote and the message
+     * preview can no longer drift apart.
+     */
+    fun snippet(): String = when {
+        deleted -> "This message was deleted"
+        kind == MessageKind.Voice ->
+            durationLabel?.takeIf { it.isNotBlank() }?.let { "Voice message ($it)" } ?: "Voice message"
+        kind == MessageKind.Photo -> labelled("Photo")
+        kind == MessageKind.Video -> labelled("Video")
+        kind == MessageKind.Document ->
+            fileName?.takeIf { it.isNotBlank() }?.let { "Document · $it" } ?: "Document"
+        kind == MessageKind.Location -> "Location"
+        else -> oneLine(text)
+    }
+
+    private fun labelled(label: String): String {
+        val caption = oneLine(text)
+        return if (caption.isBlank()) label else "$label · $caption"
+    }
+
+    private fun oneLine(raw: String): String = raw.replace(SNIPPET_WHITESPACE, " ").trim()
 )
 
 /** Where a call on screen currently is. */
@@ -340,3 +376,6 @@ data class UserProfile(
      */
     val avatarUrl: String? = null
 )
+
+/** Newlines and runs of spaces have no place in a one-line snippet. */
+private val SNIPPET_WHITESPACE = Regex("\\s+")

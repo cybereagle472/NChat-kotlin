@@ -616,15 +616,15 @@ fun ConversationScreen(
         DeleteMessageDialog(
             canDeleteForEveryone = canDeleteForEveryone(doomed),
             onDismiss = { pendingDelete = null },
+            // The confirmation is the server's, not the tap's: `deleteMessage` reports what
+            // actually happened (and puts the message back if the worker refused it).
             onDeleteForEveryone = {
                 viewModel.onDeleteMessage(doomed.id, forEveryone = true)
                 pendingDelete = null
-                NcToaster.show("Message deleted for everyone")
             },
             onDeleteForMe = {
                 viewModel.onDeleteMessage(doomed.id, forEveryone = false)
                 pendingDelete = null
-                NcToaster.show("Message deleted for you")
             }
         )
     }
@@ -1684,7 +1684,9 @@ private fun ReplyComposerStrip(quoted: Message, onCancel: () -> Unit) {
                 color = NcTheme.extra.typing
             )
             Text(
-                text = quoted.text,
+                // A voice note, a photo, a document: the strip says what is being quoted
+                // instead of showing an empty line for anything that is not plain text.
+                text = quoted.snippet(),
                 fontSize = 12.sp,
                 color = extra.textTertiary,
                 maxLines = 1,
