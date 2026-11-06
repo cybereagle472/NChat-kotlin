@@ -3,6 +3,7 @@ package com.nchat.app.data
 import android.content.Context
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
+import com.nchat.app.data.local.ArchivedStore
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.DraftStore
 import com.nchat.app.core.network.NetworkMonitor
@@ -11,6 +12,7 @@ import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.local.PinnedMessageStore
 import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
 import com.nchat.app.data.notifications.NcNotifications
@@ -223,6 +225,12 @@ object ServiceLocator {
     /** Private, per-device starred messages behind "Starred messages". */
     val stars: StarredStore by lazy { StarredStore(requireContext()) }
 
+    /** Archived conversations — a private filing decision, so it never leaves the device. */
+    val archived: ArchivedStore by lazy { ArchivedStore(requireContext()) }
+
+    /** One pinned message per conversation, shown as the banner under the header. */
+    val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext()) }
+
     /** System notifications: per-chat channels, MessagingStyle, inline reply. */
     val notifications: NcNotifications by lazy { NcNotifications(requireContext()) }
 
@@ -244,6 +252,8 @@ object ServiceLocator {
             clearLocalState = {
                 drafts.clearAll()
                 stars.clearAll()
+                archived.clearAll()
+                pinned.clearAll()
                 notifications.cancelAll()
             }
         )

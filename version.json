@@ -1,6 +1,6 @@
 {
-  "versionCode": 59,
-  "versionName": "1.0.51",
+  "versionCode": 60,
+  "versionName": "1.0.52",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.51 — notifications, finally. A message from someone else now rings the phone with a proper WhatsApp-style notification: one channel per chat (so Android's own settings can mute a single person or group), the last few lines stacked with the sender's name, a tap that opens that exact conversation, and Reply directly from the shade — the answer is queued through the same outbox the composer uses, so it still sends when the phone is offline. A muted chat arrives silently, the chat you are looking at never rings at you, and opening a chat clears its notification. Android 13 asks for the notification permission on first launch. Includes 1.0.49's swipe-to-reply, double-tap ❤️ and voice speed, and 1.0.50's in-chat search, multi-select, starred messages, drafts and photo viewer."
+  "releaseNotes": "NChat 1.0.52 — the chat list and the small WhatsApp details. Swipe a chat right to archive it, left to mark it read; the Archived row at the top opens the archive where any chat can be put back or opened. All / Unread filter chips keep the list honest. Messages now render *bold*, _italic_, ~strikethrough~ and `monospace` exactly like WhatsApp — and only when the markers really wrap text, so 2 * 3 * 4 stays arithmetic. Long-press any message for Pin (a banner under the header, tap it to jump, ✕ to unpin) or Info (from, chat, type, exact time, delivery state, edited/forwarded/starred)."
 }
