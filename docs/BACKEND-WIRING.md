@@ -419,3 +419,21 @@ Rules this section exists to protect:
 - **One icon per message in the list.** The row draws a type icon, so preview text must never
   carry a type emoji of its own — `String.withoutKindMarkers()` enforces that on both fresh and
   cached rows.
+
+### 16.2 One gesture, one owner (1.0.48)
+
+- **A seek is not a tap.** The voice bubble's row used to be clickable *and* contain the waveform,
+  so the same gesture reached both the scrubber and the play toggle (and the bubble's menu). The
+  waveform now consumes the down and the release; only the circular button toggles playback.
+- **Never leave an un-consumed gesture on a bubble.** A child that accepts a down without
+  consuming it hands the same press to the parent's `combinedClickable`, which is why "dragging
+  the bars" also opened the message menu.
+- **Sample or follow, never both.** While a finger is on the bar the head follows the finger and
+  the 50 ms position sampler stands down (`scrubbing`); otherwise the two fight and the bar jitters.
+- **Seek once, on release.** A local `seekTo` per drag event queues up on `MediaPlayer` and
+  stutters; the visual head does not need the player until the finger lifts.
+- **Hand vertical drags back.** If `|dy| > |dx|` past the slop, leave the event unconsumed so the
+  conversation list still scrolls when the finger starts on a waveform.
+- **Media should be ready before the tap.** Voice clips are fetched when the bubble appears
+  (`MediaFiles`) with a spinner in the button, so play starts from a local file; a photo shows a
+  spinner until Coil has decoded it.
