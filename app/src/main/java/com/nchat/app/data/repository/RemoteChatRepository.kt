@@ -2,6 +2,7 @@ package com.nchat.app.data.repository
 
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.model.OutboxEntry
@@ -81,7 +82,9 @@ class RemoteChatRepository(
      * a tunnel or in airplane mode is queued, keeps its clock, and goes out the moment the
      * socket comes back — it is never shown as an error.
      */
-    private val online: () -> Boolean = { true }
+    private val online: () -> Boolean = { true },
+    /** Last known group list (with rosters), painted before the network answers. */
+    private val groupCache: GroupListCache? = null
 ) : ChatRepository {
 
 
@@ -96,6 +99,21 @@ class RemoteChatRepository(
     override val groups: StateFlow<List<Group>> = _groups.asStateFlow()
 
     private val conversations = mutableMapOf<String, MutableStateFlow<List<Message>>>()
+    /**
+     * Whether the last `/messages/chats` + `/groups` answer was complete.
+     *
+     * The list is mirrored to disk whenever it changes, which would otherwise persist the
+     * half-list a failed refresh produces (chats without groups, or groups without chats) and
+     * *delete* the cached rows of whichever endpoint failed. Only a complete answer makes the
+     * mirror trustworthy.
+     */
+    @Volatile private var chatsTrusted = false
+    @Volatile private var groupsTrusted = false
+
+    /** Pending debounced list writes — see [mirrorLists]. */
+    private var chatListWrite: Job? = null
+    private var groupListWrite: Job? = null
+
     /** Pending debounced disk writes, one per conversation — see [mirrorToDisk]. */
     private val writeJobs = mutableMapOf<String, Job>()
     /** The flow observers that trigger those writes, so a forgotten chat stops observing. */
@@ -160,9 +178,24 @@ class RemoteChatRepository(
          * Offline at start-up that meant a group chat was treated as a 1:1 chat — the wrong
          * URL, the wrong outbox target — even though the chat itself was on screen from cache.
          */
+        /*
+         * Groups from disk, for the same reason as the chat list: the tab is a list of things
+         * this account already belongs to, and an offline launch must not claim otherwise.
+         * Their rosters come with them, which is also what names the authors of group bubbles
+         * before `/groups` has answered.
+         */
+        val cachedGroups = groupCache?.load().orEmpty()
+        if (cachedGroups.isNotEmpty()) {
+            _groups.value = cachedGroups
+            cachedGroups.forEach { group ->
+                group.members.forEach { member -> names[member.userId] = member.name }
+            }
+        }
         synchronized(conversations) {
             groupIds += _chats.value.filter { it.isGroup }.map { it.id }
+            groupIds += cachedGroups.map { it.id }
         }
+        mirrorLists()
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
@@ -192,9 +225,14 @@ class RemoteChatRepository(
                 }
                 synchronized(writeJobs) { writeJobs.values.forEach { it.cancel() }; writeJobs.clear() }
                 synchronized(mirrorJobs) { mirrorJobs.values.forEach { it.cancel() }; mirrorJobs.clear() }
+                chatListWrite?.cancel()
+                groupListWrite?.cancel()
                 outbox?.clear()
-                // The next account must not open a conversation and find the previous one's.
+                // The next account must not open a conversation, a chat list or a group and
+                // find the previous one's.
                 messages?.clearAll()
+                cache?.clear()
+                groupCache?.clear()
             }
         }
         refresh()
@@ -247,6 +285,11 @@ class RemoteChatRepository(
             groupResult.isFailure -> "Couldn't load your groups — ${groupResult.describe()}"
             else -> null
         }
+
+        // Only a complete answer may be written to the list caches — see [chatsTrusted].
+        // Set before the flows below are updated, so their emissions are the ones persisted.
+        chatsTrusted = directResult.isSuccess && groupResult.isSuccess
+        groupsTrusted = groupResult.isSuccess
 
         synchronized(conversations) {
             groupIds.clear()
@@ -470,6 +513,51 @@ class RemoteChatRepository(
             }
         }
         synchronized(mirrorJobs) { mirrorJobs.remove(chatId)?.cancel(); mirrorJobs[chatId] = job }
+    }
+
+    /**
+     * Keeps the chat list and the group list on disk, debounced.
+     *
+     * The caches used to be written in exactly one place: the end of a successful `reload()`.
+     * Everything that changes a list between reloads — a message arriving on the socket, a
+     * group renamed, a chat pinned, a chat deleted, a conversation started with somebody the
+     * server's friend view does not list — lived in memory only, so killing the app rolled the
+     * list back to the last reload. Observed from the flows, no change can be missed, and the
+     * debounce keeps a burst to one write.
+     *
+     * [chatsTrusted] / [groupsTrusted] are what keep this honest: a failed refresh produces a
+     * partial list, and writing that would delete the cached half of whichever endpoint did
+     * answer.
+     */
+    private fun mirrorLists() {
+        val chatStore = cache
+        if (chatStore != null) {
+            scope.launch {
+                _chats.collect { rows ->
+                    if (rows.isEmpty() || !chatsTrusted) return@collect
+                    val snapshot = rows
+                    chatListWrite?.cancel()
+                    chatListWrite = scope.launch {
+                        delay(LIST_SAVE_DELAY_MS)
+                        runCatching { chatStore.save(snapshot) }
+                    }
+                }
+            }
+        }
+        val groupStore = groupCache
+        if (groupStore != null) {
+            scope.launch {
+                _groups.collect { rows ->
+                    if (rows.isEmpty() || !groupsTrusted) return@collect
+                    val snapshot = rows
+                    groupListWrite?.cancel()
+                    groupListWrite = scope.launch {
+                        delay(LIST_SAVE_DELAY_MS)
+                        runCatching { groupStore.save(snapshot) }
+                    }
+                }
+            }
+        }
     }
 
     /** Drops one conversation from disk (delete chat, leave/delete group). */
@@ -1860,6 +1948,8 @@ class RemoteChatRepository(
         const val MESSAGE_PAGE = 300
         /** How long a change waits before it is written, so a burst costs one file write. */
         const val PERSIST_DELAY_MS = 400L
+        /** Same idea for the two list caches, which change less often. */
+        const val LIST_SAVE_DELAY_MS = 700L
         const val SEND_ATTEMPTS = 3
         /** The reference gives up on a queued message after five tries. */
         const val MAX_OUTBOX_ATTEMPTS = 5
