@@ -64,14 +64,22 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | End-to-end encryption | ✅ | ❌ | The worker stores plaintext. This is a protocol project (key exchange, per-device sessions, group sender keys), not a screen — tracked separately. |
 | Multi-device / linked devices / Web | ✅ | ❌ | Needs server sessions per device. |
 | Backup & restore | ✅ | ❌ | Local caches only. |
-| Media auto-download rules, storage manager | ✅ | ❌ | planned after notifications. |
+| Media auto-download rules, storage manager | ✅ | ❌ | next after group calls. |
 
 ## Where the waves stand
 
 - **1.0.49 — shipped.** Swipe to reply, double-tap ❤️, voice speed 1×/1.5×/2×.
-- **1.0.50 — this build.** In-chat search, multi-select, starred messages, per-chat drafts,
+- **1.0.50 — shipped.** In-chat search, multi-select, starred messages, per-chat drafts,
   photo viewer paging + zoom.
-- **Next (1.0.51).** Notifications (channels, `MessagingStyle`, inline reply, unread badge),
-  archive, swipe actions, Unread/Groups filters, text formatting, pin message, message info.
-- **Then (1.0.52+).** In-app camera, send location, group calls, and the backend-dependent rows
-  (invite links, mentions, admin-restricted groups, disappearing messages).
+- **1.0.51 — shipped.** System notifications: per-chat channels honouring mute,
+  `MessagingStyle` with inline reply, silent summary + launcher badge, tap opens that chat.
+- **1.0.52 — shipped.** Text formatting, swipe-to-archive / mark-read, archive sheet,
+  All/Unread filters, pinned message banner, message info.
+- **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
+- **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
+- **Next (1.0.55).** Group voice/video calls — mesh over the existing `WebRtcEngine` plus an
+  N-party `CallOverlay`; the API endpoints and the single-peer engine are already there, the
+  work is multiple peer connections and the participant grid.
+- **Then.** Media auto-download rules + storage manager; and the rows marked ⛔, which need the
+  worker to grow columns or endpoints first (invite links, mention delivery, admin-restricted
+  groups, disappearing messages). E2EE and multi-device stay separate protocol projects.
