@@ -50,9 +50,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
@@ -60,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.BubbleShapeMine
@@ -72,6 +76,7 @@ import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.data.model.Reaction
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 /** 30dp gradient circle with the sender's initial, shown beside the first bubble of a run. */
 @Composable
@@ -213,14 +218,17 @@ fun MessageBubble(
                 MessageKind.Photo -> PhotoContent(
                     mediaUrl = message.mediaUrl,
                     onClick = onMediaClick,
-                    onLongPress = onLongPress
+                    onLongPress = onLongPress,
+                    uploadProgress = message.uploadProgress
                 )
                 MessageKind.Voice -> VoiceContent(
                     messageId = message.id,
                     duration = message.durationLabel ?: "0:00",
                     mine = mine,
                     mediaUrl = message.mediaUrl,
-                    storedWaveform = message.thumbnailUrl
+                    storedWaveform = message.thumbnailUrl,
+                    uploadProgress = message.uploadProgress,
+                    onLongPress = onLongPress
                 )
                 MessageKind.Document -> DocumentContent(
                     name = message.fileName ?: "document.pdf",
@@ -232,7 +240,8 @@ fun MessageBubble(
                     mediaUrl = message.mediaUrl,
                     thumbnailUrl = message.thumbnailUrl,
                     onClick = onMediaClick,
-                    onLongPress = onLongPress
+                    onLongPress = onLongPress,
+                    uploadProgress = message.uploadProgress
                 )
                 MessageKind.Text -> Unit
             }
@@ -470,21 +479,81 @@ private fun ReactionsRow(reactions: List<Reaction>, mine: Boolean, modifier: Mod
     }
 }
 
+/**
+ * The ring a bubble wears while its file is still going up.
+ *
+ * WhatsApp draws the same thing: a dimmed frame with a progress ring, held until the server has
+ * the media, then gone. `progress` is the fraction already written to the socket, so it moves even
+ * on a slow connection instead of looping forever.
+ */
 @Composable
-private fun PhotoContent(mediaUrl: String?, onClick: () -> Unit, onLongPress: () -> Unit) {
+private fun UploadRing(progress: Float, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(Color(0x66000000)),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            color = Color.White,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(26.dp)
+        )
+    }
+}
+
+@Composable
+private fun PhotoContent(
+    mediaUrl: String?,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    uploadProgress: Float? = null
+) {
     val frame = Modifier
         .width(210.dp)
         .height(140.dp)
         .clip(RoundedCornerShape(12.dp))
         .combinedClickable(onClick = onClick, onLongClick = onLongPress)
 
+    if (uploadProgress != null) {
+        // Still uploading: the local preview is not on the server yet, so there is nothing to
+        // draw but the frame and its ring — exactly what the sender expects to see.
+        Box(modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))) {
+            UploadRing(progress = uploadProgress, modifier = Modifier.fillMaxSize())
+        }
+        return
+    }
+
     if (mediaUrl != null) {
-        // The uploaded file itself; the gradient below is only the loading/fallback state.
-        AsyncImage(
+        /*
+         * The uploaded file itself; the gradient is the loading state, never a half-painted
+         * picture. A photo on a private endpoint arrives over the authenticated image loader, so
+         * on a slow link there is a real wait — it shows a spinner inside the frame (WhatsApp
+         * does the same) instead of an empty gradient that looks like a broken image.
+         */
+        SubcomposeAsyncImage(
             model = mediaUrl,
             contentDescription = "Photo",
             contentScale = ContentScale.Crop,
-            modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF))))
+            modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))),
+            loading = {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            },
+            error = {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Image,
+                        contentDescription = "Photo could not be loaded",
+                        tint = Color(0xCCFFFFFF),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         )
         return
     }
@@ -508,7 +577,8 @@ private fun VideoContent(
     mediaUrl: String?,
     thumbnailUrl: String?,
     onClick: () -> Unit,
-    onLongPress: () -> Unit
+    onLongPress: () -> Unit,
+    uploadProgress: Float? = null
 ) {
     /*
      * The poster frame, when the sender produced one. It is deliberately *not* `?: mediaUrl`:
@@ -548,6 +618,9 @@ private fun VideoContent(
                 modifier = Modifier.size(24.dp)
             )
         }
+        if (uploadProgress != null) {
+            UploadRing(progress = uploadProgress, modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
@@ -578,7 +651,17 @@ private fun VoiceContent(
      * Both clients write it (the reference's `downsampleWaveform`, this app's `VoiceWaveform`),
      * so a voice note keeps the shape of what was actually said wherever it is read.
      */
-    storedWaveform: String? = null
+    storedWaveform: String? = null,
+    /** 0f…1f while the clip is still going up to the server; null once it has arrived. */
+    uploadProgress: Float? = null,
+    /**
+     * Long press on the play button opens the menu.
+     *
+     * The waveform does not need it: it consumes the gesture, and the bubble's own
+     * `combinedClickable` already turns a hold into the same menu — calling it from both would
+     * open the sheet twice.
+     */
+    onLongPress: () -> Unit = {}
 ) {
     /*
      * The clip, as a file on this device.
@@ -593,8 +676,6 @@ private fun VoiceContent(
      * A clip recorded here (still in the outbox) is already a `file://` URL and plays directly.
      */
     var audioFile by remember(mediaUrl) { mutableStateOf(MediaFiles.existingLocal(mediaUrl)) }
-    /** The user asked for the audio; the download below starts only when this is true. */
-    var wantAudio by remember(mediaUrl) { mutableStateOf(false) }
     var loading by remember(mediaUrl) { mutableStateOf(false) }
     var loadError by remember(mediaUrl) { mutableStateOf<String?>(null) }
     /** Bumped when a player dies, so the next tap gets a fresh one instead of a reset one. */
@@ -625,6 +706,13 @@ private fun VoiceContent(
     /** A seek made before the player was ready, applied the moment it is. */
     var pendingSeek by remember(filePath) { mutableStateOf<Int?>(null) }
     /**
+     * A finger is on the waveform.
+     *
+     * While this is true the head follows the finger and the sampler below stays out of the way,
+     * so the two can never fight over [positionMs] and make the bar jitter.
+     */
+    var scrubbing by remember(mediaUrl) { mutableStateOf(false) }
+    /**
      * What the user wants, as opposed to what the player is doing.
      *
      * Set on the tap, honoured in `OnPreparedListener` and by the "file just arrived" effect
@@ -650,13 +738,17 @@ private fun VoiceContent(
     }
 
     /*
-     * Fetch on demand — a tap, not a scroll. The download runs in the composition's coroutine
-     * scope on `Dispatchers.IO` (inside [MediaFiles]), so nothing blocks the frame, and the
-     * result is cached, so a second play on the same clip is instant and works offline.
+     * The clip is fetched as soon as the bubble is on screen.
+     *
+     * A voice note is tens of kilobytes; WhatsApp also has it before you press play. Fetching on
+     * the tap instead meant every first play began with a download — the button sat behind a
+     * spinner, which is exactly what "not instantly working" felt like. The work runs on
+     * `Dispatchers.IO` inside [MediaFiles] (never on the frame), the result is cached, and a clip
+     * that has been played once plays again offline.
      */
-    LaunchedEffect(wantAudio, mediaUrl) {
+    LaunchedEffect(mediaUrl) {
         val url = mediaUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-        if (!wantAudio || audioFile != null) return@LaunchedEffect
+        if (audioFile != null) return@LaunchedEffect
         loading = true
         loadError = null
         val result = MediaFiles.local(url)
@@ -666,7 +758,6 @@ private fun VoiceContent(
             onFailure = { error ->
                 val reason = error.message?.takeIf { it.isNotBlank() } ?: "the download failed"
                 loadError = reason
-                wantAudio = false
                 playWhenReady = false
                 playing = false
                 NcToaster.show("Couldn't load this voice message — $reason")
@@ -713,6 +804,9 @@ private fun VoiceContent(
         if (!playing) return@LaunchedEffect
         while (true) {
             delay(50)
+            // The finger owns the playhead while it is down; a sample landing mid-drag pulled the
+            // bar back towards the player's old position and looked like a stutter.
+            if (scrubbing) continue
             runCatching { current.duration }.getOrNull()?.let { if (it > 0 && it != realMs) realMs = it }
             runCatching { current.currentPosition }.getOrNull()?.let { positionMs = it }
         }
@@ -730,12 +824,25 @@ private fun VoiceContent(
         NcToaster.show(message)
     }
 
-    /** Moves the playhead without changing whether the clip is playing. */
+    /**
+     * Moves the playhead without changing whether the clip is playing.
+     *
+     * This is the *commit*: the waveform updates [positionMs] itself while the finger is down and
+     * only lands here on release, so a fast drag costs one `seekTo` instead of a dozen queued
+     * ones. Tapping the bars moves the head and nothing else — it never starts or stops playback.
+     */
     fun seek(targetMs: Int) {
         val bounded = targetMs.coerceAtLeast(0).let { if (totalMs > 0) it.coerceAtMost(totalMs) else it }
         positionMs = bounded
+        pendingStartAt = bounded
         val current = player ?: return
         if (prepared) runCatching { current.seekTo(bounded) } else pendingSeek = bounded
+    }
+
+    /** The millisecond a touch at [x] points at, clamped to the clip. */
+    fun positionAt(x: Float, width: Float): Int {
+        if (totalMs <= 0 || width <= 0f) return 0
+        return ((x / width).coerceIn(0f, 1f) * totalMs).toInt()
     }
 
     /*
@@ -763,7 +870,6 @@ private fun VoiceContent(
             playing = true
             positionMs = from
             pendingStartAt = from
-            wantAudio = true
             return
         }
         VoicePlayback.current = messageId
@@ -859,15 +965,25 @@ private fun VoiceContent(
         modifier = Modifier
             .width(voiceWidth)
             .clip(RoundedCornerShape(12.dp))
-            .clickable { toggle() }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        /*
+         * The play/pause button, and the *only* thing that starts or stops this clip.
+         *
+         * The row used to carry `clickable { toggle() }` while the waveform sat inside it, so a
+         * drag across the bars to seek also landed as a click on the row and stopped the audio —
+         * the report was "seeking pauses it". The tap target is this circle now, sized up to the
+         * 40 dp a thumb expects, and the waveform never toggles anything.
+         */
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary),
+                .background(if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary)
+                // Tap plays and pauses; a long press still opens the menu, like WhatsApp. The
+                // button owns the gesture either way, so nothing double-fires.
+                .combinedClickable(onClick = { toggle() }, onLongClick = onLongPress),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -875,6 +991,14 @@ private fun VoiceContent(
                     color = Color.White,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(16.dp)
+                )
+                // The clip is still on its way up: the button doubles as the transfer indicator
+                // (WhatsApp's clock), and it keeps working — the local file is already playable.
+                uploadProgress != null && !playing -> CircularProgressIndicator(
+                    progress = { uploadProgress.coerceIn(0f, 1f) },
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp)
                 )
                 playing -> Icon(
                     imageVector = Icons.Rounded.Pause,
@@ -891,42 +1015,91 @@ private fun VoiceContent(
             }
         }
         /*
-         * The waveform is the scrubber: touch down anywhere on it and the clip jumps to that
-         * point (the reference does the same on its bars, `ChatView.tsx:820-840`), and dragging
-         * keeps moving with the finger. The gesture consumes its events, so the row's own
-         * click-to-toggle does not also fire.
+         * The waveform is a scrubber, and **only** a scrubber.
+         *
+         * Touch down and the head jumps to the finger; drag and it follows, the bars tinting behind
+         * it. The down is consumed immediately, so neither the bubble's own click/long-press nor
+         * anything else can read the same gesture: seeking must never start, stop or pause the
+         * clip — that is the button's job, and the two used to overlap.
+         *
+         * The player is seeked once, on release (a fast drag would otherwise queue a dozen
+         * `seekTo` calls and jitter). Holding still for half a second opens the message menu,
+         * which is what a long press anywhere on a bubble does.
          */
         Box(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
-                .height(22.dp)
+                .height(24.dp)
                 .pointerInput(messageId, filePath, totalMs) {
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(requireUnconsumed = true)
+                        down.consume()
                         val width = size.width.toFloat().coerceAtLeast(1f)
-                        fun scrubTo(px: Float) {
-                            seek(((px / width).coerceIn(0f, 1f) * totalMs).toInt())
-                        }
-                        var x = down.position.x
-                        scrubTo(x)
+                        val slop = viewConfiguration.touchSlop
+                        var target = positionAt(down.position.x, width)
+                        var dragging = false
+                        val startedAt = System.currentTimeMillis()
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            x = change.position.x
-                            if (!change.pressed) break
-                            scrubTo(x)
-                            change.consume()
+                            if (!change.pressed) {
+                                // Claim the release too: the bubble's own tap/long-press detector
+                                // cancels on a consumed change, so seeking can never open the menu.
+                                change.consume()
+                                break
+                            }
+                            if (!dragging) {
+                                val dx = abs(change.position.x - down.position.x)
+                                val dy = abs(change.position.y - down.position.y)
+                                /*
+                                 * A vertical drag belongs to the conversation list, not the bar:
+                                 * let it go, unconsumed, so a chat scrolls when the finger starts
+                                 * on a waveform. Only a clearly horizontal move (or a tap) is ours.
+                                 */
+                                if (dy > slop && dy > dx) return@awaitEachGesture
+                                if (dx > slop) {
+                                    dragging = true
+                                    scrubbing = true
+                                }
+                            }
+                            if (dragging) {
+                                target = positionAt(change.position.x, width)
+                                // The head follows the finger; the sampler stands down meanwhile.
+                                positionMs = target
+                                change.consume()
+                            }
                         }
-                        scrubTo(x)
-                        // Tapping a paused note starts it from there, like WhatsApp.
-                        if (!playing) start(positionMs)
+                        val held = System.currentTimeMillis() - startedAt
+                        scrubbing = false
+                        /*
+                         * A hold that never moved is the bubble's long press, which opens the
+                         * message menu on its own (it does not need our help, and calling the
+                         * callback here as well would open it twice). Only a tap or a drag moves
+                         * the playhead.
+                         */
+                        if (dragging || held < 450L) seek(target)
                     }
                 },
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // The head: a thin bar where playback will resume, visible even when paused —
+                    // the tint alone disappears at position 0 and reads as "no progress".
+                    .drawBehind {
+                        if (progress > 0f) {
+                            val x = (size.width * progress).coerceIn(0f, size.width)
+                            drawLine(
+                                color = accent,
+                                start = Offset(x, 0f),
+                                end = Offset(x, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+                        }
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {

@@ -16,6 +16,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
+import okio.BufferedSink
+import okio.ForwardingSink
+import okio.buffer
 import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -83,12 +87,18 @@ class ApiClient(
      * Multipart upload for `POST /media/upload`; returns the raw JSON body (which carries
      * `id`, `url`, `key`, `media_type`, `file_name`, `file_size`).
      */
-    suspend fun upload(path: String, fileName: String, mimeType: String, bytes: ByteArray): String {
+    suspend fun upload(
+        path: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        onProgress: ((Float) -> Unit)? = null
+    ): String {
         check(isConfigured) { "No backend configured" }
         val media = (mimeType.ifBlank { "application/octet-stream" }).toMediaType()
         val body = okhttp3.MultipartBody.Builder()
             .setType(okhttp3.MultipartBody.FORM)
-            .addFormDataPart("file", fileName, bytes.toRequestBody(media))
+            .addFormDataPart("file", fileName, ProgressBody(bytes.toRequestBody(media), onProgress))
             .build()
         fun request(token: String?) = Request.Builder()
             .url(url(path, emptyMap()))
@@ -232,5 +242,43 @@ class ApiClient(
             .pingInterval(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
+    }
+}
+
+/**
+ * A file part that reports how much of it has gone out.
+ *
+ * Without this an upload is a black box: the bubble sits on its clock with no sign of life, which
+ * on a slow connection is indistinguishable from a stuck send. [onProgress] fires from OkHttp's
+ * writer thread; the repository hands the value to a `StateFlow`, and Compose reads it on the main
+ * thread, so nothing has to be posted by hand.
+ */
+private class ProgressBody(
+    private val delegate: RequestBody,
+    private val onProgress: ((Float) -> Unit)?
+) : RequestBody() {
+
+    override fun contentType() = delegate.contentType()
+
+    override fun contentLength() = delegate.contentLength()
+
+    override fun writeTo(sink: BufferedSink) {
+        if (onProgress == null) {
+            delegate.writeTo(sink)
+            return
+        }
+        val total = contentLength().coerceAtLeast(1L)
+        val counting = object : ForwardingSink(sink) {
+            private var written = 0L
+
+            override fun write(source: Buffer, byteCount: Long) {
+                super.write(source, byteCount)
+                written += byteCount
+                onProgress.invoke((written.toFloat() / total).coerceIn(0f, 1f))
+            }
+        }
+        val buffered = counting.buffer()
+        delegate.writeTo(buffered)
+        buffered.flush()
     }
 }

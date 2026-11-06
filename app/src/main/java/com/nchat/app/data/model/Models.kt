@@ -2,6 +2,7 @@ package com.nchat.app.data.model
 
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** Message payload types, mirroring the icons used in the reference previews. */
 @Serializable
@@ -69,7 +70,15 @@ data class Message(
     /** The send failed for good (after retries); tapping the bubble's warning resends it. */
     val failed: Boolean = false,
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
-    val deleted: Boolean = false
+    val deleted: Boolean = false,
+    /**
+     * How much of this message's file has reached the server, 0f…1f — null when nothing is
+     * uploading.
+     *
+     * `@Transient`: it is a fact about *this* send, not about the message. A cached `0.6` would
+     * paint a ring over a message that finished uploading last week.
+     */
+    @Transient val uploadProgress: Float? = null
 ) {
 
     /**
