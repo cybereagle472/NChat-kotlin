@@ -66,7 +66,14 @@ object SyncCheck {
             "${chats.size} conversations · ${chats.sumOf { it.unreadCount }} unread"
         }
         probe("Friends", "/friends") {
-            "${api.friends().friends.size} friends"
+            val rows = api.friends().friends
+            val readable = rows.count { !it.profile?.id.isNullOrBlank() }
+            val fromId = rows.size - readable
+            if (fromId == 0) {
+                "${rows.size} friends"
+            } else {
+                "${rows.size} friends · $readable with a profile, $fromId only by id"
+            }
         }
         probe("Friend requests", "/friends/requests") {
             "${api.friendRequests().requests.size} incoming"
@@ -76,6 +83,32 @@ object SyncCheck {
         }
         probe("Search (Find)", "/users/search?q=a") {
             "${api.searchUsers("a").profiles.size} matches for \"a\""
+        }
+        /*
+         * The two views of the same relationship, side by side.
+         *
+         * `/friends` and `/messages/chats` are the same `friendships` JOIN on the worker
+         * (`routes/friends.ts:177` / `routes/messages.ts:83`), so they must name the same
+         * people. Any conversation missing from `/friends` is the exact shape of "my chats are
+         * there but my friends are not" — print the ids instead of making the next report guess.
+         */
+        probe("Friends vs chats", "/messages/chats") {
+            val chatPeers = runCatching { api.chats().chats }
+                .getOrDefault(emptyList())
+                .map { it.userId }
+                .filter { it.isNotBlank() }
+                .toSet()
+            val friendIds = runCatching { api.friends().friends }
+                .getOrDefault(emptyList())
+                .mapNotNull { it.profile?.id?.takeIf { id -> id.isNotBlank() } ?: it.id.takeIf { id -> id.isNotBlank() } }
+                .toSet()
+            val missing = chatPeers - friendIds
+            when {
+                chatPeers.isEmpty() -> "no 1:1 conversations to compare"
+                missing.isEmpty() -> "all ${chatPeers.size} conversations are in /friends"
+                else -> "${missing.size} conversation(s) NOT in /friends: " +
+                    missing.take(3).joinToString { it.take(8) }
+            }
         }
         probe("Groups", "/groups") {
             "${api.groups().groups.size} groups"

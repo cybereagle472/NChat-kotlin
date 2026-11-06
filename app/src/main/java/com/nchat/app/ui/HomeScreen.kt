@@ -130,6 +130,9 @@ fun HomeScreen(
         visibleGraph + chatOnlyFriends
     }
     val friendGraphError by ServiceLocator.friendRepository.graphError.collectAsStateWithLifecycle()
+    // Why the Friends tab has nothing to show when nothing failed — see the KDoc on
+    // `FriendRepository.graphNote` ("server answered 0 friends" vs "rows we could not read").
+    val friendGraphNote by ServiceLocator.friendRepository.graphNote.collectAsStateWithLifecycle()
     val findResults by ServiceLocator.friendRepository.searchResults.collectAsStateWithLifecycle()
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
@@ -279,6 +282,7 @@ fun HomeScreen(
                         sentRequestIds = pendingSent,
                         chatIds = chatPeerIds,
                         loadError = friendGraphError,
+                        emptyHint = friendGraphNote,
                         onRetry = {
                             ServiceLocator.friendRepository.refresh()
                             ServiceLocator.chatRepository.refresh()

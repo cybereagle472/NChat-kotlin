@@ -257,9 +257,17 @@ data class Group(
 }
 
 /** Where a person sits in the friend graph, driving the Discover action buttons. */
+@Serializable
 enum class FriendRelation { Friend, Incoming, Outgoing, None }
 
+/**
+ * One row of the friend graph, as the Friends / Requests / Find tabs render it.
+ *
+ * Serializable because the graph is now cached on disk (`FriendGraphCache`): the Friends tab
+ * has to survive a cold start with no network the same way the chat list does.
+ */
 @Immutable
+@Serializable
 data class Friend(
     val id: String,
     val name: String,

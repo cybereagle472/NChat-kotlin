@@ -120,6 +120,12 @@ fun DiscoverScreen(
      * "you have no friends" and "the request failed".
      */
     loadError: String? = null,
+    /**
+     * What the last `/friends` load saw, when it did not fail but still left the tab empty —
+     * see `FriendRepository.graphNote`. "No friends yet" is only the truth for one of those
+     * answers; this is how the other two say what they are.
+     */
+    emptyHint: String? = null,
     /** Re-runs the friend-graph load (the empty state's Retry). */
     onRetry: () -> Unit = {},
     onAddFriend: (String) -> Unit,
@@ -190,6 +196,18 @@ fun DiscoverScreen(
                         item(key = "friends-empty") {
                             if (loadError != null && query.isBlank()) {
                                 LoadErrorCard(message = loadError, onRetry = onRetry)
+                            } else if (emptyHint != null && query.isBlank()) {
+                                /*
+                                 * Not a failure, and not "you have no friends" either: the last
+                                 * load answered something this list cannot show. Say which.
+                                 */
+                                EmptyCard(
+                                    emoji = "👥",
+                                    title = "No friends to show",
+                                    message = emptyHint,
+                                    actionLabel = "Retry",
+                                    onAction = onRetry
+                                )
                             } else {
                                 EmptyCard(
                                     emoji = "👥",
@@ -952,11 +970,18 @@ private fun LoadErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun EmptyCard(emoji: String, title: String, message: String) {
+private fun EmptyCard(
+    emoji: String,
+    title: String,
+    message: String,
+    /** Optional call to action under the text (only the Friends tab's diagnostic state has one). */
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(256.dp)
+            .height(if (actionLabel == null) 256.dp else 288.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0x99FFFFFF))
             .border(1.dp, Color(0x99FFFFFF), RoundedCornerShape(16.dp))
@@ -987,6 +1012,23 @@ private fun EmptyCard(emoji: String, title: String, message: String) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp)
         )
+        if (actionLabel != null && onAction != null) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 14.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF7C3AED))
+                    .clickable(onClick = onAction)
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    text = actionLabel,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
     }
 }
 
