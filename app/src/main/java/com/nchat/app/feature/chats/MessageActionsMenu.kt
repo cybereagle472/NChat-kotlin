@@ -30,8 +30,11 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Forward
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Mood
 import androidx.compose.material.icons.rounded.Reply
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -89,6 +92,11 @@ fun MessageActionMenu(
     onCopy: () -> Unit,
     onForward: () -> Unit,
     onDelete: () -> Unit,
+    /** Star / un-star this message — the label flips with [isStarred]. */
+    onStar: () -> Unit = {},
+    isStarred: Boolean = false,
+    /** Puts the chat into selection mode with this message already ticked. */
+    onSelect: () -> Unit = {},
     reactedEmojis: Set<String> = emptySet(),
     onShowAllReactions: () -> Unit = {}
 ) {
@@ -107,7 +115,12 @@ fun MessageActionMenu(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val density = LocalDensity.current
             val cardWidth = 248.dp
-            val estimatedHeight = 178.dp
+            // Rows: reply?/forward/copy?/star/select/edit?/delete under a ~50 dp reaction strip.
+            val rowCount = 3 +
+                (if (showReply) 1 else 0) +
+                (if (showCopy) 1 else 0) +
+                (if (showEdit) 1 else 0)
+            val estimatedHeight = 55.dp + (rowCount * 38).dp
 
             val anchorCenterX = anchor?.let { with(density) { it.center.x.toDp() } } ?: (maxWidth / 2)
             val anchorTop = anchor?.let { with(density) { it.top.toDp() } }
@@ -163,6 +176,18 @@ fun MessageActionMenu(
                         if (showCopy) {
                             MenuAction(Icons.Rounded.ContentCopy, "Copy", extra.textSecondary, onClick = onCopy)
                         }
+                        MenuAction(
+                            icon = if (isStarred) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                            label = if (isStarred) "Unstar" else "Star",
+                            tint = extra.textSecondary,
+                            onClick = onStar
+                        )
+                        MenuAction(
+                            icon = Icons.Rounded.Checklist,
+                            label = "Select",
+                            tint = extra.textSecondary,
+                            onClick = onSelect
+                        )
                         if (showEdit) {
                             MenuAction(Icons.Rounded.Edit, "Edit", extra.textSecondary, onClick = onEdit)
                         }

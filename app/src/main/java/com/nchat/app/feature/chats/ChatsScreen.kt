@@ -86,6 +86,8 @@ fun ChatsScreen(
      * reserved for answers the server actually gave (a 500, a 401, a bad response).
      */
     val deviceOnline by ServiceLocator.network.collectAsStateWithLifecycle()
+    // Drafts: a chat with unsent text says so on its row, exactly like WhatsApp's red "Draft".
+    val drafts by ServiceLocator.drafts.drafts.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize()) {
         NcTabHeader(
@@ -122,6 +124,7 @@ fun ChatsScreen(
                 items(items = state.chats, key = { it.id }) { chat ->
                     ChatRow(
                         chat = chat,
+                        draft = drafts[chat.id],
                         onClick = {
                             viewModel.markRead(chat.id)
                             onOpenChat(chat)
@@ -180,6 +183,7 @@ fun ChatsScreen(
 @Composable
 private fun ChatRow(
     chat: Chat,
+    draft: String? = null,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleMute: () -> Unit,
@@ -259,7 +263,7 @@ private fun ChatRow(
 
                     chat.isTyping -> TypingLine(label = "typing", iconColor = extra.typing)
 
-                    else -> PreviewLine(chat = chat, hasUnread = hasUnread)
+                    else -> PreviewLine(chat = chat, hasUnread = hasUnread, draft = draft)
                 }
 
                 if (hasUnread) {
@@ -373,8 +377,35 @@ private fun RowScope.TypingLine(
 }
 
 @Composable
-private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean) {
+private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? = null) {
     val extra = NcTheme.extra
+
+    if (!draft.isNullOrBlank()) {
+        // The half-written message wins the preview slot until it is sent: it is the only thing
+        // on this row that is still waiting for the user.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Draft:",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFEF4444),
+                maxLines = 1
+            )
+            Text(
+                text = draft,
+                style = MaterialTheme.typography.bodyMedium,
+                color = extra.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+        return
+    }
 
     Row(
         modifier = Modifier.weight(1f),

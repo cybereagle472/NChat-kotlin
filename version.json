@@ -1,6 +1,6 @@
 {
-  "versionCode": 57,
-  "versionName": "1.0.49",
+  "versionCode": 58,
+  "versionName": "1.0.50",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.49 — the two reflexes every WhatsApp user has, plus a faster ear. Swipe any message to the right and a reply arrow slides in at its edge; let go past the halfway point and the composer quotes it, without opening the menu. Double-tap a message and the love reaction lands on it immediately (tap it again to take it back). Long voice notes now carry the 1× / 1.5× / 2× control at the end of the bar — tap to speed up, tap again for 2×, once more for normal — and the speed is applied the moment playback starts, so a six-minute note takes three minutes. Vertical scrolling over a bubble still scrolls the chat: the swipe only claims horizontal movement."
+  "releaseNotes": "NChat 1.0.50 — the chat header grew the tools WhatsApp puts there. Search the open conversation with the magnifier: matches highlight in purple, and tapping one jumps the timeline to that bubble, which is briefly ringed. Long-press a message and choose Select to tick several — the header turns into a count with Forward, Copy, Select all and Delete (delete for me or for everyone). Star a message and it keeps a small star next to its time and appears under ⋮ → Starred messages, with its text saved so it survives the sender deleting the original. Half-written messages are now remembered per chat and shown as a red Draft on the chat row. Opening a photo gives you the whole chat's photos: swipe sideways, pinch to zoom, double-tap to fit."
 }

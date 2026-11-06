@@ -21,6 +21,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +63,10 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Forward
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +90,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -131,6 +141,7 @@ import com.nchat.app.data.ServiceLocator
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
+import com.nchat.app.data.local.StarredMessage
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
@@ -150,7 +161,12 @@ fun ConversationScreen(
     autoCallVideo: Boolean? = null,
     viewModel: ConversationViewModel = viewModel(
         key = chatId,
-        factory = ConversationViewModel.factory(chatId, chatTitle, ServiceLocator.chatRepository)
+        factory = ConversationViewModel.factory(
+            chatId,
+            chatTitle,
+            ServiceLocator.chatRepository,
+            ServiceLocator.drafts
+        )
     )
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -201,6 +217,29 @@ fun ConversationScreen(
     var groupInfoOpen by remember { mutableStateOf(false) }
     var forwardingId by remember { mutableStateOf<String?>(null) }
     var mediaViewer by remember { mutableStateOf<Message?>(null) }
+    /*
+     * Chat-header power features: search, the ⋮ options, Starred messages, and selection mode.
+     * Selection lives in the view model so a recomposition (a new message arriving, a rotation)
+     * never drops what the user ticked.
+     */
+    var searching by remember { mutableStateOf(false) }
+    var optionsOpen by remember { mutableStateOf(false) }
+    var starredOpen by remember { mutableStateOf(false) }
+    var forwardingSelection by remember { mutableStateOf(false) }
+    var bulkDeleteOpen by remember { mutableStateOf(false) }
+    var highlightId by remember { mutableStateOf<String?>(null) }
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val starredAll by ServiceLocator.stars.items.collectAsStateWithLifecycle()
+    val starredIds = remember(starredAll, chatId) {
+        starredAll.filter { it.chatId == chatId }.map { it.messageId }.toSet()
+    }
+    // The ring around a jumped-to message fades by itself.
+    LaunchedEffect(highlightId) {
+        if (highlightId != null) {
+            delay(1_800)
+            highlightId = null
+        }
+    }
     var editing by remember { mutableStateOf<Message?>(null) }
     val chats by ServiceLocator.chatRepository.chats.collectAsStateWithLifecycle()
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
@@ -310,22 +349,52 @@ fun ConversationScreen(
                 .fillMaxSize()
                 .background(Brush.linearGradient(NcTheme.extra.bodyGradient))
         ) {
-            ConversationHeader(
-                chatTitle = chatTitle,
-                chat = chat,
-                groupMemberCount = group?.memberCount,
-                typingMember = typingMember,
-                offline = !deviceOnline,
-                onBack = onBack,
-                onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
-                onOpenProfile = {
-                    if (chat?.isGroup == true || group != null) {
-                        groupInfoOpen = true
-                    } else {
-                        profileOpen = true
+            if (selection.isEmpty()) {
+                ConversationHeader(
+                    chatTitle = chatTitle,
+                    chat = chat,
+                    groupMemberCount = group?.memberCount,
+                    typingMember = typingMember,
+                    offline = !deviceOnline,
+                    onBack = onBack,
+                    onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
+                    onSearch = {
+                        optionsOpen = false
+                        searching = true
+                    },
+                    onOptions = { optionsOpen = true },
+                    onOpenProfile = {
+                        if (chat?.isGroup == true || group != null) {
+                            groupInfoOpen = true
+                        } else {
+                            profileOpen = true
+                        }
                     }
-                }
-            )
+                )
+            } else {
+                SelectionHeader(
+                    count = selection.size,
+                    onClose = viewModel::clearSelection,
+                    onSelectAll = viewModel::selectAllMessages,
+                    onForward = { forwardingSelection = true },
+                    onCopy = {
+                        val body = messages
+                            .filter { it.id in selection }
+                            .joinToString("\n") { it.snippet() }
+                            .trim()
+                        if (body.isEmpty()) {
+                            NcToaster.show("Nothing to copy")
+                        } else {
+                            clipboard.setText(AnnotatedString(body))
+                            NcToaster.show(
+                                if (selection.size == 1) "Message copied" else "${selection.size} messages copied"
+                            )
+                            viewModel.clearSelection()
+                        }
+                    },
+                    onDelete = { bulkDeleteOpen = true }
+                )
+            }
 
             if (timeline.isEmpty()) {
                 EmptyConversation(
@@ -374,6 +443,9 @@ fun ConversationScreen(
                             val onQuickReact = remember(message.id) {
                                 { viewModel.reactTo(message.id, "\u2764\uFE0F") }
                             }
+                            val onToggleSelect = remember(message.id) {
+                                { viewModel.toggleSelection(message.id) }
+                            }
                             Box(
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     anchors[message.id] = coordinates.boundsInWindow()
@@ -386,6 +458,11 @@ fun ConversationScreen(
                                     onRetrySend = onRetrySend,
                                     onSwipeReply = onSwipeReply,
                                     onQuickReact = onQuickReact,
+                                    starred = message.id in starredIds,
+                                    selectionMode = selection.isNotEmpty(),
+                                    selected = message.id in selection,
+                                    onToggleSelect = onToggleSelect,
+                                    highlighted = message.id == highlightId,
                                     showAuthor = isGroupChat,
                                     showAvatar = item.showSender
                                 )
@@ -520,6 +597,22 @@ fun ConversationScreen(
                 viewModel.onSelectMessage(null)
             },
             onReply = viewModel::onReply,
+            isStarred = activeMessage.id in starredIds,
+            onStar = {
+                ServiceLocator.stars.toggle(
+                    StarredMessage(
+                        chatId = chatId,
+                        messageId = activeMessage.id,
+                        authorName = activeMessage.authorName,
+                        preview = activeMessage.snippet(),
+                        at = activeMessage.timestamp
+                    )
+                )
+                val wasStarred = activeMessage.id in starredIds
+                viewModel.onSelectMessage(null)
+                NcToaster.show(if (wasStarred) "Removed from starred" else "Message starred")
+            },
+            onSelect = { viewModel.startSelection(activeMessage.id) },
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
                 viewModel.onSelectMessage(null)
@@ -659,8 +752,100 @@ fun ConversationScreen(
         )
     }
 
+    if (optionsOpen) {
+        ChatOptionsSheet(
+            onDismiss = { optionsOpen = false },
+            onSearch = {
+                optionsOpen = false
+                searching = true
+            },
+            onStarred = {
+                optionsOpen = false
+                starredOpen = true
+            }
+        )
+    }
+
+    if (starredOpen) {
+        StarredMessagesSheet(
+            items = starredAll.filter { it.chatId == chatId },
+            onDismiss = { starredOpen = false },
+            onPick = { starred ->
+                starredOpen = false
+                val index = timeline.indexOfFirst {
+                    it is TimelineItem.Bubble && it.message.id == starred.messageId
+                }
+                if (index >= 0) {
+                    highlightId = starred.messageId
+                    scope.launch { listState.animateScrollToItem(index) }
+                } else {
+                    NcToaster.show("That message is no longer loaded")
+                }
+            },
+            onUnstar = { starred -> ServiceLocator.stars.unstar(starred.chatId, starred.messageId) }
+        )
+    }
+
+    if (searching) {
+        ChatSearchOverlay(
+            messages = messages,
+            onDismiss = { searching = false },
+            onPick = { picked ->
+                searching = false
+                val index = timeline.indexOfFirst {
+                    it is TimelineItem.Bubble && it.message.id == picked.id
+                }
+                if (index >= 0) {
+                    highlightId = picked.id
+                    scope.launch { listState.animateScrollToItem(index) }
+                }
+            }
+        )
+    }
+
+    if (forwardingSelection) {
+        ForwardDialog(
+            chats = chats,
+            onDismiss = { forwardingSelection = false },
+            onForward = { targets ->
+                val count = selection.size
+                viewModel.forwardSelectedMessages(targets)
+                forwardingSelection = false
+                NcToaster.show(
+                    if (count == 1) "Forwarded 1 message" else "Forwarded $count messages"
+                )
+            }
+        )
+    }
+
+    if (bulkDeleteOpen) {
+        DeleteMessagesDialog(
+            count = selection.size,
+            onDismiss = { bulkDeleteOpen = false },
+            onDelete = { forEveryone ->
+                val count = selection.size
+                bulkDeleteOpen = false
+                viewModel.deleteSelectedMessages(forEveryone)
+                NcToaster.show(
+                    if (forEveryone) {
+                        if (count == 1) "Message deleted for everyone" else "$count messages deleted for everyone"
+                    } else {
+                        if (count == 1) "Message deleted" else "$count messages deleted"
+                    }
+                )
+            }
+        )
+    }
+
     mediaViewer?.let { message ->
-        MediaViewerDialog(message = message, onDismiss = { mediaViewer = null })
+        val gallery = remember(messages) {
+            messages.filter { it.kind == MessageKind.Photo || it.kind == MessageKind.Video }
+        }
+        MediaViewerDialog(
+            items = gallery,
+            initialIndex = gallery.indexOfFirst { it.id == message.id }.coerceAtLeast(0),
+            onDismiss = { mediaViewer = null }
+        )
     }
 
     editing?.let { message ->
@@ -683,10 +868,29 @@ private fun canEditMessage(message: Message): Boolean =
         message.kind == MessageKind.Text &&
         System.currentTimeMillis() - message.timestamp < 15 * 60 * 1000L
 
-/** Full-screen media preview, opened by tapping a photo or video bubble. */
+/**
+ * Full-screen photo / video viewer.
+ *
+ * Opening one photo gives you the whole chat's photos, exactly like WhatsApp: swipe sideways to
+ * walk the conversation's media without closing the viewer. Photos zoom under a pinch and snap
+ * back with a double tap; while a photo is zoomed the pager stops stealing horizontal drags so
+ * panning works instead of flipping the page. Video keeps the real player and does not page.
+ */
 @Composable
-private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
-    val isVideo = message.kind == MessageKind.Video
+private fun MediaViewerDialog(
+    items: List<Message>,
+    initialIndex: Int,
+    onDismiss: () -> Unit
+) {
+    if (items.isEmpty()) return
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(0, items.lastIndex),
+        pageCount = { items.size }
+    )
+    var zoomed by remember { mutableStateOf(false) }
+    // Every page starts un-zoomed, and leaving the zoomed page re-enables swiping.
+    LaunchedEffect(pagerState.currentPage) { zoomed = false }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -696,17 +900,19 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                 .fillMaxSize()
                 .background(Color(0xF20F172A))
         ) {
-            Box(
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = !zoomed,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = NcSpace.md, vertical = 96.dp),
-                contentAlignment = Alignment.Center
-            ) {
+                    .padding(horizontal = NcSpace.md, vertical = 92.dp)
+            ) { page ->
+                val message = items[page]
+                val isVideo = message.kind == MessageKind.Video
                 val source = message.mediaUrl ?: message.thumbnailUrl
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (isVideo) 420.dp else 320.dp)
+                        .fillMaxSize()
                         .clip(RoundedCornerShape(20.dp))
                         .background(
                             if (isVideo) {
@@ -718,25 +924,15 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        /*
-                         * A video used to open as a still frame with a play icon on top — nothing
-                         * was ever played. The reference opens a real `<video>` element
-                         * (`ChatView.tsx:2194-2198`); this is the Android equivalent: the platform
-                         * `VideoView`, which streams over HTTP(S) with byte ranges and brings its
-                         * own transport controls (play / pause / scrub), exactly what a user
-                         * expects from tapping a clip.
-                         */
                         isVideo && source != null -> VideoPlayer(
                             url = source,
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        source != null -> AsyncImage(
-                            model = source,
-                            contentDescription = "Photo",
-                            // Fit, not Crop: the full picture is the point of the viewer.
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
+                        source != null -> ZoomablePhoto(
+                            url = source,
+                            modifier = Modifier.fillMaxSize(),
+                            onZoomChanged = { zoomed = it }
                         )
 
                         else -> Icon(
@@ -749,6 +945,7 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                 }
             }
 
+            val current = items[pagerState.currentPage.coerceIn(0, items.lastIndex)]
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -777,7 +974,7 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                         .padding(start = NcSpace.md)
                 ) {
                     Text(
-                        text = message.authorName,
+                        text = current.authorName,
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -786,17 +983,74 @@ private fun MediaViewerDialog(message: Message, onDismiss: () -> Unit) {
                     )
                     Text(
                         text = buildString {
-                            append(TimeFormat.clock(message.timestamp))
+                            append(TimeFormat.clock(current.timestamp))
                             append(" · ")
-                            append(if (isVideo) "Video" else "Photo")
+                            append(if (current.kind == MessageKind.Video) "Video" else "Photo")
                         },
                         color = Color(0xB3FFFFFF),
                         fontSize = 11.sp,
                         maxLines = 1
                     )
                 }
+                if (items.size > 1) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${items.size}",
+                        color = Color(0xB3FFFFFF),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
+    }
+}
+
+/** A photo that pinches to zoom and double-taps back to fit. */
+@Composable
+private fun ZoomablePhoto(
+    url: String,
+    modifier: Modifier = Modifier,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    var scale by remember(url) { mutableStateOf(1f) }
+    var offset by remember(url) { mutableStateOf(Offset.Zero) }
+
+    fun setScale(next: Float) {
+        scale = next.coerceIn(1f, 5f)
+        if (scale == 1f) offset = Offset.Zero
+        onZoomChanged(scale > 1.01f)
+    }
+
+    Box(
+        modifier = modifier
+            .pointerInput(url) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    setScale(scale * zoom)
+                    if (scale > 1.01f) offset += pan
+                }
+            }
+            .pointerInput(url) {
+                // A tap-only detector: `detectTransformGestures` above only consumes once the
+                // finger has moved past touch slop, so a still double tap still reaches this.
+                detectTapGestures(
+                    onDoubleTap = { setScale(if (scale > 1.01f) 1f else 2.5f) }
+                )
+            }
+    ) {
+        AsyncImage(
+            model = url,
+            contentDescription = "Photo",
+            // Fit, not Crop: the full picture is the point of the viewer.
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                }
+        )
     }
 }
 
@@ -1198,6 +1452,8 @@ private fun ConversationHeader(
     onBack: () -> Unit,
     onStartCall: (video: Boolean) -> Unit,
     onOpenProfile: () -> Unit,
+    onSearch: () -> Unit = {},
+    onOptions: () -> Unit = {},
     /** The device has no internet right now — see `NetworkMonitor`. */
     offline: Boolean = false
 ) {
@@ -1282,10 +1538,117 @@ private fun ConversationHeader(
         }
         }
 
+        HeaderAction(Icons.Rounded.Search, "Search in chat", onClick = onSearch)
         HeaderAction(Icons.Rounded.Videocam, "Video call", onClick = { onStartCall(true) })
         HeaderAction(Icons.Rounded.Call, "Voice call", onClick = { onStartCall(false) })
-        HeaderAction(Icons.Rounded.MoreVert, "More options")
+        HeaderAction(Icons.Rounded.MoreVert, "More options", onClick = onOptions)
     }
+}
+
+/**
+ * The header while messages are ticked: count on the left, actions on the right.
+ *
+ * Everything the bulk actions need is here — forward, copy, delete, select-all — so selection
+ * mode never needs a menu of its own.
+ */
+@Composable
+private fun SelectionHeader(
+    count: Int,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onForward: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.linearGradient(NcTheme.extra.brandGradient))
+            .shadow(8.dp)
+            .statusBarsPadding()
+            .padding(horizontal = NcSpace.sm, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onClose),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Cancel selection",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Text(
+            text = if (count == 1) "1 selected" else "$count selected",
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 4.dp)
+        )
+        if (count > 0) {
+            HeaderAction(Icons.Rounded.Forward, "Forward", onClick = onForward)
+            HeaderAction(Icons.Rounded.ContentCopy, "Copy", onClick = onCopy)
+        }
+        HeaderAction(Icons.Rounded.SelectAll, "Select all", onClick = onSelectAll)
+        HeaderAction(Icons.Rounded.Delete, "Delete", onClick = onDelete)
+    }
+}
+
+/** "Delete for me" or "delete for everyone" for a multi-selection. */
+@Composable
+private fun DeleteMessagesDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onDelete: (forEveryone: Boolean) -> Unit
+) {
+    val extra = NcTheme.extra
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(vertical = NcSpace.lg),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = if (count == 1) "Delete message?" else "Delete $count messages?",
+                color = extra.textPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Delete for everyone also removes them from the other side.",
+                color = extra.textTertiary,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = NcSpace.lg, vertical = 6.dp)
+            )
+            DialogChoice("Delete for me") { onDelete(false) }
+            DialogChoice("Delete for everyone", destructive = true) { onDelete(true) }
+            DialogChoice("Cancel") { onDismiss() }
+        }
+    }
+}
+
+@Composable
+private fun DialogChoice(label: String, destructive: Boolean = false, onClick: () -> Unit) {
+    Text(
+        text = label,
+        color = if (destructive) Color(0xFFDC2626) else NcTheme.extra.textPrimary,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = NcSpace.lg, vertical = 13.dp)
+    )
 }
 
 @Composable

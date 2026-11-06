@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Reply
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -149,7 +150,15 @@ fun MessageBubble(
     /** Swiping the bubble to the right quotes it in the composer, like WhatsApp. */
     onSwipeReply: () -> Unit = {},
     /** Double tap drops the default quick reaction on the bubble. */
-    onQuickReact: () -> Unit = {}
+    onQuickReact: () -> Unit = {},
+    /** The message is in Starred messages; a small star rides next to the timestamp. */
+    starred: Boolean = false,
+    /** Selection mode is on: taps tick the bubble instead of opening the menu. */
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    /** Briefly ringed after a search result jumped here. */
+    highlighted: Boolean = false
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -191,6 +200,11 @@ fun MessageBubble(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
     ) {
+        // Selection mode: a tick column on the inner edge of the row, before the bubble, so the
+        // check always sits next to the message it belongs to.
+        if (selectionMode) {
+            SelectionCheck(selected = selected)
+        }
         // Group chats prefix an incoming run with the sender's 30dp avatar; later bubbles
         // in the same run keep a spacer so they stay aligned underneath it.
         if (!mine && showAuthor) {
@@ -273,11 +287,24 @@ fun MessageBubble(
                 .then(
                     if (mine) Modifier else Modifier.border(1.dp, Color(0x120F172A), bubbleShape)
                 )
+                .then(
+                    if (selected || highlighted) {
+                        Modifier.border(
+                            width = 2.dp,
+                            color = if (highlighted) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
+                            shape = bubbleShape
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
                 .combinedClickable(
-                    onClick = onLongPress,
-                    onLongClick = onLongPress,
+                    // In selection mode a tap ticks the bubble; the menu stays reachable by
+                    // leaving selection mode, which is what the reference does too.
+                    onClick = if (selectionMode) onToggleSelect else onLongPress,
+                    onLongClick = if (selectionMode) onToggleSelect else onLongPress,
                     // Double tap = the default quick reaction, the gesture WhatsApp users expect.
-                    onDoubleClick = onQuickReact
+                    onDoubleClick = if (selectionMode) null else onQuickReact
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -363,6 +390,14 @@ fun MessageBubble(
                         color = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta
                     )
                 }
+                if (starred) {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = "Starred",
+                        tint = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
                 if (mine && message.failed) {
                     // The send gave up: say so on the bubble itself and make it the retry target
                     // (a message stuck on the clock forever with no explanation is the bug).
@@ -403,6 +438,30 @@ fun MessageBubble(
         }
     }
     }
+    }
+}
+
+/** The 22 dp tick a bubble wears in selection mode. */
+@Composable
+private fun SelectionCheck(selected: Boolean) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(if (selected) accent else Color.White)
+            .border(1.5.dp, if (selected) accent else Color(0xFFCBD5E1), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "Selected",
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
+            )
+        }
     }
 }
 
