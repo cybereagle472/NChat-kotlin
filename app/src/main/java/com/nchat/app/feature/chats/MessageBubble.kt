@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,6 +66,7 @@ import com.nchat.app.core.designsystem.BubbleShapeMine
 import com.nchat.app.core.designsystem.BubbleShapeTheirs
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.util.TimeFormat
+import com.nchat.app.network.MediaFiles
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
@@ -579,27 +581,56 @@ private fun VoiceContent(
     storedWaveform: String? = null
 ) {
     /*
-     * Keyed on the URL, not on nothing: a clip that was still being uploaded swaps its
-     * `file://` path for the public URL, `remember(mediaUrl)` builds a fresh player for it, and
-     * a `prepared = true` left over from the old one would have `start()` called on a player
-     * that never had a data source set.
+     * The clip, as a file on this device.
+     *
+     * A voice note that came from the server is a URL on a **private** endpoint: `GET
+     * /media/file/…` only answers a signed-in caller, and `MediaPlayer` cannot attach a bearer
+     * token — `setDataSource(url)` opens the URL itself, anonymously, on the calling thread.
+     * Every remote clip therefore ended in "Couldn't play this voice message". The bytes are
+     * fetched once through the authenticated client ([MediaFiles]) and played from the cache,
+     * which also takes the network off the UI thread and turns every seek into a local read.
+     *
+     * A clip recorded here (still in the outbox) is already a `file://` URL and plays directly.
      */
-    var playing by remember(mediaUrl) { mutableStateOf(false) }
-    var prepared by remember(mediaUrl) { mutableStateOf(false) }
+    var audioFile by remember(mediaUrl) { mutableStateOf(MediaFiles.existingLocal(mediaUrl)) }
+    /** The user asked for the audio; the download below starts only when this is true. */
+    var wantAudio by remember(mediaUrl) { mutableStateOf(false) }
+    var loading by remember(mediaUrl) { mutableStateOf(false) }
+    var loadError by remember(mediaUrl) { mutableStateOf<String?>(null) }
+    /** Bumped when a player dies, so the next tap gets a fresh one instead of a reset one. */
+    var generation by remember(mediaUrl) { mutableStateOf(0) }
+    /**
+     * Where playback should begin once the audio exists.
+     *
+     * Survives the file arriving (the player state below is keyed on the file and resets), so a
+     * tap or a scrub made while the clip was still downloading is not lost.
+     */
+    var pendingStartAt by remember(mediaUrl) { mutableStateOf<Int?>(null) }
+
+    val filePath = audioFile?.absolutePath
+
+    /*
+     * Everything below is keyed on the *file*, not the URL: the moment the download lands, the
+     * player state has to start over — a `prepared = true` inherited from a player that never
+     * had a data source would call `start()` on an empty one.
+     */
+    var playing by remember(filePath) { mutableStateOf(false) }
+    var prepared by remember(filePath) { mutableStateOf(false) }
     /** `prepareAsync()` is in flight — a second tap must not call `setDataSource` again. */
-    var preparing by remember(mediaUrl) { mutableStateOf(false) }
+    var preparing by remember(filePath) { mutableStateOf(false) }
     /** Where the playhead is, in milliseconds. The bar and the timer both read this. */
-    var positionMs by remember(mediaUrl) { mutableStateOf(0) }
+    var positionMs by remember(filePath) { mutableStateOf(0) }
     /** The clip's real length, once the file has told us — the label can be a second off. */
-    var realMs by remember(mediaUrl) { mutableStateOf(0) }
+    var realMs by remember(filePath) { mutableStateOf(0) }
     /** A seek made before the player was ready, applied the moment it is. */
-    var pendingSeek by remember(mediaUrl) { mutableStateOf<Int?>(null) }
+    var pendingSeek by remember(filePath) { mutableStateOf<Int?>(null) }
     /**
      * What the user wants, as opposed to what the player is doing.
      *
-     * Set on the tap, honoured in `OnPreparedListener`. Without it, tapping play and then pause
-     * while the first buffer was still arriving ended up *playing*: the pause hit a player that
-     * had nothing to pause, and the prepared callback started it anyway.
+     * Set on the tap, honoured in `OnPreparedListener` and by the "file just arrived" effect
+     * below. Without it, tapping play and then pause while the clip was still loading ended up
+     * *playing*: the pause hit a player with nothing to pause, and the prepared callback started
+     * it anyway.
      */
     var playWhenReady by remember(mediaUrl) { mutableStateOf(false) }
 
@@ -618,11 +649,35 @@ private fun VoiceContent(
         }
     }
 
-    // A player per bubble, created only when the message actually carries audio. Media is
-    // served publicly by the worker (with byte ranges), so the URL can be set directly — and
-    // ranges are what makes seeking here instant instead of "download the whole clip first".
-    val player = remember(mediaUrl) {
-        mediaUrl?.takeIf { it.isNotBlank() }?.let {
+    /*
+     * Fetch on demand — a tap, not a scroll. The download runs in the composition's coroutine
+     * scope on `Dispatchers.IO` (inside [MediaFiles]), so nothing blocks the frame, and the
+     * result is cached, so a second play on the same clip is instant and works offline.
+     */
+    LaunchedEffect(wantAudio, mediaUrl) {
+        val url = mediaUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        if (!wantAudio || audioFile != null) return@LaunchedEffect
+        loading = true
+        loadError = null
+        val result = MediaFiles.local(url)
+        loading = false
+        result.fold(
+            onSuccess = { file -> audioFile = file },
+            onFailure = { error ->
+                val reason = error.message?.takeIf { it.isNotBlank() } ?: "the download failed"
+                loadError = reason
+                wantAudio = false
+                playWhenReady = false
+                playing = false
+                NcToaster.show("Couldn't load this voice message — $reason")
+            }
+        )
+    }
+
+    // A player per bubble, bound to the local file. Media is served with byte ranges, so a seek
+    // on a downloaded clip is immediate.
+    val player = remember(filePath, generation) {
+        filePath?.let {
             runCatching {
                 MediaPlayer().apply {
                     setAudioAttributes(
@@ -663,6 +718,18 @@ private fun VoiceContent(
         }
     }
 
+    /** Gives up on this player and says why; the next tap builds a new one. */
+    fun failPlayback(message: String) {
+        playing = false
+        playWhenReady = false
+        preparing = false
+        prepared = false
+        positionMs = 0
+        if (VoicePlayback.current == messageId) VoicePlayback.current = null
+        generation += 1
+        NcToaster.show(message)
+    }
+
     /** Moves the playhead without changing whether the clip is playing. */
     fun seek(targetMs: Int) {
         val bounded = targetMs.coerceAtLeast(0).let { if (totalMs > 0) it.coerceAtMost(totalMs) else it }
@@ -674,15 +741,29 @@ private fun VoiceContent(
     /*
      * Starts from `from`, flipping the icon immediately.
      *
-     * The old code only set `playing = true` inside `OnPreparedListener`, so the button did
-     * nothing at all until the first buffer arrived — on a slow link a tap looked ignored and
-     * people tapped again. The state is optimistic now and is rolled back if the player fails.
+     * The state is optimistic and rolled back if the player fails: a tap on a slow link used to
+     * look ignored until the first buffer arrived, and people tapped again. When the audio is
+     * still being fetched the request is simply remembered — the effect below starts it the
+     * moment the file lands.
      */
     fun start(from: Int = positionMs) {
         val current = player
-        if (current == null) {
-            // No file behind this bubble: say so instead of pretending to play silence.
-            NcToaster.show("This voice message has no audio attached")
+        val path = filePath
+        if (current == null || path == null) {
+            if (loadError != null) {
+                NcToaster.show("Couldn't load this voice message — $loadError")
+                return
+            }
+            if (mediaUrl.isNullOrBlank()) {
+                // No file behind this bubble: say so instead of pretending to play silence.
+                NcToaster.show("This voice message has no audio attached")
+                return
+            }
+            playWhenReady = true
+            playing = true
+            positionMs = from
+            pendingStartAt = from
+            wantAudio = true
             return
         }
         VoicePlayback.current = messageId
@@ -696,10 +777,7 @@ private fun VoiceContent(
                 current.seekTo(if (end > 0 && from >= end - 250) 0 else from)
                 current.start()
             }
-            if (started.isFailure) {
-                playing = false
-                NcToaster.show("Couldn't play this voice message")
-            }
+            if (started.isFailure) failPlayback("Couldn't play this voice message")
             return
         }
         if (preparing) {
@@ -709,7 +787,7 @@ private fun VoiceContent(
         pendingSeek = from
         preparing = true
         val started = runCatching {
-            current.setDataSource(mediaUrl)
+            current.setDataSource(path)
             current.setOnPreparedListener { ready ->
                 prepared = true
                 preparing = false
@@ -729,23 +807,23 @@ private fun VoiceContent(
                 positionMs = 0
                 if (VoicePlayback.current == messageId) VoicePlayback.current = null
             }
-            current.setOnErrorListener { failed, _, _ ->
-                playing = false
-                preparing = false
-                prepared = false
-                positionMs = 0
-                if (VoicePlayback.current == messageId) VoicePlayback.current = null
-                // Reset so a retry can set a data source again instead of throwing.
+            current.setOnErrorListener { failed, what, extra ->
                 runCatching { failed.reset() }
-                NcToaster.show("Couldn't play this voice message")
+                val unsupported = what == MediaPlayer.MEDIA_ERROR_UNSUPPORTED ||
+                    extra == MediaPlayer.MEDIA_ERROR_UNSUPPORTED
+                failPlayback(
+                    if (unsupported) {
+                        "This phone can't decode that voice message"
+                    } else {
+                        "Couldn't play this voice message"
+                    }
+                )
                 true
             }
             current.prepareAsync()
         }
         if (started.isFailure) {
-            playing = false
-            preparing = false
-            NcToaster.show("Couldn't play this voice message")
+            failPlayback("Couldn't play this voice message")
         }
     }
 
@@ -758,6 +836,15 @@ private fun VoiceContent(
 
     fun toggle() {
         if (playing) pause() else start()
+    }
+
+    // The file arrived while the user was waiting on it: honour the tap that asked for it.
+    LaunchedEffect(filePath) {
+        if (filePath != null && playWhenReady && !prepared && !preparing) {
+            val from = pendingStartAt ?: positionMs
+            pendingStartAt = null
+            start(from)
+        }
     }
 
     val accent = if (mine) Color.White else MaterialTheme.colorScheme.primary
@@ -783,12 +870,25 @@ private fun VoiceContent(
                 .background(if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (playing) "Pause voice message" else "Play voice message",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
+            when {
+                loading -> CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp)
+                )
+                playing -> Icon(
+                    imageVector = Icons.Rounded.Pause,
+                    contentDescription = "Pause voice message",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                else -> Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = "Play voice message",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
         /*
          * The waveform is the scrubber: touch down anywhere on it and the clip jumps to that
@@ -801,14 +901,14 @@ private fun VoiceContent(
                 .weight(1f)
                 .padding(horizontal = 8.dp)
                 .height(22.dp)
-                .pointerInput(messageId, mediaUrl, totalMs) {
+                .pointerInput(messageId, filePath, totalMs) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        var x = down.position.x
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         fun scrubTo(px: Float) {
                             seek(((px / width).coerceIn(0f, 1f) * totalMs).toInt())
                         }
+                        var x = down.position.x
                         scrubTo(x)
                         while (true) {
                             val event = awaitPointerEvent()
@@ -868,6 +968,7 @@ private fun VoiceContent(
         )
     }
 }
+
 
 private fun parseVoiceDuration(label: String): Int {
     val parts = label.split(":")

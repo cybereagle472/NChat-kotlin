@@ -75,7 +75,7 @@ object MediaImages {
  * Coil turns into its normal error placeholder. A picture that cannot load is a picture that
  * cannot load — it is not a reason to kill the app.
  */
-private class MediaAuthInterceptor(
+internal class MediaAuthInterceptor(
     private val root: String,
     private val accessToken: () -> String?,
     private val renewSession: suspend () -> String?
