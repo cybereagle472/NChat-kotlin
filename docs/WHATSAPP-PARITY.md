@@ -41,8 +41,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | Typing per member, sender avatars, member count | ✅ | ✅ | `ConversationHeader` |
 | **Group voice / video call** | ✅ | ❌ stubbed toast; `NChatApi` already has the endpoints — planned 1.0.53 (mesh + N-party `CallOverlay`) | `CallOverlay` |
 | Invite link / QR | ✅ | ❌ needs a backend endpoint (only "add existing friends") | — |
-| @mentions / @all | ✅ | ❌ needs mention delivery on the wire | — |
-| Reply privately / keep in chat | ✅ | ❌ planned with mentions | — |
+| @mentions / @all | ✅ | 🟡 1.0.54 — picker + `@Name` highlighting from the roster (wire stays plain text, so no "you were mentioned" ring) | `ChatTextFormat` |
+| Reply privately / keep in chat | ✅ | 🟡 1.0.54 — forwards the message into the author's DM (a group screen cannot pre-fill another chat's composer) | `ConversationScreen` |
 | Admin-restricted messaging + approval queue | ✅ | ❌ needs server roles beyond `admin` | — |
 
 ## Chat list and notifications

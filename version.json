@@ -1,6 +1,6 @@
 {
-  "versionCode": 61,
-  "versionName": "1.0.53",
+  "versionCode": 62,
+  "versionName": "1.0.54",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.53 — the composer's + now opens the camera and sends your position. Camera takes a photo with the phone's own camera UI, then it goes through the same path as a picked photo: EXIF (including the GPS tag) stripped, re-encoded, thumbnail generated, uploaded with a real progress ring. Location resolves a fix from the platform LocationManager — a recent cached one instantly, otherwise a single fresh fix with a nine-second budget — and sends lat,lng as a location message that stays queued when you are offline. Location bubbles show the coordinates and open in Maps on a tap; anything that is not a position still renders as a plain card instead of pretending."
+  "releaseNotes": "NChat 1.0.54 — groups get mentions and private replies. Type @ in a group and the member list appears; tap a name and it is inserted, and in the sent message every @Name from the roster is highlighted (stronger when it is you). A stray @ followed by ordinary words stays plain text, because only real member names light up. Long-press a group message from someone you are friends with and choose Reply privately: the message is copied into their direct chat, so the conversation moves out of the group without anyone else reading it. Long-press menus also stay inside the screen now — the card sizes itself from the actions it is actually showing."
 }
