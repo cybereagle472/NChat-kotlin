@@ -114,6 +114,20 @@ private fun HomeRoot() {
     val navigator = remember { NcNavigator() }
     BackHandler(enabled = navigator.canPop) { navigator.pop() }
 
+    /*
+     * A notification tap asks for a conversation (`NcNotifications.openIntent` →
+     * `MainActivity` → `ServiceLocator.pendingOpen`). One place handles both cases — a cold start
+     * and an already-running app — and the request is cleared as soon as it is honoured, so
+     * returning to the tab bar later does not jump back into that chat.
+     */
+    val pendingOpen by ServiceLocator.pendingOpen.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingOpen) {
+        val target = pendingOpen ?: return@LaunchedEffect
+        ServiceLocator.pendingOpen.value = null
+        ServiceLocator.notifications.cancel(target.first)
+        navigator.push(NcScreen.Conversation(target.first, target.second))
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = navigator.current,

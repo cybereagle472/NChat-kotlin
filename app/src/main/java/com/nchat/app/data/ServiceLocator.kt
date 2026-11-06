@@ -13,6 +13,7 @@ import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
+import com.nchat.app.data.notifications.NcNotifications
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.UserProfile
@@ -42,6 +43,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -91,6 +93,8 @@ object ServiceLocator {
             )
         }
         startNetworkWatch()
+        // Channels must exist before the first message can arrive, not on the first notification.
+        runCatching { notifications.ensureChannels() }
     }
 
     private fun requireContext(): Context =
@@ -219,6 +223,17 @@ object ServiceLocator {
     /** Private, per-device starred messages behind "Starred messages". */
     val stars: StarredStore by lazy { StarredStore(requireContext()) }
 
+    /** System notifications: per-chat channels, MessagingStyle, inline reply. */
+    val notifications: NcNotifications by lazy { NcNotifications(requireContext()) }
+
+    /**
+     * A conversation a notification tap asked for, consumed by `HomeRoot`.
+     *
+     * The tap may arrive while the app is cold (it starts, then this is set) or already running
+     * (`onNewIntent`), so both paths write here and the navigation layer reacts once.
+     */
+    val pendingOpen = MutableStateFlow<Pair<String, String>?>(null)
+
 
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(
@@ -229,6 +244,7 @@ object ServiceLocator {
             clearLocalState = {
                 drafts.clearAll()
                 stars.clearAll()
+                notifications.cancelAll()
             }
         )
     }
@@ -247,7 +263,10 @@ object ServiceLocator {
             messages = messageStore,
             online = { networkMonitor.online.value },
             groupCache = groupCache,
-            voiceClips = voiceClips
+            voiceClips = voiceClips,
+            // A message from somebody else becomes a system notification, unless that chat is the
+            // one currently on screen (`NcNotifications.activeChatId`).
+            onIncoming = { chat, message -> notifications.show(chat, message) }
         )
     }
     val friendRepository: FriendRepository by lazy {
