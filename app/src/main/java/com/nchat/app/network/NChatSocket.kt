@@ -115,9 +115,59 @@ class NChatSocket(
         _state.value = ConnectionState.Disconnected
     }
 
+    /**
+     * Device connectivity, mirrored in from `NetworkMonitor`.
+     *
+     * While the radio is off there is nothing to reconnect *to*, so the loop parks instead of
+     * burning a failing handshake every backoff interval — and the moment the network is back
+     * it is woken immediately rather than after the current wait. This is the difference
+     * between WhatsApp's instant resume and "it arrives a few seconds later".
+     */
+    @Volatile private var networkAvailable = true
+
+    fun setNetworkAvailable(available: Boolean) {
+        val was = networkAvailable
+        networkAvailable = available
+        if (available && !was) reconnectNow()
+    }
+
+    /**
+     * Tears the current socket down and dials again — used when connectivity was re-established.
+     *
+     * A socket that survived a wifi → cellular handover is often a zombie: the OS keeps the fd,
+     * nothing arrives, and the client only notices on a keep-alive timeout tens of seconds
+     * later. Re-dialling costs one handshake and makes the reconnect path deterministic; the
+     * server's replay-free realtime means the resync that follows is what fills the gap anyway.
+     */
+    fun reconnectNow() {
+        if (!api.isConfigured) return
+        socket?.close(4000, "network changed")
+        socket = null
+        if (loop?.isActive != true) {
+            connect()
+            return
+        }
+        _state.value = ConnectionState.Connecting
+        ensureConnected()
+    }
+
     private suspend fun runLoop() {
         var attempt = 0
         while (currentCoroutineContext().isActive) {
+            /*
+             * No radio, no handshake.
+             *
+             * The loop used to keep dialling a dead network every 8 s, which costs nothing on
+             * screen and a little battery everywhere else; parked here it waits for the nudge
+             * that `setNetworkAvailable(true)` sends, so reconnecting after airplane mode is
+             * immediate.
+             */
+            if (!networkAvailable) {
+                _state.value = ConnectionState.Connecting
+                withTimeoutOrNull(2_000) { nudge.receive() }
+                continue
+            }
+
             val userId = tokens.userId
             if (userId.isNullOrEmpty()) {
                 // Signed out (or mid-sign-in). Wait instead of dying: this loop used to return

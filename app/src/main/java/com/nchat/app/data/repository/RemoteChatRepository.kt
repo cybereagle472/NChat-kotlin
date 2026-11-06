@@ -2,6 +2,7 @@ package com.nchat.app.data.repository
 
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
 import com.nchat.app.data.model.OutboxEntry
 import com.nchat.app.data.model.Chat
@@ -23,6 +24,7 @@ import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import java.text.SimpleDateFormat
@@ -62,7 +65,23 @@ class RemoteChatRepository(
     /** Last known chat list, painted before the network answers. */
     private val cache: ChatListCache? = null,
     /** Queue of messages that still have to reach the server — see [OutboxStore]. */
-    private val outbox: OutboxStore? = null
+    private val outbox: OutboxStore? = null,
+    /**
+     * Conversations on disk — see [MessageStore].
+     *
+     * The app used to keep messages in memory only, so a restart (or a cold start with no
+     * network) opened every chat empty. Now each conversation paints from the device first and
+     * the server's answer is merged on top, exactly like the chat list and the friend graph.
+     */
+    private val messages: MessageStore? = null,
+    /**
+     * Whether the device has a usable connection right now (`NetworkMonitor`).
+     *
+     * Used to decide between "this failed" and "this is waiting for a network": a send made in
+     * a tunnel or in airplane mode is queued, keeps its clock, and goes out the moment the
+     * socket comes back — it is never shown as an error.
+     */
+    private val online: () -> Boolean = { true }
 ) : ChatRepository {
 
 
@@ -77,6 +96,10 @@ class RemoteChatRepository(
     override val groups: StateFlow<List<Group>> = _groups.asStateFlow()
 
     private val conversations = mutableMapOf<String, MutableStateFlow<List<Message>>>()
+    /** Pending debounced disk writes, one per conversation — see [mirrorToDisk]. */
+    private val writeJobs = mutableMapOf<String, Job>()
+    /** The flow observers that trigger those writes, so a forgotten chat stops observing. */
+    private val mirrorJobs = mutableMapOf<String, Job>()
     private val requested = mutableSetOf<String>()
     private val groupIds = mutableSetOf<String>()
     private val names = mutableMapOf<String, String>()
@@ -129,6 +152,17 @@ class RemoteChatRepository(
     init {
         // Disk first (instant list), then the server's copy replaces it.
         _chats.value = cache?.load().orEmpty()
+        /*
+         * Group ids from the cached list, before `/groups` has answered.
+         *
+         * `isGroup()` decides which endpoint a conversation is read from and whether a queued
+         * send goes out as a group message, and it used to be filled only by the network load.
+         * Offline at start-up that meant a group chat was treated as a 1:1 chat — the wrong
+         * URL, the wrong outbox target — even though the chat itself was on screen from cache.
+         */
+        synchronized(conversations) {
+            groupIds += _chats.value.filter { it.isGroup }.map { it.id }
+        }
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
@@ -156,7 +190,11 @@ class RemoteChatRepository(
                     requested.clear()
                     groupIds.clear()
                 }
+                synchronized(writeJobs) { writeJobs.values.forEach { it.cancel() }; writeJobs.clear() }
+                synchronized(mirrorJobs) { mirrorJobs.values.forEach { it.cancel() }; mirrorJobs.clear() }
                 outbox?.clear()
+                // The next account must not open a conversation and find the previous one's.
+                messages?.clearAll()
             }
         }
         refresh()
@@ -366,10 +404,82 @@ class RemoteChatRepository(
         val stream = stream(chatId)
         val first = synchronized(requested) { requested.add(chatId) }
         if (first) scope.launch {
+            /*
+             * Disk first, network second.
+             *
+             * The order is the whole point: `restoreFromDisk` fills the screen from the last
+             * session before a single byte goes over the wire, so opening a chat is instant and
+             * an offline open is a normal conversation instead of an empty one. The fetch below
+             * then merges the server's rows on top (it never replaces local content).
+             */
+            runCatching { restoreFromDisk(chatId) }
             runCatching { loadConversation(chatId) }
             restorePending(chatId)
         }
         return stream.asStateFlow()
+    }
+
+    /** Paints a conversation from the device, so it opens with history instead of a spinner. */
+    private suspend fun restoreFromDisk(chatId: String) {
+        val store = messages ?: return
+        val owner = tokens.userId.orEmpty()
+        if (owner.isBlank() || chatId.isBlank()) return
+        val cached = withContext(Dispatchers.IO) {
+            runCatching { store.load(owner, chatId) }.getOrDefault(emptyList())
+        }
+        if (cached.isEmpty()) return
+        stream(chatId).update { local ->
+            if (local.isEmpty()) {
+                cached
+            } else {
+                // Anything already on screen (a socket frame that beat the disk read) wins.
+                (local + cached)
+                    .distinctBy { it.clientMessageId ?: it.id }
+                    .sortedBy { it.timestamp }
+                    .takeLast(MESSAGE_PAGE)
+            }
+        }
+    }
+
+    /**
+     * Writes a conversation to disk whenever it changes, debounced.
+     *
+     * Every mutation in this file goes through the state flow returned by [stream] (send,
+     * socket frame, read receipt, edit, reaction, delete), so observing the flow is the one
+     * place that cannot miss a change — and the one place that does not have to be repeated at
+     * twenty call sites. The debounce keeps a burst (a whole refresh, a typing-then-send) to a
+     * single file write, and the write itself is atomic inside [MessageStore].
+     */
+    private fun mirrorToDisk(chatId: String, flow: MutableStateFlow<List<Message>>) {
+        val store = messages ?: return
+        val job = scope.launch {
+            flow.collect { rows ->
+                if (rows.isEmpty()) return@collect
+                val owner = tokens.userId.orEmpty()
+                if (owner.isBlank()) return@collect
+                val snapshot = rows
+                synchronized(writeJobs) {
+                    writeJobs.remove(chatId)?.cancel()
+                    writeJobs[chatId] = scope.launch {
+                        delay(PERSIST_DELAY_MS)
+                        withContext(Dispatchers.IO) {
+                            runCatching { store.save(owner, chatId, snapshot) }
+                        }
+                    }
+                }
+            }
+        }
+        synchronized(mirrorJobs) { mirrorJobs.remove(chatId)?.cancel(); mirrorJobs[chatId] = job }
+    }
+
+    /** Drops one conversation from disk (delete chat, leave/delete group). */
+    private fun forgetOnDisk(chatId: String) {
+        val store = messages ?: return
+        val owner = tokens.userId.orEmpty()
+        if (owner.isBlank()) return
+        synchronized(writeJobs) { writeJobs.remove(chatId)?.cancel() }
+        synchronized(mirrorJobs) { mirrorJobs.remove(chatId)?.cancel() }
+        scope.launch(Dispatchers.IO) { runCatching { store.clear(owner, chatId) } }
     }
 
     override fun refreshConversation(chatId: String) {
@@ -378,7 +488,11 @@ class RemoteChatRepository(
 
     private fun stream(chatId: String): MutableStateFlow<List<Message>> =
         synchronized(conversations) {
-            conversations.getOrPut(chatId) { MutableStateFlow(emptyList()) }
+            conversations.getOrPut(chatId) {
+                // Explicit type argument: `.also {}` breaks the expected-type inference that
+                // `getOrPut` would otherwise give `emptyList()`.
+                MutableStateFlow<List<Message>>(emptyList()).also { flow -> mirrorToDisk(chatId, flow) }
+            }
         }
 
     override fun openChat(personId: String, title: String, isOnline: Boolean): Chat {
@@ -634,8 +748,29 @@ class RemoteChatRepository(
         send: suspend (clientId: String) -> com.nchat.app.network.MessageEnvelope
     ) {
         scope.launch {
-            val created = sendWithRetry { send(localId) }
+            /*
+             * Offline is not a failure.
+             *
+             * The entry is already in the outbox (see `sendMessage`), so the message exists:
+             * it just has to wait. Trying three times against a radio that is off, and then
+             * colouring the bubble red with "Message not sent", is the opposite of what a
+             * messenger does — WhatsApp keeps the clock and sends it when the phone is back.
+             * The same rule applies to a transient answer (5xx / 429 / I/O): the queue retries
+             * it, and only the queue's own give-up (MAX_OUTBOX_ATTEMPTS) or a real 4xx marks
+             * the bubble as failed.
+             */
+            if (!online()) return@launch
+
+            var failure: Throwable? = null
+            val created = sendWithRetry(onFailure = { error -> failure = error }) { send(localId) }
             if (created == null) {
+                val transient = when (val error = failure) {
+                    is ApiException -> error.status >= 500 || error.status == 429
+                    is IOException -> true
+                    null -> true
+                    else -> false
+                }
+                if (transient && outbox != null) return@launch
                 markFailed(chatId, localId)
                 return@launch
             }
@@ -652,6 +787,7 @@ class RemoteChatRepository(
      * rate-limited for real), and repeating it just delays the warning the user needs to see.
      */
     private suspend fun sendWithRetry(
+        onFailure: (Throwable?) -> Unit = {},
         send: suspend () -> com.nchat.app.network.MessageEnvelope?
     ): MessageDto? {
         var attempt = 0
@@ -666,7 +802,11 @@ class RemoteChatRepository(
                 else -> true
             }
             attempt += 1
-            if (!transient || attempt >= SEND_ATTEMPTS) return null
+            if (!transient || attempt >= SEND_ATTEMPTS) {
+                // The caller decides whether this is a real failure or "wait for a network".
+                onFailure(error)
+                return null
+            }
             delay(1_000L * attempt)
         }
     }
@@ -987,6 +1127,7 @@ class RemoteChatRepository(
             groupIds -= groupId
         }
         synchronized(requested) { requested -= groupId }
+        forgetOnDisk(groupId)
         scope.launch { runCatching { api.leaveGroup(groupId) } }
     }
 
@@ -1030,6 +1171,7 @@ class RemoteChatRepository(
             conversations.remove(groupId)
             groupIds.remove(groupId)
         }
+        forgetOnDisk(groupId)
         scope.launch {
             runCatching { api.deleteGroup(groupId) }
             refresh()
@@ -1040,6 +1182,8 @@ class RemoteChatRepository(
         _chats.update { list -> list.filterNot { it.id == chatId } }
         synchronized(conversations) { conversations.remove(chatId) }
         synchronized(requested) { requested -= chatId }
+        // Deleting a chat means deleting its history, on the device as well as on the screen.
+        forgetOnDisk(chatId)
     }
 
     override fun markRead(chatId: String) {
@@ -1706,8 +1850,16 @@ class RemoteChatRepository(
     }
 
     private companion object {
-        /** Messages kept per conversation in memory; matches the page the server returns. */
-        const val MESSAGE_PAGE = 100
+        /**
+         * Messages kept per conversation in memory.
+         *
+         * The server pages 100 at a time, but the disk cache holds 300 — a merge that clamped
+         * back to 100 would throw away history the user could see a moment earlier, which is
+         * the opposite of what a local store is for.
+         */
+        const val MESSAGE_PAGE = 300
+        /** How long a change waits before it is written, so a burst costs one file write. */
+        const val PERSIST_DELAY_MS = 400L
         const val SEND_ATTEMPTS = 3
         /** The reference gives up on a queued message after five tries. */
         const val MAX_OUTBOX_ATTEMPTS = 5

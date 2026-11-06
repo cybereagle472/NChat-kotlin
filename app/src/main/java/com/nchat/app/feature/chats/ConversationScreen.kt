@@ -165,7 +165,17 @@ fun ConversationScreen(
      * the battery; the loop stops the instant the socket is back and on leaving the screen.
      */
     val connection by ServiceLocator.connection.collectAsStateWithLifecycle()
-    LaunchedEffect(chatId, connection) {
+    /*
+     * The device's own internet state.
+     *
+     * The fallback poll below is a network round trip every three seconds; with no radio it is
+     * three seconds of guaranteed failure and a little battery, forever. Offline there is
+     * nothing to poll for anyway — the socket's reconnect (and its resync) is what catches up
+     * the moment the network is back.
+     */
+    val deviceOnline by ServiceLocator.network.collectAsStateWithLifecycle()
+    LaunchedEffect(chatId, connection, deviceOnline) {
+        if (!deviceOnline) return@LaunchedEffect
         if (connection == com.nchat.app.network.ConnectionState.Connected) return@LaunchedEffect
         while (true) {
             delay(3_000)
@@ -303,6 +313,7 @@ fun ConversationScreen(
                 chat = chat,
                 groupMemberCount = group?.memberCount,
                 typingMember = typingMember,
+                offline = !deviceOnline,
                 onBack = onBack,
                 onStartCall = { video -> callKind = if (video) CallKind.Video else CallKind.Audio },
                 onOpenProfile = {
@@ -1132,10 +1143,15 @@ private fun ConversationHeader(
     typingMember: String?,
     onBack: () -> Unit,
     onStartCall: (video: Boolean) -> Unit,
-    onOpenProfile: () -> Unit
+    onOpenProfile: () -> Unit,
+    /** The device has no internet right now — see `NetworkMonitor`. */
+    offline: Boolean = false
 ) {
-    val isActivity = typingMember != null || chat?.isTyping == true
+    val isActivity = !offline && (typingMember != null || chat?.isTyping == true)
     val status = when {
+        // No radio: nothing on screen is live, and saying "online" would be a guess from
+        // whatever the last refresh said. WhatsApp says this same thing in the header.
+        offline -> "waiting for network"
         typingMember != null -> "$typingMember typing…"
         chat?.isTyping == true -> "typing…"
         chat?.isGroup == true -> groupMemberCount?.let { "$it members · tap for info" } ?: "group chat"
