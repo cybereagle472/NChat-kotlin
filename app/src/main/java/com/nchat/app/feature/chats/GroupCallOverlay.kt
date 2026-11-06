@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Mic
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.nchat.app.core.designsystem.NcSpace
+import com.nchat.app.data.repository.GroupCallInvite
 import com.nchat.app.data.repository.GroupCallPeer
 import com.nchat.app.data.repository.GroupCallState
 import com.nchat.app.data.repository.GroupCallUi
@@ -281,3 +283,77 @@ private fun GroupControl(
 
 private fun clock(seconds: Long): String =
     String.format(java.util.Locale.US, "%02d:%02d", seconds / 60, seconds % 60)
+
+/**
+ * `group-call:incoming` — somebody started a call in one of our groups.
+ *
+ * A card, not a full-screen ring: a group call has no single person being called, so blocking the
+ * whole app to announce one would be wrong. Joining is one tap; ignoring it costs nothing and the
+ * call carries on without us.
+ */
+@Composable
+fun GroupCallInviteDialog(
+    invite: GroupCallInvite,
+    onJoin: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(Color(0xFF131A24))
+                .padding(horizontal = NcSpace.lg, vertical = NcSpace.lg),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1F8A5B)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Groups,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            Spacer(modifier = Modifier.size(NcSpace.md))
+            Text(
+                text = invite.groupName,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.size(4.dp))
+            Text(
+                text = "${invite.fromName} started a ${if (invite.video) "video" else "voice"} call",
+                color = Color(0xCCFFFFFF),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.size(NcSpace.lg))
+            Row(horizontalArrangement = Arrangement.spacedBy(NcSpace.lg)) {
+                GroupControl(
+                    icon = Icons.Rounded.CallEnd,
+                    label = "Not now",
+                    background = Color(0x33FFFFFF),
+                    tint = Color.White,
+                    onClick = onDismiss
+                )
+                GroupControl(
+                    icon = Icons.Rounded.Call,
+                    label = "Join",
+                    background = Color(0xFF1F8A5B),
+                    tint = Color.White,
+                    onClick = onJoin
+                )
+            }
+        }
+    }
+}

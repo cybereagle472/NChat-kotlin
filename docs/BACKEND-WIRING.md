@@ -186,7 +186,15 @@ To close this properly the worker needs a block that is separate from friendship
 
 ### 10.2 Group calls
 
-`routes/groupCalls.ts` (`POST /group-calls`, `/:id/join|signal|decline|leave`) is not wired.
+**Status: wired server-side on 2026-11-03** (`nchat-friends` PR #11 added
+`worker/src/routes/groupCalls.ts`, `migrations/0005_group_calls.sql`, and the
+`app.route('/group-calls', …)` registration). The route set is
+`POST /group-calls` (start-or-join), `/:id/join`, `/:id/signal`, `/:id/decline`, `/:id/leave`,
+with `group-call:incoming|signal|participant-joined|participant-left|participant-declined|ended`
+events pushed to each participant's personal room. The app side landed in 1.0.56 and was aligned
+to the real field names in 1.0.57 — see `CallRepository` + `GroupCallSession`.
+
+The original note (kept for history):
 The reference web client does not implement group calls either — there is no working
 behaviour to port, and the user's own statement of the reference is "fully working except
 group calls". The group-chat call button therefore says so instead of opening the old
