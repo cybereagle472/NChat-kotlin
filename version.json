@@ -1,6 +1,6 @@
 {
-  "versionCode": 58,
-  "versionName": "1.0.50",
+  "versionCode": 59,
+  "versionName": "1.0.51",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.50 — the chat header grew the tools WhatsApp puts there. Search the open conversation with the magnifier: matches highlight in purple, and tapping one jumps the timeline to that bubble, which is briefly ringed. Long-press a message and choose Select to tick several — the header turns into a count with Forward, Copy, Select all and Delete (delete for me or for everyone). Star a message and it keeps a small star next to its time and appears under ⋮ → Starred messages, with its text saved so it survives the sender deleting the original. Half-written messages are now remembered per chat and shown as a red Draft on the chat row. Opening a photo gives you the whole chat's photos: swipe sideways, pinch to zoom, double-tap to fit."
+  "releaseNotes": "NChat 1.0.51 — notifications, finally. A message from someone else now rings the phone with a proper WhatsApp-style notification: one channel per chat (so Android's own settings can mute a single person or group), the last few lines stacked with the sender's name, a tap that opens that exact conversation, and Reply directly from the shade — the answer is queued through the same outbox the composer uses, so it still sends when the phone is offline. A muted chat arrives silently, the chat you are looking at never rings at you, and opening a chat clears its notification. Android 13 asks for the notification permission on first launch. Includes 1.0.49's swipe-to-reply, double-tap ❤️ and voice speed, and 1.0.50's in-chat search, multi-select, starred messages, drafts and photo viewer."
 }

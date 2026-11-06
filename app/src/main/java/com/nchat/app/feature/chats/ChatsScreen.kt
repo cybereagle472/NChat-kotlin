@@ -141,6 +141,8 @@ fun ChatsScreen(
                         },
                         onMarkRead = {
                             viewModel.markRead(chat.id)
+                            // Reading the chat clears its notification, like WhatsApp.
+                            ServiceLocator.notifications.cancel(chat.id)
                             NcToaster.show("Marked as read")
                         },
                         onDelete = { pendingDelete = chat }

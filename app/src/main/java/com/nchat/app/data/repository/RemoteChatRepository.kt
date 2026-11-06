@@ -91,7 +91,12 @@ class RemoteChatRepository(
      * Voice clips waiting to be uploaded — a recording made offline is queued with its audio
      * instead of dying with the failed request. See [VoiceClipStore].
      */
-    private val voiceClips: VoiceClipStore? = null
+    private val voiceClips: VoiceClipStore? = null,
+    /**
+     * A message from somebody else has just landed (socket event). The platform layer turns this
+     * into a system notification; the repository stays free of Android notification code.
+     */
+    private val onIncoming: ((Chat, Message) -> Unit)? = null
 ) : ChatRepository {
 
 
@@ -1604,6 +1609,7 @@ class RemoteChatRepository(
                 val chatId = dto.senderId
                 ingest(chatId, dto)
                 bumpPreview(chatId, dto)
+                notifyIncoming(chatId, dto)
             }
 
             "message:edit" -> {
@@ -1684,6 +1690,7 @@ class RemoteChatRepository(
                 }
                 ingest(chatId, dto)
                 bumpPreview(chatId, dto)
+                notifyIncoming(chatId, dto)
             }
 
             "group-message:delete" -> {
@@ -1906,6 +1913,20 @@ class RemoteChatRepository(
      * string per call site. That is what stops a photo reading "https://…", a voice note
      * saying nothing about its length, and a group never saying who spoke.
      */
+    /**
+     * Hands a freshly received message to [onIncoming].
+     *
+     * The chat is read from the list the same event just updated, so the notification carries the
+     * real title and the mute flag without another lookup. A message that already arrived as part
+     * of a full reload (offline catch-up) never comes through here — that is deliberate, or every
+     * reconnect would ring for the whole backlog.
+     */
+    private fun notifyIncoming(chatId: String, dto: MessageDto) {
+        val callback = onIncoming ?: return
+        val chat = _chats.value.firstOrNull { it.id == chatId } ?: return
+        runCatching { callback(chat, dto.toModel(chatId)) }
+    }
+
     private fun preview(chatId: String, message: Message, state: DeliveryState) {
         val line = previewLine(message, isGroup(chatId))
         _chats.update { list ->

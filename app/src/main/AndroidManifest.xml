@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- New-message notifications (`NcNotifications`). Android 13+ asks the user at runtime. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- A phone without a camera can still make voice calls; a tablet without a mic cannot
          call at all, but it can still chat, so neither feature is required. -->
@@ -39,6 +41,7 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -46,6 +49,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Inline "Reply" from the notification shade. Not exported: only the PendingIntent the
+             app itself builds can start it. -->
+        <receiver
+            android:name=".data.notifications.NotificationReplyReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

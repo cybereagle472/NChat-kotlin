@@ -236,6 +236,16 @@ fun ConversationScreen(
     val starredIds = remember(starredAll, chatId) {
         starredAll.filter { it.chatId == chatId }.map { it.messageId }.toSet()
     }
+    /*
+     * While this screen is up, this chat's notifications are pointless — the messages are right
+     * here. The marker also cancels whatever was already in the shade, so opening a chat from a
+     * notification clears it the way WhatsApp does.
+     */
+    DisposableEffect(chatId) {
+        ServiceLocator.notifications.activeChatId = chatId
+        ServiceLocator.notifications.cancel(chatId)
+        onDispose { ServiceLocator.notifications.activeChatId = null }
+    }
     // The ring around a jumped-to message fades by itself.
     LaunchedEffect(highlightId) {
         if (highlightId != null) {
