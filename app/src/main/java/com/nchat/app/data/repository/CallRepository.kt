@@ -222,7 +222,8 @@ class RemoteCallRepository(
     // ---------------------------------------------------------------- group calls
 
     private val _groupCall = MutableStateFlow<GroupCallUi?>(null)
-    override val groupInvite = MutableStateFlow<GroupCallInvite?>(null)
+    private val _groupInvite = MutableStateFlow<GroupCallInvite?>(null)
+    override val groupInvite: StateFlow<GroupCallInvite?> = _groupInvite.asStateFlow()
     override val groupCall: StateFlow<GroupCallUi?> = _groupCall.asStateFlow()
 
     private var groupSession: GroupCallSession? = null
