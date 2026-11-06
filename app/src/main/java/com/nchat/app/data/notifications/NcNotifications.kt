@@ -232,6 +232,30 @@ class NcNotifications(private val context: Context) {
         const val EXTRA_CHAT_TITLE = "com.nchat.app.extra.CHAT_TITLE"
         const val KEY_REPLY = "com.nchat.app.extra.REPLY_TEXT"
 
+        /**
+         * The foreground service's own channel: the quiet "NChat · connected" line.
+         *
+         * `IMPORTANCE_MIN` keeps it collapsed at the bottom of the shade with no icon, no sound
+         * and no vibration — visible enough to be honest about what the app is doing, quiet
+         * enough that it is not a notification anybody has to deal with.
+         */
+        fun backgroundChannel(context: Context): String {
+            val id = "background"
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return id
+            val system = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return id
+            if (system.getNotificationChannel(id) == null) {
+                system.createNotificationChannel(
+                    NotificationChannel(id, "Background connection", NotificationManager.IMPORTANCE_MIN).apply {
+                        description = "Keeps NChat connected so messages arrive while the app is closed"
+                        setShowBadge(false)
+                        enableVibration(false)
+                        setSound(null, null)
+                    }
+                )
+            }
+            return id
+        }
+
         private const val CHAT_PREFIX = "chat_"
         private const val GROUP_CHANNEL = "messages"
         private const val GROUP_MESSAGES = "com.nchat.app.MESSAGES"

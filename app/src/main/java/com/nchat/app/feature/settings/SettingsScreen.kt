@@ -76,6 +76,7 @@ import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.pressFeedback
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.ServiceLocator
+import com.nchat.app.data.push.BackgroundSyncService
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.feature.profile.ProfileAvatar
 import com.nchat.app.feature.profile.ProfileScreen
@@ -132,7 +133,16 @@ fun SettingsScreen(
                 onCallsChange = preferences::setCallNotifications,
                 onPreviewChange = preferences::setShowPreview,
                 onSoundChange = preferences::setSound,
-                onVibrateChange = preferences::setVibrate
+                onVibrateChange = preferences::setVibrate,
+                onBackgroundChange = { enabled ->
+                    preferences.setBackgroundNotifications(enabled)
+                    // Start or stop the service immediately: a switch that only takes effect at
+                    // the next launch is a switch that looks broken.
+                    ServiceLocator.applyBackgroundSync()
+                },
+                onBatterySettings = {
+                    BackgroundSyncService.requestBatteryExemption(context)
+                }
             )
             return
         }

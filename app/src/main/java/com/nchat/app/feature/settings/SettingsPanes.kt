@@ -367,7 +367,9 @@ fun NotificationsPane(
     onCallsChange: (Boolean) -> Unit,
     onPreviewChange: (Boolean) -> Unit,
     onSoundChange: (Boolean) -> Unit,
-    onVibrateChange: (Boolean) -> Unit
+    onVibrateChange: (Boolean) -> Unit,
+    onBackgroundChange: (Boolean) -> Unit,
+    onBatterySettings: () -> Unit
 ) {
     SettingsPaneScaffold(
         title = "Notifications",
@@ -399,6 +401,28 @@ fun NotificationsPane(
                     subtitle = "Ring for incoming voice and video calls",
                     checked = settings.calls,
                     onCheckedChange = onCallsChange,
+                    last = true
+                )
+            }
+        }
+
+        /*
+         * The one row that decides whether NChat behaves like a messenger at all when it is not
+         * on screen. It is a switch rather than a hidden default because the cost is visible: a
+         * permanent (quiet) line in the shade, and a little battery.
+         */
+        item(key = "background") {
+            PaneSection(title = "While the app is closed") {
+                SwitchRow(
+                    title = "Deliver in the background",
+                    subtitle = "Keep NChat connected — the only way to get messages without Google",
+                    checked = settings.background,
+                    onCheckedChange = onBackgroundChange
+                )
+                SettingRow(
+                    title = "Battery usage",
+                    subtitle = "Let NChat stay awake so alerts are not delayed",
+                    onClick = onBatterySettings,
                     last = true
                 )
             }

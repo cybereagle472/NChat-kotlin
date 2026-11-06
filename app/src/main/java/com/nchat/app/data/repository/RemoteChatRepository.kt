@@ -1949,7 +1949,18 @@ class RemoteChatRepository(
      */
     private fun notifyIncoming(chatId: String, dto: MessageDto) {
         val callback = onIncoming ?: return
-        val chat = _chats.value.firstOrNull { it.id == chatId } ?: return
+        val chat = _chats.value.firstOrNull { it.id == chatId }
+        if (chat == null) {
+            /*
+             * The first message of a conversation this device has never listed (a new friend, or
+             * a phone that was closed for a week). Refreshing brings the row in, so the *second*
+             * message notifies; without it the chat stayed invisible to the notifier until the
+             * app was opened by hand, which is exactly the case a background connection exists to
+             * cover.
+             */
+            scope.launch { runCatching { refresh() } }
+            return
+        }
         runCatching { callback(chat, dto.toModel(chatId)) }
     }
 

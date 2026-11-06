@@ -12,6 +12,15 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- New-message notifications (`NcNotifications`). Android 13+ asks the user at runtime. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Background delivery without Firebase: `BackgroundSyncService` holds the realtime socket
+         so messages arrive while the app is closed. `dataSync` is the type that matches "keeping
+         the user's own data up to date". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Optional, asked for through the system dialog only when the user taps the row in
+         Settings ▸ Notifications. Nothing works differently if it is refused, it just gets
+         frozen in doze sooner. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- "Send my location" (`Locator`). Coarse is enough to place somebody in a city; fine is
          asked for as well so the fix can be the accurate one when the user allows it. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -61,6 +70,14 @@
         <receiver
             android:name=".data.notifications.NotificationReplyReceiver"
             android:exported="false" />
+
+        <!-- The connection that makes notifications arrive while the app is closed. Started by
+             `ServiceLocator.applyBackgroundSync()`; `START_STICKY` so a kill by the system is
+             followed by a restart rather than by silence. -->
+        <service
+            android:name=".data.push.BackgroundSyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

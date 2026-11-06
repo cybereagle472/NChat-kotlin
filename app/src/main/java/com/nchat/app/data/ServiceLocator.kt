@@ -16,6 +16,7 @@ import com.nchat.app.data.local.PinnedMessageStore
 import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
 import com.nchat.app.data.notifications.NcNotifications
+import com.nchat.app.data.push.BackgroundSyncService
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.UserProfile
@@ -182,6 +183,23 @@ object ServiceLocator {
      */
     fun ensureRealtime() {
         socket.ensureConnected()
+    }
+
+    /**
+     * Starts or stops the background connection to match the settings and the session.
+     *
+     * Called on launch, when the notification switch changes, and when the session ends. The
+     * decision lives here rather than in the UI so the answer cannot differ between the settings
+     * screen, a cold start and a sign-out.
+     */
+    fun applyBackgroundSync() {
+        val enabled = runCatching { preferencesRepository.notifications.value.background }
+            .getOrDefault(true)
+        if (enabled && tokens.signedIn.value) {
+            BackgroundSyncService.start(requireContext())
+        } else {
+            BackgroundSyncService.stop(requireContext())
+        }
     }
 
     fun disconnectRealtime() {
