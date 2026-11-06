@@ -227,7 +227,8 @@ fun MessageBubble(
                     mine = mine,
                     mediaUrl = message.mediaUrl,
                     storedWaveform = message.thumbnailUrl,
-                    uploadProgress = message.uploadProgress
+                    uploadProgress = message.uploadProgress,
+                    onLongPress = onLongPress
                 )
                 MessageKind.Document -> DocumentContent(
                     name = message.fileName ?: "document.pdf",
@@ -652,7 +653,15 @@ private fun VoiceContent(
      */
     storedWaveform: String? = null,
     /** 0f…1f while the clip is still going up to the server; null once it has arrived. */
-    uploadProgress: Float? = null
+    uploadProgress: Float? = null,
+    /**
+     * Long press on the play button opens the menu.
+     *
+     * The waveform does not need it: it consumes the gesture, and the bubble's own
+     * `combinedClickable` already turns a hold into the same menu — calling it from both would
+     * open the sheet twice.
+     */
+    onLongPress: () -> Unit = {}
 ) {
     /*
      * The clip, as a file on this device.
