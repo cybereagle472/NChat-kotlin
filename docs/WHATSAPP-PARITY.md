@@ -40,7 +40,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | Create / rename / description / avatar | ✅ | ✅ | `GroupInfoScreen` |
 | Add / remove members, promote / demote, leave, delete | ✅ | ✅ | `GroupInfoScreen` |
 | Typing per member, sender avatars, member count | ✅ | ✅ | `ConversationHeader` |
-| **Group voice / video call** | ✅ | ❌ stubbed toast; `NChatApi` already has the endpoints — planned 1.0.53 (mesh + N-party `CallOverlay`) | `CallOverlay` |
+| **Group voice call** | ✅ | ✅ 1.0.56 — mesh: one `PeerConnection` per participant, perfect-negotiation glare handling, roster overlay | `GroupCallSession` |
+| Group **video** call | ✅ | ❌ next — one camera feeding several encoders is its own problem | — |
 | Invite link / QR | ✅ | ❌ needs a backend endpoint (only "add existing friends") | — |
 | @mentions / @all | ✅ | 🟡 1.0.54 — picker + `@Name` highlighting from the roster (wire stays plain text, so no "you were mentioned" ring) | `ChatTextFormat` |
 | Reply privately / keep in chat | ✅ | 🟡 1.0.54 — forwards the message into the author's DM (a group screen cannot pre-fill another chat's composer) | `ConversationScreen` |
@@ -79,9 +80,9 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
-- **Next (1.0.56).** Group voice/video calls — mesh over the existing `WebRtcEngine` plus an
-  N-party `CallOverlay`; the API endpoints and the single-peer engine are already there, the
-  work is multiple peer connections and the participant grid.
+- **1.0.56 — shipped.** Group **voice** calls (mesh, perfect negotiation, roster overlay).
+- **Next (1.0.57).** Group **video** calls (shared camera into several encoders + tile grid), then
+  media auto-download rules.
 - **Then.** Media auto-download rules + storage manager; and the rows marked ⛔, which need the
   worker to grow columns or endpoints first (invite links, mention delivery, admin-restricted
   groups, disappearing messages). E2EE and multi-device stay separate protocol projects.

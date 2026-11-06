@@ -4,11 +4,16 @@ import android.content.Context
 import android.media.AudioManager
 import android.util.Log
 import com.nchat.app.core.designsystem.NcToaster
+import androidx.compose.runtime.Immutable
+import com.nchat.app.data.calls.GroupCallSession
 import com.nchat.app.data.calls.WebRtcEngine
+import com.nchat.app.data.calls.WebRtcFactory
 import com.nchat.app.data.model.ActiveCall
 import com.nchat.app.data.model.CallRecord
 import com.nchat.app.data.model.CallState
 import com.nchat.app.network.CallDto
+import com.nchat.app.network.ApiException
+import com.nchat.app.network.GroupCallParticipantDto
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.NcJson
@@ -58,8 +63,51 @@ import java.util.TimeZone
  * `everConnectedRef`, a 20 s connecting timeout and a 6 s disconnect grace for exactly this).
  * A call that never connects is reported as failed instead of sitting on "Connecting…".
  */
+/** One participant of a group call, as the overlay draws them. */
+@Immutable
+data class GroupCallPeer(
+    val id: String,
+    val name: String,
+    /** That participant's audio is flowing. */
+    val connected: Boolean = false
+)
+
+enum class GroupCallState { Connecting, Live, Ended }
+
+/** The group call this app is in. Null when there is none. */
+@Immutable
+data class GroupCallUi(
+    val id: String,
+    val groupId: String,
+    val groupName: String,
+    val peers: List<GroupCallPeer> = emptyList(),
+    val state: GroupCallState = GroupCallState.Connecting,
+    val micMuted: Boolean = false,
+    val speakerOn: Boolean = true,
+    val startedAt: Long = 0L,
+    val note: String? = null
+) {
+    val connectedCount: Int get() = peers.count { it.connected }
+}
+
 interface CallRepository {
     val history: StateFlow<List<CallRecord>>
+
+    /** The group call in progress, or null. Drives [com.nchat.app.feature.chats.GroupCallOverlay]. */
+    val groupCall: StateFlow<GroupCallUi?>
+
+    /**
+     * Starts a group call (`POST /group-calls`) and joins it.
+     *
+     * A server without the route answers 404/405; that is reported as "group calls aren't enabled
+     * on this server" instead of ringing into nothing.
+     */
+    fun startGroupCall(groupId: String, groupName: String, video: Boolean)
+
+    /** Leaves the group call: tells the server, closes every peer, and clears the screen. */
+    fun leaveGroupCall()
+
+    fun toggleGroupMic()
 
     /** The call this app is ringing/connected in, or null. Drives the call screen. */
     val active: StateFlow<ActiveCall?>
@@ -143,6 +191,17 @@ class RemoteCallRepository(
 
     /** Candidates gathered before the server gave us a call id. */
     private val pendingCandidates = mutableListOf<JsonObject>()
+
+    // ---------------------------------------------------------------- group calls
+
+    private val _groupCall = MutableStateFlow<GroupCallUi?>(null)
+    override val groupCall: StateFlow<GroupCallUi?> = _groupCall.asStateFlow()
+
+    private var groupSession: GroupCallSession? = null
+    private var groupMicMuted = false
+    private var groupCallId: String? = null
+    /** Signals that arrived before the session existed (the join response races the socket). */
+    private val earlyGroupSignals = mutableListOf<Pair<String, JsonObject>>()
 
     private var dialJob: Job? = null
     private var answerJob: Job? = null
@@ -359,6 +418,202 @@ class RemoteCallRepository(
     override fun flipCamera() {
         engine?.flipCamera()
         _active.update { it?.copy(frontCamera = engine?.isFrontCamera ?: it.frontCamera) }
+    }
+
+    // -------------------------------------------------------------- group calls
+
+    override fun startGroupCall(groupId: String, groupName: String, video: Boolean) {
+        if (groupId.isBlank()) return
+        if (_active.value != null || _groupCall.value != null) {
+            NcToaster.show("You're already on a call")
+            return
+        }
+        scope.launch {
+            val envelope = runCatching { api.startGroupCall(groupId, if (video) "video" else "audio") }
+                .getOrElse { error ->
+                    // No group-call support on this server is a *different* message from "no
+                    // network": one is worth retrying, the other never will be.
+                    val unsupported = (error as? ApiException)?.let { it.status == 404 || it.status == 405 } == true
+                    NcToaster.show(
+                        if (unsupported) "This server doesn't support group calls yet"
+                        else "Couldn't start the group call — check your connection"
+                    )
+                    return@launch
+                }
+            val call = envelope.call ?: return@launch
+            joinGroupSession(
+                callId = call.id,
+                groupId = groupId,
+                groupName = call.groupName ?: groupName,
+                participants = envelope.participants,
+                video = video
+            )
+        }
+    }
+
+    private suspend fun joinGroupSession(
+        callId: String,
+        groupId: String,
+        groupName: String,
+        participants: List<GroupCallParticipantDto>,
+        video: Boolean
+    ) {
+        if (!WebRtcFactory.ensure(context)) {
+            NcToaster.show("This device can't make calls")
+            return
+        }
+        val others = participants.filter { it.userId.isNotBlank() && it.userId != myId }
+        val session = withContext(Dispatchers.Default) {
+            GroupCallSession(
+                appContext = context.applicationContext,
+                callId = callId,
+                myId = myId,
+                iceServers = iceServers(),
+                listener = groupListener
+            )
+        }
+        groupSession = session
+        groupCallId = callId
+        groupMicMuted = false
+        _groupCall.value = GroupCallUi(
+            id = callId,
+            groupId = groupId,
+            groupName = groupName,
+            peers = others.map { participant ->
+                GroupCallPeer(
+                    id = participant.userId,
+                    name = participant.profile?.fullName
+                        ?: participant.profile?.username
+                        ?: "Participant"
+                )
+            },
+            speakerOn = true
+        )
+        applyAudioRoute(true)
+        requestAudioFocus()
+        // We just joined, so we are the new side in this mesh: offer to everybody already here.
+        others.forEach { participant -> session.addPeer(participant.userId, offer = true) }
+        // Anything that raced the join response is replayed now that a session exists.
+        val early = synchronized(earlyGroupSignals) {
+            val copy = earlyGroupSignals.toList()
+            earlyGroupSignals.clear()
+            copy
+        }
+        early.forEach { (from, payload) -> session.handleSignal(from, payload) }
+    }
+
+    override fun leaveGroupCall() {
+        val current = _groupCall.value ?: return
+        val session = groupSession
+        val id = groupCallId
+        groupSession = null
+        groupCallId = null
+        _groupCall.value = null
+        applyAudioRoute(null)
+        abandonAudioFocus()
+        scope.launch {
+            session?.close()
+            if (id != null) runCatching { api.leaveGroupCall(id) }
+        }
+    }
+
+    override fun toggleGroupMic() {
+        groupMicMuted = !groupMicMuted
+        groupSession?.setMicMuted(groupMicMuted)
+        _groupCall.update { it?.copy(micMuted = groupMicMuted) }
+    }
+
+    private val groupListener = object : GroupCallSession.Listener {
+        override fun onSignal(peerId: String, payload: JsonObject) {
+            val id = groupCallId ?: return
+            scope.launch { runCatching { api.signalGroupCall(id, peerId, payload) } }
+        }
+
+        override fun onPeerConnected(peerId: String) {
+            val current = _groupCall.value ?: return
+            val peer = current.peers.firstOrNull { it.id == peerId } ?: return
+            val peers = current.peers.map { if (it.id == peerId) peer.copy(connected = true) else it }
+            val firstConnection = current.state == GroupCallState.Connecting
+            _groupCall.value = current.copy(
+                peers = peers,
+                state = GroupCallState.Live,
+                startedAt = if (firstConnection) System.currentTimeMillis() else current.startedAt
+            )
+        }
+
+        override fun onPeerFailed(peerId: String) {
+            val current = _groupCall.value ?: return
+            _groupCall.value = current.copy(
+                peers = current.peers.map {
+                    if (it.id == peerId) it.copy(connected = false) else it
+                },
+                note = "A participant lost connection"
+            )
+        }
+
+        override fun onError(message: String) {
+            NcToaster.show(message)
+        }
+    }
+
+    /**
+     * A socket event that belongs to the group call.
+     *
+     * The worker's group-call event names are not part of the collected contract, so they are
+     * matched by *shape* rather than by an exact string: any `…signal…` event that carries our
+     * call id and a sender is treated as signalling, and `…join…` / `…leave…` events add or drop a
+     * participant. Nothing here ever throws — an unrecognised event is ignored.
+     */
+    private fun handleGroupEvent(event: RealtimeEvent) {
+        val callId = groupCallId ?: return
+        val eventCall = event.string("callId")
+            ?: event.string("call_id")
+            ?: event.string("groupCallId")
+            ?: event.string("group_call_id")
+        if (eventCall != null && eventCall != callId) return
+        val from = event.string("from")
+            ?: event.string("from_id")
+            ?: event.string("senderId")
+            ?: event.string("sender_id")
+        val type = event.type.lowercase()
+        val payload = event.objectOrNull("payload") ?: event.objectOrNull("data") ?: event.json
+
+        when {
+            type.contains("signal") -> if (from != null && payload != null) {
+                val session = groupSession
+                if (session == null) {
+                    synchronized(earlyGroupSignals) { earlyGroupSignals.add(from to payload) }
+                } else {
+                    session.handleSignal(from, payload)
+                }
+            }
+
+            type.contains("join") && type.contains("group") -> if (from != null && from != myId) {
+                addGroupPeer(from, event.string("name") ?: "Participant")
+            }
+
+            type.contains("leave") && type.contains("group") -> if (from != null) {
+                val current = _groupCall.value ?: return
+                _groupCall.value = current.copy(peers = current.peers.filterNot { it.id == from })
+                groupSession?.removePeer(from)
+            }
+
+            type.contains("end") && type.contains("group") -> {
+                _groupCall.update { it?.copy(state = GroupCallState.Ended, note = "Call ended") }
+                val session = groupSession
+                groupSession = null
+                groupCallId = null
+                scope.launch { session?.close() }
+                applyAudioRoute(null)
+            }
+        }
+    }
+
+    private fun addGroupPeer(peerId: String, name: String) {
+        val current = _groupCall.value ?: return
+        if (current.peers.any { it.id == peerId }) return
+        _groupCall.value = current.copy(peers = current.peers + GroupCallPeer(id = peerId, name = name))
+        // The newcomer will offer to us; a peer connection is created when its first signal lands.
     }
 
     // -------------------------------------------------------------- media engine
@@ -601,6 +856,13 @@ class RemoteCallRepository(
                 }
                 refresh()
             }
+
+            /*
+             * Group calls. Their event names are not part of the collected contract, so every
+             * remaining event is offered to `handleGroupEvent`, which matches on shape (a call id
+             * plus `signal` / `join` / `leave` / `end` in the name) and ignores everything else.
+             */
+            else -> handleGroupEvent(event)
         }
     }
 

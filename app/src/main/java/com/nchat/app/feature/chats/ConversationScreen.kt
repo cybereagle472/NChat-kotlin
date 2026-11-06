@@ -894,12 +894,22 @@ fun ConversationScreen(
          * machine lives in `CallRepository` and the overlay is drawn once by `HomeRoot`.
          */
         callKind?.let { kind ->
-            // Group calls are not part of the reference backend's working set (the web app skips
-            // them too); say so instead of opening a screen that cannot connect.
             if (chat?.isGroup == true || group != null) {
-                LaunchedEffect(kind) { callKind = null }
-                LaunchedEffect(Unit) {
-                    NcToaster.show("Group calls aren't available yet")
+                // A group call is a mesh: `startGroupCall` creates it on the server, joins it and
+                // offers to everybody already there. Voice only for now — see GroupCallSession.
+                LaunchedEffect(kind) {
+                    val video = kind == CallKind.Video
+                    callKind = null
+                    callGate(false) {
+                        ServiceLocator.callRepository.startGroupCall(
+                            groupId = chatId,
+                            groupName = chatTitle,
+                            video = false
+                        )
+                    }
+                    if (video) {
+                        NcToaster.show("Group video calls are coming — this one is voice only")
+                    }
                 }
             } else {
                 LaunchedEffect(kind) {
