@@ -1,7 +1,9 @@
 package com.nchat.app.data.repository
 
 import com.nchat.app.data.local.BlockedContactsStore
+import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.network.ApiException
+import com.nchat.app.network.ApiLog
 import com.nchat.app.data.model.BlockedContact
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
@@ -46,7 +48,20 @@ class RemoteFriendRepository(
     private val socket: NChatSocket,
     private val scope: CoroutineScope,
     /** The device's own block list — see the class comment on [BlockedContactsStore]. */
-    private val blockedStore: BlockedContactsStore
+    private val blockedStore: BlockedContactsStore,
+    /** Last known graph on disk, so a cold start cannot show an empty Friends tab. */
+    private val cache: FriendGraphCache? = null,
+    /**
+     * The 1:1 conversations the chat list currently holds.
+     *
+     * `/messages/chats` is the *same* `friendships` JOIN as `/friends`
+     * (`worker/src/routes/messages.ts:83-90`, every row stamped `status: 'accepted'`), so the
+     * server itself considers those people friends. Feeding them in here means the Friends tab
+     * can never be emptier than the Chats tab — in the reference web app that is structurally
+     * guaranteed, because its chat list is *derived* from the friend list; ours asks two
+     * endpoints and they have to agree.
+     */
+    private val chatPeers: () -> List<Friend> = { emptyList() }
 ) : FriendRepository {
 
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
@@ -73,6 +88,9 @@ class RemoteFriendRepository(
     private val _graphError = MutableStateFlow<String?>(null)
     override val graphError: StateFlow<String?> = _graphError.asStateFlow()
 
+    private val _graphNote = MutableStateFlow<String?>(null)
+    override val graphNote: StateFlow<String?> = _graphNote.asStateFlow()
+
     /** One reload at a time: two overlapping loads used to fight over [_friends]. */
     private val reloadMutex = Mutex()
 
@@ -90,6 +108,32 @@ class RemoteFriendRepository(
         // The block list survives restarts (it lives on the device, not on the server).
         _blockedPeople.value = blockedStore.load().sortedByDescending { it.blockedAt }
         _blockedIds.value = _blockedPeople.value.map { it.id }.toSet()
+        /*
+         * Disk first, exactly like the chat list.
+         *
+         * The graph used to be memory-only, so any start-up in which `/friends` did not answer
+         * (cold start with no data, a 502 at the edge, a 401 that needed a token refresh)
+         * opened the Friends tab on "No friends yet" — while Chats, painted from its cache,
+         * showed the very same people. Restoring the last good answer removes that asymmetry;
+         * the server's next reply still replaces it wholesale.
+         */
+        val restored = cache?.load(myId).orEmpty().filter { it.id.isNotBlank() && it.id != myId }
+        if (restored.isNotEmpty()) {
+            _friends.value = restored
+        }
+        scope.launch {
+            tokens.signedIn.collect { signedIn ->
+                if (signedIn) return@collect
+                // Signing out must not leave the previous account's graph (or its file) behind.
+                _friends.value = emptyList()
+                _graphError.value = null
+                _graphNote.value = null
+                _pendingSent.value = emptySet()
+                incoming = emptyList()
+                outgoing = emptyList()
+                cache?.clear()
+            }
+        }
         scope.launch {
             socket.events.collect { event ->
                 /*
@@ -150,7 +194,20 @@ class RemoteFriendRepository(
     }
 
     override fun refresh() {
-        scope.launch { runCatching { reload() } }
+        scope.launch {
+            /*
+             * A throw escaping `reload()` used to be swallowed whole (`runCatching { … }` with
+             * no failure branch), which is the one way this screen could look empty with no
+             * error at all: `/friends` answered fine, the merge threw halfway through, the
+             * graph was never published and nothing was reported. Every failure is now named,
+             * logged and shown.
+             */
+            runCatching { reload() }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                ApiLog.record("MERGE", "/friends", null, 0L, error.describeAction())
+                _graphError.value = "Couldn't build your friends list — ${error.describeAction()}"
+            }
+        }
     }
 
     override fun accept(id: String) {
@@ -320,6 +377,19 @@ class RemoteFriendRepository(
     }
 
     private suspend fun reload() = reloadMutex.withLock {
+        val me = myId
+        /*
+         * What this device already knew, before anything is replaced.
+         *
+         * Two uses. First, a row can arrive without a readable profile — the id still names a
+         * real person, and the name we showed a moment ago is better than dropping them.
+         * Second, and more important: a failed `/friends` must never delete friends. The graph
+         * used to be rebuilt from whatever came back, so one 502 (or one 401 that resolved
+         * into a retry) replaced a full friend list with "nobody" until the next successful
+         * load — which is exactly what a disappearing Friends tab looks like.
+         */
+        val previous = _friends.value.associateBy { it.id }
+
         val acceptedResult = runCatching { withRetry { api.friends().friends } }
         val accepted = acceptedResult.getOrDefault(emptyList())
         val requests = runCatching { api.friendRequests().requests }.getOrDefault(emptyList())
@@ -353,39 +423,111 @@ class RemoteFriendRepository(
                 blockedAt = 0L
             )
         } + _blockedPeople.value.filter { local -> blocked.none { it.id == local.id } }
-        persistBlocked(merged)
+        // A disk write is not allowed to stop the graph from loading: this call used to sit
+        // between the two, so a full or read-only filesystem threw here and the friend list was
+        // never published at all.
+        runCatching { persistBlocked(merged) }
 
         val rows = mutableListOf<Friend>()
         val known = mutableSetOf<String>()
 
+        // Names for rows that carry an id but no nested profile (see below).
+        val directory = HashMap<String, UserDto>()
+        everyone.forEach { if (it.id.isNotBlank()) directory[it.id] = it }
+        requests.forEach { request ->
+            request.senderProfile?.takeIf { it.id.isNotBlank() }?.let { directory[it.id] = directory[it.id] ?: it }
+        }
+
+        var unreadable = 0
         accepted.forEach { friend ->
-            val profile = friend.profile
-            if (profile == null || profile.id == myId) return@forEach
-            known += profile.id
-            rows += profile.toFriend(FriendRelation.Friend)
+            /*
+             * A `/friends` row is `{ id, profile }` (`worker/src/routes/friends.ts:177-197`) and
+             * both halves name the same person, so the id alone is enough to keep them. The row
+             * used to be thrown away the moment `profile` was missing — no error, no log, no
+             * row: a friend silently vanished from a list the server had just confirmed.
+             */
+            val id = friend.profile?.id?.takeIf { it.isNotBlank() } ?: friend.id
+            if (id.isBlank() || id == me || !known.add(id)) return@forEach
+            val profile = friend.profile?.takeIf { it.id.isNotBlank() } ?: directory[id]
+            val row = when {
+                profile != null -> profile.toFriend(FriendRelation.Friend)
+                // Keep the name this device already had for them.
+                else -> previous[id]?.copy(relation = FriendRelation.Friend)
+            }
+            if (row == null) {
+                unreadable++
+                known.remove(id)
+                return@forEach
+            }
+            rows += row
+        }
+
+        // A failed `/friends` keeps the friends it could not re-confirm.
+        if (acceptedResult.isFailure) {
+            previous.values.forEach { old ->
+                if (old.relation == FriendRelation.Friend && old.id.isNotBlank() &&
+                    old.id != me && known.add(old.id)
+                ) {
+                    rows += old
+                }
+            }
         }
 
         requests.forEach { request ->
             val profile = request.senderProfile ?: return@forEach
-            if (profile.id == myId || profile.id in known) return@forEach
-            known += profile.id
+            if (profile.id.isBlank() || profile.id == me || !known.add(profile.id)) return@forEach
             rows += profile.toFriend(FriendRelation.Incoming, requestedAt = isoMillis(request.createdAt))
         }
 
         (sent?.requests ?: emptyList()).forEach { request ->
-            if (request.receiverId == myId || request.receiverId in known) return@forEach
-            val profile = everyone.firstOrNull { it.id == request.receiverId } ?: return@forEach
+            if (request.receiverId == me || request.receiverId in known) return@forEach
+            val profile = directory[request.receiverId] ?: return@forEach
             known += request.receiverId
             rows += profile.toFriend(FriendRelation.Outgoing, requestedAt = isoMillis(request.createdAt))
         }
 
+        /*
+         * The chat list is the server's other view of the same relationship.
+         *
+         * `/messages/chats` runs the identical `friendships` JOIN and stamps every row
+         * `status: 'accepted'` (`worker/src/routes/messages.ts:83-128`), so anyone with a 1:1
+         * thread *is* a friend as far as the backend is concerned. In the reference web app the
+         * chat list is built from the friend list, which is why "chats work but friends are
+         * empty" cannot happen there; here the two endpoints are independent, so they are
+         * reconciled — a person you are talking to always appears in Friends.
+         */
+        runCatching { chatPeers() }.getOrDefault(emptyList()).forEach { peer ->
+            if (peer.id.isBlank() || peer.id == me || !known.add(peer.id)) return@forEach
+            rows += peer.copy(relation = FriendRelation.Friend)
+        }
+
         everyone.forEach { profile ->
-            if (profile.id == myId || profile.id in known) return@forEach
-            known += profile.id
+            if (profile.id.isBlank() || profile.id == me || !known.add(profile.id)) return@forEach
             rows += profile.toFriend(FriendRelation.None)
         }
 
         _friends.value = rows
+
+        /*
+         * Why the tab is empty, when it is.
+         *
+         * "No friends yet" was printed for three different situations: the request failed, the
+         * server answered zero rows, or the rows it answered could not be read. Only the first
+         * had a message; the other two now say what they are, so a screenshot of the Friends
+         * tab is enough to tell them apart.
+         */
+        _graphNote.value = when {
+            acceptedResult.isFailure -> null // the error card already explains it
+            unreadable > 0 ->
+                "The server listed ${accepted.size} friends, but $unreadable of them came back " +
+                    "without a profile this device could read."
+            accepted.isEmpty() && rows.none { it.relation == FriendRelation.Friend } ->
+                "The server answered /friends with 0 friends for " +
+                    "${tokens.email ?: "this account"}."
+            else -> null
+        }
+
+        if (acceptedResult.isSuccess) runCatching { cache?.save(me, rows) }
     }
 
     private inline fun <reified T> decode(row: JsonObject): T =

@@ -70,4 +70,15 @@ interface FriendRepository {
      * check. This carries the reason to the screen that shows the empty state.
      */
     val graphError: StateFlow<String?>
+
+    /**
+     * What the last load of `/friends` actually saw, when the Friends tab has nothing to show.
+     *
+     * [graphError] only covers "the request failed". This covers the other two answers that
+     * used to look identical to an empty account: the server replied `friends: []` (so there
+     * really is no relationship under this account), or it listed rows this device could not
+     * turn into a person. The empty state prints whichever applies instead of a blanket
+     * "No friends yet" — that sentence was true for exactly one of those cases.
+     */
+    val graphNote: StateFlow<String?>
 }

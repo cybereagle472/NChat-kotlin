@@ -5,7 +5,10 @@ import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.model.Friend
+import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.UserProfile
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
@@ -128,6 +131,9 @@ object ServiceLocator {
     /** Disk cache of the chat list; wiped on sign-out. */
     private val chatCache by lazy { ChatListCache(requireContext()) }
 
+    /** Disk cache of the friend graph, so the Friends tab opens with content like Chats does. */
+    private val friendCache by lazy { FriendGraphCache(requireContext()) }
+
     /** Device-side block list; blocking never touches the server's friendship rows. */
     private val blockedStore by lazy { BlockedContactsStore(requireContext()) }
 
@@ -153,7 +159,35 @@ object ServiceLocator {
         )
     }
     val friendRepository: FriendRepository by lazy {
-        RemoteFriendRepository(api, tokens, socket, appScope, blockedStore)
+        RemoteFriendRepository(
+            api = api,
+            tokens = tokens,
+            socket = socket,
+            scope = appScope,
+            blockedStore = blockedStore,
+            cache = friendCache,
+            /*
+             * `/messages/chats` is the same `friendships` JOIN as `/friends`, so every 1:1
+             * thread the chat list holds is somebody the server already calls a friend. Passing
+             * them in keeps the Friends tab from ever being emptier than the Chats tab; the
+             * lambda is only read at reload time, so the two repositories can refer to each
+             * other without a construction cycle.
+             */
+            chatPeers = {
+                chatRepository.chats.value
+                    .filterNot { it.isGroup }
+                    .map { chat ->
+                        Friend(
+                            id = chat.id,
+                            name = chat.title,
+                            handle = "",
+                            isOnline = chat.isOnline,
+                            avatarUrl = chat.avatarUrl,
+                            relation = FriendRelation.Friend
+                        )
+                    }
+            }
+        )
     }
     val statusRepository: StatusRepository by lazy {
         RemoteStatusRepository(api, tokens, socket, appScope)

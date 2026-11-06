@@ -1,6 +1,6 @@
 {
-  "versionCode": 49,
-  "versionName": "1.0.41",
+  "versionCode": 50,
+  "versionName": "1.0.42",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.41 — calls have audio and video. 1.0.40 made the phones ring; this release connects the line: real WebRTC media between the two devices, with the offer/answer and ICE candidates travelling over the same backend calls the reference web app uses, plus the worker's short-lived TURN credentials for networks where a direct path is impossible. Video calls show the other person full-screen with your own camera in the corner; mute, speaker and camera-flip all work, and the call can no longer sit on \"Connecting…\" forever — if the media never connects or drops, it says so and closes cleanly. Microphone and camera are requested before the call starts (and before answering), so a call never opens into silence."
+  "releaseNotes": "NChat 1.0.42 — the Friends tab tells the truth, and keeps its people. The friend graph was the only list in the app with no local copy: one failed or half-read /friends answer and the tab went back to \"No friends yet\" even though the Chats tab was showing the same people from its cache. It is now cached on disk like the chats, a failed load can no longer delete the friends it failed to re-confirm, a row the server lists is never dropped just because its profile came back empty, and — the one that actually matters — your chat list and your friend list are reconciled, so anyone you have a 1:1 conversation with appears in Friends. The empty state no longer guesses: it says whether the request failed, whether the server answered zero friends, or whether the rows could not be read."
 }
