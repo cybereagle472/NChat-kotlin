@@ -6,7 +6,6 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import com.nchat.app.core.audio.VoiceWaveform
 import java.util.Locale
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,7 +42,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,8 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.compose.AsyncImagePainter
-import coil.compose.rememberAsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.BubbleShapeMine
@@ -494,35 +491,31 @@ private fun PhotoContent(mediaUrl: String?, onClick: () -> Unit, onLongPress: ()
          * on a slow link there is a real wait — it shows a spinner inside the frame (WhatsApp
          * does the same) instead of an empty gradient that looks like a broken image.
          */
-        val painter = rememberAsyncImagePainter(model = mediaUrl)
-        val state by painter.state.collectAsState()
-        Box(
+        SubcomposeAsyncImage(
+            model = mediaUrl,
+            contentDescription = "Photo",
+            contentScale = ContentScale.Crop,
             modifier = frame.background(Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)))),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painter,
-                contentDescription = "Photo",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            when (state) {
-                is AsyncImagePainter.State.Loading -> CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(22.dp)
-                )
-
-                is AsyncImagePainter.State.Error -> Icon(
-                    imageVector = Icons.Rounded.Image,
-                    contentDescription = "Photo could not be loaded",
-                    tint = Color(0xCCFFFFFF),
-                    modifier = Modifier.size(28.dp)
-                )
-
-                else -> Unit
+            loading = {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            },
+            error = {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Image,
+                        contentDescription = "Photo could not be loaded",
+                        tint = Color(0xCCFFFFFF),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
-        }
+        )
         return
     }
 
