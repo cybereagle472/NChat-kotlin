@@ -930,7 +930,9 @@ private fun VoiceContent(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(if (mine) Color(0x33FFFFFF) else MaterialTheme.colorScheme.primary)
-                .clickable { toggle() },
+                // Tap plays and pauses; a long press still opens the menu, like WhatsApp. The
+                // button owns the gesture either way, so nothing double-fires.
+                .combinedClickable(onClick = { toggle() }, onLongClick = onLongPress),
             contentAlignment = Alignment.Center
         ) {
             when {
