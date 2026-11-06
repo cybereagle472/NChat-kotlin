@@ -39,7 +39,9 @@ interface ChatRepository {
         chatId: String,
         text: String,
         replyAuthor: String? = null,
-        replyText: String? = null
+        replyText: String? = null,
+        /** The id of the message being quoted — sent as `reply_to`, so the other side sees it. */
+        replyToId: String? = null
     )
 
     /**
@@ -74,7 +76,8 @@ interface ChatRepository {
         durationLabel: String,
         replyAuthor: String? = null,
         replyText: String? = null,
-        waveform: String? = null
+        waveform: String? = null,
+        replyToId: String? = null
     )
     /**
      * Resend a bubble whose send failed for good (the warning icon on the message).

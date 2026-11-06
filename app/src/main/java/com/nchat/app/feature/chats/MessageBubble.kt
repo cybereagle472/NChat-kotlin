@@ -9,6 +9,8 @@ import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -194,9 +197,11 @@ fun MessageBubble(
                 .combinedClickable(onClick = onLongPress, onLongClick = onLongPress)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            message.replyAuthor?.let { author ->
+            // A reply whose target is outside the loaded page still says *that* it is a reply
+            // instead of silently looking like an ordinary message.
+            if (message.replyAuthor != null || message.replyToId != null) {
                 ReplyQuote(
-                    author = author,
+                    author = message.replyAuthor ?: "Replied message",
                     text = message.replyText.orEmpty(),
                     mine = mine
                 )
@@ -209,6 +214,7 @@ fun MessageBubble(
                     onLongPress = onLongPress
                 )
                 MessageKind.Voice -> VoiceContent(
+                    messageId = message.id,
                     duration = message.durationLabel ?: "0:00",
                     mine = mine,
                     mediaUrl = message.mediaUrl,
@@ -413,7 +419,8 @@ private fun ReplyQuote(author: String, text: String, mine: Boolean) {
                 text = text,
                 fontSize = 12.sp,
                 color = if (mine) Color(0xCCFFFFFF) else NcTheme.extra.textTertiary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -558,6 +565,8 @@ private const val VOICE_BARS = 24
 
 @Composable
 private fun VoiceContent(
+    /** Identifies *this* bubble for exclusive playback — two notes can share a URL. */
+    messageId: String,
     duration: String,
     mine: Boolean,
     mediaUrl: String? = null,
@@ -576,11 +585,28 @@ private fun VoiceContent(
      * that never had a data source set.
      */
     var playing by remember(mediaUrl) { mutableStateOf(false) }
-    var progress by remember(mediaUrl) { mutableStateOf(0f) }
     var prepared by remember(mediaUrl) { mutableStateOf(false) }
     /** `prepareAsync()` is in flight — a second tap must not call `setDataSource` again. */
     var preparing by remember(mediaUrl) { mutableStateOf(false) }
-    val totalMs = remember(duration) { parseVoiceDuration(duration) }
+    /** Where the playhead is, in milliseconds. The bar and the timer both read this. */
+    var positionMs by remember(mediaUrl) { mutableStateOf(0) }
+    /** The clip's real length, once the file has told us — the label can be a second off. */
+    var realMs by remember(mediaUrl) { mutableStateOf(0) }
+    /** A seek made before the player was ready, applied the moment it is. */
+    var pendingSeek by remember(mediaUrl) { mutableStateOf<Int?>(null) }
+    /**
+     * What the user wants, as opposed to what the player is doing.
+     *
+     * Set on the tap, honoured in `OnPreparedListener`. Without it, tapping play and then pause
+     * while the first buffer was still arriving ended up *playing*: the pause hit a player that
+     * had nothing to pause, and the prepared callback started it anyway.
+     */
+    var playWhenReady by remember(mediaUrl) { mutableStateOf(false) }
+
+    val labelledMs = remember(duration) { parseVoiceDuration(duration) }
+    val totalMs = if (realMs > 0) realMs else labelledMs
+    val progress = if (totalMs > 0) (positionMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
+
     /*
      * Real bars when the message carries them, and a stable shape otherwise (voice notes sent
      * by an older build, or a clip that recorded nothing but silence). The placeholder is the
@@ -593,7 +619,8 @@ private fun VoiceContent(
     }
 
     // A player per bubble, created only when the message actually carries audio. Media is
-    // served publicly by the worker (with byte ranges), so the URL can be set directly.
+    // served publicly by the worker (with byte ranges), so the URL can be set directly — and
+    // ranges are what makes seeking here instant instead of "download the whole clip first".
     val player = remember(mediaUrl) {
         mediaUrl?.takeIf { it.isNotBlank() }?.let {
             runCatching {
@@ -610,97 +637,110 @@ private fun VoiceContent(
     }
     DisposableEffect(player) {
         onDispose {
-            if (mediaUrl != null && VoicePlayback.current == mediaUrl) VoicePlayback.current = null
+            if (VoicePlayback.current == messageId) VoicePlayback.current = null
             runCatching { player?.release() }
         }
     }
 
     // Exclusive playback: another bubble started, so this one stops where it is.
-    val playingUrl = VoicePlayback.current
-    LaunchedEffect(playingUrl) {
-        if (playing && playingUrl != mediaUrl) {
+    val activeId = VoicePlayback.current
+    LaunchedEffect(activeId) {
+        if (playing && activeId != messageId) {
             runCatching { player?.pause() }
             playing = false
         }
     }
 
-    // Real position while the player runs; the old timer is kept only for messages that
-    // predate the upload and have no file to play.
+    // The playhead, sampled while the clip runs. 50 ms is smooth enough for a 24-bar wave and
+    // cheap enough that a screenful of bubbles costs nothing.
     LaunchedEffect(playing, player) {
+        val current = player ?: return@LaunchedEffect
         if (!playing) return@LaunchedEffect
-        if (player != null) {
-            while (true) {
-                delay(80)
-                val total = runCatching { player.duration }.getOrDefault(0)
-                val current = runCatching { player.currentPosition }.getOrDefault(0)
-                progress = if (total > 0) (current.toFloat() / total).coerceIn(0f, 1f) else 0f
-                if (!playing) break
-            }
-        } else {
-            if (totalMs <= 0) {
-                playing = false
-                return@LaunchedEffect
-            }
-            while (true) {
-                delay(100)
-                val next = progress + 100f / totalMs
-                if (next >= 1f) {
-                    progress = 0f
-                    playing = false
-                    break
-                }
-                progress = next
-            }
+        while (true) {
+            delay(50)
+            runCatching { current.duration }.getOrNull()?.let { if (it > 0 && it != realMs) realMs = it }
+            runCatching { current.currentPosition }.getOrNull()?.let { positionMs = it }
         }
     }
 
-    fun toggle() {
+    /** Moves the playhead without changing whether the clip is playing. */
+    fun seek(targetMs: Int) {
+        val bounded = targetMs.coerceAtLeast(0).let { if (totalMs > 0) it.coerceAtMost(totalMs) else it }
+        positionMs = bounded
+        val current = player ?: return
+        if (prepared) runCatching { current.seekTo(bounded) } else pendingSeek = bounded
+    }
+
+    /*
+     * Starts from `from`, flipping the icon immediately.
+     *
+     * The old code only set `playing = true` inside `OnPreparedListener`, so the button did
+     * nothing at all until the first buffer arrived — on a slow link a tap looked ignored and
+     * people tapped again. The state is optimistic now and is rolled back if the player fails.
+     */
+    fun start(from: Int = positionMs) {
         val current = player
         if (current == null) {
             // No file behind this bubble: say so instead of pretending to play silence.
             NcToaster.show("This voice message has no audio attached")
             return
         }
-        if (playing) {
-            runCatching { current.pause() }
-            playing = false
-            if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
+        VoicePlayback.current = messageId
+        playWhenReady = true
+        playing = true
+        positionMs = from
+        if (prepared) {
+            val started = runCatching {
+                val end = runCatching { current.duration }.getOrDefault(0)
+                // Finished a moment ago? Start over instead of playing the last 200 ms.
+                current.seekTo(if (end > 0 && from >= end - 250) 0 else from)
+                current.start()
+            }
+            if (started.isFailure) {
+                playing = false
+                NcToaster.show("Couldn't play this voice message")
+            }
             return
         }
-        // Tapped twice while the first `prepareAsync()` is still buffering: ignore, otherwise
-        // `setDataSource` runs on a player that is already preparing and throws.
-        if (preparing) return
+        if (preparing) {
+            pendingSeek = from
+            return
+        }
+        pendingSeek = from
+        preparing = true
         val started = runCatching {
-            if (!prepared) {
-                current.setDataSource(mediaUrl)
-                current.setOnPreparedListener {
-                    it.start()
-                    prepared = true
+            current.setDataSource(mediaUrl)
+            current.setOnPreparedListener { ready ->
+                prepared = true
+                preparing = false
+                runCatching { ready.duration }.getOrNull()?.let { if (it > 0) realMs = it }
+                pendingSeek?.let { target -> runCatching { ready.seekTo(target) } }
+                pendingSeek = null
+                if (playWhenReady) {
+                    runCatching { ready.start() }
                     playing = true
-                    preparing = false
-                    VoicePlayback.current = mediaUrl
-                }
-                current.setOnCompletionListener {
-                    progress = 0f
+                } else {
                     playing = false
-                    if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
                 }
-                current.setOnErrorListener { _, _, _ ->
-                    playing = false
-                    preparing = false
-                    progress = 0f
-                    if (VoicePlayback.current == mediaUrl) VoicePlayback.current = null
-                    NcToaster.show("Couldn't play this voice message")
-                    true
-                }
-                preparing = true
-                current.prepareAsync()
-            } else {
-                if (current.currentPosition >= current.duration) current.seekTo(0)
-                VoicePlayback.current = mediaUrl
-                current.start()
-                playing = true
             }
+            current.setOnCompletionListener {
+                playing = false
+                playWhenReady = false
+                positionMs = 0
+                if (VoicePlayback.current == messageId) VoicePlayback.current = null
+            }
+            current.setOnErrorListener { failed, _, _ ->
+                playing = false
+                preparing = false
+                prepared = false
+                positionMs = 0
+                if (VoicePlayback.current == messageId) VoicePlayback.current = null
+                // Reset so a retry can set a data source again instead of throwing.
+                runCatching { failed.reset() }
+                NcToaster.show("Couldn't play this voice message")
+                true
+            }
+            current.prepareAsync()
         }
         if (started.isFailure) {
             playing = false
@@ -709,10 +749,28 @@ private fun VoiceContent(
         }
     }
 
+    fun pause() {
+        playWhenReady = false
+        runCatching { player?.pause() }
+        playing = false
+        if (VoicePlayback.current == messageId) VoicePlayback.current = null
+    }
+
+    fun toggle() {
+        if (playing) pause() else start()
+    }
+
     val accent = if (mine) Color.White else MaterialTheme.colorScheme.primary
+    /*
+     * Width grows with the clip, like the reference bubble (`width = min(284, 176 + seconds*2.6)`):
+     * a two-second "ok" is a stub, a two-minute note is a bar big enough to scrub. Capped a little
+     * under the reference because the bubble's own padding sits inside a 300 dp container.
+     */
+    val widthSeconds = (labelledMs / 1000f).coerceAtLeast(1f)
+    val voiceWidth = (176f + widthSeconds * 2.6f).coerceIn(176f, 264f).dp
     Row(
         modifier = Modifier
-            .width(190.dp)
+            .width(voiceWidth)
             .clip(RoundedCornerShape(12.dp))
             .clickable { toggle() }
             .padding(vertical = 2.dp),
@@ -732,12 +790,43 @@ private fun VoiceContent(
                 modifier = Modifier.size(18.dp)
             )
         }
+        /*
+         * The waveform is the scrubber: touch down anywhere on it and the clip jumps to that
+         * point (the reference does the same on its bars, `ChatView.tsx:820-840`), and dragging
+         * keeps moving with the finger. The gesture consumes its events, so the row's own
+         * click-to-toggle does not also fire.
+         */
         Box(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
+                .height(22.dp)
+                .pointerInput(messageId, mediaUrl, totalMs) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var x = down.position.x
+                        val width = size.width.toFloat().coerceAtLeast(1f)
+                        fun scrubTo(px: Float) {
+                            seek(((px / width).coerceIn(0f, 1f) * totalMs).toInt())
+                        }
+                        scrubTo(x)
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            x = change.position.x
+                            if (!change.pressed) break
+                            scrubTo(x)
+                            change.consume()
+                        }
+                        scrubTo(x)
+                        // Tapping a paused note starts it from there, like WhatsApp.
+                        if (!playing) start(positionMs)
+                    }
+                },
+            contentAlignment = Alignment.CenterStart
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
@@ -747,7 +836,9 @@ private fun VoiceContent(
                     val played = (index + 1).toFloat() / levels.size <= progress + 0.001f
                     Box(
                         modifier = Modifier
-                            .width(2.dp)
+                            // Shares the bar's width, so a longer clip draws wider bars instead
+                            // of the same 96 dp cluster in a wider box.
+                            .weight(1f)
                             .height(barHeight)
                             .clip(RoundedCornerShape(1.dp))
                             .background(
@@ -761,11 +852,14 @@ private fun VoiceContent(
                 }
             }
         }
-        // Total length at rest, elapsed while playing — the same thing the web bubble counts.
+        /*
+         * Elapsed once the playhead has moved, total at rest — the same thing the web bubble
+         * counts. Keying this on `playing` alone snapped back to the total the moment you
+         * paused, losing the position you had just scrubbed to.
+         */
         Text(
-            text = if (playing && totalMs > 0) {
-                val elapsed = (progress * totalMs).toInt().coerceIn(0, totalMs)
-                "%d:%02d".format(Locale.US, elapsed / 60_000, (elapsed / 1_000) % 60)
+            text = if (totalMs > 0 && positionMs > 0) {
+                "%d:%02d".format(Locale.US, (positionMs / 60_000), (positionMs / 1_000) % 60)
             } else {
                 duration
             },

@@ -171,7 +171,15 @@ class RemotePreferencesRepository(
 
     private val local = LocalPreferencesRepository(context)
 
-    private val _privacy = MutableStateFlow(PrivacySettings())
+    /*
+     * Seeded from the device, not from the defaults.
+     *
+     * The pane used to show "Everyone / on" until `/privacy` answered, which is not just a
+     * flicker: offline it never answered at all, so the privacy screen claimed the user's
+     * details were visible to everyone when they had set them to Nobody. The last server answer
+     * is mirrored to SharedPreferences for exactly this launch.
+     */
+    private val _privacy = MutableStateFlow(local.privacy.value)
     override val privacy: StateFlow<PrivacySettings> = _privacy.asStateFlow()
 
     override val notifications: StateFlow<NotificationSettings> = local.notifications
@@ -182,26 +190,32 @@ class RemotePreferencesRepository(
 
     override suspend fun refresh() {
         val remote = runCatching { api.privacySettings().settings }.getOrNull() ?: return
-        _privacy.value = remote.toModel()
+        val model = remote.toModel()
+        _privacy.value = model
+        mirrorToLocal(model)
     }
 
     override fun setLastSeen(value: Visibility) {
         _privacy.update { it.copy(lastSeen = value) }
+        local.setLastSeen(value)
         push(lastSeen = value)
     }
 
     override fun setProfilePhoto(value: Visibility) {
         _privacy.update { it.copy(profilePhoto = value) }
+        local.setProfilePhoto(value)
         push(profilePhoto = value)
     }
 
     override fun setReadReceipts(enabled: Boolean) {
         _privacy.update { it.copy(readReceipts = enabled) }
+        local.setReadReceipts(enabled)
         push(readReceipts = enabled)
     }
 
     override fun setOnlineStatus(enabled: Boolean) {
         _privacy.update { it.copy(onlineStatus = enabled) }
+        local.setOnlineStatus(enabled)
         push(onlineStatus = enabled)
     }
 
@@ -227,8 +241,20 @@ class RemotePreferencesRepository(
                 )
             }.getOrNull()
             // Snap back to the server's truth if the write was rejected.
-            response?.settings?.let { _privacy.value = it.toModel() }
+            response?.settings?.let { accepted ->
+                val model = accepted.toModel()
+                _privacy.value = model
+                mirrorToLocal(model)
+            }
         }
+    }
+
+    /** Keeps the device copy in step with whatever the server has agreed to. */
+    private fun mirrorToLocal(settings: PrivacySettings) {
+        local.setLastSeen(settings.lastSeen)
+        local.setProfilePhoto(settings.profilePhoto)
+        local.setReadReceipts(settings.readReceipts)
+        local.setOnlineStatus(settings.onlineStatus)
     }
 
     private fun PrivacySettingsDto.toModel() = PrivacySettings(

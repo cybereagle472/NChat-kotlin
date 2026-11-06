@@ -69,7 +69,8 @@ class ConversationViewModel(
             chatId = chatId,
             text = text,
             replyAuthor = quoted?.authorName,
-            replyText = quoted?.text
+            replyText = quoted?.snippet(),
+            replyToId = quoted?.id
         )
         _composerText.value = ""
         _replyTo.value = null
@@ -163,8 +164,9 @@ class ConversationViewModel(
             fileName = fileName,
             durationLabel = durationLabel,
             replyAuthor = quoted?.authorName,
-            replyText = quoted?.text,
-            waveform = waveform
+            replyText = quoted?.snippet(),
+            waveform = waveform,
+            replyToId = quoted?.id
         )
         _replyTo.value = null
     }

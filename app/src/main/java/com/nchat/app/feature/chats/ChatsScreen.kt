@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsOff
@@ -381,7 +382,7 @@ private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (chat.lastMessageMine) {
-            DeliveryTick(state = chat.lastMessageState)
+            if (chat.lastMessageFailed) DeliveryFailed() else DeliveryTick(state = chat.lastMessageState)
         }
         KindIcon(kind = chat.lastMessageKind)
         Text(
@@ -394,6 +395,17 @@ private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean) {
             modifier = Modifier.weight(1f, fill = false)
         )
     }
+}
+
+/** The newest message never reached the server: the row says so, like the bubble does. */
+@Composable
+private fun DeliveryFailed() {
+    Icon(
+        imageVector = Icons.Rounded.ErrorOutline,
+        contentDescription = "Not sent",
+        tint = Color(0xFFF87171),
+        modifier = Modifier.size(14.dp)
+    )
 }
 
 @Composable
