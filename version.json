@@ -1,6 +1,6 @@
 {
-  "versionCode": 73,
-  "versionName": "1.0.65",
+  "versionCode": 74,
+  "versionName": "1.0.66",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.65 — pick a background for your chats. (1) Settings ▸ Chats now actually opens: the row that has always said 'Theme, wallpapers, chat history' leads to a wallpaper picker with eight choices — NChat (the default look), Violet, Sunset, Mint, Sky, Sand, Midnight and Graphite. Each tile is the wallpaper itself, so you choose by looking, and a preview panel shows how it sits behind real message bubbles before you commit. The choice applies to every conversation, is stored on this phone only — the other person sees their own — and can be reset to the default at any time. (2) Group chats read better: a sender's name is now drawn once above their run of messages instead of repeating above every single bubble."
+  "releaseNotes": "NChat 1.0.66 — the Groups and Status tabs. (1) Groups now line up with the Chats tab: the group name and clock sit on one line, and the member count, the last activity and the unread badge sit on the next — before, the clock drifted to wherever the name happened to end. A count of your groups sits under the header. (2) If you have no groups, the tab no longer shows an empty screen with a lone grey sentence at the bottom: it explains what a group is and offers a Create a group button. (3) The Status tab says 'No updates yet' with a short explanation instead of an empty 'Recent updates' heading that looked like a failed load."
 }

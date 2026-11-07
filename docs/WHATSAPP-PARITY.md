@@ -95,6 +95,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   choices, live percentage), mention-aware group notifications.
 - **1.0.65 — shipped.** Chat wallpaper picker (Settings ▸ Chats), group sender name shown
   once per run.
+- **1.0.66 — shipped.** Groups tab on the same two-line grid as the chat list, empty
+  states for Groups and Status.
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
