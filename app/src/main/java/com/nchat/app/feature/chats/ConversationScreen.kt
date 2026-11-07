@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Mood
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -2282,6 +2283,8 @@ private fun ComposerBar(
         }
     }
     var mediaOpen by remember { mutableStateOf(false) }
+    // The emoji panel: a quick insert, so it sits above the composer rather than replacing it.
+    var emojiOpen by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf<VoicePhase?>(null) }
     var elapsedMs by remember { mutableStateOf(0L) }
     var cancelProgress by remember { mutableStateOf(0f) }
@@ -2416,6 +2419,19 @@ private fun ComposerBar(
         }
 
         AnimatedVisibility(
+            visible = emojiOpen,
+            enter = fadeIn(tween(140)) + slideInVertically(tween(200)) { it / 3 },
+            exit = fadeOut(tween(110))
+        ) {
+            EmojiPickerPanel(
+                // Appended to the composer: a String-backed field has no cursor to insert at,
+                // and the panel is opened to add something to the end of a thought anyway.
+                onPick = { emoji -> onTextChange(text + emoji) },
+                modifier = Modifier.padding(bottom = NcSpace.xs)
+            )
+        }
+
+        AnimatedVisibility(
             visible = mentionSuggestions.isNotEmpty(),
             enter = fadeIn(tween(120)),
             exit = fadeOut(tween(100))
@@ -2460,7 +2476,10 @@ private fun ComposerBar(
                         .clip(CircleShape)
                         .background(Color(0x33FFFFFF))
                         .rotate(rotation)
-                        .clickable { mediaOpen = !mediaOpen },
+                        .clickable {
+                            mediaOpen = !mediaOpen
+                            if (mediaOpen) emojiOpen = false
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -2491,6 +2510,26 @@ private fun ComposerBar(
                         cursorBrush = SolidColor(Color.White),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         maxLines = 4
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(if (emojiOpen) Color(0x4DFFFFFF) else Color.Transparent)
+                        .clickable {
+                            emojiOpen = !emojiOpen
+                            // One panel at a time: the attach sheet would cover the emoji grid.
+                            if (emojiOpen) mediaOpen = false
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Mood,
+                        contentDescription = if (emojiOpen) "Hide emoji" else "Emoji",
+                        tint = Color.White,
+                        modifier = Modifier.size(21.dp)
                     )
                 }
 

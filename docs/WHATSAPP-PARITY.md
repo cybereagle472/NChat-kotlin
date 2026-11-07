@@ -97,6 +97,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   once per run.
 - **1.0.66 — shipped.** Groups tab on the same two-line grid as the chat list, empty
   states for Groups and Status.
+- **1.0.67 — shipped.** Emoji picker in the composer (six curated groups, ~300 emoji).
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
