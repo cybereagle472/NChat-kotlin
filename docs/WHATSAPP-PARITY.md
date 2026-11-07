@@ -66,6 +66,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | End-to-end encryption | ✅ | ❌ | The worker stores plaintext. This is a protocol project (key exchange, per-device sessions, group sender keys), not a screen — tracked separately. |
 | Multi-device / linked devices / Web | ✅ | ❌ | Needs server sessions per device. |
 | Backup & restore | ✅ | ❌ | Local caches only. |
+| Chat wallpaper | ✅ | ✅ 1.0.65 — eight built-in gradients, live preview, one choice for every chat, stored on the device | `WallpaperStore`, `ChatsPane` |
 | Media auto-download rules, storage manager | ✅ | 🟡 1.0.55 — storage manager with real per-directory sizes and confirms; auto-download rules still missing | `StorageReport` |
 
 ## Where the waves stand
@@ -92,6 +93,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   visible notification; "missed" is decided once, from the call state.
 - **1.0.64 — shipped.** Update page (full screen, version step, scrollable notes, both
   choices, live percentage), mention-aware group notifications.
+- **1.0.65 — shipped.** Chat wallpaper picker (Settings ▸ Chats), group sender name shown
+  once per run.
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".

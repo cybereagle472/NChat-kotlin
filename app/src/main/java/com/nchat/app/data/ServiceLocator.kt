@@ -16,6 +16,7 @@ import android.graphics.Bitmap
 import com.nchat.app.data.local.ArchivedStore
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.DraftStore
+import com.nchat.app.data.local.WallpaperStore
 import com.nchat.app.core.network.NetworkMonitor
 import com.nchat.app.data.local.ChatListCache
 import com.nchat.app.data.local.FriendGraphCache
@@ -254,6 +255,9 @@ object ServiceLocator {
 
     /** Unfinished composer text per conversation, restored when the chat is reopened. */
     val drafts: DraftStore by lazy { DraftStore(requireContext()) }
+
+    /** The chat wallpaper choice (Settings ▸ Chats). Device-local, no account data. */
+    val wallpapers: WallpaperStore by lazy { WallpaperStore(requireContext()) }
 
     /** Private, per-device starred messages behind "Starred messages". */
     val stars: StarredStore by lazy { StarredStore(requireContext()) }

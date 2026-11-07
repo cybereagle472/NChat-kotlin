@@ -182,6 +182,11 @@ fun ConversationScreen(
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
+    val wallpaperId by ServiceLocator.wallpapers.selection.collectAsStateWithLifecycle()
+    val wallpaper = remember(wallpaperId) {
+        com.nchat.app.data.local.Wallpaper.entries.firstOrNull { it.id == wallpaperId }
+            ?: com.nchat.app.data.local.Wallpaper.Default
+    }
 
     /*
      * Liveness fallback.
@@ -486,7 +491,9 @@ fun ConversationScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.linearGradient(NcTheme.extra.bodyGradient))
+                // Settings ▸ Chats ▸ Wallpaper. A gradient drawn by Compose, so there is no image
+                // to load and the text behind it can never be an unreadable photograph.
+                .background(wallpaper.brush())
         ) {
             if (selection.isEmpty()) {
                 ConversationHeader(
@@ -629,7 +636,11 @@ fun ConversationScreen(
                                     highlighted = message.id == highlightId,
                                     mentions = mentionNames,
                                     showAuthor = isGroupChat,
-                                    showAvatar = item.showSender
+                                    showAvatar = item.showSender,
+                                    // One name per run, not per bubble: repeating "Zaid" above
+                                    // every line he sends is noise, and it is the first thing
+                                    // that makes a group thread look machine-generated.
+                                    showName = item.showSender
                                 )
                             }
                         }

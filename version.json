@@ -1,6 +1,6 @@
 {
-  "versionCode": 72,
-  "versionName": "1.0.64",
+  "versionCode": 73,
+  "versionName": "1.0.65",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.64 — the update is now a proper page, and mentions are called mentions. (1) When a new build is available, NChat opens a full screen instead of a small floating card: a clear 'Update available' heading, the version step (installed → new), the full release notes in a scrollable panel that never cuts a sentence, and two obvious choices — Not now, or Update now — with the download percentage shown while it runs. The back gesture means 'not now'; it is ignored while the download is in progress. (2) If someone mentions you in a group, the notification title says so — 'Team · you were mentioned' — instead of looking like every other message in that group. Mentions are plain text between phones, so the title is the one place that difference can be shown."
+  "releaseNotes": "NChat 1.0.65 — pick a background for your chats. (1) Settings ▸ Chats now actually opens: the row that has always said 'Theme, wallpapers, chat history' leads to a wallpaper picker with eight choices — NChat (the default look), Violet, Sunset, Mint, Sky, Sand, Midnight and Graphite. Each tile is the wallpaper itself, so you choose by looking, and a preview panel shows how it sits behind real message bubbles before you commit. The choice applies to every conversation, is stored on this phone only — the other person sees their own — and can be reset to the default at any time. (2) Group chats read better: a sender's name is now drawn once above their run of messages instead of repeating above every single bubble."
 }
