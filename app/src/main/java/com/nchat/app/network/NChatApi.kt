@@ -359,6 +359,8 @@ class NChatApi(private val client: ApiClient) {
         caption: String? = null,
         privacy: String = "contacts",
         contentUrl: String? = null,
+        fontStyle: String? = null,
+        durationMs: Long = 0L,
     ): StatusEnvelope = decode(
         client.post(
             "/status",
@@ -369,6 +371,10 @@ class NChatApi(private val client: ApiClient) {
                 if (backgroundColor != null) put("background_color", backgroundColor)
                 if (caption != null) put("caption", caption)
                 if (contentUrl != null) put("content_url", contentUrl)
+                // Both columns exist on the row; sending them is what makes a text status keep
+                // its colour and font for everybody who opens it, not just its author.
+                if (fontStyle != null) put("font_style", fontStyle)
+                if (durationMs > 0) put("duration", durationMs)
             }
         )
     )
