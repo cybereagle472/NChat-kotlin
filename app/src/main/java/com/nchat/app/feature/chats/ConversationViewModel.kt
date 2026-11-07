@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.stateIn
@@ -75,6 +77,24 @@ class ConversationViewModel(
             _firstUnreadId.value = history[index].id
         }
         repository.markRead(chatId)
+        /*
+         * Reading is not a single moment.
+         *
+         * Marking read once on open left anything that arrived afterwards counted as unread, so
+         * leaving the chat showed a badge for messages the user was looking at. Every time the
+         * newest message changes while this screen is alive, the chat is cleared again — with a
+         * short debounce, because a burst of messages should mean one request, not ten.
+         */
+        viewModelScope.launch {
+            messages
+                .map { it.lastOrNull()?.id }
+                .distinctUntilChanged()
+                .collectLatest { newest ->
+                    if (newest == null) return@collectLatest
+                    delay(250)
+                    repository.markRead(chatId)
+                }
+        }
     }
 
     fun onComposerChange(value: String) {

@@ -290,7 +290,15 @@ object ServiceLocator {
      * The tap may arrive while the app is cold (it starts, then this is set) or already running
      * (`onNewIntent`), so both paths write here and the navigation layer reacts once.
      */
-    val pendingOpen = MutableStateFlow<Pair<String, String>?>(null)
+    val pendingOpen = MutableStateFlow<PendingOpen?>(null)
+
+    /**
+     * A call notification was tapped.
+     *
+     * The call may have stopped ringing while the shade was open, so this is only a *request*:
+     * `CallRepository.openFromNotification` checks the server and does nothing if it is over.
+     */
+    val pendingCall = MutableStateFlow<String?>(null)
 
 
     // ------------------------------------------------------- system notifications
@@ -371,8 +379,10 @@ object ServiceLocator {
                 notifications.showEvent(
                     key = "call-$id",
                     title = if (video) "Incoming video call" else "Incoming call",
-                    body = "$name is calling — open NChat to answer",
-                    avatarUrl = profile?.string("avatar_url")
+                    body = "$name is calling — tap to answer",
+                    avatarUrl = profile?.string("avatar_url"),
+                    // Tapping this must open the call screen, not just the app.
+                    callId = id
                 )
             }
 
@@ -499,3 +509,15 @@ object ServiceLocator {
 
     val profile: UserProfile get() = profileRepository.profile.value
 }
+
+/**
+ * What a notification tap asked for: which conversation, and which message inside it.
+ *
+ * [messageId] is null when the tap came from something without a message (a friend request, a
+ * group invite, an older notification built before ids were carried).
+ */
+data class PendingOpen(
+    val chatId: String,
+    val title: String,
+    val messageId: String? = null
+)

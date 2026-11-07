@@ -127,8 +127,32 @@ private fun HomeRoot() {
     LaunchedEffect(pendingOpen) {
         val target = pendingOpen ?: return@LaunchedEffect
         ServiceLocator.pendingOpen.value = null
-        ServiceLocator.notifications.cancel(target.first)
-        navigator.push(NcScreen.Conversation(target.first, target.second))
+        /*
+         * Clear the badge *here*, not only inside the conversation.
+         *
+         * The conversation screen marks the chat read on open, but the list behind it was drawn
+         * before that call landed, and the next refresh raced the server — which is why the
+         * unread badge was still there after a back gesture. Marking read at the moment the tap
+         * is honoured closes that window.
+         */
+        ServiceLocator.chatRepository.markRead(target.chatId)
+        ServiceLocator.notifications.cancel(target.chatId)
+        navigator.push(
+            NcScreen.Conversation(
+                chatId = target.chatId,
+                title = target.title,
+                focusMessageId = target.messageId
+            )
+        )
+    }
+
+    // A call alert tapped in the shade: bring the call screen back, if it is still ringing.
+    val pendingCall by ServiceLocator.pendingCall.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingCall) {
+        val callId = pendingCall ?: return@LaunchedEffect
+        ServiceLocator.pendingCall.value = null
+        ServiceLocator.notifications.cancelEvent("call-$callId")
+        ServiceLocator.callRepository.openFromNotification(callId)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -161,7 +185,8 @@ private fun HomeRoot() {
                     chatTitle = screen.title,
                     onBack = { navigator.pop() },
                     modifier = Modifier.fillMaxSize(),
-                    autoCallVideo = screen.autoCallVideo
+                    autoCallVideo = screen.autoCallVideo,
+                    focusMessageId = screen.focusMessageId
                 )
 
                 is NcScreen.Settings -> SettingsScreen(

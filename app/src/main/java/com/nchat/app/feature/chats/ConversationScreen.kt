@@ -168,6 +168,8 @@ fun ConversationScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     autoCallVideo: Boolean? = null,
+    /** A message to land on, when this screen was opened from a notification. */
+    focusMessageId: String? = null,
     viewModel: ConversationViewModel = viewModel(
         key = chatId,
         factory = ConversationViewModel.factory(
@@ -441,6 +443,29 @@ fun ConversationScreen(
     // themselves; otherwise new traffic must never yank the viewport away.
     val atBottom by remember { derivedStateOf { !listState.canScrollForward } }
     var didInitialScroll by remember { mutableStateOf(false) }
+
+    /*
+     * Land on the message the notification was about.
+     *
+     * The alert said "Zaid: are you free at 5?"; opening the chat at the bottom and leaving the
+     * user to scroll for it is the difference between a notification that helps and one that
+     * only says something happened. The message is scrolled to and ringed (the same highlight a
+     * pinned-message jump uses), and the normal "park at the bottom" behaviour is disarmed for
+     * this open so it does not immediately yank the viewport away.
+     */
+    var didFocus by remember(focusMessageId) { mutableStateOf(false) }
+    LaunchedEffect(focusMessageId, timeline.size) {
+        val target = focusMessageId ?: return@LaunchedEffect
+        if (didFocus) return@LaunchedEffect
+        val index = timeline.indexOfFirst {
+            it is TimelineItem.Bubble && it.message.id == target
+        }
+        if (index < 0) return@LaunchedEffect
+        didFocus = true
+        didInitialScroll = true
+        listState.scrollToItem(index)
+        highlightId = target
+    }
 
     LaunchedEffect(timeline.size, typingRow) {
         val last = timeline.lastIndex + typingRow
