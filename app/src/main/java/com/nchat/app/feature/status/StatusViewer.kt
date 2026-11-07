@@ -93,10 +93,10 @@ fun StatusViewer(
     var paused by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var muted by remember { mutableStateOf(false) }
-    /** Video segments take their progress from the player, not from the timer. */
-    var videoProgress by remember(current.id) { mutableFloatStateOf(0f) }
     val dismissThreshold = with(LocalDensity.current) { 96.dp.toPx() }
     val current = statuses.getOrNull(index) ?: return
+    /** Video segments take their progress from the player, not from the timer. */
+    var videoProgress by remember(current.id) { mutableFloatStateOf(0f) }
 
     val url = current.contentUrl
     val isVideo = current.contentType.equals("video", ignoreCase = true) && !url.isNullOrBlank()
