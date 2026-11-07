@@ -371,6 +371,24 @@ object ServiceLocator {
     }
 
     /**
+     * True when a group message names this user (`@Nasir`, `@nasir12`).
+     *
+     * Mentions exist only as text on the wire, so this is the one place that can tell a mention
+     * from an ordinary message — and therefore the only place a notification can say "you were
+     * mentioned" instead of just showing the line.
+     */
+    private fun mentionsMe(chat: com.nchat.app.data.model.Chat, message: com.nchat.app.data.model.Message): Boolean {
+        if (!chat.isGroup || message.isMine) return false
+        val text = message.text
+        if (text.isBlank() || !text.contains('@')) return false
+        val me = runCatching { profile }.getOrNull()
+        val handle = me?.handle?.removePrefix("@")?.takeIf { it.isNotBlank() }
+        val name = me?.fullName?.takeIf { it.isNotBlank() }
+        val needles = listOfNotNull(handle?.let { "@$it" }, name?.let { "@$it" })
+        return needles.any { needle -> text.contains(needle, ignoreCase = true) }
+    }
+
+    /**
      * The user dealt with this call (declined it from the shade, or answered it elsewhere), so it
      * must not later be reported as missed.
      */
@@ -519,7 +537,9 @@ object ServiceLocator {
             voiceClips = voiceClips,
             // A message from somebody else becomes a system notification, unless that chat is the
             // one currently on screen (`NcNotifications.activeChatId`).
-            onIncoming = { chat, message -> notifications.show(chat, message) }
+            onIncoming = { chat, message ->
+                notifications.show(chat, message, mentioned = mentionsMe(chat, message))
+            }
         )
     }
     val friendRepository: FriendRepository by lazy {

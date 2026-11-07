@@ -43,7 +43,7 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | **Group voice call** | ✅ | ✅ 1.0.56/1.0.57 — mesh: one `PeerConnection` per participant, perfect-negotiation glare handling, roster overlay, incoming-call card (`group-call:incoming`) | `GroupCallSession`, `GroupCallInviteDialog` |
 | Group **video** call | ✅ | ❌ next — one camera feeding several encoders is its own problem | — |
 | Invite link / QR | ✅ | ❌ needs a backend endpoint (only "add existing friends") | — |
-| @mentions / @all | ✅ | 🟡 1.0.54 — picker + `@Name` highlighting from the roster (wire stays plain text, so no "you were mentioned" ring) | `ChatTextFormat` |
+| @mentions / @all | ✅ | 🟡 1.0.54 + 1.0.64 — picker, `@Name` highlighting from the roster, and a notification that says "you were mentioned" (the wire stays plain text; `@all` needs a server role) | `ChatTextFormat`, `NcNotifications` |
 | Reply privately / keep in chat | ✅ | 🟡 1.0.54 — forwards the message into the author's DM (a group screen cannot pre-fill another chat's composer) | `ConversationScreen` |
 | Admin-restricted messaging + approval queue | ✅ | ❌ needs server roles beyond `admin` | — |
 
@@ -90,6 +90,8 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   call (`openFromNotification`); unread badges no longer come back after a back gesture.
 - **1.0.63 — shipped.** Calls ring from the shade with a Decline action and a lock-screen
   visible notification; "missed" is decided once, from the call state.
+- **1.0.64 — shipped.** Update page (full screen, version step, scrollable notes, both
+  choices, live percentage), mention-aware group notifications.
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
