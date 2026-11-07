@@ -1,6 +1,6 @@
 {
-  "versionCode": 74,
-  "versionName": "1.0.66",
+  "versionCode": 75,
+  "versionName": "1.0.67",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.66 — the Groups and Status tabs. (1) Groups now line up with the Chats tab: the group name and clock sit on one line, and the member count, the last activity and the unread badge sit on the next — before, the clock drifted to wherever the name happened to end. A count of your groups sits under the header. (2) If you have no groups, the tab no longer shows an empty screen with a lone grey sentence at the bottom: it explains what a group is and offers a Create a group button. (3) The Status tab says 'No updates yet' with a short explanation instead of an empty 'Recent updates' heading that looked like a failed load."
+  "releaseNotes": "NChat 1.0.67 — an emoji button in the composer. (1) There is now a smiley beside the text field: tap it and a panel opens above the message box with six categories — smileys, gestures, hearts, animals, food and things — about 300 of the emoji conversations actually use. Tap any of them and it is added to your message; tap the smiley again to close it. Opening the attachment sheet closes the panel, and opening the panel closes the sheet, so the two can never cover each other. Before this, adding an emoji meant going into your keyboard's emoji drawer, which on many Android keyboards is three taps deep."
 }
