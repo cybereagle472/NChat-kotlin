@@ -58,6 +58,15 @@ class NcNotifications(
 
     private val manager = NotificationManagerCompat.from(context)
 
+    /**
+     * Chats whose pending notification is a mention.
+     *
+     * The mention is a property of the newest message, but the notification is rebuilt more than
+     * once (the avatar arriving, a second message), so the flag has to outlive a single call or
+     * "you were mentioned" would vanish on the second build.
+     */
+    private val mentionedChats = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
     /** Avatars already fetched this session, keyed by URL. */
     private val avatars = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
 
@@ -89,7 +98,7 @@ class NcNotifications(
         }
     }
 
-    fun show(chat: Chat, message: Message) {
+    fun show(chat: Chat, message: Message, mentioned: Boolean = false) {
         if (!canPost()) return
         if (chat.id == activeChatId) return
         ensureChannels()
@@ -104,7 +113,8 @@ class NcNotifications(
         )
         while (entry.size > MAX_LINES) entry.removeAt(0)
 
-        post(chat, entry)
+        if (mentioned) mentionedChats[chat.id] = true
+        post(chat, entry, mentioned || mentionedChats[chat.id] == true)
         refreshAvatar(chat)
     }
 
@@ -235,7 +245,7 @@ class NcNotifications(
     }
 
     /** Builds and posts the per-chat notification from the lines already collected for it. */
-    private fun post(chat: Chat, entry: List<Line>) {
+    private fun post(chat: Chat, entry: List<Line>, mentioned: Boolean = false) {
         val channelId = ensureChatChannel(chat)
         val avatar = chat.avatarUrl?.let { url -> avatars[url] }
         val me = Person.Builder().setName("You").build()
@@ -263,8 +273,18 @@ class NcNotifications(
             .setAutoCancel(true)
             .setWhen(entry.last().at)
             .setShowWhen(true)
-            .setContentTitle(chat.title)
-            .setContentText(entry.last().let { if (chat.isGroup) "${it.sender}: ${it.body}" else it.body })
+            /*
+             * A mention is the one message in a group that is *about you*, so it says so.
+             *
+             * The wire carries `@Name` as plain text (no attribute), which means the only place
+             * the difference can be surfaced is here, where the text is handed to the system.
+             */
+            .setContentTitle(if (mentioned) "${chat.title} · you were mentioned" else chat.title)
+            .setContentText(
+                entry.last().let {
+                    if (chat.isGroup) "${it.sender}: ${it.body}" else it.body
+                }
+            )
             .setContentIntent(openIntent(chat.id, chat.title, messageId = entry.last().id))
             .setGroup(GROUP_MESSAGES)
             .setOnlyAlertOnce(chat.muted)
@@ -308,19 +328,21 @@ class NcNotifications(
             avatars[url] = picture
             main.post {
                 val current = lines[chat.id] ?: return@post
-                runCatching { post(chat, current) }
+                runCatching { post(chat, current, mentionedChats[chat.id] == true) }
             }
         }
     }
 
     fun cancel(chatId: String) {
         lines.remove(chatId)
+        mentionedChats.remove(chatId)
         runCatching { manager.cancel(chatId.hashCode()) }
         if (lines.isEmpty()) runCatching { manager.cancel(SUMMARY_ID) }
     }
 
     fun cancelAll() {
         lines.clear()
+        mentionedChats.clear()
         runCatching { manager.cancelAll() }
     }
 

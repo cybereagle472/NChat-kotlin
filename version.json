@@ -1,6 +1,6 @@
 {
-  "versionCode": 71,
-  "versionName": "1.0.63",
+  "versionCode": 72,
+  "versionName": "1.0.64",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.63 — calls now reach you when the app is closed. (1) A call used to ring only if you were looking at the app; in the background the call screen was drawn in a window nobody could see, so the phone stayed silent and the call simply went by. Incoming calls now raise a proper ringing notification — its own channel, the phone's ringtone, vibration, visible on the lock screen and with the caller's photo — the moment the call arrives. (2) The ringing notification carries a Decline button, so you can reject a call without opening anything. (3) Tapping it opens the call screen to answer, and if the caller hung up first, NChat says 'That call has ended' instead of doing nothing. (4) 'Missed call' is now decided in exactly one place: it appears when the call rang and nobody took it, and never when you declined or answered."
+  "releaseNotes": "NChat 1.0.64 — the update is now a proper page, and mentions are called mentions. (1) When a new build is available, NChat opens a full screen instead of a small floating card: a clear 'Update available' heading, the version step (installed → new), the full release notes in a scrollable panel that never cuts a sentence, and two obvious choices — Not now, or Update now — with the download percentage shown while it runs. The back gesture means 'not now'; it is ignored while the download is in progress. (2) If someone mentions you in a group, the notification title says so — 'Team · you were mentioned' — instead of looking like every other message in that group. Mentions are plain text between phones, so the title is the one place that difference can be shown."
 }
