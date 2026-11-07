@@ -1965,12 +1965,14 @@ class RemoteChatRepository(
     }
 
     private fun preview(chatId: String, message: Message, state: DeliveryState) {
+        val (sender, _) = previewParts(message, isGroup(chatId))
         val line = previewLine(message, isGroup(chatId))
         _chats.update { list ->
             list.map { chat ->
                 if (chat.id != chatId) chat
                 else chat.copy(
                     lastMessage = line,
+                    lastMessageSender = sender,
                     lastMessageAt = System.currentTimeMillis(),
                     lastMessageKind = message.kind,
                     lastMessageMine = true,
@@ -2012,9 +2014,21 @@ class RemoteChatRepository(
      * prefixed with who spoke — "You" for our own — the way every messenger does.
      */
     private fun previewLine(message: Message, isGroup: Boolean): String {
+        val (sender, body) = previewParts(message, isGroup)
+        return if (sender == null) body else "$sender: $body"
+    }
+
+    /**
+     * The chat-list line, split into who and what.
+     *
+     * Groups needs both halves separately so the row can draw the name in its own colour; 1:1
+     * chats and system rows have no "who" (the title already says it), hence a null sender.
+     */
+    private fun previewParts(message: Message, isGroup: Boolean): Pair<String?, String> {
         val body = message.previewBody()
-        if (!isGroup || message.systemEvent) return body
-        return if (message.isMine) "You: $body" else "${message.authorName}: $body"
+        if (!isGroup || message.systemEvent) return null to body
+        val sender = if (message.isMine) "You" else message.authorName
+        return sender to body
     }
 
     /** The message's own text, without the group prefix — the model owns the wording. */
@@ -2063,6 +2077,7 @@ class RemoteChatRepository(
 
     private fun bumpPreview(chatId: String, dto: MessageDto) {
         val isGroupChat = isGroup(chatId)
+        val (sender, _) = previewParts(dto.toModel(chatId), isGroupChat)
         val line = previewOf(dto, chatId, isGroupChat)
         _chats.update { list ->
             if (list.none { it.id == chatId }) {
@@ -2074,6 +2089,7 @@ class RemoteChatRepository(
                     title = nameOf(chatId),
                     isGroup = isGroupChat,
                     lastMessage = line,
+                    lastMessageSender = sender,
                     lastMessageAt = isoMillis(dto.createdAt),
                     lastMessageMine = false,
                     lastMessageKind = dto.kind(),
@@ -2084,6 +2100,7 @@ class RemoteChatRepository(
                     if (chat.id != chatId) chat
                     else chat.copy(
                         lastMessage = line,
+                        lastMessageSender = sender,
                         lastMessageAt = isoMillis(dto.createdAt),
                         lastMessageMine = false,
                         lastMessageState = null,
@@ -2181,6 +2198,7 @@ class RemoteChatRepository(
             isOnline = profile?.isOnline == true,
             isGroup = false,
             lastMessage = last?.let { previewOf(it, userId, isGroup = false) }.orEmpty(),
+            lastMessageSender = null,
             lastMessageAt = isoMillis(last?.createdAt),
             lastMessageKind = last?.kind() ?: MessageKind.Text,
             lastMessageMine = last?.senderId == myId,
@@ -2200,6 +2218,7 @@ class RemoteChatRepository(
         avatarUrl = avatarUrl,
         isGroup = true,
         lastMessage = lastMessage?.let { previewOf(it, id, isGroup = true) }.orEmpty(),
+        lastMessageSender = lastMessage?.let { previewParts(it.toModel(id), true).first },
         lastMessageAt = isoMillis(lastMessage?.createdAt ?: createdAt),
         lastMessageKind = lastMessage?.kind() ?: MessageKind.Text,
         lastMessageMine = lastMessage?.senderId == myId,

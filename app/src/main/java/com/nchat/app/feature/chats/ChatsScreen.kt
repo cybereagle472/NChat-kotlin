@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -172,6 +174,9 @@ fun ChatsScreen(
                     }
                 }
                 items(items = visibleChats, key = { it.id }) { chat ->
+                    // Pinning, archiving or a new message reorders this list; sliding the rows
+                    // into their new places keeps the change readable instead of a jump cut.
+                    Box(modifier = Modifier.animateItem()) {
                     SwipeableChatRow(
                         chat = chat,
                         onArchive = {
@@ -215,6 +220,7 @@ fun ChatsScreen(
                         },
                         onDelete = { pendingDelete = chat }
                     )
+                    }
                     }
                 }
             }
@@ -535,48 +541,38 @@ private fun ChatRow(
         )
 
         Column(modifier = Modifier.weight(1f)) {
+            /*
+             * Two rows, one grid: the name and the clock share the first line, the preview and
+             * the badge the second, and both right-hand columns end on the same pixel. The old
+             * row scattered the clock into the title line and the badge into the preview line
+             * with a weighted spacer between, so nothing lined up down the list — which is what
+             * made it read as unstructured. Everything that is *about* the message now sits on
+             * the second line, in one place: pin, mute, unread count.
+             */
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = chat.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = if (hasUnread) extra.textPrimary else extra.textSecondary,
+                    fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                if (chat.pinned) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = "Pinned",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(13.dp)
-                    )
-                }
-                if (chat.muted) {
-                    Icon(
-                        imageVector = Icons.Rounded.NotificationsOff,
-                        contentDescription = "Muted",
-                        tint = extra.textMuted,
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(13.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.size(NcSpace.sm))
                 Text(
                     text = TimeFormat.listTimestamp(chat.lastMessageAt),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = if (hasUnread) MaterialTheme.colorScheme.primary else extra.textMuted,
                     fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
-                    modifier = Modifier.padding(start = NcSpace.sm)
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.widthIn(min = 44.dp)
                 )
             }
 
             Row(
-                modifier = Modifier.padding(top = NcSpace.xs),
+                modifier = Modifier.padding(top = 3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 when {
@@ -591,8 +587,29 @@ private fun ChatRow(
                     else -> PreviewLine(chat = chat, hasUnread = hasUnread, draft = draft)
                 }
 
+                Spacer(modifier = Modifier.size(NcSpace.sm))
+
+                if (chat.pinned) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = "Pinned",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(12.dp)
+                    )
+                }
+                if (chat.muted) {
+                    Icon(
+                        imageVector = Icons.Rounded.NotificationsOff,
+                        contentDescription = "Muted",
+                        tint = extra.textMuted,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(12.dp)
+                    )
+                }
                 if (hasUnread) {
-                    Spacer(modifier = Modifier.weight(1f))
                     NcUnreadBadge(count = chat.unreadCount)
                 }
             }
@@ -735,14 +752,35 @@ private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? 
     Row(
         modifier = Modifier.weight(1f),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         if (chat.lastMessageMine) {
             if (chat.lastMessageFailed) DeliveryFailed() else DeliveryTick(state = chat.lastMessageState)
         }
         KindIcon(kind = chat.lastMessageKind)
+
+        /*
+         * "Zaid:" and what Zaid said, in two weights. The stored line is "Zaid: ok" — the name is
+         * pulled back out here so it can be coloured like an author instead of reading as part of
+         * the sentence. Same text, legible at a glance.
+         */
+        val sender = chat.lastMessageSender
+        val body = if (sender != null && chat.lastMessage.startsWith("$sender: ")) {
+            chat.lastMessage.removePrefix("$sender: ")
+        } else {
+            chat.lastMessage
+        }
+        if (sender != null) {
+            Text(
+                text = "$sender:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (sender == "You") extra.textMuted else MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
         Text(
-            text = chat.lastMessage,
+            text = body,
             style = MaterialTheme.typography.bodyMedium,
             color = if (hasUnread) extra.textSecondary else extra.textTertiary,
             fontWeight = if (hasUnread) FontWeight.Medium else FontWeight.Normal,
