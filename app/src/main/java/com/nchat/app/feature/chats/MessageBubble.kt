@@ -163,7 +163,9 @@ fun MessageBubble(
     /** Briefly ringed after a search result jumped here. */
     highlighted: Boolean = false,
     /** Group roster names; `@Name` in the body lights up when it is one of them. */
-    mentions: List<String> = emptyList()
+    mentions: List<String> = emptyList(),
+    /** Draw the author's name above the bubble — true only for the first of a run. */
+    showName: Boolean = true
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -263,7 +265,7 @@ fun MessageBubble(
     Column(
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
     ) {
-        if (showAuthor && !mine) {
+        if (showAuthor && showName && !mine) {
             Text(
                 text = message.authorName,
                 fontSize = 11.sp,

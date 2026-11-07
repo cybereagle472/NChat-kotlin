@@ -68,6 +68,9 @@ import com.nchat.app.network.ApiLog
 import kotlinx.coroutines.launch
 import com.nchat.app.data.repository.NotificationSettings
 import com.nchat.app.data.repository.PrivacySettings
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.rounded.Check
 
 private val PaneTitle = Color(0xFF1E293B)
 private val PaneBody = Color(0xFF64748B)
@@ -924,5 +927,202 @@ private fun PaneButton(label: String, modifier: Modifier = Modifier, onClick: ()
         horizontalArrangement = Arrangement.Center
     ) {
         Text(text = label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Settings ▸ Chats — the wallpaper picker.
+ *
+ * The row that opens this has always said "wallpapers" and never did anything. A background is
+ * the cheapest real personalisation a messenger can offer: it is drawn by Compose, stored as one
+ * string, and applies to every conversation at once, so there is nothing to download and nothing
+ * to go wrong. The tiles are the wallpapers themselves rather than names, because "Sand" means
+ * nothing until you see it.
+ */
+@Composable
+fun ChatsPane(onBack: () -> Unit) {
+    val store = com.nchat.app.data.ServiceLocator.wallpapers
+    val selected by store.selection.collectAsState()
+    val current = com.nchat.app.data.local.Wallpaper.entries
+        .firstOrNull { it.id == selected } ?: com.nchat.app.data.local.Wallpaper.Default
+
+    SettingsPaneScaffold(
+        title = "Chats",
+        subtitle = "Wallpaper for every conversation",
+        onBack = onBack
+    ) {
+        item(key = "preview") {
+            PaneSection(title = "Preview") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(132.dp)
+                        .background(current.brush())
+                ) {
+                    // Two sample bubbles, so the choice is judged the way it will be seen: behind
+                    // a conversation, not as a colour chip in a list.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(NcSpace.md),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 190.dp)
+                                .clip(RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp))
+                                .background(Color.White)
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = "How does this one look?",
+                                color = Color(0xFF1E293B),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .widthIn(max = 170.dp)
+                                .clip(RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp))
+                                .background(Brush.linearGradient(NcTheme.extra.brandGradient))
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                        ) {
+                            Text(text = "Like this", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "wallpapers") {
+            PaneSection(title = "Wallpapers") {
+                Column(modifier = Modifier.padding(NcSpace.sm)) {
+                    com.nchat.app.data.local.Wallpaper.entries.chunked(4).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(NcSpace.sm)
+                        ) {
+                            row.forEach { wallpaper ->
+                                WallpaperTile(
+                                    wallpaper = wallpaper,
+                                    selected = wallpaper == current,
+                                    onClick = {
+                                        store.set(wallpaper.id)
+                                        NcToaster.show("Wallpaper: ${wallpaper.label}")
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(vertical = NcSpace.xs)
+                                )
+                            }
+                            // Keeps the last row the same tile size as the others.
+                            repeat(4 - row.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "note") {
+            PaneSection {
+                Column(modifier = Modifier.padding(NcSpace.md)) {
+                    Text(
+                        text = "The wallpaper applies to every chat. It is stored on this phone only — " +
+                            "the other person sees their own.",
+                        color = PaneBody,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                    if (current != com.nchat.app.data.local.Wallpaper.Default) {
+                        Text(
+                            text = "Reset to the default",
+                            color = Color(0xFF7C3AED),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .padding(top = NcSpace.sm)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    store.set(com.nchat.app.data.local.Wallpaper.Default.id)
+                                    NcToaster.show("Wallpaper reset")
+                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "storage") {
+            PaneSection(title = "Chat history") {
+                Column(modifier = Modifier.padding(NcSpace.md)) {
+                    Text(
+                        text = "Messages are kept on this device and on the server. To see how much " +
+                            "space they take, or to clear the media cache, open Storage and data.",
+                        color = PaneBody,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One wallpaper: the gradient itself, ringed when chosen. */
+@Composable
+private fun WallpaperTile(
+    wallpaper: com.nchat.app.data.local.Wallpaper,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .clip(shape)
+                .background(wallpaper.brush())
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) Color(0xFF7C3AED) else Color(0x1A0F172A),
+                    shape = shape
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(NcTheme.extra.brandGradient)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            text = wallpaper.label,
+            color = if (selected) Color(0xFF7C3AED) else PaneBody,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 3.dp)
+        )
     }
 }

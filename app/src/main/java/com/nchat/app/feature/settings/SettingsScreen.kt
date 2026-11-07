@@ -121,6 +121,10 @@ fun SettingsScreen(
             return
         }
 
+        SettingsPane.Chats -> {
+            ChatsPane(onBack = { section = SettingsPane.Main })
+            return
+        }
         SettingsPane.Storage -> {
             StoragePane(onBack = { section = SettingsPane.Main })
             return
@@ -240,7 +244,13 @@ fun SettingsScreen(
                             subtitle = "Media, message history, downloads",
                             onClick = { section = SettingsPane.Storage }
                         )
-                        SettingsMenuItem(MenuTone.Blue, Icons.Rounded.ChatBubbleOutline, "Chats", "Theme, wallpapers, chat history")
+                        SettingsMenuItem(
+                            tone = MenuTone.Blue,
+                            icon = Icons.Rounded.ChatBubbleOutline,
+                            title = "Chats",
+                            subtitle = "Wallpaper for every conversation",
+                            onClick = { section = SettingsPane.Chats }
+                        )
                         SettingsMenuItem(MenuTone.Teal, Icons.Rounded.Palette, "Appearance", "Theme, dark mode")
                         SettingsMenuItem(MenuTone.Indigo, Icons.Rounded.Language, "Language", "English", last = true)
                     }
@@ -665,7 +675,7 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 }
 
 /** Which pane of Settings is showing. */
-private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Storage, Sync }
+private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Chats, Storage, Sync }
 
 
 /**
