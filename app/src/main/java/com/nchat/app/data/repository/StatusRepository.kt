@@ -25,17 +25,48 @@ import java.util.TimeZone
  * viewer count; the UI shows one list, so they are merged with `isMine` set the way the
  * Status tab expects.
  */
+/**
+ * Where a status post is up to, so the composer can show a real bar and a real error.
+ *
+ * Posting was fire-and-forget: `createPhoto` uploaded, ignored the failure and refreshed, so a
+ * status that never went out looked exactly like one that did.
+ */
+sealed interface StatusPost {
+    data object Idle : StatusPost
+    /** Uploading, with the fraction the HTTP layer reports (null while preparing). */
+    data class Busy(val progress: Float?) : StatusPost
+    data class Failed(val message: String) : StatusPost
+}
+
 interface StatusRepository {
     val statuses: StateFlow<List<StatusUpdate>>
+
+    /** Progress of the post being composed. */
+    val post: StateFlow<StatusPost>
 
     /** Authors whose updates this account muted (`GET /status/muted`, bare user ids). */
     val mutedAuthors: StateFlow<Set<String>>
 
     fun refresh()
-    fun create(text: String)
 
-    /** Posts a photo status: upload the picture, then `POST /status` with `content_url`. */
-    fun createPhoto(bytes: ByteArray, mimeType: String, caption: String, fileName: String = "status.jpg")
+    /** Posts a text status, with the background colour and font the author picked. */
+    fun createText(text: String, backgroundColor: String? = null, fontStyle: String? = null)
+
+    /**
+     * Posts a photo or a **video** status: upload the file, then `POST /status` with
+     * `content_url` and the matching `content_type`.
+     */
+    fun createMedia(
+        bytes: ByteArray,
+        mimeType: String,
+        contentType: String,
+        caption: String,
+        fileName: String,
+        durationMs: Long = 0L
+    )
+
+    /** Dismisses a failed post so the composer can be used again. */
+    fun clearPostError()
 
     fun markViewed(id: String)
     fun delete(id: String)
@@ -100,27 +131,79 @@ class RemoteStatusRepository(
         }
     }
 
-    override fun create(text: String) {
+    private val _post = MutableStateFlow<StatusPost>(StatusPost.Idle)
+    override val post: StateFlow<StatusPost> = _post.asStateFlow()
+
+    override fun clearPostError() {
+        if (_post.value is StatusPost.Failed) _post.value = StatusPost.Idle
+    }
+
+    override fun createText(text: String, backgroundColor: String?, fontStyle: String?) {
         val body = text.trim()
         if (body.isEmpty()) return
         scope.launch {
-            runCatching { api.createStatus(body) }
+            _post.value = StatusPost.Busy(null)
+            runCatching {
+                api.createStatus(
+                    textContent = body,
+                    contentType = "text",
+                    backgroundColor = backgroundColor,
+                    fontStyle = fontStyle
+                )
+            }.onFailure { error ->
+                _post.value = StatusPost.Failed(postError(error))
+                return@launch
+            }
+            _post.value = StatusPost.Idle
             refresh()
         }
     }
 
-    override fun createPhoto(bytes: ByteArray, mimeType: String, caption: String, fileName: String) {
+    override fun createMedia(
+        bytes: ByteArray,
+        mimeType: String,
+        contentType: String,
+        caption: String,
+        fileName: String,
+        durationMs: Long
+    ) {
         scope.launch {
-            val media = runCatching { api.uploadMedia(fileName, mimeType, bytes) }.getOrNull()
-                ?: return@launch
+            _post.value = StatusPost.Busy(null)
+            val media = runCatching {
+                api.uploadMedia(fileName, mimeType, bytes) { fraction ->
+                    _post.value = StatusPost.Busy(fraction)
+                }
+            }.getOrElse { error ->
+                _post.value = StatusPost.Failed(postError(error))
+                return@launch
+            }
             runCatching {
                 api.createStatus(
                     textContent = caption,
-                    contentType = "image",
-                    contentUrl = media.url
+                    contentType = contentType,
+                    caption = caption.takeIf { it.isNotBlank() },
+                    contentUrl = media.url,
+                    durationMs = durationMs
                 )
+            }.onFailure { error ->
+                _post.value = StatusPost.Failed(postError(error))
+                return@launch
             }
+            _post.value = StatusPost.Idle
             refresh()
+        }
+    }
+
+    /** The composer shows this verbatim, so it has to say what the user can do about it. */
+    private fun postError(error: Throwable): String {
+        val text = error.message.orEmpty()
+        return if (text.contains("timeout", ignoreCase = true) ||
+            text.contains("Failed to connect", ignoreCase = true) ||
+            text.contains("Unable to resolve host", ignoreCase = true)
+        ) {
+            "Couldn't reach NChat. Check your connection and try again."
+        } else {
+            "Couldn't post your status. Please try again."
         }
     }
 
@@ -209,7 +292,11 @@ class RemoteStatusRepository(
             },
         timestamp = isoMillis(createdAt),
         viewed = isMine || viewedByMe,
-        isMine = isMine
+        isMine = isMine,
+        expiresAt = isoMillis(expiresAt),
+        backgroundColor = backgroundColor,
+        fontStyle = fontStyle,
+        durationMs = duration ?: 0L
     )
 
     private fun isoMillis(value: String?): Long {

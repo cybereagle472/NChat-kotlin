@@ -89,6 +89,7 @@ fun HomeScreen(
 
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
     val statuses by ServiceLocator.statusRepository.statuses.collectAsStateWithLifecycle()
+    val postState by ServiceLocator.statusRepository.post.collectAsStateWithLifecycle()
     val calls by ServiceLocator.callRepository.history.collectAsStateWithLifecycle()
     val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
     val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
@@ -252,21 +253,38 @@ fun HomeScreen(
                     HomeTab.Status -> StatusScreen(
                         statuses = statuses,
                         listState = statusListState,
-                        onCreateStatus = { text -> ServiceLocator.statusRepository.create(text) },
                         myAvatarUrl = me.avatarUrl,
-                        onCreatePhotoStatus = { bytes, mimeType, caption, fileName ->
-                            ServiceLocator.statusRepository.createPhoto(
+                        postState = postState,
+                        onCreateText = { text, background, font ->
+                            ServiceLocator.statusRepository.createText(text, background, font)
+                        },
+                        onCreateMedia = { bytes, mimeType, contentType, caption, fileName, durationMs ->
+                            ServiceLocator.statusRepository.createMedia(
                                 bytes = bytes,
                                 mimeType = mimeType,
+                                contentType = contentType,
                                 caption = caption,
-                                fileName = fileName
+                                fileName = fileName,
+                                durationMs = durationMs
                             )
                         },
+                        onClearPostError = { ServiceLocator.statusRepository.clearPostError() },
+                        onDeleteStatus = { id -> ServiceLocator.statusRepository.delete(id) },
                         mutedAuthorIds = mutedAuthors,
                         onMuteAuthor = { ServiceLocator.statusRepository.mute(it) },
                         onUnmuteAuthor = { ServiceLocator.statusRepository.unmute(it) },
                         loadViewers = { id -> ServiceLocator.statusRepository.viewers(id) },
-                        onMarkViewed = { id -> ServiceLocator.statusRepository.markViewed(id) }
+                        onMarkViewed = { id -> ServiceLocator.statusRepository.markViewed(id) },
+                        onReplyToAuthor = { status ->
+                            // A status reply is a normal direct message: open that person's chat.
+                            onOpenChat(
+                                ServiceLocator.chatRepository.openChat(
+                                    personId = status.authorId,
+                                    title = status.authorName,
+                                    isOnline = false
+                                )
+                            )
+                        }
                     )
 
                     HomeTab.Groups -> GroupsScreen(

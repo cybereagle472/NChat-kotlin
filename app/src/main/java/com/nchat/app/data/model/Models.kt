@@ -237,7 +237,21 @@ data class StatusUpdate(
     /** The picture itself, when this is a photo status (`content_url`). */
     val contentUrl: String? = null,
     /** How many other people have seen it — only ever non-zero for my own. */
-    val viewCount: Int = 0
+    val viewCount: Int = 0,
+    /**
+     * When this update stops being visible (`expires_at` on the server row).
+     *
+     * The field has always come down with every status and was thrown away, which is why even
+     * your own status could not say "6 hours left" — the one piece of information a status author
+     * actually wants.
+     */
+    val expiresAt: Long = 0L,
+    /** Text status background, as the hex string the composer chose (`background_color`). */
+    val backgroundColor: String? = null,
+    /** Text status font: `sans`, `serif` or `mono` (`font_style`). */
+    val fontStyle: String? = null,
+    /** Length of a video status in milliseconds, when the author's device sent one. */
+    val durationMs: Long = 0L
 )
 
 /** One person who watched a status (`GET /status/:id/views`). */
