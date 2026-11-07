@@ -151,8 +151,10 @@ private fun HomeRoot() {
     LaunchedEffect(pendingCall) {
         val callId = pendingCall ?: return@LaunchedEffect
         ServiceLocator.pendingCall.value = null
-        ServiceLocator.notifications.cancelEvent("call-$callId")
-        ServiceLocator.callRepository.openFromNotification(callId)
+        ServiceLocator.notifications.cancelIncomingCall(callId)
+        val opened = ServiceLocator.callRepository.openFromNotification(callId)
+        // The call ended while the notification sat there: say so instead of doing nothing.
+        if (!opened) NcToaster.show("That call has ended")
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

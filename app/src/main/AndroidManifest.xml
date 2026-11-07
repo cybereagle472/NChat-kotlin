@@ -71,6 +71,12 @@
             android:name=".data.notifications.NotificationReplyReceiver"
             android:exported="false" />
 
+        <!-- "Decline" on the ringing call notification. Not exported: only our own
+             PendingIntent can send it. -->
+        <receiver
+            android:name=".data.notifications.CallActionReceiver"
+            android:exported="false" />
+
         <!-- The connection that makes notifications arrive while the app is closed. Started by
              `ServiceLocator.applyBackgroundSync()`; `START_STICKY` so a kill by the system is
              followed by a restart rather than by silence. -->

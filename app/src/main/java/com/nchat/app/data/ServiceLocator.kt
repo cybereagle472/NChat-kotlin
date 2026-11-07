@@ -309,6 +309,11 @@ object ServiceLocator {
     /** Calls that rang while this device was not on the call screen, so it can report a miss. */
     private val ringingCalls = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** Calls this device actually answered — those must never be reported as missed. */
+    private val answeredCalls = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    )
+
     /**
      * Requests, group changes and calls, as notifications.
      *
@@ -325,6 +330,53 @@ object ServiceLocator {
                 runCatching { handleSystemEvent(event) }
             }
         }
+        /*
+         * Answering (or dismissing) a call in the app must stop the ringing notification, even if
+         * the caller's `call:answered` frame is late. One observer on the call state covers both.
+         */
+        appScope.launch {
+            callRepository.active.collect { call ->
+                when {
+                    call == null -> Unit
+                    call.state == com.nchat.app.data.model.CallState.Live ||
+                        call.state == com.nchat.app.data.model.CallState.Connecting -> {
+                        answeredCalls.add(call.id)
+                        ringingCalls.remove(call.id)
+                        notifications.cancelIncomingCall(call.id)
+                    }
+                    /*
+                     * Over. This is the only place a "missed call" is decided, because it is the
+                     * only place that knows both halves: that it rang (`ringingCalls`) and that
+                     * nobody took it (not answered here, and not declined by the user either —
+                     * a declined call is a decision, not a miss).
+                     */
+                    call.state == com.nchat.app.data.model.CallState.Ended -> {
+                        notifications.cancelIncomingCall(call.id)
+                        val rang = ringingCalls.remove(call.id) != null
+                        val handled = answeredCalls.remove(call.id) == true ||
+                            call.note.equals("Declined", ignoreCase = true)
+                        if (rang && !handled) {
+                            notifications.showEvent(
+                                key = "missed-${call.id}",
+                                title = "Missed call",
+                                body = "You missed a call from ${call.peerName}",
+                                avatarUrl = call.peerAvatarUrl,
+                                highPriority = false
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The user dealt with this call (declined it from the shade, or answered it elsewhere), so it
+     * must not later be reported as missed.
+     */
+    fun markCallHandled(callId: String) {
+        answeredCalls.add(callId)
+        ringingCalls.remove(callId)
     }
 
     private fun handleSystemEvent(event: RealtimeEvent) {
@@ -367,39 +419,45 @@ object ServiceLocator {
                 )
             }
 
-            // A call ringing while the call screen is not already up.
+            /*
+             * A call, always — not only when the call screen is already up.
+             *
+             * `CallRepository` sets `active` from this same event whether or not the Activity is
+             * on screen, so skipping the notification whenever a call existed meant a call that
+             * arrived while the app was in the background produced *no* sound at all: the overlay
+             * was drawn in a window nobody could see. The ringing notification is therefore
+             * unconditional, and it is the thing that makes the phone ring and shows over the
+             * lock screen.
+             */
             "call:incoming" -> {
-                if (callRepository.active.value != null) return
                 val call = event.objectOrNull("call") ?: return
                 val id = call.string("id") ?: return
                 val profile = call.objectOrNull("caller_profile")
                 val name = profile?.string("full_name") ?: profile?.string("username") ?: "Someone"
                 val video = call.string("call_type") == "video"
                 ringingCalls[id] = name
-                notifications.showEvent(
-                    key = "call-$id",
-                    title = if (video) "Incoming video call" else "Incoming call",
-                    body = "$name is calling — tap to answer",
-                    avatarUrl = profile?.string("avatar_url"),
-                    // Tapping this must open the call screen, not just the app.
-                    callId = id
+                answeredCalls.remove(id)
+                notifications.showIncomingCall(
+                    callId = id,
+                    callerName = name,
+                    video = video,
+                    avatarUrl = profile?.string("avatar_url")
                 )
             }
 
+            "call:answered" -> {
+                val id = event.string("callId") ?: event.string("call_id") ?: return
+                answeredCalls.add(id)
+                ringingCalls.remove(id)
+                notifications.cancelIncomingCall(id)
+            }
+
+            // The ring stops here; whether it becomes a "missed call" is decided once, from the
+            // call state (see the `active` observer in `startSystemNotifications`).
             "call:ended" -> {
                 val id = event.string("callId") ?: event.string("call_id") ?: return
-                val name = ringingCalls.remove(id) ?: return
+                notifications.cancelIncomingCall(id)
                 notifications.cancelEvent("call-$id")
-                // It rang and nobody picked up on this device: that is a missed call, and it is
-                // the one thing a call notification must not stay silent about.
-                if (callRepository.active.value == null) {
-                    notifications.showEvent(
-                        key = "missed-$id",
-                        title = "Missed call",
-                        body = "You missed a call from $name",
-                        highPriority = false
-                    )
-                }
             }
         }
     }

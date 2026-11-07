@@ -166,6 +166,69 @@ class NcNotifications(
         }
     }
 
+    /**
+     * An incoming call, in the shade and over the lock screen.
+     *
+     * A call is the one notification that cannot be a quiet line of text: it needs its own
+     * channel with a ringtone and vibration (the message channels are silent-ish by design), it
+     * stays until the call is answered, declined or ends, and it carries a **Decline** action so
+     * the call does not have to be opened just to reject it. `setTimeoutAfter` is the backstop for
+     * a caller whose "ended" frame never arrives — the notification cleans itself up instead of
+     * ringing into the next hour.
+     */
+    fun showIncomingCall(
+        callId: String,
+        callerName: String,
+        video: Boolean,
+        avatarUrl: String? = null
+    ) {
+        if (!canPost()) return
+        val channelId = ensureCallChannel()
+        val avatar = avatarUrl?.let { url -> avatars[url] }
+        val decline = PendingIntent.getBroadcast(
+            context,
+            callId.hashCode(),
+            Intent(context, CallActionReceiver::class.java)
+                .setAction(CallActionReceiver.ACTION_DECLINE)
+                .putExtra(EXTRA_CALL_ID, callId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setColor(0xFF7C3AED.toInt())
+            .setContentTitle(if (video) "$callerName · video call" else "$callerName is calling")
+            .setContentText("Tap to answer in NChat")
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setShowWhen(true)
+            .setTimeoutAfter(CALL_NOTIFICATION_TIMEOUT_MS)
+            .setContentIntent(openIntent(chatId = null, chatTitle = callerName, callId = callId))
+            .addAction(R.drawable.ic_stat_message, "Decline", decline)
+            .apply { if (avatar != null) setLargeIcon(avatar) }
+
+        runCatching { manager.notify(CALL_TAG.hashCode() * 31 + callId.hashCode(), builder.build()) }
+
+        val loader = loadAvatar
+        val coroutineScope = scope
+        if (avatarUrl != null && avatar == null && loader != null && coroutineScope != null) {
+            coroutineScope.launch {
+                val picture = runCatching { loader(avatarUrl) }.getOrNull() ?: return@launch
+                avatars[avatarUrl] = picture
+                main.post {
+                    runCatching { showIncomingCall(callId, callerName, video, avatarUrl) }
+                }
+            }
+        }
+    }
+
+    /** Stops the ringing notification for [callId] (answered, declined, or ended). */
+    fun cancelIncomingCall(callId: String) {
+        runCatching { manager.cancel(CALL_TAG.hashCode() * 31 + callId.hashCode()) }
+    }
+
     /** Removes one [showEvent] notification (the call that stopped ringing, the handled request). */
     fun cancelEvent(key: String) {
         runCatching { manager.cancel(EVENT_TAG.hashCode() * 31 + key.hashCode()) }
@@ -262,6 +325,41 @@ class NcNotifications(
     }
 
     // ---------------------------------------------------------------- channels
+
+    /**
+     * The ringing channel.
+     *
+     * Its own id, not the generic `events` one, because only a call should make the phone ring —
+     * and because a user who silences "Requests and calls" should still be able to hear a call.
+     */
+    private fun ensureCallChannel(): String {
+        val id = "calls"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return id
+        val system = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return id
+        if (system.getNotificationChannel(id) == null) {
+            val ringtone = runCatching {
+                android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            }.getOrNull()
+            system.createNotificationChannel(
+                NotificationChannel(id, "Incoming calls", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Ringing for voice and video calls"
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 700, 500, 700)
+                    if (ringtone != null) {
+                        setSound(
+                            ringtone,
+                            android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                        )
+                    }
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                }
+            )
+        }
+        return id
+    }
 
     /** Channel for the non-message alerts (requests, groups, calls). */
     private fun ensureEventChannel(): String {
@@ -407,6 +505,10 @@ class NcNotifications(
         }
 
         private const val CHAT_PREFIX = "chat_"
+        /** How long a ringing notification survives if nothing cancels it. */
+        private const val CALL_NOTIFICATION_TIMEOUT_MS = 45_000L
+        private const val CALL_TAG = "call-ring"
+
         /** Namespace for [showEvent] ids, so they can never collide with a chat's id. */
         private const val EVENT_TAG = "event:"
         private const val GROUP_CHANNEL = "messages"

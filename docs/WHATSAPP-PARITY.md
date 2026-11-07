@@ -53,11 +53,11 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
 | --- | --- | --- | --- |
 | Type-aware previews, pinned chats, mute, unread badge | ✅ | ✅ | `ChatsScreen` |
 | Draft preview | ✅ | ✅ 1.0.50 | `ChatsScreen` |
-| **System notifications** | ✅ | ❌ none at all — planned 1.0.51: per-chat channels honouring mute, `MessagingStyle` with inline reply, group summaries, unread badge | — |
-| Archive | ✅ | ❌ planned 1.0.51 | — |
-| Swipe actions on rows | ✅ | ❌ planned 1.0.51 | — |
-| Unread / Groups filters | ✅ | ❌ planned 1.0.51 | — |
-| Background calls (foreground service, ringtone, lock screen) | ✅ | 🟡 call works only while the app is in the foreground — planned 1.0.51 | `CallOverlay` |
+| **System notifications** | ✅ | ✅ 1.0.51–1.0.62 — per-chat channels honouring mute, `MessagingStyle` with inline reply, group summary + launcher badge, sender photo, tap lands on *that message*, and alerts for friend requests, accepted requests, group adds, incoming and missed calls | `NcNotifications`, `ServiceLocator` |
+| Archive | ✅ | ✅ 1.0.52 — swipe, archive sheet, swipe back out | `ChatsScreen` |
+| Swipe actions on rows | ✅ | ✅ 1.0.52 — swipe to archive (left) / mark read (right), with the hint revealed behind the row | `SwipeableChatRow` |
+| Unread / Groups filters | ✅ | ✅ 1.0.52, restyled 1.0.60 (own row under the header, gradient pill, hairline idle state) | `ChatFilterRow` |
+| Background calls (foreground service, ringtone, lock screen) | ✅ | 🟡 1.0.63 — a call now rings from the shade with a **Decline** action and the call screen opens on tap, even with the app in the background; there is still no full-screen lock-screen takeover (that needs `USE_FULL_SCREEN_INTENT` plus an Activity that can answer without the app being resumed) | `NcNotifications.showIncomingCall`, `CallActionReceiver` |
 
 ## Platform and trust
 
@@ -77,6 +77,19 @@ Legend: **✅ parity (or better)** · **🟡 partial** · **❌ missing** · **�
   `MessagingStyle` with inline reply, silent summary + launcher badge, tap opens that chat.
 - **1.0.52 — shipped.** Text formatting, swipe-to-archive / mark-read, archive sheet,
   All/Unread filters, pinned message banner, message info.
+- **1.0.58 — shipped.** Background delivery without Firebase: `BackgroundSyncService`
+  holds the socket, per-chat pref, battery-exemption row.
+- **1.0.59 — shipped.** Self-view black fixed, calls no longer end themselves, 30 s
+  reconnect grace with a visible "Reconnecting…".
+- **1.0.60 — shipped.** Notification photos, alerts for every event kind, chats-tab
+  filter row restyled, conversation-header actions no longer pushed off screen, startup
+  update sheet with scrollable notes, battery permission asked on first launch.
+- **1.0.61 — shipped.** Chat rows on one grid (name + clock, then preview + pin/mute/badge),
+  group sender names drawn separately, unread styling.
+- **1.0.62 — shipped.** Notification taps land on the message (scroll + ring) and on the
+  call (`openFromNotification`); unread badges no longer come back after a back gesture.
+- **1.0.63 — shipped.** Calls ring from the shade with a Decline action and a lock-screen
+  visible notification; "missed" is decided once, from the call state.
 - **1.0.53 — shipped.** Camera capture (`TakePicture`), share location with a Maps hand-off.
 - **1.0.54 — shipped.** @mentions (composer picker + roster-aware highlighting), reply privately.
 - **1.0.55 — shipped.** Storage and data screen; per-chat "Media, links and docs".
