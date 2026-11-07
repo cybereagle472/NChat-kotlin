@@ -155,11 +155,12 @@ interface CallRepository {
      *
      * A notification is a snapshot: by the time the shade is tapped the call may already be over,
      * or the app may have been killed and never seen `call:incoming` at all. So this asks the
-     * server (`GET /calls/history`, which carries the offer SDP) and only claims the screen when
-     * the call is still ringing and addressed to this device. Silence otherwise — never a stale
-     * ringing screen the user cannot get rid of.
+     * server and only claims the screen when the call is still ringing and addressed to this
+     * device — never a stale ringing screen the user cannot get rid of.
+     *
+     * @return true when the call screen was opened; false when there was nothing left to open.
      */
-    fun openFromNotification(callId: String)
+    suspend fun openFromNotification(callId: String): Boolean
 
     /** Start an outgoing call and show the ringing screen (`POST /calls`). */
     fun dial(personId: String, name: String, avatarUrl: String?, video: Boolean)
@@ -1033,34 +1034,33 @@ class RemoteCallRepository(
 
     // ------------------------------------------------------------------- REST
 
-    override fun openFromNotification(callId: String) {
-        if (_active.value?.id == callId) return
+    override suspend fun openFromNotification(callId: String): Boolean {
+        if (_active.value?.id == callId) return true
         // Already on a different call: do not yank that call off the screen.
-        if (_active.value != null) return
-        scope.launch {
-            val dto = runCatching {
-                api.callHistory(limit = 20).history.firstOrNull { it.id == callId }
-            }.getOrNull() ?: return@launch
-            if (!dto.status.equals("ringing", ignoreCase = true)) return@launch
-            if (dto.callerId == myId) return@launch
-            val me = myId
-            if (me.isNotEmpty() && dto.receiverId.isNotEmpty() && dto.receiverId != me) return@launch
-            if (busy()) return@launch
-            resetCallState()
-            pendingOffer = dto.offerSdp.asSdpObject()
-            val profile = dto.callerProfile
-            val video = dto.callType.equals("video", ignoreCase = true)
-            _active.value = ActiveCall(
-                id = dto.id,
-                peerId = dto.callerId,
-                peerName = profile?.fullName ?: profile?.username ?: "NChat user",
-                peerAvatarUrl = profile?.avatarUrl,
-                isVideo = video,
-                incoming = true,
-                state = CallState.Ringing,
-                speakerOn = video
-            )
-        }
+        if (_active.value != null) return false
+        val dto = runCatching {
+            api.callHistory(limit = 20).history.firstOrNull { it.id == callId }
+        }.getOrNull() ?: return false
+        if (!dto.status.equals("ringing", ignoreCase = true)) return false
+        if (dto.callerId == myId) return false
+        val me = myId
+        if (me.isNotEmpty() && dto.receiverId.isNotEmpty() && dto.receiverId != me) return false
+        if (busy()) return false
+        resetCallState()
+        pendingOffer = dto.offerSdp.asSdpObject()
+        val profile = dto.callerProfile
+        val video = dto.callType.equals("video", ignoreCase = true)
+        _active.value = ActiveCall(
+            id = dto.id,
+            peerId = dto.callerId,
+            peerName = profile?.fullName ?: profile?.username ?: "NChat user",
+            peerAvatarUrl = profile?.avatarUrl,
+            isVideo = video,
+            incoming = true,
+            state = CallState.Ringing,
+            speakerOn = video
+        )
+        return true
     }
 
     override fun refresh() {
