@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcGlassRow
 import com.nchat.app.core.designsystem.NcSpace
@@ -58,6 +59,8 @@ import com.nchat.app.data.model.StatusUpdate
 import com.nchat.app.data.model.StatusViewer
 import com.nchat.app.ui.components.NcHeaderAction
 import com.nchat.app.ui.components.NcTabHeader
+import androidx.compose.material.icons.rounded.Circle
+import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun StatusScreen(
@@ -163,6 +166,48 @@ fun StatusScreen(
                         color = extra.textTertiary,
                         modifier = Modifier.padding(start = NcSpace.xs, top = NcSpace.sm)
                     )
+                }
+
+                if (others.isEmpty()) {
+                    // The header alone over an empty list read like a failed load; say plainly
+                    // that there is simply nothing to see yet.
+                    item(key = "recent-empty") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = NcSpace.md, vertical = NcSpace.lg),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x148B5CF6)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Circle,
+                                    contentDescription = null,
+                                    tint = extra.textTertiary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Text(
+                                text = "No updates yet",
+                                color = extra.textSecondary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = NcSpace.sm)
+                            )
+                            Text(
+                                text = "When a contact posts a status, it appears here for 24 hours.",
+                                color = extra.textTertiary,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 items(items = others, key = { it.id }) { status ->
