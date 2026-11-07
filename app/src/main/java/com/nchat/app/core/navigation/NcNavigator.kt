@@ -32,7 +32,13 @@ sealed interface NcScreen {
     data class Conversation(
         val chatId: String,
         val title: String,
-        val autoCallVideo: Boolean? = null
+        val autoCallVideo: Boolean? = null,
+        /**
+         * A message to land on, from a notification tap. The screen scrolls to it and rings it so
+         * the user can see *which* message the alert was about, instead of being dropped at the
+         * bottom of the conversation to hunt for it.
+         */
+        val focusMessageId: String? = null
     ) : NcScreen
 
     data object Settings : NcScreen

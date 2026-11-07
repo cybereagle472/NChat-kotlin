@@ -1,6 +1,6 @@
 {
-  "versionCode": 69,
-  "versionName": "1.0.61",
+  "versionCode": 70,
+  "versionName": "1.0.62",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.61 — the chat list. (1) Every row now reads as two clean lines on one grid: the name and the clock share the first line, and everything about the message sits on the second — delivery tick, message-type icon, who spoke, what they said, pin, mute and the unread count. Before, the clock and the badge were on different lines with a spacer between them, so nothing lined up as you scrolled; that is what made the list look unstructured. (2) In groups you can now tell who is talking at a glance: the sender's name is drawn in the app's colour, set apart from the message text, instead of being blended into one long grey sentence. Your own messages read 'You:' in a quieter grey. (3) Unread chat names are now semibold, and the clock is bold and tinted when there is something new."
+  "releaseNotes": "NChat 1.0.62 — notifications now take you exactly where they point. (1) A message notification opens the chat on that message: it scrolls straight to it and rings it briefly, instead of dropping you at the bottom of the conversation to hunt for what was said. (2) A call notification now opens the call screen itself. Tapping it re-opens the ringing call if it is still ringing; if the caller already hung up it does nothing rather than showing a call that no longer exists. (3) The unread badge stays gone. Reading a chat — including one opened from a notification — now clears it for good: the count is marked read on this device the moment you tap, so a list refresh that lands a split second before the server catches up can no longer put the badge back after you press back. Anything that arrives while you are inside the chat is also marked read as it arrives, so leaving the chat shows zero."
 }

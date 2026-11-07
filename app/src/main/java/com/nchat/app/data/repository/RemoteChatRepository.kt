@@ -1570,7 +1570,26 @@ class RemoteChatRepository(
         forgetOnDisk(chatId)
     }
 
+    /**
+     * When each chat was last cleared on *this* device.
+     *
+     * The badge is a server number, but the user's act of reading is local and instantaneous. If
+     * a list refresh lands between the tap and `POST /messages/read`, the server still reports the
+     * old count and the badge pops back — the "I read it, went back, still unread" report. Anything
+     * at or before the mark is treated as read no matter what the server says yet.
+     */
+    private val readMarks = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** The badge to show: the server's count, minus anything already read here. */
+    private fun badgeCount(chatId: String, serverCount: Int, lastMessageAt: Long): Int {
+        val mark = readMarks[chatId] ?: return serverCount
+        return if (lastMessageAt <= mark) 0 else serverCount
+    }
+
     override fun markRead(chatId: String) {
+        // Remembered locally: the server round trip is asynchronous, and a refresh that raced it
+        // used to bring the unread badge straight back after a back gesture.
+        readMarks[chatId] = System.currentTimeMillis()
         _chats.update { list ->
             list.map { if (it.id == chatId) it.copy(unreadCount = 0) else it }
         }
@@ -2207,7 +2226,7 @@ class RemoteChatRepository(
                 last.isRead -> DeliveryState.Read
                 else -> DeliveryState.Sent
             },
-            unreadCount = unreadCount
+            unreadCount = badgeCount(userId, unreadCount, isoMillis(last?.createdAt))
         )
     }
 
@@ -2227,7 +2246,7 @@ class RemoteChatRepository(
             lastMessage.isRead -> DeliveryState.Read
             else -> DeliveryState.Sent
         },
-        unreadCount = unreadCount,
+        unreadCount = badgeCount(id, unreadCount, isoMillis(lastMessage?.createdAt ?: createdAt)),
         muted = members.firstOrNull { it.userId == myId }?.isMuted == true
     )
 

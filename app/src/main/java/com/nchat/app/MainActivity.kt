@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.nchat.app.core.util.CrashLog
+import com.nchat.app.data.PendingOpen
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.notifications.NcNotifications
 import com.nchat.app.ui.CrashReportScreen
@@ -76,12 +77,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readChatTarget(intent: Intent?) {
-        val chatId = intent?.getStringExtra(NcNotifications.EXTRA_CHAT_ID) ?: return
+        if (intent == null) return
+
+        /*
+         * A call alert. Opening the call screen from the shade is the whole point of the
+         * notification, so the id goes to the repository, which checks the server before claiming
+         * the screen (the call may have ended while the notification sat there).
+         */
+        intent.getStringExtra(NcNotifications.EXTRA_CALL_ID)?.let { callId ->
+            ServiceLocator.pendingCall.value = callId
+            intent.removeExtra(NcNotifications.EXTRA_CALL_ID)
+        }
+
+        val chatId = intent.getStringExtra(NcNotifications.EXTRA_CHAT_ID) ?: return
         val title = intent.getStringExtra(NcNotifications.EXTRA_CHAT_TITLE).orEmpty()
-        ServiceLocator.pendingOpen.value = chatId to title.ifBlank { "Chat" }
+        val messageId = intent.getStringExtra(NcNotifications.EXTRA_MESSAGE_ID)
+        ServiceLocator.pendingOpen.value = PendingOpen(
+            chatId = chatId,
+            title = title.ifBlank { "Chat" },
+            messageId = messageId?.takeIf { it.isNotBlank() }
+        )
         // Consumed once: a later rotation must not re-open the same conversation.
         intent.removeExtra(NcNotifications.EXTRA_CHAT_ID)
         intent.removeExtra(NcNotifications.EXTRA_CHAT_TITLE)
+        intent.removeExtra(NcNotifications.EXTRA_MESSAGE_ID)
     }
 
     private fun requestNotificationPermission() {

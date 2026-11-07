@@ -70,7 +70,7 @@ class NcNotifications(
     /** Recent lines per chat, so a second message extends the notification instead of replacing it. */
     private val lines = LinkedHashMap<String, MutableList<Line>>()
 
-    private data class Line(val sender: String, val body: String, val at: Long)
+    private data class Line(val sender: String, val body: String, val at: Long, val id: String? = null)
 
     fun ensureChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -98,7 +98,9 @@ class NcNotifications(
         entry += Line(
             sender = if (chat.isGroup) message.authorName else chat.title,
             body = bodyOf(message),
-            at = if (message.timestamp > 0) message.timestamp else System.currentTimeMillis()
+            at = if (message.timestamp > 0) message.timestamp else System.currentTimeMillis(),
+            // Kept so tapping the notification can land on this exact bubble, not just the chat.
+            id = message.id
         )
         while (entry.size > MAX_LINES) entry.removeAt(0)
 
@@ -120,7 +122,8 @@ class NcNotifications(
         chatId: String? = null,
         chatTitle: String? = null,
         avatarUrl: String? = null,
-        highPriority: Boolean = true
+        highPriority: Boolean = true,
+        callId: String? = null
     ) {
         if (!canPost()) return
         ensureChannels()
@@ -139,7 +142,11 @@ class NcNotifications(
             .setShowWhen(true)
             .apply {
                 if (avatar != null) setLargeIcon(avatar)
-                if (chatId != null) setContentIntent(openIntent(chatId, chatTitle ?: title))
+                // Every alert opens something specific: the chat, or — for a call — the call
+                // screen itself, which is what the user tapped for.
+                if (chatId != null || callId != null) {
+                    setContentIntent(openIntent(chatId, chatTitle ?: title, callId = callId))
+                }
             }
 
         runCatching { manager.notify(EVENT_TAG.hashCode() * 31 + key.hashCode(), builder.build()) }
@@ -152,7 +159,7 @@ class NcNotifications(
                 avatars[avatarUrl] = picture
                 main.post {
                     runCatching {
-                        showEvent(key, title, body, chatId, chatTitle, avatarUrl, highPriority)
+                        showEvent(key, title, body, chatId, chatTitle, avatarUrl, highPriority, callId)
                     }
                 }
             }
@@ -195,7 +202,7 @@ class NcNotifications(
             .setShowWhen(true)
             .setContentTitle(chat.title)
             .setContentText(entry.last().let { if (chat.isGroup) "${it.sender}: ${it.body}" else it.body })
-            .setContentIntent(openIntent(chat.id, chat.title))
+            .setContentIntent(openIntent(chat.id, chat.title, messageId = entry.last().id))
             .setGroup(GROUP_MESSAGES)
             .setOnlyAlertOnce(chat.muted)
             .apply { if (avatar != null) setLargeIcon(avatar) }
@@ -310,15 +317,24 @@ class NcNotifications(
 
     // ---------------------------------------------------------------- intents
 
-    private fun openIntent(chatId: String, chatTitle: String): PendingIntent {
+    private fun openIntent(
+        chatId: String?,
+        chatTitle: String,
+        messageId: String? = null,
+        callId: String? = null
+    ): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_CHAT_ID, chatId)
-            putExtra(EXTRA_CHAT_TITLE, chatTitle)
+            if (chatId != null) {
+                putExtra(EXTRA_CHAT_ID, chatId)
+                putExtra(EXTRA_CHAT_TITLE, chatTitle)
+            }
+            if (messageId != null) putExtra(EXTRA_MESSAGE_ID, messageId)
+            if (callId != null) putExtra(EXTRA_CALL_ID, callId)
         }
         return PendingIntent.getActivity(
             context,
-            chatId.hashCode(),
+            (chatId ?: callId ?: chatTitle).hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -357,6 +373,12 @@ class NcNotifications(
     companion object {
         const val ACTION_REPLY = "com.nchat.app.notification.REPLY"
         const val EXTRA_CHAT_ID = "com.nchat.app.extra.CHAT_ID"
+
+        /** The message a notification was about, so the chat opens *on* it. */
+        const val EXTRA_MESSAGE_ID = "com.nchat.app.extra.MESSAGE_ID"
+
+        /** The call a notification was about, so tapping it re-opens the call screen. */
+        const val EXTRA_CALL_ID = "com.nchat.app.extra.CALL_ID"
         const val EXTRA_CHAT_TITLE = "com.nchat.app.extra.CHAT_TITLE"
         const val KEY_REPLY = "com.nchat.app.extra.REPLY_TEXT"
 
