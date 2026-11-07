@@ -182,6 +182,15 @@ data class Chat(
     val isOnline: Boolean = false,
     val isGroup: Boolean = false,
     val lastMessage: String = "",
+    /**
+     * Who wrote the newest message in a **group**, for the chat list.
+     *
+     * The prefix used to be baked into [lastMessage] as plain text, so "Zaid: ok" and "ok" were
+     * the same grey string. Split out, the row can set the name apart from what was actually
+     * said — which is the difference between a list you scan and one you read line by line.
+     * Null for 1:1 chats, where the name is the title, and for system rows ("Zaid joined").
+     */
+    val lastMessageSender: String? = null,
     val lastMessageAt: Long = 0L,
     val lastMessageKind: MessageKind = MessageKind.Text,
     val lastMessageMine: Boolean = false,
