@@ -174,9 +174,6 @@ fun ChatsScreen(
                     }
                 }
                 items(items = visibleChats, key = { it.id }) { chat ->
-                    // Pinning, archiving or a new message reorders this list; sliding the rows
-                    // into their new places keeps the change readable instead of a jump cut.
-                    Box(modifier = Modifier.animateItem()) {
                     SwipeableChatRow(
                         chat = chat,
                         onArchive = {
@@ -220,7 +217,6 @@ fun ChatsScreen(
                         },
                         onDelete = { pendingDelete = chat }
                     )
-                    }
                     }
                 }
             }
