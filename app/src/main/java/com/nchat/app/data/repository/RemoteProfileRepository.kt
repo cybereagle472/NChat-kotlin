@@ -117,17 +117,16 @@ class RemoteProfileRepository(
         val userId = tokens.userId ?: throw IOException("You are not signed in")
         val name = fullName.trim()
         val handle = username.trim().lowercase()
-        val photoUrl = if (image == null) "" else {
+        val photoUrl = profileSetupAvatarUrl(image) { selectedImage ->
             val bytes = withContext(Dispatchers.IO) {
                 ByteArrayOutputStream().use { sink ->
-                    if (!image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, sink)) {
+                    if (!selectedImage.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, sink)) {
                         throw IOException("Could not prepare the profile photo")
                     }
                     sink.toByteArray()
                 }
             }
-            api.uploadMedia("avatar.png", "image/png", bytes).url.shareableMediaUrl()
-                ?: throw IOException("The server did not provide a usable photo address")
+            api.uploadMedia("avatar.png", "image/png", bytes).url
         }
         val remote = api.updateMe(
             fullName = name,

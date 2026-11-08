@@ -327,6 +327,7 @@ fun ProfileSetupScreen(
                     onValueChange = { fullName = it },
                     placeholder = "Jane Doe",
                     icon = Icons.Rounded.Person,
+                    enabled = !submitting,
                     modifier = Modifier.padding(top = 18.dp)
                 )
 
@@ -339,6 +340,7 @@ fun ProfileSetupScreen(
                     },
                     placeholder = "janedoe",
                     icon = Icons.Rounded.Email,
+                    enabled = !submitting,
                     modifier = Modifier.padding(top = 14.dp),
                     trailing = {
                         when {
@@ -414,6 +416,7 @@ fun ProfileSetupScreen(
                 BasicTextField(
                     value = bio,
                     onValueChange = { if (it.length <= 150) bio = it },
+                    enabled = !submitting,
                     textStyle = TextStyle(fontSize = 14.sp, color = Slate900),
                     cursorBrush = SolidColor(Violet600),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -548,6 +551,7 @@ private fun SetupField(
     placeholder: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     trailing: @Composable (() -> Unit)? = null
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -582,6 +586,7 @@ private fun SetupField(
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
+                    enabled = enabled,
                     singleLine = true,
                     textStyle = TextStyle(fontSize = 14.sp, color = Slate900),
                     cursorBrush = SolidColor(Violet600),
