@@ -1,6 +1,7 @@
 package com.nchat.app.feature.settings
 
 import android.net.Uri
+import com.nchat.app.core.update.AutoUpdater
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -440,7 +441,12 @@ fun SettingsScreen(
             onDismissRequest = viewModel::clearNotice,
             title = { Text("NChat") },
             text = { Text(notice) },
-            confirmButton = { TextButton(onClick = viewModel::clearNotice) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearNotice) { Text("OK") } },
+            dismissButton = {
+                if (notice.contains("update", ignoreCase = true) || state.info != null) {
+                    TextButton(onClick = { AutoUpdater.openReleasePage(context) }) { Text("Open release page") }
+                }
+            }
         )
     }
 }

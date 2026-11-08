@@ -4,16 +4,22 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.nchat.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -21,7 +27,9 @@ data class UpdateInfo(
     val versionCode: Int,
     val versionName: String,
     val apkUrl: String,
-    val notes: String
+    val notes: String,
+    /** Optional independently hosted HTTPS mirrors supplied by the release manifest. */
+    val fallbackApkUrls: List<String> = emptyList()
 )
 
 /** Outcome of handing a downloaded APK to the system installer. */
@@ -48,34 +56,51 @@ object AutoUpdater {
 
     private const val VERSION_URL =
         "https://raw.githubusercontent.com/cybereagle472/NChat-kotlin/main/version.json"
+    private const val RELEASE_PAGE = "https://github.com/cybereagle472/NChat-kotlin/releases/latest"
     private const val APK_MIME = "application/vnd.android.package-archive"
     private const val MIN_APK_BYTES = 100_000L
+    private val downloadMutex = Mutex()
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
-        val connection = (URL(VERSION_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            requestMethod = "GET"
-            setRequestProperty("Cache-Control", "no-cache, no-store")
-            setRequestProperty("Pragma", "no-cache")
-            setRequestProperty("User-Agent", "NChat-Updater")
-        }
-        try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                error("Update server returned HTTP ${connection.responseCode}.")
+        var lastError: IOException? = null
+        for (attempt in 0 until 3) {
+            try {
+                val connection = (URL(VERSION_URL).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    requestMethod = "GET"
+                    setRequestProperty("Cache-Control", "no-cache, no-store")
+                    setRequestProperty("Pragma", "no-cache")
+                    setRequestProperty("User-Agent", "NChat-Updater")
+                }
+                try {
+                    val status = connection.responseCode
+                    if (status != HttpURLConnection.HTTP_OK) throw UpdateHttpException(status)
+                    val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    val remoteCode = json.getInt("versionCode")
+                    if (remoteCode <= BuildConfig.VERSION_CODE) return@withContext null
+                    val mirrors = json.optJSONArray("apkUrls")
+                    val alternatives = if (mirrors == null) emptyList() else
+                        (0 until minOf(mirrors.length(), 3)).mapNotNull { index ->
+                            mirrors.optString(index).takeIf { it.isNotBlank() }
+                        }
+                    return@withContext UpdateInfo(
+                        versionCode = remoteCode,
+                        versionName = json.getString("versionName"),
+                        apkUrl = json.getString("apkUrl"),
+                        notes = json.optString("releaseNotes", "Performance and design improvements"),
+                        fallbackApkUrls = alternatives
+                    )
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (error: IOException) {
+                lastError = error
+                if (!isTransientUpdateFailure(error) || attempt == 2) break
+                delay(600L * (attempt + 1))
             }
-            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val remoteCode = json.getInt("versionCode")
-            if (remoteCode <= BuildConfig.VERSION_CODE) return@withContext null
-            UpdateInfo(
-                versionCode = remoteCode,
-                versionName = json.getString("versionName"),
-                apkUrl = json.getString("apkUrl"),
-                notes = json.optString("releaseNotes", "Performance and design improvements")
-            )
-        } finally {
-            connection.disconnect()
         }
+        throw IOException("Couldn't check for updates. Try another network or open the release page in your browser.", lastError)
     }
 
     /**
@@ -88,68 +113,34 @@ object AutoUpdater {
         info: UpdateInfo,
         onProgress: (Float?) -> Unit = {}
     ): File = withContext(Dispatchers.IO) {
-        val connection = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "NChat-Updater")
-            setRequestProperty("Accept", APK_MIME)
+      downloadMutex.withLock {
+        val targetDir = File(context.filesDir, "updates").apply {
+            if (!exists() && !mkdirs()) error("Could not create the update folder.")
+        }
+        val apk = File(targetDir, "nchat-${info.versionCode}.apk")
+        val temp = File(targetDir, "nchat-${info.versionCode}.part.apk")
+        // Returning from Android's install-permission screen should not download 30 MB again.
+        if (apk.isFile && apk.length() >= MIN_APK_BYTES && hasZipHeader(apk) &&
+            validateArchive(context, apk, info.versionCode) == null) {
+            onProgress(1f)
+            return@withLock apk
         }
         try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                error("APK download failed (HTTP ${connection.responseCode}).")
+            ApkDownloader().download(listOf(info.apkUrl) + info.fallbackApkUrls, temp, onProgress) { file ->
+                if (!hasZipHeader(file)) "The downloaded file is not a valid APK."
+                else validateArchive(context, file, info.versionCode)
             }
-            val targetDir = File(context.filesDir, "updates").apply {
-                if (!exists() && !mkdirs()) error("Could not create the update folder.")
-            }
-            // Remove APKs from earlier attempts so storage never creeps up.
-            targetDir.listFiles()?.forEach { stale ->
-                if (stale.name != "nchat-${info.versionCode}.apk") stale.delete()
-            }
-
-            val apk = File(targetDir, "nchat-${info.versionCode}.apk")
-            val temp = File(targetDir, "nchat-${info.versionCode}.part")
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
-
-            onProgress(if (totalBytes != null) 0f else null)
-            connection.inputStream.use { input ->
-                FileOutputStream(temp).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var copied = 0L
-                    var lastReported = -1
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        copied += read
-                        // One callback per whole percent keeps the UI smooth without
-                        // flooding the main thread with state updates.
-                        val percent = totalBytes
-                            ?.let { ((copied * 100) / it).toInt().coerceIn(0, 100) }
-                        if (percent != null && percent != lastReported) {
-                            lastReported = percent
-                            onProgress(percent / 100f)
-                        }
-                    }
-                    output.flush()
-                }
-            }
-
-            if (temp.length() < MIN_APK_BYTES || !hasZipHeader(temp)) {
-                temp.delete()
-                error("The downloaded file is not a valid APK. Please retry.")
-            }
-            if (!isNchatPackage(context, temp)) {
-                temp.delete()
-                error("The downloaded file is not a valid NChat build.")
-            }
-            if (apk.exists()) apk.delete()
+            // Same-directory rename; keep the previous file if replacement fails.
             check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
+            targetDir.listFiles()?.forEach { stale ->
+                if (stale.name != apk.name && (stale.name.endsWith(".apk") || stale.name.endsWith(".part"))) stale.delete()
+            }
             onProgress(1f)
             apk
         } finally {
-            connection.disconnect()
+            temp.delete()
         }
+      }
     }
 
     /**
@@ -168,7 +159,7 @@ object AutoUpdater {
                 context.packageManager.canRequestPackageInstalls()
         }
         if (!canInstall) {
-            openUnknownSourcesSettings(context)
+            withContext(Dispatchers.Main) { openUnknownSourcesSettings(context) }
             return InstallResult.NeedsPermission
         }
 
@@ -219,6 +210,14 @@ object AutoUpdater {
         }
     }
 
+    /** A manual route when GitHub's download endpoint is unavailable to the app. */
+    fun openReleasePage(context: Context): Boolean = try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RELEASE_PAGE)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     private fun openUnknownSourcesSettings(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val intent = Intent(
@@ -227,8 +226,8 @@ object AutoUpdater {
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
             context.startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            // Some OEMs rename this screen; the user can still enable it in Settings.
+        } catch (_: Exception) {
+            // Some OEMs rename or restrict this screen; the user can still enable it in Settings.
         }
     }
 
@@ -240,11 +239,47 @@ object AutoUpdater {
         false
     }
 
-    private fun isNchatPackage(context: Context, file: File): Boolean = try {
+    /** Check package, exact advertised version, and signing compatibility before invoking Android. */
+    private fun validateArchive(context: Context, file: File, expectedVersion: Int): String? {
+      return try {
         @Suppress("DEPRECATION")
-        val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
-        archive?.packageName == context.packageName
-    } catch (_: Exception) {
-        false
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        @Suppress("DEPRECATION")
+        val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
+            ?: return "The downloaded file is not a valid Android package."
+        if (archive.packageName != context.packageName) return "The downloaded file is not an NChat update."
+        @Suppress("DEPRECATION")
+        val version = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archive.longVersionCode else archive.versionCode.toLong()
+        if (version != expectedVersion.toLong() || version <= BuildConfig.VERSION_CODE.toLong()) {
+            return "The downloaded APK does not match the advertised update. Please try again later."
+        }
+        @Suppress("DEPRECATION")
+        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
+        val current = currentSigners(installed)
+        val incoming = currentSigners(archive)
+        val history = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            signatureIds(archive.signingInfo?.signingCertificateHistory)
+        } else emptySet()
+        if (!compatibleUpdateSigners(current, incoming, history)) {
+            return "The update signing key does not match this installation. Do not uninstall the app; contact support."
+        }
+        null
+      } catch (_: Exception) {
+          "Could not verify the downloaded update. Please try again."
+      }
     }
+
+    @Suppress("DEPRECATION")
+    private fun currentSigners(info: PackageInfo): Set<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        signatureIds(info.signingInfo?.apkContentsSigners)
+    } else {
+        signatureIds(info.signatures)
+    }
+
+    private fun signatureIds(signatures: Array<Signature>?): Set<String> = signatures.orEmpty()
+        .map { it.toCharsString() }.toSet()
 }

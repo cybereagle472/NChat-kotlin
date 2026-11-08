@@ -1,6 +1,6 @@
 {
-  "versionCode": 77,
-  "versionName": "1.0.69",
+  "versionCode": 78,
+  "versionName": "1.0.70",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.69 improves message delivery and retry reliability, protects queued messages and voice recordings, strengthens account and media security, and fixes conversation caching and date display. Delivery can still be uncertain when a server acknowledgement is lost."
+  "releaseNotes": "NChat 1.0.70 improves update downloads with automatic retries, clearer errors and a browser fallback. It also verifies update package identity, version and signing compatibility before installation, and includes the recent messaging and reliability fixes."
 }
