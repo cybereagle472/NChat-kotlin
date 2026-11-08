@@ -24,8 +24,8 @@ class VoiceClipStore(context: Context) {
     /**
      * Writes [bytes] for [clientId] and returns the absolute path, or null when the disk refuses.
      *
-     * A null return is not fatal — the caller treats it as "no local copy" and sends the way it
-     * used to (upload, then post). It only costs the ability to survive going offline.
+     * A null return means the recording could not be saved. The caller reports a failure rather
+     * than sending an empty voice message.
      */
     fun save(clientId: String, bytes: ByteArray, extension: String): String? = runCatching {
         if (bytes.isEmpty()) return null
