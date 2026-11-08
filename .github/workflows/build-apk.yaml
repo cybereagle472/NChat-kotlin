@@ -75,7 +75,7 @@ jobs:
       # One-time transfer for a user whose network cannot reach release downloads.
       # The APK is a temporary, unreferenced Git object, not committed to the repository.
       - name: Prepare one-time APK transfer
-        if: "${{ github.ref == 'refs/heads/arena/e87304bb-nchat-kotlin' && github.event.head_commit.message == 'ci: prepare one-time APK transfer' }}"
+        if: "${{ github.ref == 'refs/heads/arena/e87304bb-nchat-kotlin' && startsWith(github.event.head_commit.message, 'ci: prepare one-time APK transfer') }}"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
