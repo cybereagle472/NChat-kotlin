@@ -13,6 +13,7 @@ import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.data.model.hasUnconfirmedDelivery
 import com.nchat.app.data.model.Reaction
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.ChatDto
@@ -210,18 +211,8 @@ class RemoteChatRepository(
             groupIds += cachedGroups.map { it.id }
         }
         mirrorLists()
-        /*
-         * Voice clips left over from a previous run that nothing is waiting for any more —
-         * a send that succeeded just before the process died, or one whose bubble the user
-         * deleted. Anything the outbox still points at stays; the rest is dead weight on a
-         * phone's internal storage.
-         */
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                val keep = outbox?.all().orEmpty().mapNotNull { it.localFile }.toSet()
-                voiceClips?.prune(keep)
-            }
-        }
+        // Do not sweep voice files from an outbox snapshot: a corrupt queue, a failed
+        // message, or a concurrent recording can leave a needed clip outside that snapshot.
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
@@ -1233,7 +1224,7 @@ class RemoteChatRepository(
     }
 
     /**
-     * True while a bubble exists only on this device.
+     * True while this device has not confirmed the server's message ID.
      *
      * A pending message's `id` *is* the id we minted for the send (`clientMessageId`); once the
      * server answers, the bubble carries the server's id and the client id separately. Edit /
@@ -1241,7 +1232,7 @@ class RemoteChatRepository(
      */
     private fun isPending(chatId: String, messageId: String): Boolean {
         val message = stream(chatId).value.firstOrNull { it.id == messageId } ?: return true
-        return message.clientMessageId == message.id
+        return message.hasUnconfirmedDelivery()
     }
 
     /**
@@ -1433,16 +1424,16 @@ class RemoteChatRepository(
         }
     }
 
-    override fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean) {
+    override fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean, reportSuccess: Boolean) {
         val target = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
-        /*
-         * A bubble that never reached the server is deleted here and nowhere else — but its
-         * outbox entry has to go with it. It used to be left behind, so the very next flush
-         * (a reconnect, a foreground) delivered the message the user had just deleted.
-         */
-        if (isPending(chatId, messageId)) {
-            // Once a request has started we cannot guarantee the server hasn't received it.
-            // Avoid promising deletion while that outcome is still unknown.
+        if (target.hasUnconfirmedDelivery()) {
+            // The server may have accepted the message even though its acknowledgement was lost.
+            // Without the server ID, removing the outbox row cannot recall the recipient's copy.
+            if (forEveryone) {
+                NcToaster.show("Delivery is unconfirmed — wait before deleting for everyone")
+                return
+            }
+            // Do not cancel a send while its local request is still running.
             if (!deliveryGate.tryAcquire(messageId)) {
                 NcToaster.show("Message is being sent — try deleting it when sending finishes")
                 return
@@ -1456,7 +1447,7 @@ class RemoteChatRepository(
                 voiceClips?.delete(queued?.localFile)
                 updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
                 previewFromLast(chatId)
-                NcToaster.show(if (forEveryone) "Message deleted" else "Message deleted for you")
+                if (reportSuccess) NcToaster.show("Removed locally; it may have been sent and could reappear")
             } finally {
                 deliveryGate.release(messageId)
             }
@@ -1477,21 +1468,20 @@ class RemoteChatRepository(
                 }
             }
             val error = response.exceptionOrNull() ?: run {
-                NcToaster.show(if (forEveryone) "Message deleted for everyone" else "Message deleted for you")
+                if (reportSuccess) NcToaster.show(if (forEveryone) "Message deleted for everyone" else "Message deleted for you")
                 return@launch
             }
             /*
-             * The server said no — a group message older than the worker's one-hour window
-             * (`groups.ts:513-521`), or a row that is not mine. Put the message back exactly as
-             * it was and say why: a tombstone that a refresh silently undoes is worse than a
-             * delete that never happened.
+             * The request may have been refused or its response lost. Restore the local view
+             * until a later refresh resolves the server state; do not claim the outcome is known.
              */
             updateMessages(chatId) { messages ->
                 if (forEveryone) messages.map { if (it.id == messageId) target else it }
+                else if (messages.any { it.id == messageId }) messages
                 else (messages + target).sortedBy { it.timestamp }
             }
             previewFromLast(chatId)
-            NcToaster.show("Couldn't delete — ${error.describeSend()}")
+            NcToaster.show("Couldn't confirm deletion — ${error.describeSend()}")
         }
     }
 

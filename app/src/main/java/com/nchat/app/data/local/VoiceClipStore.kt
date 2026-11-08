@@ -13,13 +13,12 @@ import java.io.File
  *
  * So the bytes land here first (`filesDir/voice-out/<client_message_id>.m4a`), the outbox entry
  * points at the file, and delivery uploads it. The file is deleted once the server has the
- * message, which makes it self-cleaning; [prune] sweeps whatever a killed process left behind.
+ * message. Unreferenced files are retained until a safe, coordinated cleanup is available.
  *
  * Nothing here is user-facing: the bubble plays a pending clip straight off this file.
  */
-class VoiceClipStore(context: Context) {
-
-    private val dir = File(context.applicationContext.filesDir, "voice-out")
+class VoiceClipStore internal constructor(private val dir: File) {
+    constructor(context: Context) : this(File(context.applicationContext.filesDir, "voice-out"))
 
     /**
      * Writes [bytes] for [clientId] and returns the absolute path, or null when the disk refuses.
@@ -37,7 +36,7 @@ class VoiceClipStore(context: Context) {
         file.absolutePath
     }.getOrNull()
 
-    /** The clip at [path], or null when it is gone (already sent, or swept by [prune]). */
+    /** The clip at [path], or null when it is gone or cannot be read. */
     fun read(path: String?): ByteArray? = runCatching {
         val file = path?.let { File(it) } ?: return null
         if (!file.isFile || !inside(file)) return null
@@ -48,13 +47,6 @@ class VoiceClipStore(context: Context) {
         runCatching {
             val file = path?.let { File(it) } ?: return
             if (inside(file)) file.delete()
-        }
-    }
-
-    /** Drops every stored clip no queued send still needs. */
-    fun prune(keep: Set<String>) {
-        runCatching {
-            dir.listFiles()?.forEach { file -> if (file.absolutePath !in keep) file.delete() }
         }
     }
 

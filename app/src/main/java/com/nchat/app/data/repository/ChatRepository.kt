@@ -100,7 +100,9 @@ interface ChatRepository {
     /** Rewrites the body of my own text message and flags it as edited. */
     fun editMessage(chatId: String, messageId: String, text: String)
     fun toggleReaction(chatId: String, messageId: String, emoji: String)
-    fun deleteMessage(chatId: String, messageId: String, forEveryone: Boolean = false)
+    fun deleteMessage(
+        chatId: String, messageId: String, forEveryone: Boolean = false, reportSuccess: Boolean = true
+    )
     fun createGroup(name: String, description: String, memberIds: List<String>): Group
     fun addMembers(groupId: String, memberIds: List<String>)
     fun renameGroup(groupId: String, name: String)
