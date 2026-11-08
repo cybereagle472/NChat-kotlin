@@ -18,9 +18,9 @@ import java.io.File
  * Every entry carries the account it belongs to, so signing in as somebody else can never send
  * the previous user's pending text.
  */
-class OutboxStore(context: Context) {
+class OutboxStore internal constructor(private val file: File) {
 
-    private val file = File(context.applicationContext.filesDir, "outbox.json")
+    constructor(context: Context) : this(File(context.applicationContext.filesDir, "outbox.json"))
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -30,6 +30,18 @@ class OutboxStore(context: Context) {
     private val lock = Any()
 
     fun all(): List<OutboxEntry> = synchronized(lock) { read() }
+
+    fun find(clientId: String): OutboxEntry? = synchronized(lock) {
+        read().firstOrNull { it.clientId == clientId }
+    }
+
+    /** Update an existing entry only; never resurrect one deleted during an upload. */
+    fun replaceIfPresent(entry: OutboxEntry): Boolean = synchronized(lock) {
+        val rows = read()
+        if (rows.none { it.clientId == entry.clientId }) return@synchronized false
+        write(rows.map { if (it.clientId == entry.clientId) entry else it })
+        true
+    }
 
     fun add(entry: OutboxEntry) = synchronized(lock) {
         val rows = read().filterNot { it.clientId == entry.clientId } + entry

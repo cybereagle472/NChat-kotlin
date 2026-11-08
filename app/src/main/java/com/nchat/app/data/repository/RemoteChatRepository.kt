@@ -26,6 +26,7 @@ import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -134,6 +135,7 @@ class RemoteChatRepository(
     private val groupIds = mutableSetOf<String>()
     private val names = mutableMapOf<String, String>()
     private val typingJobs = mutableMapOf<String, Job>()
+    private val deliveryGate = DeliveryGate()
 
     /**
      * Conversations found in the message history itself, and whether the search has run.
@@ -773,11 +775,15 @@ class RemoteChatRepository(
             mimeType = mimeType,
             replyTo = replyToId
         )
+        if (localFile == null) {
+            markFailed(chatId, localId, "Couldn't save the recording on this device")
+            return
+        }
         outbox?.add(entry)
         // Offline is not a failure — the entry above *is* the send, and `flushOutbox()` (on the
         // way back up) finishes it. The bubble keeps its clock, exactly like a queued text.
         if (!online()) return
-        scope.launch { deliver(entry, live = true) }
+        scope.launch { deliver(entry) }
     }
 
     override fun sendMedia(
@@ -802,86 +808,98 @@ class RemoteChatRepository(
         preview(chatId, local, DeliveryState.Sending)
 
         scope.launch {
-            // 1) upload the file (and its preview), 2) send a message that points at both.
-            val media = runCatching {
-                api.uploadMedia(fileName, mimeType, bytes) { fraction ->
-                    setUploadProgress(chatId, localId, fraction)
+            if (!deliveryGate.tryAcquire(localId)) return@launch
+            try {
+                if (stream(chatId).value.none { it.id == localId }) return@launch
+                // 1) upload the file (and its preview), 2) send a message that points at both.
+                val media = runCatching {
+                    api.uploadMedia(fileName, mimeType, bytes) { fraction ->
+                        setUploadProgress(chatId, localId, fraction)
+                    }
+                }.getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    setUploadProgress(chatId, localId, null)
+                    markFailed(chatId, localId)
+                    NcToaster.show("Upload failed — ${error.describeSend()}")
+                    return@launch
                 }
-            }.getOrElse { error ->
+                // The file is on the server; what is left is a small JSON post, not worth a ring.
+                //
+                // The bubble switches to the uploaded file immediately instead of waiting for the
+                // message row: the sender sees their photo the moment it lands, the same second the
+                // ring disappears, rather than a grey gradient until the acknowledgement arrives.
                 setUploadProgress(chatId, localId, null)
-                markFailed(chatId, localId)
-                NcToaster.show("Upload failed — ${error.describeSend()}")
-                return@launch
-            }
-            // The file is on the server; what is left is a small JSON post, not worth a ring.
-            //
-            // The bubble switches to the uploaded file immediately instead of waiting for the
-            // message row: the sender sees their photo the moment it lands, the same second the
-            // ring disappears, rather than a grey gradient until the acknowledgement arrives.
-            setUploadProgress(chatId, localId, null)
-            if (media.url.isNotBlank()) {
-                updateMessages(chatId) { messages ->
-                    messages.map {
-                        if (it.id == localId) it.copy(mediaUrl = media.url) else it
+                if (media.url.isNotBlank()) {
+                    updateMessages(chatId) { messages ->
+                        messages.map {
+                            if (it.id == localId) it.copy(mediaUrl = media.url) else it
+                        }
                     }
                 }
-            }
-            val thumb = thumbnail?.let { preview ->
-                // `thumb-clip.mp4` would be served back as `image/jpeg` bytes behind an .mp4
-                // name, which confuses players and image loaders alike; give it a .jpg.
-                val stem = fileName.substringBeforeLast('.', fileName)
-                runCatching { api.uploadMedia("thumb-$stem.jpg", "image/jpeg", preview) }
-                    .getOrNull()
-                    ?.url
-            }
-            outbox?.add(
-                OutboxEntry(
-                    clientId = localId,
-                    chatId = chatId,
-                    isGroup = isGroup(chatId),
-                    ownerId = myId,
-                    text = body,
-                    type = kind.wireType(),
-                    mediaUrl = media.url,
-                    thumbnailUrl = thumb,
-                    fileName = fileName,
-                    fileSize = media.fileSize?.toString()
-                )
-            )
-            val created = sendWithRetry {
-                // Same as voice: the URL goes in `content` too, so a client that only reads
-                // `content` (the reference web app) still finds the file.
-                val wireBody = media.url
-                if (isGroup(chatId)) {
-                    api.sendGroupMessage(
-                        chatId,
-                        wireBody,
+                val thumb = thumbnail?.let { preview ->
+                    // `thumb-clip.mp4` would be served back as `image/jpeg` bytes behind an .mp4
+                    // name, which confuses players and image loaders alike; give it a .jpg.
+                    val stem = fileName.substringBeforeLast('.', fileName)
+                    val result = runCatching { api.uploadMedia("thumb-$stem.jpg", "image/jpeg", preview) }
+                    val error = result.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    result.getOrNull()?.url
+                }
+                outbox?.add(
+                    OutboxEntry(
+                        clientId = localId,
+                        chatId = chatId,
+                        isGroup = isGroup(chatId),
+                        ownerId = myId,
+                        text = body,
                         type = kind.wireType(),
-                        clientMessageId = localId,
-                        mediaUrl = media.url,
-                        thumbnailUrl = thumb,
-                        duration = null
-                    )
-                } else {
-                    api.sendMessage(
-                        chatId,
-                        wireBody,
-                        type = kind.wireType(),
-                        clientMessageId = localId,
                         mediaUrl = media.url,
                         thumbnailUrl = thumb,
                         fileName = fileName,
                         fileSize = media.fileSize?.toString()
                     )
+                )
+                var failure: Throwable? = null
+                val created = sendWithRetry(onFailure = { failure = it }) {
+                    // Same as voice: the URL goes in `content` too, so a client that only reads
+                    // `content` (the reference web app) still finds the file.
+                    val wireBody = media.url
+                    if (isGroup(chatId)) {
+                        api.sendGroupMessage(
+                            chatId,
+                            wireBody,
+                            type = kind.wireType(),
+                            clientMessageId = localId,
+                            mediaUrl = media.url,
+                            thumbnailUrl = thumb,
+                            duration = null
+                        )
+                    } else {
+                        api.sendMessage(
+                            chatId,
+                            wireBody,
+                            type = kind.wireType(),
+                            clientMessageId = localId,
+                            mediaUrl = media.url,
+                            thumbnailUrl = thumb,
+                            fileName = fileName,
+                            fileSize = media.fileSize?.toString()
+                        )
+                    }
                 }
+                if (created == null) {
+                    val transient = isTransientSendFailure(failure)
+                    if (transient && outbox != null) return@launch
+                    if (!transient) outbox?.remove(localId)
+                    markFailed(chatId, localId, failure?.describeSend())
+                    return@launch
+                }
+                outbox?.remove(localId)
+                replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
+                previewFromLast(chatId)
+            } finally {
+                deliveryGate.release(localId)
             }
-            if (created == null) {
-                markFailed(chatId, localId)
-                return@launch
-            }
-            outbox?.remove(localId)
-            replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
-            previewFromLast(chatId)
         }
     }
 
@@ -930,7 +948,7 @@ class RemoteChatRepository(
         )
         outbox?.add(entry)
         if (!online()) return
-        scope.launch { deliver(entry, live = true) }
+        scope.launch { deliver(entry) }
     }
 
     /** Sends the queued row, then swaps the optimistic bubble for the server's. */
@@ -940,43 +958,48 @@ class RemoteChatRepository(
         send: suspend (clientId: String) -> com.nchat.app.network.MessageEnvelope
     ) {
         scope.launch {
-            /*
-             * Offline is not a failure.
-             *
-             * The entry is already in the outbox (see `sendMessage`), so the message exists:
-             * it just has to wait. Trying three times against a radio that is off, and then
-             * colouring the bubble red with "Message not sent", is the opposite of what a
-             * messenger does — WhatsApp keeps the clock and sends it when the phone is back.
-             * The same rule applies to a transient answer (5xx / 429 / I/O): the queue retries
-             * it, and only the queue's own give-up (MAX_OUTBOX_ATTEMPTS) or a real 4xx marks
-             * the bubble as failed.
-             */
-            if (!online()) return@launch
+            if (!deliveryGate.tryAcquire(localId)) return@launch
+            try {
+                // A reconnect flush or deletion may have removed this entry already.
+                if (outbox != null && outbox.find(localId) == null) return@launch
+                /*
+                 * Offline is not a failure.
+                 *
+                 * The entry is already in the outbox (see `sendMessage`), so the message exists:
+                 * it just has to wait. Trying three times against a radio that is off, and then
+                 * colouring the bubble red with "Message not sent", is the opposite of what a
+                 * messenger does — WhatsApp keeps the clock and sends it when the phone is back.
+                 * The same rule applies to a transient answer (5xx / 429 / I/O): the queue retries
+                 * it, and only the queue's own give-up (MAX_OUTBOX_ATTEMPTS) or a real 4xx marks
+                 * the bubble as failed.
+                 */
+                if (!online()) return@launch
 
-            var failure: Throwable? = null
-            val created = sendWithRetry(onFailure = { error -> failure = error }) { send(localId) }
-            if (created == null) {
-                val transient = when (val error = failure) {
-                    is ApiException -> error.status >= 500 || error.status == 429
-                    is IOException -> true
-                    null -> true
-                    else -> false
+                var failure: Throwable? = null
+                val created = sendWithRetry(onFailure = { error -> failure = error }) { send(localId) }
+                if (created == null) {
+                    val transient = isTransientSendFailure(failure)
+                    if (transient && outbox != null) return@launch
+                    // A permanent refusal must not remain queued and be sent later
+                    // when the connection returns. The failed bubble stays retryable.
+                    if (!transient) outbox?.remove(localId)
+                    markFailed(chatId, localId, failure?.describeSend())
+                    return@launch
                 }
-                if (transient && outbox != null) return@launch
-                markFailed(chatId, localId)
-                return@launch
+                outbox?.remove(localId)
+                replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
+                previewFromLast(chatId)
+            } finally {
+                deliveryGate.release(localId)
             }
-            outbox?.remove(localId)
-            replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
-            previewFromLast(chatId)
         }
     }
 
     /**
      * Three attempts with a growing pause — the reference's `retry({maxRetries: 3, backoff})`.
      *
-     * Only transient answers are retried: a 4xx is the server saying no (bad receiver, blocked,
-     * rate-limited for real), and repeating it just delays the warning the user needs to see.
+     * Only transient answers are retried: timeouts, rate limits, server errors and I/O failures.
+     * Other client errors are refusals, and repeating them delays the warning the user needs.
      */
     private suspend fun sendWithRetry(
         onFailure: (Throwable?) -> Unit = {},
@@ -988,11 +1011,8 @@ class RemoteChatRepository(
             result.getOrNull()?.message?.let { return it }
             if (result.isSuccess) return null
             val error = result.exceptionOrNull()
-            val transient = when (error) {
-                is ApiException -> error.status >= 500 || error.status == 429
-                is IOException -> true
-                else -> true
-            }
+            if (error is CancellationException) throw error
+            val transient = isTransientSendFailure(error)
             attempt += 1
             if (!transient || attempt >= SEND_ATTEMPTS) {
                 // The caller decides whether this is a real failure or "wait for a network".
@@ -1021,91 +1041,101 @@ class RemoteChatRepository(
     /**
      * Sends one queued entry, uploading its clip first when it has one that never made it.
      *
-     * @param live true when the user just pressed send and is watching this bubble: a refusal
-     *   from the server is then reported immediately instead of being retried on every flush.
+     * A permanent refusal is surfaced immediately; transient failures stay queued.
      */
-    private suspend fun deliver(entry: OutboxEntry, live: Boolean = false) {
-        val store = outbox
-        var row = entry
-        /*
-         * A voice note recorded without a network arrives here with its audio on disk and no
-         * URL: the upload is part of delivery, not a condition for queueing. Once it succeeds
-         * the entry is rewritten with the URL, so a failed post afterwards re-sends the message
-         * rather than uploading the same clip again.
-         */
-        if (row.mediaUrl.isNullOrBlank() && !row.localFile.isNullOrBlank()) {
-            val upload = uploadClip(row)
-            val media = upload.getOrNull()
-            setUploadProgress(row.chatId, row.clientId, null)
-            if (media == null) {
-                onDeliveryFailure(row, upload.exceptionOrNull(), live)
+    private suspend fun deliver(entry: OutboxEntry) {
+        if (!deliveryGate.tryAcquire(entry.clientId)) return
+        try {
+            val store = outbox
+            // The flush snapshot can be stale after a successful send or deletion.
+            var row = if (store != null) store.find(entry.clientId) ?: return else entry
+            if (row.ownerId.isNotEmpty() && row.ownerId != myId) return
+            /*
+             * A voice note recorded without a network arrives here with its audio on disk and no
+             * URL: the upload is part of delivery, not a condition for queueing. Once it succeeds
+             * the entry is rewritten with the URL, so a failed post afterwards re-sends the message
+             * rather than uploading the same clip again.
+             */
+            if (row.mediaUrl.isNullOrBlank() && !row.localFile.isNullOrBlank()) {
+                val upload = uploadClip(row)
+                val media = upload.getOrNull()
+                setUploadProgress(row.chatId, row.clientId, null)
+                if (media == null) {
+                    val error = upload.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    onDeliveryFailure(row, error)
+                    return
+                }
+                row = row.copy(
+                    mediaUrl = media.url,
+                    fileSize = media.fileSize?.toString() ?: row.fileSize
+                )
+                if (store != null && !store.replaceIfPresent(row)) return
+                updateMessages(row.chatId) { messages ->
+                    messages.map { if (it.id == row.clientId) it.copy(mediaUrl = media.url) else it }
+                }
+            }
+            // A queued media row is replayed exactly like the live send: the URL travels in
+            // `content` as well as `media_url`.
+            val content = row.mediaUrl?.takeIf { it.isNotBlank() } ?: row.text
+            var failure: Throwable? = null
+            val response = runCatching {
+                if (row.isGroup) {
+                    api.sendGroupMessage(
+                        row.chatId,
+                        content,
+                        type = row.type,
+                        clientMessageId = row.clientId,
+                        replyTo = row.replyTo,
+                        mediaUrl = row.mediaUrl,
+                        thumbnailUrl = row.thumbnailUrl,
+                        duration = row.duration
+                    )
+                } else {
+                    api.sendMessage(
+                        row.chatId,
+                        content,
+                        type = row.type,
+                        clientMessageId = row.clientId,
+                        replyTo = row.replyTo,
+                        mediaUrl = row.mediaUrl,
+                        thumbnailUrl = row.thumbnailUrl,
+                        duration = row.duration,
+                        fileName = row.fileName,
+                        fileSize = row.fileSize
+                    )
+                }
+            }.also { failure = it.exceptionOrNull() }
+            val created = response.getOrNull()?.message
+            if (created != null) {
+                store?.remove(row.clientId)
+                // The server owns the message now; the local clip is only a fallback.
+                voiceClips?.delete(row.localFile)
+                replaceLocal(
+                    row.chatId,
+                    row.clientId,
+                    created.toModel(row.chatId).copy(
+                        mediaUrl = created.mediaUrl ?: row.mediaUrl,
+                        state = DeliveryState.Sent
+                    )
+                )
+                preview(row.chatId, previewOf(row), DeliveryState.Sent)
                 return
             }
-            row = row.copy(
-                mediaUrl = media.url,
-                fileSize = media.fileSize?.toString() ?: row.fileSize
-            )
-            store?.add(row)
-            updateMessages(row.chatId) { messages ->
-                messages.map { if (it.id == row.clientId) it.copy(mediaUrl = media.url) else it }
-            }
+            val deliveryError = failure
+            if (deliveryError is CancellationException) throw deliveryError
+            onDeliveryFailure(row, deliveryError)
+        } finally {
+            deliveryGate.release(entry.clientId)
         }
-        // A queued media row is replayed exactly like the live send: the URL travels in
-        // `content` as well as `media_url`.
-        val content = row.mediaUrl?.takeIf { it.isNotBlank() } ?: row.text
-        var failure: Throwable? = null
-        val response = runCatching {
-            if (row.isGroup) {
-                api.sendGroupMessage(
-                    row.chatId,
-                    content,
-                    type = row.type,
-                    clientMessageId = row.clientId,
-                    replyTo = row.replyTo,
-                    mediaUrl = row.mediaUrl,
-                    thumbnailUrl = row.thumbnailUrl,
-                    duration = row.duration
-                )
-            } else {
-                api.sendMessage(
-                    row.chatId,
-                    content,
-                    type = row.type,
-                    clientMessageId = row.clientId,
-                    replyTo = row.replyTo,
-                    mediaUrl = row.mediaUrl,
-                    thumbnailUrl = row.thumbnailUrl,
-                    duration = row.duration,
-                    fileName = row.fileName,
-                    fileSize = row.fileSize
-                )
-            }
-        }.also { failure = it.exceptionOrNull() }
-        val created = response.getOrNull()?.message
-        if (created != null) {
-            store?.remove(row.clientId)
-            // The server owns the message now; the local clip is only a fallback.
-            voiceClips?.delete(row.localFile)
-            replaceLocal(
-                row.chatId,
-                row.clientId,
-                created.toModel(row.chatId).copy(
-                    mediaUrl = created.mediaUrl ?: row.mediaUrl,
-                    state = DeliveryState.Sent
-                )
-            )
-            preview(row.chatId, previewOf(row), DeliveryState.Sent)
-            return
-        }
-        onDeliveryFailure(row, failure, live)
     }
 
     /** Uploads the clip an entry still holds locally. [MediaDto] carries the public URL. */
     private suspend fun uploadClip(entry: OutboxEntry): Result<MediaDto> {
         val bytes = voiceClips?.read(entry.localFile)
-            ?: return Result.failure(IOException("The recording is no longer on this device"))
+            ?: return Result.failure(IllegalStateException("The recording is no longer on this device"))
         if (bytes.isEmpty()) {
-            return Result.failure(IOException("The recording is empty"))
+            return Result.failure(IllegalStateException("The recording is empty"))
         }
         return runCatching {
             api.uploadMedia(
@@ -1126,19 +1156,14 @@ class RemoteChatRepository(
      * stays on disk) so the next flush — a reconnect, a foreground, the next launch — finishes
      * the job. Only a real refusal, or the queue's own give-up, marks the bubble and says why.
      */
-    private fun onDeliveryFailure(entry: OutboxEntry, error: Throwable?, live: Boolean) {
+    private fun onDeliveryFailure(entry: OutboxEntry, error: Throwable?) {
         val store = outbox
         // A dead radio is not the message's fault, and burning its attempts on it would turn
         // "waiting for a network" into "failed" for somebody who was simply in a lift.
         if (!online()) return
-        val transient = when (error) {
-            is ApiException -> error.status >= 500 || error.status == 408 || error.status == 429
-            is IOException -> true
-            null -> true
-            else -> false
-        }
-        // The user is looking at this bubble: a refusal is reported now, not three flushes later.
-        if (live && !transient) {
+        val transient = isTransientSendFailure(error)
+        // Retrying a permanent refusal on every reconnect cannot make it succeed.
+        if (!transient) {
             store?.remove(entry.clientId)
             markFailed(entry.chatId, entry.clientId, error?.describeSend())
             return
@@ -1248,102 +1273,53 @@ class RemoteChatRepository(
      * a clip whose *upload* failed has no file to point at and is reported instead of pretending.
      */
     override fun retrySend(chatId: String, messageId: String) {
-        val message = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
-        if (!message.failed) return
-        val localId = message.id
-        val resendUrl = message.mediaUrl
-        updateMessages(chatId) { list -> list.map { if (it.id == localId) it.copy(failed = false) else it } }
-        /*
-         * A voice note whose clip never left the phone: `file://` is not something the server,
-         * or anybody else's phone, can open. Re-queue it with the recording and let delivery
-         * upload it — posting the local path would store a link that is dead for the recipient
-         * and unplayable everywhere.
-         */
-        val localClip = resendUrl?.takeIf { !it.isRemoteUrl() }?.removePrefix("file://")
-        if (localClip != null) {
-            val entry = OutboxEntry(
-                clientId = localId,
+        if (!deliveryGate.tryAcquire(messageId)) {
+            NcToaster.show("Message is still being sent — try again shortly")
+            return
+        }
+        val entry: OutboxEntry
+        try {
+            val message = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+            if (!message.failed) return
+            // An older failed send may still have its original queued metadata (for
+            // example a generated thumbnail or file size). Preserve it on retry.
+            val previous = outbox?.find(messageId)?.takeIf {
+                it.chatId == chatId && (it.ownerId.isEmpty() || it.ownerId == myId)
+            }
+            val mediaUrl = previous?.mediaUrl ?: message.mediaUrl?.takeIf { it.isRemoteUrl() }
+            val localClip = previous?.localFile ?: message.mediaUrl
+                ?.takeIf { it.startsWith("file://") }
+                ?.removePrefix("file://")
+            if (message.kind !in setOf(MessageKind.Text, MessageKind.Location) &&
+                mediaUrl == null && localClip == null) {
+                NcToaster.show("The attachment is no longer available to retry")
+                return
+            }
+            entry = previous?.copy(ownerId = myId, attempts = 0) ?: OutboxEntry(
+                clientId = message.id,
                 chatId = chatId,
                 isGroup = isGroup(chatId),
                 ownerId = myId,
                 text = message.text,
                 type = message.kind.wireType(),
+                mediaUrl = mediaUrl,
+                thumbnailUrl = message.thumbnailUrl,
                 duration = message.durationLabel?.let { durationSeconds(it) },
                 fileName = message.fileName,
-                thumbnailUrl = message.thumbnailUrl,
+                replyTo = message.replyToId,
                 localFile = localClip,
-                mimeType = mimeTypeOf(localClip)
+                mimeType = localClip?.let { mimeTypeOf(it) },
+                createdAt = message.timestamp
             )
             outbox?.add(entry)
-            scope.launch { deliver(entry, live = true) }
-            return
-        }
-        // A manual retry of an already-uploaded message puts it back in the queue too, so a
-        // second failure still gets the automatic flush.
-        if (resendUrl != null) {
-            outbox?.add(
-                OutboxEntry(
-                    clientId = localId,
-                    chatId = chatId,
-                    isGroup = isGroup(chatId),
-                    ownerId = myId,
-                    text = message.text,
-                    type = message.kind.wireType(),
-                    mediaUrl = resendUrl,
-                    thumbnailUrl = message.thumbnailUrl,
-                    duration = message.durationLabel?.let { durationSeconds(it) },
-                    fileName = message.fileName
-                )
-            )
-        }
-        scope.launch {
-            val created = sendWithRetry {
-                when {
-                    // A retried attachment in a group is still a *group* message: posting it to
-                    // `/messages` would deliver it to a receiver id that happens to be a group.
-                    resendUrl != null && isGroup(chatId) -> api.sendGroupMessage(
-                        chatId,
-                        resendUrl,
-                        type = message.kind.wireType(),
-                        clientMessageId = localId,
-                        mediaUrl = resendUrl,
-                        thumbnailUrl = message.thumbnailUrl,
-                        duration = message.durationLabel?.let { durationSeconds(it) }
-                    )
-                    // The URL goes in `content` as well — the reference's bubbles read
-                    // `media_url || content`, and this is what the first send does too.
-                    resendUrl != null -> api.sendMessage(
-                        chatId,
-                        resendUrl,
-                        type = message.kind.wireType(),
-                        clientMessageId = localId,
-                        mediaUrl = resendUrl,
-                        thumbnailUrl = message.thumbnailUrl,
-                        duration = message.durationLabel?.let { durationSeconds(it) },
-                        fileName = message.fileName
-                    )
-                    message.kind == MessageKind.Voice || message.kind == MessageKind.Document -> {
-                        // Nothing was uploaded, so there is nothing to re-send.
-                        markFailed(chatId, localId)
-                        return@sendWithRetry null
-                    }
-                    isGroup(chatId) -> api.sendGroupMessage(
-                        chatId,
-                        message.text,
-                        type = message.kind.wireType(),
-                        clientMessageId = localId
-                    )
-                    else -> api.sendMessage(chatId, message.text, clientMessageId = localId)
-                }
+            updateMessages(chatId) { list ->
+                list.map { if (it.id == messageId) it.copy(failed = false) else it }
             }
-            if (created == null) {
-                if (stream(chatId).value.firstOrNull { it.id == localId }?.failed != true) markFailed(chatId, localId)
-                return@launch
-            }
-            outbox?.remove(localId)
-            replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
             previewFromLast(chatId)
+        } finally {
+            deliveryGate.release(messageId)
         }
+        if (online()) scope.launch { deliver(entry) }
     }
 
     // ------------------------------------------------------------ editing etc.
@@ -1415,14 +1391,22 @@ class RemoteChatRepository(
          * (a reconnect, a foreground) delivered the message the user had just deleted.
          */
         if (isPending(chatId, messageId)) {
-            val queued = outbox?.all()?.firstOrNull { it.clientId == messageId }
-            outbox?.remove(messageId)
-            // A voice note that was still waiting to upload has its audio on disk — that file
-            // is part of the message, so deleting the bubble deletes the recording too.
-            voiceClips?.delete(queued?.localFile)
-            updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
-            previewFromLast(chatId)
-            NcToaster.show(if (forEveryone) "Message deleted" else "Message deleted for you")
+            // Once a request has started we cannot guarantee the server hasn't received it.
+            // Avoid promising deletion while that outcome is still unknown.
+            if (!deliveryGate.tryAcquire(messageId)) {
+                NcToaster.show("Message is being sent — try deleting it when sending finishes")
+                return
+            }
+            try {
+                val queued = outbox?.find(messageId)
+                outbox?.remove(messageId)
+                voiceClips?.delete(queued?.localFile)
+                updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
+                previewFromLast(chatId)
+                NcToaster.show(if (forEveryone) "Message deleted" else "Message deleted for you")
+            } finally {
+                deliveryGate.release(messageId)
+            }
             return
         }
         updateMessages(chatId) { messages ->
