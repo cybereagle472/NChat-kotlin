@@ -1,6 +1,8 @@
 package com.nchat.app.core.util
 
 import java.util.Calendar
+import java.util.GregorianCalendar
+import java.util.TimeZone
 
 /**
  * All timestamps in the app are epoch milliseconds. Formatting avoids java.time so the
@@ -113,17 +115,16 @@ object TimeFormat {
     private fun dayDistance(timestamp: Long, now: Long): Long {
         val target = Calendar.getInstance().apply { timeInMillis = timestamp }
         val reference = Calendar.getInstance().apply { timeInMillis = now }
-        val targetDay = target.startOfDay()
-        val referenceDay = reference.startOfDay()
-        return ((referenceDay - targetDay) / DAY).coerceAtLeast(0L)
+        // Compare local calendar dates rather than elapsed hours between local midnights:
+        // daylight-saving transitions can make a local day 23 or 25 hours long.
+        return ((reference.utcDateMillis() - target.utcDateMillis()) / DAY).coerceAtLeast(0L)
     }
 
-    private fun Calendar.startOfDay(): Long {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-        return timeInMillis
+    private fun Calendar.utcDateMillis(): Long = GregorianCalendar(TimeZone.getTimeZone("UTC")).run {
+        clear()
+        set(this@utcDateMillis.get(Calendar.YEAR), this@utcDateMillis.get(Calendar.MONTH),
+            this@utcDateMillis.get(Calendar.DAY_OF_MONTH))
+        timeInMillis
     }
 
     private fun weekday(timestamp: Long): String {

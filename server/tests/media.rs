@@ -381,3 +381,12 @@ async fn public_mode_still_serves_anonymous_reads() {
         .iter()
         .any(|h| h == "cache-control: public, max-age=31536000, immutable"));
 }
+
+#[tokio::test]
+async fn upload_larger_than_axums_default_body_limit() {
+    let app = app();
+    let (token, _) = app.signup("large@example.com", "Large").await;
+    let payload = vec![42u8; 3 * 1024 * 1024];
+    let (status, body) = app.upload(&token, "large.bin", "application/octet-stream", &payload).await;
+    assert_eq!(status, StatusCode::CREATED, "upload: {body}");
+}

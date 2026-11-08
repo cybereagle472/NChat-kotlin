@@ -53,7 +53,8 @@ object ApiLog {
 
     /** `10:42:07  GET  /messages/chats  200  180 ms` — or the failure, in one line. */
     fun format(entry: Entry): String {
-        val time = clock.format(Date(entry.at))
+        // SimpleDateFormat is mutable and diagnostics can be formatted concurrently.
+        val time = synchronized(clock) { clock.format(Date(entry.at)) }
         val code = entry.status?.toString() ?: "ERR"
         val tail = entry.error?.let { "  ← $it" }.orEmpty()
         return "$time  ${entry.method.padEnd(6)} ${entry.path}  $code  ${entry.millis} ms$tail"

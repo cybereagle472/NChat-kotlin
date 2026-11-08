@@ -32,7 +32,9 @@ impl Db {
         {
             let conn = Connection::open(&path)?;
             conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-            conn.execute_batch(SCHEMA)?;
+            // SQLite DDL is transactional. A failed bootstrap must never leave a
+            // partially initialized database that looks healthy on the next boot.
+            conn.execute_batch(&format!("BEGIN IMMEDIATE;\n{SCHEMA}\nCOMMIT;"))?;
         }
 
         let size = pool_size.max(1);
@@ -63,5 +65,28 @@ impl Db {
 impl std::fmt::Debug for Db {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Db(pool={})", self.pool.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reopening_preserves_existing_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nchat.sqlite");
+        {
+            let db = Db::open(&path, 2).unwrap();
+            db.with(|conn| conn.execute(
+                "INSERT INTO users (id, email, password_hash, full_name) VALUES ('u1', 'a@example.com', 'hash', 'Ada')",
+                [],
+            )).unwrap();
+        }
+        let db = Db::open(&path, 2).unwrap();
+        let name: String = db.with(|conn| conn.query_row(
+            "SELECT full_name FROM users WHERE id = 'u1'", [], |row| row.get(0),
+        )).unwrap();
+        assert_eq!(name, "Ada");
     }
 }

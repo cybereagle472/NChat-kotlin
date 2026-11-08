@@ -171,6 +171,10 @@ async fn signup_login_refresh_logout() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let refresh = body["refresh_token"].as_str().expect("refresh").to_string();
 
+    // A refresh credential must not authorize ordinary API calls.
+    let (status, _) = app.call("GET", "/auth/me", Some(&refresh), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
     let (status, rotated) = app
         .call(
             "POST",
@@ -585,4 +589,38 @@ async fn user_search_finds_people_and_hides_blocked() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["profiles"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
+async fn websocket_restricts_rooms_and_rejects_refresh_credentials() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn status(addr: std::net::SocketAddr, room: &str, token: &str) -> String {
+        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        let request = format!(
+            "GET /realtime/connect?room={room}&token={token} HTTP/1.1\r\n\
+             Host: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
+             Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).await.expect("request");
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).await.expect("response");
+        line
+    }
+
+    let app = app();
+    let (access, user_id) = app.signup("ws@example.com", "Web Socket").await;
+    let refresh = nchat_server::jwt::sign(
+        &json!({ "sub": user_id.clone(), "sid": "session" }), "test-secret", 60,
+    ).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app.router).await.unwrap() });
+
+    assert!(status(addr, &format!("user:{user_id}"), &access).await.contains(" 101 "));
+    assert!(status(addr, "user:another-user", &access).await.contains(" 403 "));
+    assert!(status(addr, "group:any", &access).await.contains(" 403 "));
+    assert!(status(addr, &format!("user:{user_id}"), &refresh).await.contains(" 401 "));
+    server.abort();
 }
