@@ -791,7 +791,10 @@ fun ConversationScreen(
             anchor = anchors[activeMessageId],
             showCopy = activeMessage.text.isNotBlank() && !activeMessage.deleted,
             showReply = !activeMessage.deleted,
-            showEdit = canEditMessage(activeMessage),
+            // The backend only supports editing sent direct messages. Pending group
+            // messages can still be edited locally before they leave the outbox.
+            showEdit = canEditMessage(activeMessage) &&
+                (!isGroupChat || activeMessage.clientMessageId == activeMessage.id),
             onEdit = {
                 editing = activeMessage
                 viewModel.onSelectMessage(null)
@@ -1127,7 +1130,6 @@ fun ConversationScreen(
             onSave = { text ->
                 viewModel.onEditMessage(message.id, text)
                 editing = null
-                NcToaster.show("Message edited")
             }
         )
     }

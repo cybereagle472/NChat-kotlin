@@ -1341,22 +1341,75 @@ class RemoteChatRepository(
     override fun editMessage(chatId: String, messageId: String, text: String) {
         val body = text.trim()
         if (body.isEmpty()) return
-        updateMessages(chatId) { messages ->
-            messages.map { message ->
-                if (message.id != messageId || !message.isMine || message.deleted) message
-                else message.copy(text = body, isEdited = true)
+        val original = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+        if (!original.isMine || original.deleted || original.kind != MessageKind.Text) return
+
+        if (original.clientMessageId == original.id) {
+            // Do not change what is displayed while a request containing the old text is in flight.
+            if (!deliveryGate.tryAcquire(messageId)) {
+                NcToaster.show("Message is being sent — try editing it when sending finishes")
+                return
             }
+            try {
+                val current = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+                if (current.clientMessageId != current.id) return
+                val pending = outbox?.find(messageId)
+                if (pending != null) {
+                    if (pending.ownerId.isNotEmpty() && pending.ownerId != myId) {
+                        NcToaster.show("This message belongs to a different account")
+                        return
+                    }
+                    if (outbox?.replaceIfPresent(pending.copy(text = body)) != true) {
+                        NcToaster.show("Couldn't save the edited message on this device")
+                        return
+                    }
+                } else if (!current.failed) {
+                    NcToaster.show("The queued message is unavailable to edit")
+                    return
+                }
+                updateMessages(chatId) { messages ->
+                    messages.map { if (it.id == messageId) it.copy(text = body) else it }
+                }
+                previewFromLast(chatId)
+                NcToaster.show("Message updated")
+            } finally {
+                deliveryGate.release(messageId)
+            }
+            return
         }
-        // Editing the newest message changes the chat-list row too; nothing else re-derives it.
+
+        // The existing backend contract has no edit endpoint for sent group messages.
+        if (isGroup(chatId)) {
+            NcToaster.show("Editing sent group messages isn't supported yet")
+            return
+        }
+        updateMessages(chatId) { messages ->
+            messages.map { if (it.id == messageId) it.copy(text = body, isEdited = true) else it }
+        }
         previewFromLast(chatId)
-        if (isPending(chatId, messageId)) return
         scope.launch {
-            val response = runCatching { api.editMessage(messageId, body) }.getOrNull()
-            val updated = response?.message ?: return@launch
+            val response = runCatching { api.editMessage(messageId, body) }
+            val error = response.exceptionOrNull()
+            if (error is CancellationException) throw error
+            val updated = response.getOrNull()?.message
+            if (updated == null) {
+                // Don't overwrite a newer change that arrived while this request was in flight.
+                updateMessages(chatId) { messages ->
+                    messages.map {
+                        if (it.id == messageId && it.text == body) {
+                            it.copy(text = original.text, isEdited = original.isEdited)
+                        } else it
+                    }
+                }
+                previewFromLast(chatId)
+                NcToaster.show("Couldn't edit — ${error?.describeSend() ?: "try again"}")
+                return@launch
+            }
             updateMessages(chatId) { messages ->
                 messages.map { if (it.id == messageId) updated.toModel(chatId) else it }
             }
             previewFromLast(chatId)
+            NcToaster.show("Message edited")
         }
     }
 

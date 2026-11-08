@@ -102,4 +102,21 @@ class OutboxStoreTest {
         assertFalse(leftover.exists())
     }
 
+
+    @Test
+    fun queuedTextEditPersistsWithoutLosingReplyMetadata() {
+        val file = folder.root.resolve("outbox.json")
+        val original = OutboxEntry(
+            clientId = "one", chatId = "peer", ownerId = "user",
+            text = "old", replyTo = "quoted", createdAt = 123L
+        )
+        val store = OutboxStore(file)
+        assertTrue(store.add(original))
+        assertTrue(store.replaceIfPresent(original.copy(text = "new")))
+        val reloaded = OutboxStore(file).find("one")
+        assertEquals("new", reloaded?.text)
+        assertEquals("quoted", reloaded?.replyTo)
+        assertEquals(123L, reloaded?.createdAt ?: -1L)
+    }
+
 }
