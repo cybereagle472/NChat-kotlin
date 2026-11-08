@@ -26,6 +26,7 @@ import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -956,14 +957,12 @@ class RemoteChatRepository(
             var failure: Throwable? = null
             val created = sendWithRetry(onFailure = { error -> failure = error }) { send(localId) }
             if (created == null) {
-                val transient = when (val error = failure) {
-                    is ApiException -> error.status >= 500 || error.status == 429
-                    is IOException -> true
-                    null -> true
-                    else -> false
-                }
+                val transient = isTransientSendFailure(failure)
                 if (transient && outbox != null) return@launch
-                markFailed(chatId, localId)
+                // A permanent refusal must not remain queued and be sent later
+                // when the connection returns. The failed bubble stays retryable.
+                if (!transient) outbox?.remove(localId)
+                markFailed(chatId, localId, failure?.describeSend())
                 return@launch
             }
             outbox?.remove(localId)
@@ -975,8 +974,8 @@ class RemoteChatRepository(
     /**
      * Three attempts with a growing pause — the reference's `retry({maxRetries: 3, backoff})`.
      *
-     * Only transient answers are retried: a 4xx is the server saying no (bad receiver, blocked,
-     * rate-limited for real), and repeating it just delays the warning the user needs to see.
+     * Only transient answers are retried: timeouts, rate limits, server errors and I/O failures.
+     * Other client errors are refusals, and repeating them delays the warning the user needs.
      */
     private suspend fun sendWithRetry(
         onFailure: (Throwable?) -> Unit = {},
@@ -988,11 +987,8 @@ class RemoteChatRepository(
             result.getOrNull()?.message?.let { return it }
             if (result.isSuccess) return null
             val error = result.exceptionOrNull()
-            val transient = when (error) {
-                is ApiException -> error.status >= 500 || error.status == 429
-                is IOException -> true
-                else -> true
-            }
+            if (error is CancellationException) throw error
+            val transient = isTransientSendFailure(error)
             attempt += 1
             if (!transient || attempt >= SEND_ATTEMPTS) {
                 // The caller decides whether this is a real failure or "wait for a network".
@@ -1038,7 +1034,9 @@ class RemoteChatRepository(
             val media = upload.getOrNull()
             setUploadProgress(row.chatId, row.clientId, null)
             if (media == null) {
-                onDeliveryFailure(row, upload.exceptionOrNull(), live)
+                val error = upload.exceptionOrNull()
+                if (error is CancellationException) throw error
+                onDeliveryFailure(row, error, live)
                 return
             }
             row = row.copy(
@@ -1097,7 +1095,9 @@ class RemoteChatRepository(
             preview(row.chatId, previewOf(row), DeliveryState.Sent)
             return
         }
-        onDeliveryFailure(row, failure, live)
+        val deliveryError = failure
+        if (deliveryError is CancellationException) throw deliveryError
+        onDeliveryFailure(row, deliveryError, live)
     }
 
     /** Uploads the clip an entry still holds locally. [MediaDto] carries the public URL. */
@@ -1131,12 +1131,7 @@ class RemoteChatRepository(
         // A dead radio is not the message's fault, and burning its attempts on it would turn
         // "waiting for a network" into "failed" for somebody who was simply in a lift.
         if (!online()) return
-        val transient = when (error) {
-            is ApiException -> error.status >= 500 || error.status == 408 || error.status == 429
-            is IOException -> true
-            null -> true
-            else -> false
-        }
+        val transient = isTransientSendFailure(error)
         // The user is looking at this bubble: a refusal is reported now, not three flushes later.
         if (live && !transient) {
             store?.remove(entry.clientId)
