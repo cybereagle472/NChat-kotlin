@@ -46,6 +46,7 @@ interface FriendRepository {
      * the implementation. An empty query clears the results.
      */
     val searchResults: StateFlow<List<Friend>>
+    val searchError: StateFlow<String?>
     fun search(query: String)
 
     /**

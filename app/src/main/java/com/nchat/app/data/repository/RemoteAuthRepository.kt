@@ -13,8 +13,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 
 /**
- * `AuthRepository` against the Rust backend — the same three calls the reference's
- * `authService` makes (`/auth/check-email`, `/auth/signup`, `/auth/login`), plus the
+ * `AuthRepository` against the Rust backend — sign-up and sign-in, plus the
  * refresh-token logout the worker expects.
  *
  * A restored session survives restarts: the token pair and the identity live in
@@ -57,18 +56,6 @@ class RemoteAuthRepository(
         }
     }
 
-    override suspend fun isEmailRegistered(email: String): Boolean {
-        val trimmed = email.trim()
-        if (trimmed.isEmpty()) return false
-        return try {
-            api.checkEmail(trimmed).exists
-        } catch (_: IOException) {
-            // Offline: don't block the form, the submit path reports the real error.
-            false
-        } catch (_: ApiException) {
-            false
-        }
-    }
 
     override suspend fun signIn(email: String, password: String): AuthResult {
         val normalized = email.trim().lowercase()

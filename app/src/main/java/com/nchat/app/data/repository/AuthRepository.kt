@@ -21,10 +21,9 @@ interface AuthRepository {
     /** False until the profile-setup step has been completed for this account. */
     val profileComplete: StateFlow<Boolean>
 
-    /** All three are HTTP round trips against the backend. */
+    /** Both authentication operations are HTTP round trips against the backend. */
     suspend fun signIn(email: String, password: String): AuthResult
     suspend fun signUp(email: String, password: String): AuthResult
-    suspend fun isEmailRegistered(email: String): Boolean
     fun completeProfile()
     fun signOut()
 }

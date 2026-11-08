@@ -370,6 +370,9 @@ pub async fn block(
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
     let target = text_field(&body, "user_id").ok_or_else(|| ApiError::bad_request("user_id is required"))?;
+    if target.is_empty() || target == user_id {
+        return Err(ApiError::bad_request("Invalid user_id"));
+    }
 
     state.db.with(|conn| {
         conn.execute(
@@ -377,11 +380,13 @@ pub async fn block(
              VALUES (?, ?, ?, ?)",
             params![new_id(), user_id, target, now_iso()],
         )?;
+        // Requests cannot be accepted after a block is established.
         conn.execute(
-            "DELETE FROM friendships
-             WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)",
+            "DELETE FROM friend_requests WHERE status = 'pending'\n             AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))",
             params![user_id, target, target, user_id],
         )?;
+        // Blocking is a delivery/privacy gate, not an unfriend operation. Keep the friendship
+        // and message history so unblocking restores the existing conversation.
         Ok(())
     })?;
     Ok(Json(json!({ "success": true })))
@@ -395,11 +400,32 @@ pub async fn unblock(
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
     let target = text_field(&body, "user_id").ok_or_else(|| ApiError::bad_request("user_id is required"))?;
+    if target.is_empty() || target == user_id {
+        return Err(ApiError::bad_request("Invalid user_id"));
+    }
     state.db.with(|conn| {
         conn.execute(
             "DELETE FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?",
             params![user_id, target],
         )?;
+        // Recover accounts blocked by older server builds, which deleted the friendship row.
+        let accepted: Option<(String, String)> = conn
+            .query_row(
+                "SELECT sender_id, receiver_id FROM friend_requests
+                 WHERE status = 'accepted'
+                   AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+                 LIMIT 1",
+                params![user_id, target, target, user_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((a, b)) = accepted {
+            conn.execute(
+                "INSERT OR IGNORE INTO friendships (id, user1_id, user2_id, created_at)
+                 VALUES (?, ?, ?, ?)",
+                params![new_id(), a, b, now_iso()],
+            )?;
+        }
         Ok(())
     })?;
     Ok(Json(json!({ "success": true })))

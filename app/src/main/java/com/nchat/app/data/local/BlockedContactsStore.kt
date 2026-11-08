@@ -7,46 +7,37 @@ import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
- * The block list, kept on the device on purpose.
- *
- * WhatsApp, Telegram and Messenger all treat a block as a *pause*, never a deletion: the
- * contact stays in your list (marked), the chat and its entire history stay exactly where you
- * left them, and unblocking resumes the conversation from that same point.
- *
- * The reference worker cannot express that. Its `POST /friends/block` runs
- *
- * ```sql
- * DELETE FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
- * ```
- *
- * so asking the server to block somebody destroys the friendship row — and `POST
- * /friends/unblock` only clears `blocked_users`, it never puts the friendship back. The chat
- * list is built from `friendships`, so a blocked-then-unblocked contact would come back with
- * no chat at all.
- *
- * So the app keeps the block itself: `blockedIds` drives the UI (hidden from Friends/Find,
- * composer replaced by an "unblock" banner, no new messages) while the friendship and both
- * sides of the history stay untouched on the server. Unblocking is then a pure local removal
- * and everything reappears exactly as it was. `POST /friends/unblock` is still sent when a
- * *legacy* server-side block exists, because that call is harmless — it only deletes the row
- * in `blocked_users`.
+ * Per-account local mirror of the server block list. This enables immediate UI gating while
+ * the remote block is persisted and enforced by the backend across all devices.
  */
-class BlockedContactsStore(context: Context) {
-
-    private val file = File(context.applicationContext.filesDir, "blocked.json")
+class BlockedContactsStore internal constructor(private val root: File) {
+    constructor(context: Context) : this(
+        File(context.applicationContext.filesDir, "blocked").also {
+            // Older versions used one unscoped file. It has no owner metadata, so importing it
+            // into whichever account signs in first could leak one account's private list.
+            runCatching { File(it.parentFile, "blocked.json").delete() }
+        }
+    )
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    fun load(): List<BlockedContact> = runCatching {
-        if (!file.exists()) return emptyList()
-        json.decodeFromString(LIST_SERIALIZER, file.readText())
-    }.getOrDefault(emptyList())
+    /** Block lists are account-private; never load one account's IDs for another account. */
+    fun load(ownerId: String): List<BlockedContact> {
+        if (ownerId.isBlank()) return emptyList()
+        return runCatching {
+            val file = fileFor(ownerId)
+            if (!file.exists()) return emptyList()
+            json.decodeFromString(LIST_SERIALIZER, file.readText())
+        }.getOrDefault(emptyList())
+    }
 
-    fun save(contacts: List<BlockedContact>) {
+    fun save(ownerId: String, contacts: List<BlockedContact>) {
+        if (ownerId.isBlank()) return
         runCatching {
+            val file = fileFor(ownerId)
             if (contacts.isEmpty()) {
                 file.delete()
                 return
@@ -56,8 +47,16 @@ class BlockedContactsStore(context: Context) {
         }
     }
 
-    fun clear() {
-        runCatching { file.delete() }
+    fun clear(ownerId: String) {
+        if (ownerId.isNotBlank()) runCatching { fileFor(ownerId).delete() }
+    }
+
+    private fun fileFor(ownerId: String): File {
+        // Hash opaque identity strings instead of using them as paths.
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(ownerId.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(root, "$digest.json")
     }
 
     private companion object {

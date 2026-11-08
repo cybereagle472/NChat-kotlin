@@ -91,6 +91,18 @@ class OutboxStoreTest {
 
 
     @Test
+    fun removingConversationOnlyRemovesThatAccountsQueuedSends() {
+        val store = OutboxStore(folder.root.resolve("outbox.json"))
+        val target = OutboxEntry(clientId = "target", chatId = "peer", ownerId = "user", text = "pending")
+        val otherChat = OutboxEntry(clientId = "other-chat", chatId = "group", ownerId = "user", text = "keep")
+        val otherAccount = OutboxEntry(clientId = "other-account", chatId = "peer", ownerId = "other", text = "keep")
+        listOf(target, otherChat, otherAccount).forEach { assertTrue(store.add(it)) }
+
+        assertEquals(listOf(target), store.removeConversation("peer", "user"))
+        assertEquals(listOf(otherChat, otherAccount), store.all())
+    }
+
+    @Test
     fun clearRemovesInterruptedTemporaryCopies() {
         val file = folder.root.resolve("outbox.json")
         val store = OutboxStore(file)

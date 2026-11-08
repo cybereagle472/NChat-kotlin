@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import java.text.SimpleDateFormat
@@ -133,6 +135,10 @@ class RemoteChatRepository(
     /** The flow observers that trigger those writes, so a forgotten chat stops observing. */
     private val mirrorJobs = mutableMapOf<String, Job>()
     private val requested = mutableSetOf<String>()
+    /** Pagination cursor and guard, keyed by conversation. */
+    private val olderCursor = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val olderAvailable = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val olderLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     private val groupIds = mutableSetOf<String>()
     private val names = mutableMapOf<String, String>()
     private val typingJobs = mutableMapOf<String, Job>()
@@ -235,6 +241,9 @@ class RemoteChatRepository(
                 names.clear()
                 historyPeers = emptyList()
                 historyProbedFor = null
+                olderCursor.clear()
+                olderAvailable.clear()
+                olderLocks.clear()
                 synchronized(conversations) {
                     conversations.clear()
                     requested.clear()
@@ -457,7 +466,21 @@ class RemoteChatRepository(
          * nothing left to tell it apart.
          */
         val me = myId
-        val server = rows.filterNot { me.isNotEmpty() && me in it.deletedFor }.map { it.toModel(chatId) }
+        val visibleRows = rows.filterNot { me.isNotEmpty() && me in it.deletedFor }
+        val server = visibleRows.map { it.toModel(chatId) }
+        if (rows.size >= CONVERSATION_PAGE && rows.isNotEmpty()) {
+            val serverCursor = rows.first().createdAt
+            val cachedOldest = messages?.load(me, chatId)?.firstOrNull()?.timestamp?.let(::formatIso)
+            val candidate = listOfNotNull(serverCursor, cachedOldest).minOrNull()
+            if (candidate != null) {
+                olderCursor.compute(chatId) { _, previous ->
+                    if (previous == null || candidate < previous) candidate else previous
+                }
+            }
+            olderAvailable[chatId] = true
+        } else if (olderCursor[chatId] == null) {
+            olderAvailable[chatId] = false
+        }
         updateMessages(chatId) { local -> mergeMessages(local, server) }
     }
 
@@ -622,6 +645,32 @@ class RemoteChatRepository(
 
     override fun refreshConversation(chatId: String) {
         scope.launch { runCatching { loadConversation(chatId) } }
+    }
+
+    override fun loadOlder(chatId: String) {
+        scope.launch {
+            val lock = olderLocks.computeIfAbsent(chatId) { Mutex() }
+            lock.withLock {
+                val cursor = olderCursor[chatId] ?: return@withLock
+                if (olderAvailable[chatId] != true) return@withLock
+                val group = isGroup(chatId)
+                val page = runCatching {
+                    if (group) api.groupMessages(chatId, before = cursor, limit = CONVERSATION_PAGE).messages
+                    else api.conversation(chatId, before = cursor, limit = CONVERSATION_PAGE).messages
+                }.getOrElse { return@withLock }
+                if (page.isEmpty()) {
+                    olderAvailable[chatId] = false
+                    return@withLock
+                }
+                val previousCursor = cursor
+                val nextCursor = page.first().createdAt
+                updateMessages(chatId) { local ->
+                    mergeMessages(local, page.map { it.toModel(chatId) })
+                }
+                olderCursor[chatId] = nextCursor.takeIf { it < previousCursor } ?: previousCursor
+                olderAvailable[chatId] = page.size >= CONVERSATION_PAGE && nextCursor < previousCursor
+            }
+        }
     }
 
     private fun stream(chatId: String): MutableStateFlow<List<Message>> =
@@ -1610,10 +1659,30 @@ class RemoteChatRepository(
     }
 
     override fun deleteChat(chatId: String) {
+        val group = isGroup(chatId)
         _chats.update { list -> list.filterNot { it.id == chatId } }
         synchronized(conversations) { conversations.remove(chatId) }
         synchronized(requested) { requested -= chatId }
-        // Deleting a chat means deleting its history, on the device as well as on the screen.
+        olderCursor.remove(chatId)
+        olderAvailable.remove(chatId)
+        // Cancel any offline sends first so they cannot resurrect the thread after deletion.
+        val queued = if (!group) outbox?.removeConversation(chatId, myId) else emptyList()
+        queued?.forEach { entry ->
+            entry.localFile?.let { voiceClips?.delete(it) }
+        }
+        if (!group && queued == null) {
+            NcToaster.show("Couldn't safely remove pending messages from the send queue")
+        }
+        // A direct chat is removed for this account on the server as well as locally; future
+        // messages make it reappear. Groups remain server-owned and are not left/deleted here.
+        if (!group) scope.launch {
+            runCatching { api.clearConversation(chatId) }
+                .onSuccess { refresh() }
+                .onFailure { error ->
+                    NcToaster.show("Couldn't delete chat — ${error.describeSend()}")
+                    refresh()
+                }
+        }
         forgetOnDisk(chatId)
     }
 
@@ -2529,6 +2598,8 @@ class RemoteChatRepository(
         }
     }
 
+    private fun formatIso(value: Long): String = synchronized(ISO) { ISO.format(java.util.Date(value)) }
+
     /** Human summary of a failed call, for the banner above the list. */
     private fun Result<*>.describe(): String {
         val error = exceptionOrNull() ?: return "unknown error"
@@ -2547,6 +2618,7 @@ class RemoteChatRepository(
          * the opposite of what a local store is for.
          */
         const val MESSAGE_PAGE = 300
+        const val CONVERSATION_PAGE = 100
         /** How long a change waits before it is written, so a burst costs one file write. */
         const val PERSIST_DELAY_MS = 400L
         /** Same idea for the two list caches, which change less often. */

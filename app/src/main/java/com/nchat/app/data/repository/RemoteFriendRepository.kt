@@ -51,17 +51,6 @@ class RemoteFriendRepository(
     private val blockedStore: BlockedContactsStore,
     /** Last known graph on disk, so a cold start cannot show an empty Friends tab. */
     private val cache: FriendGraphCache? = null,
-    /**
-     * The 1:1 conversations the chat list currently holds.
-     *
-     * `/messages/chats` is the *same* `friendships` JOIN as `/friends`
-     * (`worker/src/routes/messages.ts:83-90`, every row stamped `status: 'accepted'`), so the
-     * server itself considers those people friends. Feeding them in here means the Friends tab
-     * can never be emptier than the Chats tab — in the reference web app that is structurally
-     * guaranteed, because its chat list is *derived* from the friend list; ours asks two
-     * endpoints and they have to agree.
-     */
-    private val chatPeers: () -> List<Friend> = { emptyList() }
 ) : FriendRepository {
 
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
@@ -75,6 +64,9 @@ class RemoteFriendRepository(
 
     private val _searchResults = MutableStateFlow<List<Friend>>(emptyList())
     override val searchResults: StateFlow<List<Friend>> = _searchResults.asStateFlow()
+
+    private val _searchError = MutableStateFlow<String?>(null)
+    override val searchError: StateFlow<String?> = _searchError.asStateFlow()
 
     /** In-flight search, so a fast typist never sees an older answer beat a newer one. */
     private var searchJob: Job? = null
@@ -106,8 +98,7 @@ class RemoteFriendRepository(
 
     init {
         // The block list survives restarts (it lives on the device, not on the server).
-        _blockedPeople.value = blockedStore.load().sortedByDescending { it.blockedAt }
-        _blockedIds.value = _blockedPeople.value.map { it.id }.toSet()
+        loadLocalBlocks(myId)
         /*
          * Disk first, exactly like the chat list.
          *
@@ -123,9 +114,17 @@ class RemoteFriendRepository(
         }
         scope.launch {
             tokens.signedIn.collect { signedIn ->
-                if (signedIn) return@collect
-                // Signing out must not leave the previous account's graph (or its file) behind.
+                if (signedIn) {
+                    // Account-scoped local state is switched at the same time as the session.
+                    loadLocalBlocks(myId)
+                    return@collect
+                }
+                // Signing out must not leave the previous account's private graph/results visible.
                 _friends.value = emptyList()
+                _searchResults.value = emptyList()
+                _searchError.value = null
+                _blockedPeople.value = emptyList()
+                _blockedIds.value = emptySet()
                 _graphError.value = null
                 _graphNote.value = null
                 _pendingSent.value = emptySet()
@@ -214,6 +213,7 @@ class RemoteFriendRepository(
         val request = incoming.firstOrNull { it.senderId == id } ?: return
         scope.launch {
             runCatching { api.respondToRequest(request.id, accept = true) }
+                .onFailure { error -> _actionError.value = "Couldn't accept request — ${error.describeAction()}" }
             refresh()
         }
     }
@@ -222,6 +222,7 @@ class RemoteFriendRepository(
         val request = incoming.firstOrNull { it.senderId == id } ?: return
         scope.launch {
             runCatching { api.respondToRequest(request.id, accept = false) }
+                .onFailure { error -> _actionError.value = "Couldn't decline request — ${error.describeAction()}" }
             refresh()
         }
     }
@@ -281,6 +282,7 @@ class RemoteFriendRepository(
     override fun unfriend(id: String) {
         scope.launch {
             runCatching { api.removeFriend(id) }
+                .onFailure { error -> _actionError.value = "Couldn't unfriend this user — ${error.describeAction()}" }
             refresh()
         }
     }
@@ -297,9 +299,9 @@ class RemoteFriendRepository(
     override fun block(id: String, name: String, avatarUrl: String?) {
         val target = id.trim()
         if (target.isEmpty()) return
+        val previous = _blockedPeople.value
         persistBlocked(
-            _blockedPeople.value
-                .filterNot { it.id == target } +
+            previous.filterNot { it.id == target } +
                 BlockedContact(
                     id = target,
                     name = name.trim().ifBlank { "NChat user" },
@@ -307,50 +309,68 @@ class RemoteFriendRepository(
                     blockedAt = System.currentTimeMillis()
                 )
         )
-        // Their chat keeps its place in the list; the conversation screen shows the block and
-        // offers Unblock, and the socket stops appending their new messages.
+        // Persist remotely so the block applies to every device and is enforced by the API.
+        scope.launch {
+            runCatching { api.blockUser(target) }.onFailure { error ->
+                // Keep the immediate local safety gate, but be explicit that other devices will
+                // not be protected until the server sync succeeds.
+                _actionError.value = "Block is local only until it syncs — ${error.describeAction()}"
+            }
+            refresh()
+        }
     }
 
     override fun unblock(id: String) {
         val target = id.trim()
         if (target.isEmpty()) return
-        persistBlocked(_blockedPeople.value.filterNot { it.id == target })
-        // Clear a legacy server-side block too — `/friends/unblock` only deletes the row in
-        // `blocked_users`, so this can never touch the friendship or the history.
-        if (blockedUsers.any { it.id == target }) {
-            scope.launch { runCatching { api.unblockUser(target) } }
+        val previous = _blockedPeople.value
+        persistBlocked(previous.filterNot { it.id == target })
+        scope.launch {
+            runCatching { api.unblockUser(target) }.onFailure { error ->
+                persistBlocked(previous)
+                _actionError.value = "Couldn't unblock this user — ${error.describeAction()}"
+            }
+            refresh()
         }
     }
 
-    /** Writes the list to disk and mirrors it into the two flows the UI reads. */
+    private fun loadLocalBlocks(ownerId: String) {
+        val contacts = if (ownerId.isBlank()) emptyList() else
+            blockedStore.load(ownerId).sortedByDescending { it.blockedAt }
+        _blockedPeople.value = contacts
+        _blockedIds.value = contacts.map { it.id }.toSet()
+    }
+
+    /** Writes the account's list to disk and mirrors it into the two flows the UI reads. */
     private fun persistBlocked(contacts: List<BlockedContact>) {
         val ordered = contacts.sortedByDescending { it.blockedAt }
         _blockedPeople.value = ordered
         _blockedIds.value = ordered.map { it.id }.toSet()
-        blockedStore.save(ordered)
+        blockedStore.save(myId, ordered)
     }
 
     override fun search(query: String) {
         val term = query.trim()
         searchJob?.cancel()
-        if (term.isEmpty()) {
-            _searchResults.value = emptyList()
-            return
-        }
+        _searchResults.value = emptyList()
+        _searchError.value = null
+        if (term.isEmpty()) return
         searchJob = scope.launch {
-            // Same ~250 ms debounce the reference search bars use; short enough to feel live,
-            // long enough that typing a handle is one request, not eight.
             delay(250)
-            val rows = runCatching { api.searchUsers(term, limit = 30).profiles }
-                .getOrDefault(emptyList())
-            _searchResults.value = rows
-                .filter { it.id.isNotEmpty() && it.id != myId }
-                .map { profile ->
-                    // Anyone already in the graph keeps their real relation (friend / incoming /
-                    // outgoing) so the row shows Accept / Cancel / Message instead of "Add".
-                    _friends.value.firstOrNull { it.id == profile.id }
-                        ?: profile.toFriend(FriendRelation.None)
-                }
+            try {
+                val rows = api.searchUsers(term, limit = 30).profiles
+                _searchResults.value = rows
+                    .filter { it.id.isNotEmpty() && it.id != myId }
+                    .map { profile ->
+                        _friends.value.firstOrNull { it.id == profile.id }
+                            ?: profile.toFriend(FriendRelation.None)
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _searchResults.value = emptyList()
+                _searchError.value = "Couldn't search people — ${error.describeAction()}"
+            }
         }
     }
 
@@ -411,8 +431,18 @@ class RemoteFriendRepository(
         val confirmed = outgoing.map { it.receiverId }.toSet()
         if (confirmed.isNotEmpty()) _pendingSent.update { it - confirmed }
         blockedUsers = blocked
-        // Legacy blocks that were made on the server (before blocking became local) still have
-        // to be visible and undoable from Settings, so they are merged into the device list.
+        // Retry local blocks that could not reach the server earlier (for example, while offline).
+        // The server operation is idempotent and the local block remains active until it succeeds.
+        val serverBlockedIds = blocked.mapTo(HashSet()) { it.id }
+        _blockedPeople.value.filterNot { it.id in serverBlockedIds }.forEach { local ->
+            scope.launch {
+                runCatching { api.blockUser(local.id) }.onFailure { error ->
+                    _actionError.value = "Block is local only until it syncs — ${error.describeAction()}"
+                }
+            }
+        }
+        // Legacy blocks that were made on the server still have to be visible and undoable from
+        // Settings, so they are merged into the device list.
         // Anything already known locally keeps its stored name/photo.
         val knownLocally = _blockedPeople.value.associateBy { it.id }
         val merged = blocked.map { profile ->
@@ -486,20 +516,8 @@ class RemoteFriendRepository(
             rows += profile.toFriend(FriendRelation.Outgoing, requestedAt = isoMillis(request.createdAt))
         }
 
-        /*
-         * The chat list is the server's other view of the same relationship.
-         *
-         * `/messages/chats` runs the identical `friendships` JOIN and stamps every row
-         * `status: 'accepted'` (`worker/src/routes/messages.ts:83-128`), so anyone with a 1:1
-         * thread *is* a friend as far as the backend is concerned. In the reference web app the
-         * chat list is built from the friend list, which is why "chats work but friends are
-         * empty" cannot happen there; here the two endpoints are independent, so they are
-         * reconciled — a person you are talking to always appears in Friends.
-         */
-        runCatching { chatPeers() }.getOrDefault(emptyList()).forEach { peer ->
-            if (peer.id.isBlank() || peer.id == me || !known.add(peer.id)) return@forEach
-            rows += peer.copy(relation = FriendRelation.Friend)
-        }
+        // A conversation is not proof of a current friendship: it may remain after unfriend.
+        // Keep chat history in the chat list, but only accepted server relationships belong here.
 
         everyone.forEach { profile ->
             if (profile.id.isBlank() || profile.id == me || !known.add(profile.id)) return@forEach

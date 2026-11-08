@@ -53,6 +53,16 @@ class OutboxStore internal constructor(
         write(remaining)
     }
 
+    /** Removes queued sends belonging to one conversation/account before that chat is cleared. */
+    fun removeConversation(chatId: String, ownerId: String): List<OutboxEntry>? = synchronized(lock) {
+        val rows = read() ?: return@synchronized null
+        val removed = rows.filter { it.chatId == chatId && it.ownerId == ownerId }
+        if (removed.isNotEmpty() && !write(rows.filterNot { it.chatId == chatId && it.ownerId == ownerId })) {
+            return@synchronized null
+        }
+        removed
+    }
+
     /** Records a failed attempt and returns its persisted count, or zero if it could not be saved. */
     fun bumpAttempts(clientId: String): Int = synchronized(lock) {
         val rows = read() ?: return@synchronized 0

@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{MessageRow, UserRow};
 use crate::presence::get_presence_map;
-use crate::privacy::{apply_privacy_to_list, get_privacy_settings};
+use crate::privacy::{are_friends, apply_privacy_to_list, get_privacy_settings};
 use crate::routes::{parse_body, text_field};
 use crate::util::{clamp_limit, new_id, now_iso, parse_iso_millis};
 use crate::AppState;
@@ -33,6 +33,31 @@ fn broadcast_to_participants(state: &AppState, a: &str, b: &str, payload: &Value
     if b != a {
         state.hub.publish_to_user(b, &text);
     }
+}
+
+/// Direct conversations are only available to accepted friends and neither side may have
+/// blocked the other. Keep this check server-side: UI gating is not an authorization boundary.
+fn ensure_direct_access(state: &AppState, a: &str, b: &str) -> ApiResult<()> {
+    if a == b {
+        return Err(ApiError::bad_request("Cannot message yourself"));
+    }
+    let allowed = state.db.with(|conn| {
+        let friends = are_friends(conn, a, b)?;
+        let blocked: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM blocked_users
+                 WHERE (user_id = ? AND blocked_user_id = ?)
+                    OR (user_id = ? AND blocked_user_id = ?) LIMIT 1",
+                params![a, b, b, a],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(friends && blocked.is_none())
+    })?;
+    if !allowed {
+        return Err(ApiError::forbidden("Direct messaging is unavailable for this user"));
+    }
+    Ok(())
 }
 
 /// `GET /messages/with/:other_id` — history, oldest-first.
@@ -131,22 +156,30 @@ pub async fn chats(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
 
     for (index, friend) in friends.iter().enumerate() {
         let (last, unread) = state.db.with(|conn| {
-            let last = conn
-                .query_row(
-                    "SELECT * FROM messages
-                     WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-                     ORDER BY created_at DESC LIMIT 1",
-                    params![user_id, friend.id, friend.id, user_id],
-                    MessageRow::from_row,
-                )
-                .optional()?;
-            let unread: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
-                params![friend.id, user_id],
-                |row| row.get(0),
+            let mut statement = conn.prepare(
+                "SELECT * FROM messages
+                 WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                 ORDER BY created_at DESC",
             )?;
+            let rows = statement.query_map(
+                params![user_id, friend.id, friend.id, user_id],
+                MessageRow::from_row,
+            )?;
+            let mut last = None;
+            let mut unread = 0i64;
+            for row in rows {
+                let message = row?;
+                if message.deleted_for_ids().contains(&user_id) {
+                    continue;
+                }
+                if message.sender_id == friend.id && !message.is_read { unread += 1; }
+                if last.is_none() { last = Some(message); }
+            }
             Ok((last, unread))
         })?;
+        // A cleared conversation disappears from this device's chat list. A later incoming or
+        // outgoing message naturally makes it visible again. Friend discovery remains separate.
+        if last.is_none() { continue; }
 
         let mut last_json = last.as_ref().map(MessageRow::to_json);
         if let (Some(value), Some(row)) = (last_json.as_mut(), last.as_ref()) {
@@ -200,6 +233,7 @@ pub async fn send(
     if receiver_id.is_empty() {
         return Err(ApiError::bad_request("receiver_id is required"));
     }
+    ensure_direct_access(&state, &user_id, &receiver_id)?;
     let content = text_field(&body, "content").unwrap_or_default();
     let kind = text_field(&body, "type").unwrap_or_else(|| "text".to_string());
     let client_message_id = text_field(&body, "client_message_id");
@@ -284,6 +318,7 @@ pub async fn edit(
     let Some(mut row) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    ensure_direct_access(&state, &user_id, &row.receiver_id)?;
     if row.kind != "text" {
         return Err(ApiError::bad_request("Only text messages can be edited"));
     }
@@ -332,6 +367,7 @@ pub async fn delete_for_everyone(
     let Some(receiver) = receiver else {
         return Err(ApiError::not_found("Message not found"));
     };
+    ensure_direct_access(&state, &user_id, &receiver)?;
 
     state.db.with(|conn| {
         conn.execute(
@@ -349,6 +385,49 @@ pub async fn delete_for_everyone(
     });
     broadcast_to_participants(&state, &user_id, &receiver, &payload);
 
+    Ok(Json(json!({ "success": true })))
+}
+
+/// Hide an entire direct conversation from this account without deleting the other side's copy.
+pub async fn clear_conversation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(other_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let user_id = state.current_user(&headers)?;
+    if other_id.is_empty() || other_id == user_id {
+        return Err(ApiError::bad_request("Invalid conversation"));
+    }
+    state.db.with(|conn| {
+        let tx = conn.transaction()?;
+        let mut statement = tx.prepare(
+            "SELECT id, deleted_for FROM messages
+             WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+        )?;
+        let rows = statement.query_map(params![user_id, other_id, other_id, user_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        let mut updates = Vec::new();
+        for row in rows {
+            updates.push(row?);
+        }
+        drop(statement);
+        for (message_id, raw) in updates {
+            let mut deleted: Vec<String> = raw
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok())
+                .unwrap_or_default();
+            if !deleted.contains(&user_id) {
+                deleted.push(user_id.clone());
+                let encoded = serde_json::to_string(&deleted).unwrap_or_else(|_| "[]".to_string());
+                tx.execute(
+                    "UPDATE messages SET deleted_for = ? WHERE id = ?",
+                    params![encoded, message_id],
+                )?;
+            }
+        }
+        tx.commit()
+    })?;
     Ok(Json(json!({ "success": true })))
 }
 
@@ -400,8 +479,9 @@ pub async fn reaction(
 
     let row: Option<(String, String, Option<String>)> = state.db.with(|conn| {
         conn.query_row(
-            "SELECT sender_id, receiver_id, reactions FROM messages WHERE id = ?",
-            params![&id],
+            "SELECT sender_id, receiver_id, reactions FROM messages
+             WHERE id = ? AND (sender_id = ? OR receiver_id = ?)",
+            params![&id, user_id, user_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
@@ -409,6 +489,8 @@ pub async fn reaction(
     let Some((sender_id, receiver_id, reactions)) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    let other_id = if sender_id == user_id { &receiver_id } else { &sender_id };
+    ensure_direct_access(&state, &user_id, other_id)?;
 
     let mut map: std::collections::BTreeMap<String, Vec<String>> = reactions
         .as_deref()
@@ -459,6 +541,7 @@ pub async fn mark_read(
     if sender_id.is_empty() {
         return Err(ApiError::bad_request("sender_id is required"));
     }
+    ensure_direct_access(&state, &user_id, &sender_id)?;
 
     let ids: Vec<String> = state.db.with(|conn| {
         let mut statement = conn.prepare(
@@ -509,6 +592,7 @@ pub async fn typing(
     if receiver_id.is_empty() {
         return Err(ApiError::bad_request("receiver_id is required"));
     }
+    ensure_direct_access(&state, &user_id, &receiver_id)?;
     let is_typing = crate::routes::bool_field(&body, "is_typing").unwrap_or(false);
 
     let payload = json!({
@@ -534,6 +618,7 @@ pub async fn recording(
     if receiver_id.is_empty() {
         return Err(ApiError::bad_request("receiver_id is required"));
     }
+    ensure_direct_access(&state, &user_id, &receiver_id)?;
     let is_recording = crate::routes::bool_field(&body, "is_recording").unwrap_or(false);
 
     let payload = json!({

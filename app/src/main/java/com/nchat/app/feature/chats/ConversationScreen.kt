@@ -92,6 +92,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -488,6 +490,15 @@ fun ConversationScreen(
         if (atBottom || messages.lastOrNull()?.isMine == true) {
             listState.animateScrollToItem(last)
         }
+    }
+
+    // Pull the previous server page only when the user reaches the oldest visible rows. The
+    // repository serializes requests and preserves the viewport via stable message keys.
+    LaunchedEffect(chatId, didInitialScroll) {
+        if (!didInitialScroll) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index -> if (index <= 3) viewModel.loadOlder() }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
