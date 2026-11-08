@@ -2116,6 +2116,8 @@ class RemoteChatRepository(
                     if (it.id != chatId) it
                     else it.copy(
                         lastMessage = "",
+                        lastMessageSender = null,
+                        lastMessageAt = 0L,
                         lastMessageKind = MessageKind.Text,
                         lastMessageMine = false,
                         lastMessageState = null,
@@ -2131,6 +2133,7 @@ class RemoteChatRepository(
                 if (it.id != chatId) it
                 else it.copy(
                     lastMessage = line,
+                    lastMessageSender = previewParts(newest, chat.isGroup).first,
                     lastMessageAt = newest.timestamp,
                     lastMessageKind = newest.kind,
                     lastMessageMine = newest.isMine,

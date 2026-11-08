@@ -1,6 +1,6 @@
 {
-  "versionCode": 78,
-  "versionName": "1.0.70",
+  "versionCode": 79,
+  "versionName": "1.0.71",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.70 improves update downloads with automatic retries, clearer errors and a browser fallback. It also verifies update package identity, version and signing compatibility before installation, and includes the recent messaging and reliability fixes."
+  "releaseNotes": "NChat 1.0.71 improves profile setup with a default avatar and photo preview, simplifies chat actions, and refreshes chat previews and last-seen display."
 }

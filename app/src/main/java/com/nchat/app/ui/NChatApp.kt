@@ -30,6 +30,7 @@ import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.feature.auth.AuthScreen
 import com.nchat.app.feature.auth.ProfileSetupScreen
+import com.nchat.app.feature.auth.completeProfileSetup
 import com.nchat.app.feature.chats.ConversationScreen
 import com.nchat.app.feature.update.StartupUpdateGate
 import com.nchat.app.feature.settings.SettingsScreen
@@ -92,9 +93,11 @@ fun NChatApp() {
 
                 LaunchStage.ProfileSetup -> ProfileSetupScreen(
                     email = session.orEmpty(),
-                    onComplete = { fullName, username, bio ->
-                        ServiceLocator.profileRepository.update(fullName, username, bio)
-                        auth.completeProfile()
+                    onComplete = { fullName, username, bio, photo ->
+                        completeProfileSetup(
+                            save = { ServiceLocator.profileRepository.completeSetup(fullName, username, bio, photo) },
+                            markComplete = auth::completeProfile
+                        )
                     }
                 )
 

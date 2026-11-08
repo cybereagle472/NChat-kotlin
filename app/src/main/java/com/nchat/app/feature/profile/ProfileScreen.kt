@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nchat.app.core.designsystem.NcBackdrop
+import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.util.ImageCrop
@@ -282,47 +283,23 @@ fun ProfileScreen(
     }
 }
 
-/** Circular avatar: the cropped photo when set, otherwise the gradient initials. */
+/** A selected photo, or the same default avatar used throughout the app. */
 @Composable
 fun ProfileAvatar(
     name: String,
     image: ImageBitmap?,
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
-    /**
-     * The photo the server has for this account. Only used when [image] is null — a picture
-     * picked in this session paints instantly while it uploads, but the persisted one is what
-     * makes the avatar survive a restart.
-     */
     imageUrl: String? = null
 ) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(NcTheme.extra.brandGradient)),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = modifier.size(size).clip(CircleShape), contentAlignment = Alignment.Center) {
+        NcAvatar(name = name, size = size, imageUrl = if (image == null) imageUrl else null)
         if (image != null) {
             Image(
                 bitmap = image,
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
-            )
-        } else if (!imageUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Text(
-                text = name.trim().take(2).uppercase().ifBlank { "?" },
-                color = Color.White,
-                fontSize = (size.value * 0.34f).sp,
-                fontWeight = FontWeight.Bold
             )
         }
     }

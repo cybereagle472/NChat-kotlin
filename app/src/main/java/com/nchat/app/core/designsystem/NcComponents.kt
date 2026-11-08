@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,10 +47,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.ui.unit.sp
-
-/** First letter of a contact name, matching the reference avatar treatment. */
-internal fun initialOf(name: String): String =
-    name.trim().take(1).uppercase().ifBlank { "?" }
 
 /** The translucent "glass-card" surface used by nav bars, sheets and empty states. */
 @Composable
@@ -133,7 +132,7 @@ fun NcAvatar(
     modifier: Modifier = Modifier,
     size: Dp = NcSize.rowAvatar,
     emoji: String? = null,
-    /** Server-hosted avatar; falls back to the brand gradient + initial while it loads. */
+    /** Server-hosted avatar; the default silhouette remains visible while it loads or fails. */
     imageUrl: String? = null,
     isOnline: Boolean = false,
     showPresence: Boolean = false,
@@ -155,24 +154,24 @@ fun NcAvatar(
                 .then(if (onGradient) Modifier.border(2.dp, Color(0x4DFFFFFF), CircleShape) else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            if (imageUrl != null) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(size)
-                        .clip(CircleShape)
-                )
-            } else if (emoji != null) {
+            if (emoji != null) {
                 Text(text = emoji, fontSize = (size.value * 0.4f).sp)
             } else {
-                Text(
-                    text = initialOf(name),
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = (size.value * 0.36f).sp,
-                    maxLines = 1
+                Icon(
+                    imageVector = Icons.Rounded.Person,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.92f),
+                    modifier = Modifier.size(size * 0.6f)
+                )
+            }
+            // Draw the image above the fallback: a missing or failed URL never becomes a blank
+            // circle, and a custom picture still takes precedence over a group emoji.
+            if (!imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(size).clip(CircleShape)
                 )
             }
         }

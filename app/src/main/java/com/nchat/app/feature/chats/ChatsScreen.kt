@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -557,7 +558,7 @@ private fun ChatRow(
                 )
                 Spacer(modifier = Modifier.size(NcSpace.sm))
                 Text(
-                    text = TimeFormat.listTimestamp(chat.lastMessageAt),
+                    text = if (chat.lastMessageAt > 0L) TimeFormat.listTimestamp(chat.lastMessageAt) else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (hasUnread) MaterialTheme.colorScheme.primary else extra.textMuted,
                     fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
@@ -755,24 +756,16 @@ private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? 
         }
         KindIcon(kind = chat.lastMessageKind)
 
-        /*
-         * "Zaid:" and what Zaid said, in two weights. The stored line is "Zaid: ok" — the name is
-         * pulled back out here so it can be coloured like an author instead of reading as part of
-         * the sentence. Same text, legible at a glance.
-         */
-        val sender = chat.lastMessageSender
-        val body = if (sender != null && chat.lastMessage.startsWith("$sender: ")) {
-            chat.lastMessage.removePrefix("$sender: ")
-        } else {
-            chat.lastMessage
-        }
+        val (sender, body) = chatPreview(chat)
         if (sender != null) {
             Text(
                 text = "$sender:",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (sender == "You") extra.textMuted else MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 96.dp)
             )
         }
         Text(
@@ -800,11 +793,21 @@ private fun DeliveryFailed() {
 
 @Composable
 private fun DeliveryTick(state: DeliveryState?) {
-    val isRead = state == DeliveryState.Read
+    if (state == null) return
+    val icon = when (state) {
+        DeliveryState.Sending -> Icons.Rounded.Schedule
+        DeliveryState.Sent -> Icons.Rounded.Check
+        DeliveryState.Read -> Icons.Rounded.DoneAll
+    }
+    val description = when (state) {
+        DeliveryState.Sending -> "Sending"
+        DeliveryState.Sent -> "Sent"
+        DeliveryState.Read -> "Read"
+    }
     Icon(
-        imageVector = if (isRead) Icons.Rounded.DoneAll else Icons.Rounded.Check,
-        contentDescription = null,
-        tint = if (isRead) NcTheme.extra.readTick else NcTheme.extra.textMuted,
+        imageVector = icon,
+        contentDescription = description,
+        tint = if (state == DeliveryState.Read) NcTheme.extra.readTick else NcTheme.extra.textMuted,
         modifier = Modifier.size(14.dp)
     )
 }

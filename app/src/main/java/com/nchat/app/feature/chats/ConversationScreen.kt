@@ -18,6 +18,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -502,6 +503,7 @@ fun ConversationScreen(
                     chatTitle = chatTitle,
                     chat = chat,
                     groupMemberCount = group?.memberCount,
+                    lastSeenAt = friendGraph.firstOrNull { it.id == chatId }?.lastSeenAt,
                     typingMember = typingMember,
                     offline = !deviceOnline,
                     onBack = onBack,
@@ -685,13 +687,7 @@ fun ConversationScreen(
             }
 
             if (selection.isNotEmpty()) {
-                // Selection mode owns the whole screen: no composer, no accidental send while
-                // messages are ticked (WhatsApp hides it too).
-                SelectionFooter(
-                    count = selection.size,
-                    onDelete = { bulkDeleteOpen = true },
-                    onForward = { forwardingSelection = true }
-                )
+                // Selection actions live in the header; hide the composer without duplicating them.
             } else if (isBlocked) {
                 BlockedComposerBar(
                     name = blockedPerson?.name ?: chatTitle,
@@ -1007,10 +1003,6 @@ fun ConversationScreen(
     if (optionsOpen) {
         ChatOptionsSheet(
             onDismiss = { optionsOpen = false },
-            onSearch = {
-                optionsOpen = false
-                searching = true
-            },
             onStarred = {
                 optionsOpen = false
                 starredOpen = true
@@ -1687,6 +1679,7 @@ private fun ConversationHeader(
     chatTitle: String,
     chat: Chat?,
     groupMemberCount: Int?,
+    lastSeenAt: Long?,
     typingMember: String?,
     onBack: () -> Unit,
     onStartCall: (video: Boolean) -> Unit,
@@ -1705,7 +1698,8 @@ private fun ConversationHeader(
         chat?.isTyping == true -> "typing…"
         chat?.isGroup == true -> groupMemberCount?.let { "$it members · tap for info" } ?: "group chat"
         chat?.isOnline == true -> "online"
-        else -> "last seen recently"
+        lastSeenAt != null && lastSeenAt > 0 -> TimeFormat.lastSeen(lastSeenAt)
+        else -> ""
     }
 
     Row(
@@ -1760,14 +1754,14 @@ private fun ConversationHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (status.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = status,
                     color = if (isActivity) Color(0xFF86EFAC) else Color(0xCCFFFFFF),
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    softWrap = false,
+                    modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE)
                 )
                 if (isActivity) {
                     NcTypingDots(
@@ -2015,59 +2009,6 @@ private fun InfoRow(label: String, value: String) {
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/** The bar that replaces the composer while messages are ticked. */
-@Composable
-private fun SelectionFooter(count: Int, onDelete: () -> Unit, onForward: () -> Unit) {
-    val extra = NcTheme.extra
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .navigationBarsPadding()
-            .padding(horizontal = NcSpace.lg, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        FooterAction(Icons.Rounded.Forward, "Forward", onForward)
-        FooterAction(Icons.Rounded.Delete, "Delete", onDelete)
-        Text(
-            text = if (count == 1) "1 selected" else "$count selected",
-            color = extra.textTertiary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun FooterAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(17.dp)
-        )
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -2710,20 +2651,7 @@ private fun MentionSuggestions(names: List<String>, onPick: (String) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = name.take(1).uppercase(),
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                NcAvatar(name = name, size = 22.dp)
                 Text(
                     text = name,
                     color = NcTheme.extra.textPrimary,

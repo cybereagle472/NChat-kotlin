@@ -3,10 +3,12 @@ package com.nchat.app.feature.auth
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -43,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,8 +55,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -61,19 +66,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
+import com.nchat.app.network.ApiException
+import com.nchat.app.core.util.ImageCrop
+import com.nchat.app.feature.profile.ImageCropperScreen
+import com.nchat.app.feature.profile.ProfileAvatar
 import com.nchat.app.data.ServiceLocator
 
-/** The six avatar gradients from `ProfileSetup.tsx`. */
-private val AvatarGradients = listOf(
-    listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)),
-    listOf(Color(0xFF0EA5E9), Color(0xFF6366F1)),
-    listOf(Color(0xFF10B981), Color(0xFF14B8A6)),
-    listOf(Color(0xFFF59E0B), Color(0xFFF97316)),
-    listOf(Color(0xFFF43F5E), Color(0xFFEC4899)),
-    listOf(Color(0xFF6366F1), Color(0xFFA855F7))
-)
-
-/** Handles that are already taken in the seeded friend graph. */
 private val Slate900 = Color(0xFF0F172A)
 private val Slate500 = Color(0xFF64748B)
 private val Slate400 = Color(0xFF94A3B8)
@@ -81,49 +84,60 @@ private val Violet600 = Color(0xFF7C3AED)
 
 /**
  * `ProfileSetup.tsx`: the "One last step / Create your profile" screen shown right after
- * sign-up — avatar style picker, name, username with live availability and the bio.
+ * sign-up — optional photo, default avatar, name, username and bio.
  */
 @Composable
 fun ProfileSetupScreen(
     email: String,
-    onComplete: (fullName: String, username: String, bio: String) -> Unit,
+    onComplete: suspend (fullName: String, username: String, bio: String, photo: ImageBitmap?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var fullName by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
-    var gradientIndex by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf("") }
+    var photo by remember { mutableStateOf<ImageBitmap?>(null) }
+    var pendingCrop by remember { mutableStateOf<ImageBitmap?>(null) }
+    var loadingPhoto by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                loadingPhoto = true
+                val decoded = withContext(Dispatchers.IO) { ImageCrop.loadFromUri(context, uri) }
+                loadingPhoto = false
+                if (decoded == null) error = "Could not open this photo. Please choose another."
+                else pendingCrop = decoded
+            }
+        }
+    }
     var submitting by remember { mutableStateOf(false) }
     var checkingUsername by remember { mutableStateOf(false) }
     var usernameAvailable by remember { mutableStateOf<Boolean?>(null) }
 
-    val gradient = AvatarGradients[gradientIndex]
-    val initials = (fullName.trim().ifBlank { email }).take(2).uppercase()
+    var availabilityError by remember { mutableStateOf(false) }
 
     LaunchedEffect(username) {
         val value = username
+        usernameAvailable = null
+        availabilityError = false
         if (value.length < 3) {
-            usernameAvailable = null
             checkingUsername = false
             return@LaunchedEffect
         }
         checkingUsername = true
-        // Debounce while typing, then ask the backend whether the handle is free.
         delay(350)
-        usernameAvailable = ServiceLocator.profileRepository.isUsernameAvailable(value)
-        checkingUsername = false
-    }
-
-    LaunchedEffect(submitting) {
-        if (!submitting) return@LaunchedEffect
-        delay(600)
-        submitting = false
-        onComplete(
-            fullName.trim(),
-            username,
-            bio.trim().ifBlank { "Hey there! I am using NChat." }
-        )
+        try {
+            usernameAvailable = ServiceLocator.profileRepository.isUsernameAvailable(value)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The server will still validate the username when the profile is saved.
+            availabilityError = true
+        } finally {
+            checkingUsername = false
+        }
     }
 
     fun submit() {
@@ -131,11 +145,40 @@ fun ProfileSetupScreen(
             fullName.trim().isEmpty() -> error = "Please enter your full name"
             username.length < 3 -> error = "Username must be at least 3 characters"
             usernameAvailable == false -> error = "Username is already taken"
+            loadingPhoto -> error = "Please wait for your photo to load"
+            submitting -> Unit
             else -> {
                 error = ""
                 submitting = true
+                scope.launch {
+                    try {
+                        onComplete(
+                            fullName.trim(), username,
+                            bio.trim().ifBlank { "Hey there! I am using NChat." }, photo
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: ApiException) {
+                        error = failure.message.ifBlank { "Could not save your profile. Please try again." }
+                    } catch (_: IOException) {
+                        error = "Could not save your profile. Check your connection and try again."
+                    } catch (_: Exception) {
+                        error = "Could not save your profile. Please try again."
+                    } finally {
+                        submitting = false
+                    }
+                }
             }
         }
+    }
+
+    pendingCrop?.let { image ->
+        ImageCropperScreen(
+            image = image,
+            onCancel = { pendingCrop = null },
+            onCrop = { cropped -> photo = cropped; pendingCrop = null; error = "" }
+        )
+        return
     }
 
     Box(
@@ -209,93 +252,47 @@ fun ProfileSetupScreen(
                         .padding(top = 4.dp, bottom = 22.dp)
                 )
 
-                // Avatar preview with the gradient ring.
+                // This is the actual photo (or built-in default), not a decorative preset.
                 Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .size(112.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(gradient))
-                        .padding(3.dp),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    contentAlignment = Alignment.BottomEnd
                 ) {
+                    ProfileAvatar(
+                        name = fullName.ifBlank { email },
+                        image = photo,
+                        size = 112.dp,
+                        modifier = Modifier.clickable(enabled = !submitting && !loadingPhoto) {
+                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    )
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .padding(4.dp),
+                        modifier = Modifier.size(32.dp).clip(CircleShape)
+                            .background(Violet600)
+                            .clickable(enabled = !submitting && !loadingPhoto) {
+                                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(gradient)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = initials,
-                                color = Color.White,
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                        }
+                        Icon(Icons.Rounded.CameraAlt, contentDescription = "Choose profile photo", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
-
                 Text(
-                    text = "or pick a style",
-                    color = Slate400,
-                    fontSize = 11.sp,
+                    text = if (loadingPhoto) "Opening photo…" else if (photo == null) "Default avatar · tap to add a photo" else "Tap to change photo",
+                    color = Slate500,
+                    fontSize = 12.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 14.dp, bottom = 10.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    AvatarGradients.forEachIndexed { index, colors ->
-                        val selected = index == gradientIndex
-                        val scale by animateFloatAsState(
-                            targetValue = if (selected) 1.06f else 1f,
-                            animationSpec = tween(200),
-                            label = "avatarPresetScale"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .size(42.dp)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                }
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(colors))
-                                .then(
-                                    if (selected) {
-                                        Modifier.border(2.5.dp, Color(0xFF8B5CF6), CircleShape)
-                                    } else {
-                                        Modifier.border(1.dp, Color(0xFFE2E8F0), CircleShape)
-                                    }
-                                )
-                                .clickable { gradientIndex = index },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (selected) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = "Selected style",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
+                if (photo != null) {
+                    Text(
+                        text = "Use default avatar",
+                        color = Violet600,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !submitting) { photo = null }
+                            .padding(top = 8.dp, bottom = 4.dp)
+                    )
                 }
 
                 if (error.isNotEmpty()) {
@@ -338,6 +335,7 @@ fun ProfileSetupScreen(
                     value = username,
                     onValueChange = { value ->
                         username = value.lowercase().filter { it.isLetterOrDigit() || it == '_' }
+                        usernameAvailable = null
                     },
                     placeholder = "janedoe",
                     icon = Icons.Rounded.Email,
@@ -375,6 +373,14 @@ fun ProfileSetupScreen(
                         }
                     }
                 )
+
+                if (availabilityError) {
+                    Text(
+                        text = "Could not check availability; we will check when saving.",
+                        color = Slate500, fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                    )
+                }
 
                 if (username.isNotEmpty() && username.length < 3) {
                     Text(

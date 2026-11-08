@@ -8,6 +8,12 @@ import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,17 +48,26 @@ class RemoteProfileRepository(
     override val profile: StateFlow<UserProfile> = _profile.asStateFlow()
 
     private val _avatar = MutableStateFlow<ImageBitmap?>(null)
+    private var avatarOwnerId: String? = tokens.userId
+    private val setupAndRefresh = Mutex()
     override val avatar: StateFlow<ImageBitmap?> = _avatar.asStateFlow()
 
-    override suspend fun refresh() {
-        val remote = runCatching { api.myProfile().profile }.getOrNull() ?: return
-        apply(remote)
+    override suspend fun refresh() = setupAndRefresh.withLock {
+        val userId = tokens.userId
+        val remote = try {
+            api.myProfile().profile
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (remote != null && userId != null && tokens.userId == userId && remote.id == userId) apply(remote)
     }
 
     override suspend fun isUsernameAvailable(username: String): Boolean {
         val value = username.trim().lowercase()
         if (value.length < 3) return false
-        return runCatching { api.usernameAvailable(value).available }.getOrDefault(false)
+        return api.usernameAvailable(value).available
     }
 
     override fun updateName(name: String) {
@@ -93,6 +108,41 @@ class RemoteProfileRepository(
         )
     }
 
+    override suspend fun completeSetup(
+        fullName: String,
+        username: String,
+        about: String,
+        image: ImageBitmap?
+    ) = setupAndRefresh.withLock {
+        val userId = tokens.userId ?: throw IOException("You are not signed in")
+        val name = fullName.trim()
+        val handle = username.trim().lowercase()
+        val photoUrl = if (image == null) "" else {
+            val bytes = withContext(Dispatchers.IO) {
+                ByteArrayOutputStream().use { sink ->
+                    if (!image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, sink)) {
+                        throw IOException("Could not prepare the profile photo")
+                    }
+                    sink.toByteArray()
+                }
+            }
+            api.uploadMedia("avatar.png", "image/png", bytes).url.shareableMediaUrl()
+                ?: throw IOException("The server did not provide a usable photo address")
+        }
+        val remote = api.updateMe(
+            fullName = name,
+            username = handle,
+            bio = about.trim(),
+            avatarUrl = photoUrl
+        ).profile ?: throw IOException("The server did not confirm your profile")
+        if (tokens.userId != userId || remote.id != userId || remote.fullName?.trim() != name ||
+            remote.username?.lowercase() != handle || remote.avatarUrl.orEmpty() != photoUrl) {
+            throw IOException("The server did not confirm your profile")
+        }
+        apply(remote)
+        _avatar.value = image
+    }
+
     override fun setAvatar(image: ImageBitmap?) {
         _avatar.value = image
         if (image == null) return
@@ -124,6 +174,10 @@ class RemoteProfileRepository(
     }
 
     private fun apply(remote: UserDto) {
+        if (avatarOwnerId != remote.id) {
+            _avatar.value = null
+            avatarOwnerId = remote.id
+        }
         _profile.value = UserProfile(
             fullName = remote.fullName.orEmpty(),
             handle = remote.username?.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(),

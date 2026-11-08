@@ -34,6 +34,17 @@ object TimeFormat {
         }
     }
 
+    /** Last-seen label only for a timestamp the server actually disclosed. */
+    fun lastSeen(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+        val day = dayDistance(timestamp, now)
+        val whenSeen = when (day) {
+            0L -> "today"
+            1L -> "yesterday"
+            else -> "on ${date(timestamp)}"
+        }
+        return "last seen $whenSeen at ${clock(timestamp)}"
+    }
+
     /** Separator label inside a conversation: `Today`, `Yesterday`, `Monday`, `12/03/2026`. */
     fun daySeparator(timestamp: Long, now: Long = System.currentTimeMillis()): String {
         val daysApart = dayDistance(timestamp, now)

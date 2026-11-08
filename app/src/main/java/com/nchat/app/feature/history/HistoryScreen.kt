@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallMade
 import androidx.compose.material.icons.rounded.CallReceived
@@ -346,13 +347,16 @@ private fun HistoryRow(
 
 @Composable
 private fun AvatarInitial(call: CallRecord) {
-    Text(
-        text = if (call.isGroup) "👥" else call.name.trim().take(1).uppercase().ifBlank { "?" },
-        color = Color.White,
-        fontSize = if (call.isGroup) 17.sp else 15.sp,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1
-    )
+    if (call.isGroup) {
+        Text(text = "👥", fontSize = 17.sp, maxLines = 1)
+    } else {
+        Icon(
+            imageVector = Icons.Rounded.Person,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(24.dp)
+        )
+    }
 }
 
 @Composable
