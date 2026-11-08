@@ -55,13 +55,19 @@ class NetworkMonitor(context: Context) {
     }
 
     /** Idempotent; safe to call from every entry point. */
+    @Synchronized
     fun start() {
-        if (started || manager == null) return
-        started = true
-        runCatching { manager?.registerDefaultNetworkCallback(callback) }
+        val connectivity = manager ?: return
+        if (started) return
+        // A failed registration must remain retryable on a later start.
+        started = runCatching {
+            connectivity.registerDefaultNetworkCallback(callback)
+            true
+        }.getOrDefault(false)
         refresh()
     }
 
+    @Synchronized
     fun stop() {
         if (!started) return
         started = false
@@ -77,8 +83,14 @@ class NetworkMonitor(context: Context) {
     }
 
     private fun read(): Boolean = runCatching {
-        val capabilities = active() ?: return true // unreadable: assume online, never freeze
-        capabilities.hasInternet()
+        // If the system service is unavailable we cannot tell, so retain the
+        // optimistic fallback. A missing active network, however, means offline.
+        if (manager == null) return true
+        val capabilities = active()
+        validatedInternet(
+            capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+            capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        )
     }.getOrDefault(true)
 
     private fun label(): String? = runCatching {
@@ -97,8 +109,8 @@ class NetworkMonitor(context: Context) {
         val network = connectivity.activeNetwork ?: return null
         return connectivity.getNetworkCapabilities(network)
     }
-
-    private fun NetworkCapabilities.hasInternet(): Boolean =
-        hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
+
+/** Missing capabilities (including no active network) must not be reported as online. */
+internal fun validatedInternet(internet: Boolean?, validated: Boolean?): Boolean =
+    internet == true && validated == true
