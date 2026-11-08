@@ -28,7 +28,9 @@ data class UpdateInfo(
     val versionName: String,
     val apkUrl: String,
     val notes: String,
-    /** Optional independently hosted HTTPS mirrors supplied by the release manifest. */
+    /** Release certificate fingerprint pinned by the repository's release-verification step. */
+    val signingCertSha256: String,
+    /** Optional alternate release URLs supplied by the version manifest. */
     val fallbackApkUrls: List<String> = emptyList()
 )
 
@@ -59,6 +61,7 @@ object AutoUpdater {
     private const val RELEASE_PAGE = "https://github.com/cybereagle472/NChat-kotlin/releases/latest"
     private const val APK_MIME = "application/vnd.android.package-archive"
     private const val MIN_APK_BYTES = 100_000L
+    private val SIGNER_FINGERPRINT = Regex("^[0-9a-f]{64}$")
     private val downloadMutex = Mutex()
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
@@ -79,6 +82,12 @@ object AutoUpdater {
                     val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                     val remoteCode = json.getInt("versionCode")
                     if (remoteCode <= BuildConfig.VERSION_CODE) return@withContext null
+                    val signer = json.getString("signingCertSha256")
+                        .replace(":", "")
+                        .lowercase()
+                    if (!SIGNER_FINGERPRINT.matches(signer)) {
+                        throw IOException("The update manifest has an invalid signing-certificate fingerprint.")
+                    }
                     val mirrors = json.optJSONArray("apkUrls")
                     val alternatives = if (mirrors == null) emptyList() else
                         (0 until minOf(mirrors.length(), 3)).mapNotNull { index ->
@@ -89,6 +98,7 @@ object AutoUpdater {
                         versionName = json.getString("versionName"),
                         apkUrl = json.getString("apkUrl"),
                         notes = json.optString("releaseNotes", "Performance and design improvements"),
+                        signingCertSha256 = signer,
                         fallbackApkUrls = alternatives
                     )
                 } finally {
@@ -121,14 +131,18 @@ object AutoUpdater {
         val temp = File(targetDir, "nchat-${info.versionCode}.part.apk")
         // Returning from Android's install-permission screen should not download 30 MB again.
         if (apk.isFile && apk.length() >= MIN_APK_BYTES && hasZipHeader(apk) &&
-            validateArchive(context, apk, info.versionCode) == null) {
+            validateArchive(context, apk, info.versionCode, info.signingCertSha256) == null) {
             onProgress(1f)
             return@withLock apk
+        }
+        // Never let a corrupt or wrongly signed cached file block a clean retry at rename time.
+        if (apk.exists() && !apk.delete()) {
+            throw IOException("Could not remove an invalid cached update. Free device storage and retry.")
         }
         try {
             ApkDownloader().download(listOf(info.apkUrl) + info.fallbackApkUrls, temp, onProgress) { file ->
                 if (!hasZipHeader(file)) "The downloaded file is not a valid APK."
-                else validateArchive(context, file, info.versionCode)
+                else validateArchive(context, file, info.versionCode, info.signingCertSha256)
             }
             // Same-directory rename; keep the previous file if replacement fails.
             check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
@@ -240,7 +254,12 @@ object AutoUpdater {
     }
 
     /** Check package, exact advertised version, and signing compatibility before invoking Android. */
-    private fun validateArchive(context: Context, file: File, expectedVersion: Int): String? {
+    private fun validateArchive(
+        context: Context,
+        file: File,
+        expectedVersion: Int,
+        expectedSigner: String
+    ): String? {
       return try {
         @Suppress("DEPRECATION")
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -261,11 +280,15 @@ object AutoUpdater {
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)
         val current = currentSigners(installed)
         val incoming = currentSigners(archive)
+        val expected = setOf(expectedSigner)
+        if (incoming != expected) {
+            return "The downloaded APK is not signed by NChat's verified release key. Expected SHA-256: ${expectedSigner}. Received: ${describeSigners(incoming)}. Please retry or use the official release page."
+        }
         val history = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            signatureIds(archive.signingInfo?.signingCertificateHistory)
+            currentSigners(archive.signingInfo?.signingCertificateHistory)
         } else emptySet()
         if (!compatibleUpdateSigners(current, incoming, history)) {
-            return "The update signing key does not match this installation. Do not uninstall the app; contact support."
+            return "This installed copy has a different signing key, so Android cannot update it in place. Installed SHA-256: ${describeSigners(current)}. Official update SHA-256: ${describeSigners(incoming)}. Do not uninstall; send these fingerprints to NChat support."
         }
         null
       } catch (_: Exception) {
@@ -274,12 +297,18 @@ object AutoUpdater {
     }
 
     @Suppress("DEPRECATION")
-    private fun currentSigners(info: PackageInfo): Set<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        signatureIds(info.signingInfo?.apkContentsSigners)
-    } else {
-        signatureIds(info.signatures)
+    private fun currentSigners(info: PackageInfo): Set<String> {
+        val legacy = currentSigners(info.signatures)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return legacy
+        val modern = currentSigners(info.signingInfo?.apkContentsSigners)
+        // Some vendor PackageManager implementations return a null/empty SigningInfo for
+        // archives or installed packages even when the legacy field is populated.
+        return preferredSignerSet(modern, legacy)
     }
 
-    private fun signatureIds(signatures: Array<Signature>?): Set<String> = signatures.orEmpty()
-        .map { it.toCharsString() }.toSet()
+    private fun currentSigners(signatures: Array<Signature>?): Set<String> = signatures.orEmpty()
+        .map { certificateSha256(it.toByteArray()) }.toSet()
+
+    private fun describeSigners(signers: Set<String>): String =
+        signers.sorted().takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "unavailable"
 }

@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -440,7 +441,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = viewModel::clearNotice,
             title = { Text("NChat") },
-            text = { Text(notice) },
+            text = { SelectionContainer { Text(notice) } },
             confirmButton = { TextButton(onClick = viewModel::clearNotice) { Text("OK") } },
             dismissButton = {
                 if (notice.contains("update", ignoreCase = true) || state.info != null) {

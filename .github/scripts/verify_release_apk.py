@@ -25,6 +25,18 @@ def verify(badging: str, signer_output: str, manifest: dict) -> None:
             or fields.get("versionName") != manifest["versionName"]):
         raise ValueError("APK package or version does not match version.json")
 
+    expected_tag = f"nchat-v{manifest['versionName']}"
+    if manifest.get("releaseTag") != expected_tag:
+        raise ValueError("releaseTag must match the versionName")
+    expected_url = (
+        "https://github.com/cybereagle472/NChat-kotlin/releases/download/"
+        f"{expected_tag}/nchat-ui-lab.apk"
+    )
+    if manifest.get("apkUrl") != expected_url:
+        raise ValueError("apkUrl must use the exact versioned release asset")
+    if manifest.get("signingCertSha256", "").replace(":", "").lower() != DEMO_SIGNER_SHA256:
+        raise ValueError("version.json signing fingerprint does not match the pinned release key")
+
     signers = re.findall(
         r"^Signer #(\d+) certificate SHA-256 digest:\s*([0-9a-fA-F:]+)\s*$",
         signer_output,

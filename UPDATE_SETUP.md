@@ -35,7 +35,7 @@ Open the repository on GitHub, then Settings -> Secrets and variables -> Actions
 
 These secrets are not used by the current demo-signing workflow. When migrating, update the workflow to use them before building. Then open Actions -> Build NChat APK -> Run workflow. Download the generated release APK artifact or the GitHub Release asset and install it. You can uninstall the older unsigned/debug build first as planned.
 
-Future releases must keep the same keystore and increase both `versionCode` in `app/build.gradle` and `versionCode` in `version.json`. The app checks the version manifest at launch and offers the APK update; Android still asks you to confirm installation.
+Future releases must keep the same keystore and increase `versionCode` in both `app/build.gradle` and `version.json`. Set `releaseTag` to `nchat-v<versionName>` and point `apkUrl` at that exact versioned release asset; the build workflow uses that same tag and validates the APK's package, version, and pinned certificate before publishing. The versioned URL avoids the extra `latest/download` redirect that can time out on some networks. Keep any fallback URLs HTTPS-only. The app checks the manifest at launch, retries transient failures with bounded backoff, and Android still asks the user to confirm installation.
 
 ## Update downloads and mirrors
 

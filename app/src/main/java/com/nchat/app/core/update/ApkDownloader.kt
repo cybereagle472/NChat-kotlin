@@ -10,7 +10,11 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-internal class UpdateHttpException(val status: Int) : IOException("HTTP $status")
+internal class UpdateHttpException(
+    val status: Int,
+    /** A numeric Retry-After value, clamped by the downloader to a safe maximum. */
+    val retryAfterMillis: Long? = null
+) : IOException("HTTP $status")
 internal class InvalidUpdateDownload(message: String) : IOException(message)
 
 internal fun isTransientUpdateFailure(error: IOException): Boolean = when (error) {
@@ -45,7 +49,10 @@ internal class ApkDownloader(
                     temp.delete()
                     lastError = error
                     if (!isTransientUpdateFailure(error) || attempt == MAX_ATTEMPTS - 1) break
-                    pause(600L * (attempt + 1))
+                    val backoff = (1_000L shl attempt).coerceAtMost(MAX_BACKOFF_MS)
+                    val serverDelay = (error as? UpdateHttpException)?.retryAfterMillis
+                        ?.coerceIn(0L, MAX_BACKOFF_MS)
+                    pause(serverDelay ?: backoff)
                 }
             }
         }
@@ -63,8 +70,8 @@ internal class ApkDownloader(
         while (true) {
             currentCoroutineContext().ensureActive()
             val connection = open(url).apply {
-                connectTimeout = 20_000
-                readTimeout = 60_000
+                connectTimeout = 30_000
+                readTimeout = 90_000
                 requestMethod = "GET"
                 instanceFollowRedirects = false
                 setRequestProperty("User-Agent", "NChat-Updater")
@@ -79,7 +86,13 @@ internal class ApkDownloader(
                     url = secureUrl(URL(url, location).toExternalForm())
                     continue
                 }
-                if (status != HttpURLConnection.HTTP_OK) throw UpdateHttpException(status)
+                if (status != HttpURLConnection.HTTP_OK) {
+                    val retryAfterMillis = connection.getHeaderField("Retry-After")
+                        ?.trim()
+                        ?.toLongOrNull()
+                        ?.times(1_000L)
+                    throw UpdateHttpException(status, retryAfterMillis)
+                }
                 val total = connection.contentLengthLong.takeIf { it >= 0 }
                 if (total != null && (total < minBytes || total > maxBytes)) {
                     throw InvalidUpdateDownload("The update file has an invalid size.")
@@ -126,8 +139,9 @@ internal class ApkDownloader(
     }
 
     private companion object {
-        const val MAX_ATTEMPTS = 3
+        const val MAX_ATTEMPTS = 5
         const val MAX_SOURCES = 4
+        const val MAX_BACKOFF_MS = 20_000L
         const val MAX_REDIRECTS = 8
         val REDIRECTS = setOf(301, 302, 303, 307, 308)
     }
