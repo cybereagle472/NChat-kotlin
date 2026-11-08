@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Pause
@@ -82,6 +83,7 @@ import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.core.designsystem.BubbleShapeMine
 import com.nchat.app.core.designsystem.BubbleShapeTheirs
 import com.nchat.app.core.designsystem.NcTheme
+import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.core.util.chatFormatted
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.network.MediaFiles
@@ -94,24 +96,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.abs
 
-/** 30dp gradient circle with the sender's initial, shown beside the first bubble of a run. */
+/** Avatar beside the first bubble of a sender's group-message run. */
 @Composable
 private fun GroupSenderAvatar(name: String) {
-    Box(
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .size(30.dp)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(NcTheme.extra.brandGradient)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = name.trim().take(1).uppercase().ifBlank { "?" },
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
+    NcAvatar(name = name, size = 30.dp, modifier = Modifier.padding(end = 8.dp))
 }
 
 /** Glass pill that separates messages by day. */
@@ -434,12 +422,16 @@ fun MessageBubble(
                     )
                 } else if (mine) {
                     Icon(
-                        imageVector = if (message.state == DeliveryState.Read) {
-                            Icons.Rounded.DoneAll
-                        } else {
-                            Icons.Rounded.Check
+                        imageVector = when (message.state) {
+                            DeliveryState.Sending -> Icons.Rounded.Schedule
+                            DeliveryState.Sent -> Icons.Rounded.Check
+                            DeliveryState.Read -> Icons.Rounded.DoneAll
                         },
-                        contentDescription = null,
+                        contentDescription = when (message.state) {
+                            DeliveryState.Sending -> "Sending"
+                            DeliveryState.Sent -> "Sent"
+                            DeliveryState.Read -> "Read"
+                        },
                         tint = if (message.state == DeliveryState.Read) {
                             Color(0xFFE0F2FE)
                         } else {

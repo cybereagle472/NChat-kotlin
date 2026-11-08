@@ -452,7 +452,6 @@ fun StarredMessagesSheet(
 @Composable
 fun ChatOptionsSheet(
     onDismiss: () -> Unit,
-    onSearch: () -> Unit,
     onStarred: () -> Unit,
     onMedia: () -> Unit = {}
 ) {
@@ -477,7 +476,6 @@ fun ChatOptionsSheet(
                     .clickable(enabled = false, onClick = {})
                     .padding(vertical = 4.dp)
             ) {
-                OptionRow("Search", Icons.Rounded.Search) { onSearch() }
                 OptionRow("Media, links and docs", Icons.Rounded.PhotoLibrary) { onMedia() }
                 OptionRow("Starred messages", Icons.Rounded.Star) { onStarred() }
             }

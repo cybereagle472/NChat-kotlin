@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.nchat.app.core.designsystem.NcSpace
+import com.nchat.app.core.designsystem.NcAvatar
 import com.nchat.app.data.repository.GroupCallInvite
 import com.nchat.app.data.repository.GroupCallPeer
 import com.nchat.app.data.repository.GroupCallState
@@ -214,20 +215,7 @@ private fun GroupPeerRow(peer: GroupCallPeer) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NcSpace.md)
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF8B5CF6)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = peer.name.take(1).uppercase(),
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        NcAvatar(name = peer.name, size = 34.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = peer.name,
