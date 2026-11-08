@@ -1,63 +1,42 @@
-run: 42357665175
+run: 42490765804
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
 > Configure project :app
-NCHAT_API_BASE resolved from build configuration
+NCHAT_API_BASE is not set: this APK will ask for a server address on first launch.
 Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
 
-> Task :app:buildKotlinToolingMetadata
 > Task :app:checkKotlinGradlePluginConfigurationErrors
 > Task :app:preBuild UP-TO-DATE
-> Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:generateReleaseBuildConfig
-> Task :app:generateReleaseResValues FROM-CACHE
-> Task :app:checkReleaseAarMetadata
-> Task :app:mapReleaseSourceSetPaths
-> Task :app:generateReleaseResources UP-TO-DATE
-> Task :app:mergeReleaseResources FROM-CACHE
-> Task :app:packageReleaseResources FROM-CACHE
-> Task :app:parseReleaseLocalResources FROM-CACHE
-> Task :app:createReleaseCompatibleScreenManifests
-> Task :app:extractDeepLinksRelease FROM-CACHE
-> Task :app:processReleaseMainManifest
-> Task :app:processReleaseManifest
-> Task :app:javaPreCompileRelease FROM-CACHE
-> Task :app:extractProguardFiles
-> Task :app:mergeReleaseJniLibFolders FROM-CACHE
-> Task :app:processReleaseManifestForPackage
-> Task :app:mergeReleaseNativeLibs
-> Task :app:desugarReleaseFileDependencies FROM-CACHE
-> Task :app:checkReleaseDuplicateClasses
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig FROM-CACHE
+> Task :app:generateDebugResValues FROM-CACHE
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources FROM-CACHE
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:parseDebugLocalResources FROM-CACHE
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :app:processDebugMainManifest FROM-CACHE
+> Task :app:processDebugManifest FROM-CACHE
+> Task :app:processDebugManifestForPackage FROM-CACHE
+> Task :app:processDebugResources FROM-CACHE
+> Task :app:javaPreCompileDebug FROM-CACHE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :app:compileDebugKotlin
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/local/BlockedContactsStore.kt:18:13 Cannot access 'runCatching' before the instance has been initialized
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/Dtos.kt:62:1 This annotation is not repeatable
 
-> Task :app:stripReleaseDebugSymbols
-Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
-
-> Task :app:extractReleaseNativeSymbolTables FROM-CACHE
-> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
-> Task :app:mergeReleaseArtProfile
-> Task :app:mergeExtDexRelease FROM-CACHE
-> Task :app:processReleaseResources
-> Task :app:mergeReleaseShaders FROM-CACHE
-> Task :app:compileReleaseShaders NO-SOURCE
-> Task :app:generateReleaseAssets UP-TO-DATE
-> Task :app:mergeReleaseAssets FROM-CACHE
-> Task :app:compressReleaseAssets FROM-CACHE
-> Task :app:collectReleaseDependencies
-> Task :app:sdkReleaseDependencyData
-> Task :app:optimizeReleaseResources
-> Task :app:validateSigningRelease
-> Task :app:writeReleaseAppMetadata
-> Task :app:writeReleaseSigningConfigVersions
-
-> Task :app:compileReleaseKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:97:35 Unresolved reference: current
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1794041898344.json
+> Task :app:compileDebugKotlin FAILED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1794148716325.json
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:compileReleaseKotlin'.
+Execution failed for task ':app:compileDebugKotlin'.
 > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
    > Compilation error. See log for more details
 
@@ -67,7 +46,7 @@ Execution failed for task ':app:compileReleaseKotlin'.
 > Get more help at https://help.gradle.org.
 
 * Exception is:
-org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileReleaseKotlin'.
+org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileDebugKotlin'.
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:149)
 	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:282)
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:147)
@@ -96,6 +75,34 @@ org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:com
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
@@ -222,6 +229,34 @@ Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionExcept
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
@@ -258,5 +293,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 34s
-35 actionable tasks: 22 executed, 13 from cache
+BUILD FAILED in 53s
+17 actionable tasks: 5 executed, 12 from cache

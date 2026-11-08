@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
@@ -64,7 +63,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.repository.AuthResult
-import kotlinx.coroutines.delay
 
 private val AuthBackground = listOf(
     Color(0xFFA855F7),
@@ -79,12 +77,10 @@ private val FieldBorder = Color(0xFFE5E7EB)
 
 private val EmailRegex = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
-private enum class EmailStatus { Idle, Checking, Available, Taken }
-
 /**
  * `Auth.tsx`: purple gradient backdrop with floating circles, a white card holding the
- * logo, the Welcome Back / Create Account copy, the email + password form with live email
- * availability while signing up, and the switch-mode footer.
+ * logo, the Welcome Back / Create Account copy, the email + password form, and the switch-mode
+ * footer. Email availability is deliberately not disclosed before account creation.
  */
 @Composable
 fun AuthScreen(modifier: Modifier = Modifier) {
@@ -97,29 +93,6 @@ fun AuthScreen(modifier: Modifier = Modifier) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var success by remember { mutableStateOf("") }
-    var emailStatus by remember { mutableStateOf(EmailStatus.Idle) }
-
-    // Sign-up only: tell the user straight away when an email is already taken.
-    LaunchedEffect(email, isLogin) {
-        if (isLogin) {
-            emailStatus = EmailStatus.Idle
-            return@LaunchedEffect
-        }
-        val trimmed = email.trim()
-        if (!EmailRegex.matches(trimmed)) {
-            emailStatus = EmailStatus.Idle
-            return@LaunchedEffect
-        }
-        emailStatus = EmailStatus.Checking
-        // Debounce while typing before asking the backend (`GET /auth/check-email`).
-        delay(350)
-        emailStatus = if (ServiceLocator.authRepository.isEmailRegistered(trimmed)) {
-            EmailStatus.Taken
-        } else {
-            EmailStatus.Available
-        }
-    }
-
     LaunchedEffect(loading) {
         if (!loading) return@LaunchedEffect
         val repository = ServiceLocator.authRepository
@@ -144,8 +117,6 @@ fun AuthScreen(modifier: Modifier = Modifier) {
             !EmailRegex.matches(trimmed) -> error = "Please enter a valid email address"
             !isLogin && password != confirmPassword -> error = "Passwords do not match"
             password.length < 6 -> error = "Password must be at least 6 characters"
-            !isLogin && emailStatus == EmailStatus.Taken ->
-                error = "This email is already registered — log in instead"
             else -> loading = true
         }
     }
@@ -154,7 +125,6 @@ fun AuthScreen(modifier: Modifier = Modifier) {
         isLogin = !isLogin
         error = ""
         success = ""
-        emailStatus = EmailStatus.Idle
         password = ""
         confirmPassword = ""
     }
@@ -254,65 +224,7 @@ fun AuthScreen(modifier: Modifier = Modifier) {
                     leadingIcon = Icons.Rounded.Email,
                     keyboardType = KeyboardType.Email,
                     enabled = !loading,
-                    trailing = {
-                        if (!isLogin && emailStatus != EmailStatus.Idle) {
-                            when (emailStatus) {
-                                EmailStatus.Checking -> CircularProgressIndicator(
-                                    modifier = Modifier.size(15.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color(0xFFC4B5FD)
-                                )
-
-                                EmailStatus.Available -> Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = "Email available",
-                                    tint = Color(0xFF22C55E),
-                                    modifier = Modifier.size(17.dp)
-                                )
-
-                                EmailStatus.Taken -> Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Email taken",
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(17.dp)
-                                )
-
-                                EmailStatus.Idle -> Unit
-                            }
-                        }
-                    }
                 )
-
-                if (!isLogin) {
-                    when (emailStatus) {
-                        EmailStatus.Taken -> Row(
-                            modifier = Modifier.padding(top = 6.dp, start = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "This email is already registered. ",
-                                color = Color(0xFFEF4444),
-                                fontSize = 11.sp
-                            )
-                            Text(
-                                text = "Log in instead",
-                                color = Color(0xFF7C3AED),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { switchMode() }
-                            )
-                        }
-
-                        EmailStatus.Available -> Text(
-                            text = "Email available",
-                            color = Color(0xFF16A34A),
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 6.dp, start = 2.dp)
-                        )
-
-                        else -> Unit
-                    }
-                }
 
                 AuthField(
                     label = "Password",

@@ -23,9 +23,6 @@ class NChatApi(private val client: ApiClient) {
 
     // ------------------------------------------------------------------ auth
 
-    suspend fun checkEmail(email: String): CheckEmailEnvelope =
-        decode(client.get("/auth/check-email", mapOf("email" to email)))
-
     suspend fun signUp(email: String, password: String, fullName: String): AuthResponse =
         decode(
             client.post(
@@ -144,6 +141,11 @@ class NChatApi(private val client: ApiClient) {
     )
 
     suspend fun chats(): ChatsEnvelope = decode(client.get("/messages/chats"))
+
+    /** Hide every message in a direct thread for the current account only. */
+    suspend fun clearConversation(otherId: String) {
+        client.post("/messages/with/$otherId/delete-for-me")
+    }
 
     suspend fun sendMessage(
         receiverId: String,

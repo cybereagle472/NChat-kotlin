@@ -43,7 +43,6 @@ PY
 |---|---|---|---|
 | `POST /auth/signup` | `NChatApi.signup` → `RemoteAuthRepository` | Auth screen | ✅ |
 | `POST /auth/login` | `NChatApi.login` → `RemoteAuthRepository` | Auth screen | ✅ |
-| `GET /auth/check-email` | `NChatApi.checkEmail` | Auth screen (live validation) | ✅ |
 | `GET /auth/me` | `NChatApi.me` | startup session restore | ✅ |
 | `POST /auth/refresh` | `ApiClient` (:164) | transparent 401 retry on every call **and** before a socket handshake | ✅ |
 | `POST /auth/logout` | `NChatApi.logout` | Settings → Log out | ✅ |
@@ -71,16 +70,17 @@ PY
 | `POST /friends/:id/respond` | `respond` | accept / decline | ✅ |
 | `DELETE /friends/request/:id` | `cancelRequest` | cancel outgoing | ✅ |
 | `DELETE /friends/:friendId` | `removeFriend` | Remove friend | ✅ |
-| `POST /friends/block` | — | — | 🚫 deliberate, see §10.1 |
-| `POST /friends/unblock` | — | — | 🚫 deliberate, see §10.1 |
-| `GET /friends/blocked` | `loadBlocked` (legacy rows only) | Unblock list | ⚠️ see §10.1 |
+| `POST /friends/block` | `RemoteFriendRepository.block` | Blocked users / chat privacy | ✅ |
+| `POST /friends/unblock` | `RemoteFriendRepository.unblock` | Blocked users / chat privacy | ✅ |
+| `GET /friends/blocked` | `RemoteFriendRepository.refresh` | Unblock list + account sync | ✅ |
 
 ## 4. Messages — `routes/messages.ts`
 
 | Route | App caller | Surface | State |
 |---|---|---|---|
 | `GET /messages/chats` | `RemoteChatRepository.loadChats` | Chats tab | ✅ |
-| `GET /messages/with/:otherId` | `loadConversation` | open chat | ✅ |
+| `GET /messages/with/:otherId` | `loadConversation` + `loadOlder` | open chat + older-page scroll | ✅ |
+| `POST /messages/with/:otherId/delete-for-me` | `clearConversation` | delete direct chat for this account | ✅ |
 | `POST /messages` | `sendMessage` / outbox `deliver` | composer | ✅ |
 | `PATCH /messages/:id` | `editMessage` | edit bubble | ✅ |
 | `DELETE /messages/:id` | `deleteForEveryone` | delete-for-everyone | ✅ |
@@ -164,25 +164,24 @@ Before 1.0.40 only `POST /calls` and `GET /calls/history` were used, and the cal
 was an animation: `LaunchedEffect { delay(1_600); connected = true }`. The other phone never
 rang, answering was impossible, and the "connected" timer meant nothing.
 
-## 10. Deliberately not wired
+## 10. Security and privacy behavior
 
-### 10.1 Blocking stays on the device
+### 10.1 Blocking is server-enforced and non-destructive
 
-`POST /friends/block` does two things (`worker/src/routes/friends.ts:219`): it inserts into
-`blocked_users` **and deletes the friendship row**, then broadcasts `friend:removed` — the
-other person loses the contact too. Blocking must be non-destructive (the blocked
-conversation stays, and unblocking resumes exactly where it was), which that endpoint
-cannot express.
+`POST /friends/block` writes an account-scoped server block without deleting the friendship or
+history. Direct send, typing, recording, edit, delete-for-everyone, reaction, and read-receipt
+operations are authorized against the current friendship and bilateral block state. Unblocking
+removes the block and preserves an existing friendship; the app also keeps a hashed,
+per-account local mirror for immediate UI gating and offline state. A legacy unscoped local block
+file is discarded rather than attributed to whichever account signs in first.
 
-So the app keeps the block itself (`data/local/BlockedContactsStore.kt`): blocked ids are
-hidden from Friends/Discover, their incoming messages are dropped in
-`RemoteChatRepository.handleEvent` (:1106), the chat shows an Unblock banner instead of the
-composer, and nothing is deleted. The cost is that the *server* is not told, so a blocked
-person's messages are still stored and their calls still ring through to the worker.
+### 10.2 Direct chats and history
 
-To close this properly the worker needs a block that is separate from friendship deletion
-(e.g. `POST /friends/block` with `keep_friendship: true`, or a dedicated
-`/users/:id/block`). That is a change in `nchat-friends`, not in this repo.
+Unfriending removes the current relationship; a chat row is never used to synthesize a friendship.
+Direct message sends and interactions require an accepted friendship, while history remains
+available for cleanup. “Delete chat” marks the existing direct-thread rows hidden for the current
+account, removes queued sends for that owner/chat, and refreshes the preview after server success.
+Older conversation pages load when scrolling near the top and retain stable message keys.
 
 ### 10.2 Group calls
 
@@ -302,7 +301,7 @@ a normal app rather than an empty one.
 | Friend graph | `FriendGraphCache` → `cache/friends.json` (per account) | after every successful `/friends` | in `init`, before `refresh()` |
 | **Messages** | **`MessageStore` → `cache/messages/<owner>/<chat>.json`** | **whenever a conversation's flow changes (debounced 400 ms, atomic tmp+rename)** | **`conversation()` before the request; one file per chat, newest 300** |
 | Queued sends | `OutboxStore` → `outbox.json` | on send, before the request | at start-up and on every `ConnectionState.Connected` |
-| Block list | `BlockedContactsStore` → `blocked.json` | on block/unblock | in `init` |
+| Block list | `BlockedContactsStore` → `blocked/<account-sha256>.json` | on block/unblock | in `init` + server sync |
 
 List-mirroring rule: the chat and group lists are written **only after a complete answer**
 (`chatsTrusted` / `groupsTrusted` in the repository). A failed refresh produces half a list —
@@ -385,6 +384,7 @@ Rules this section exists to protect:
 |---|---|---|
 | Delete for everyone (1:1) | `DELETE /messages/:id` — sender only, no time limit; broadcasts `message:delete` | `RemoteChatRepository.deleteMessage` |
 | Delete for me (1:1) | `POST /messages/:id/delete-for-me` — appends to `deleted_for`; **not** broadcast | same |
+| Delete chat (1:1) | `POST /messages/with/:otherId/delete-for-me` — hides the full thread for the current account | `RemoteChatRepository.deleteChat` |
 | Delete for everyone (group) | `POST /groups/messages/:id/delete-for-everyone` — **one-hour window**, `403`/`400` otherwise; broadcasts `group-message:delete` | same |
 | Delete for me (group) | `POST /groups/messages/:id/delete-for-me` | same |
 | Reply | `reply_to` on `POST /messages` and `POST /groups/:id/messages` | `Message.replyToId`, resolved by `linkQuotes()` |

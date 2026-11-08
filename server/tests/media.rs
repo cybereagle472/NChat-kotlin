@@ -128,6 +128,28 @@ impl TestApp {
         )
     }
 
+    async fn befriend(&self, sender: &str, receiver_id: &str, receiver: &str) {
+        let (status, body) = self
+            .call(
+                "POST",
+                "/friends/request",
+                Some(sender),
+                Some(json!({ "receiver_id": receiver_id })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "request: {body}");
+        let request_id = body["id"].as_str().expect("request id");
+        let (status, body) = self
+            .call(
+                "POST",
+                &format!("/friends/{request_id}/respond"),
+                Some(receiver),
+                Some(json!({ "accept": true })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "respond: {body}");
+    }
+
     /// `POST /media/upload` as `multipart/form-data` with a single `file` part.
     async fn upload(
         &self,
@@ -291,6 +313,7 @@ async fn conversation_members_can_read_but_strangers_cannot() {
     let (ada_token, _ada_id) = app.signup("ada@example.com", "Ada").await;
     let (grace_token, grace_id) = app.signup("grace@example.com", "Grace").await;
     let (bob_token, _bob_id) = app.signup("bob@example.com", "Bob").await;
+    app.befriend(&ada_token, &grace_id, &grace_token).await;
 
     let payload = b"jpeg-bytes".to_vec();
     let (status, body) = app.upload(&ada_token, "photo.jpg", "image/jpeg", &payload).await;

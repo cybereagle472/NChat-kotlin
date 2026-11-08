@@ -35,6 +35,8 @@ interface ChatRepository {
      * "whenever something else happens to refresh".
      */
     fun refreshConversation(chatId: String)
+    /** Loads the preceding page when the user scrolls to the top of a conversation. */
+    fun loadOlder(chatId: String)
     fun sendMessage(
         chatId: String,
         text: String,

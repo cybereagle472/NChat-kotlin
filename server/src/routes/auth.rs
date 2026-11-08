@@ -1,11 +1,10 @@
 //! `/auth/*` — port of `worker/src/routes/auth.ts`.
 
 use axum::body::Bytes;
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use rusqlite::{params, OptionalExtension};
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
@@ -19,10 +18,6 @@ use crate::{jwt, AppState};
 const ACCESS_TTL_SECS: i64 = 15 * 60;
 const REFRESH_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
-#[derive(Debug, Deserialize)]
-pub struct EmailQuery {
-    email: Option<String>,
-}
 
 /// `\w+@\w+\.\w+` with the same constraints as the reference regex
 /// (`^[^\s@]+@[^\s@]+\.[^\s@]+$`).
@@ -90,22 +85,6 @@ fn find_by_email(state: &AppState, email: &str) -> ApiResult<Option<UserRow>> {
     Ok(row)
 }
 
-pub async fn check_email(
-    State(state): State<AppState>,
-    Query(query): Query<EmailQuery>,
-) -> ApiResult<Json<Value>> {
-    let email = query
-        .email
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase();
-    if email.is_empty() || !email_valid(&email) {
-        return Ok(Json(json!({ "valid": false, "exists": false })));
-    }
-    let exists = find_by_email(&state, &email)?.is_some();
-    Ok(Json(json!({ "valid": true, "exists": exists })))
-}
-
 pub async fn signup(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -135,12 +114,14 @@ pub async fn signup(
     if password.len() < 6 {
         return Err(ApiError::bad_request("Password must be at least 6 characters"));
     }
+    // Hash before checking for duplicates: otherwise the fast duplicate path becomes a timing
+    // oracle even though the response text and status are intentionally indistinguishable.
+    let password_hash = password::hash_password(&password);
     if find_by_email(&state, &email)?.is_some() {
-        return Err(ApiError::conflict("Email is already registered"));
+        return Err(ApiError::bad_request("Unable to create an account with these details"));
     }
 
     let id = new_id();
-    let password_hash = password::hash_password(&password);
     let created_at = now_iso();
 
     state.db.with(|conn| {

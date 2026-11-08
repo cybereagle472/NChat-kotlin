@@ -124,7 +124,7 @@ the TypeScript wins.
 | `src/privacy.rs` | `getPrivacySettings`, `applyPrivacy`, `applyPrivacyToList`, `are_friends` |
 | `src/presence.rs` | `last_active_at` reads/writes and the online/offline window |
 | `src/realtime.rs` | WebSocket upgrade (`/realtime/connect?room=&token=`), room registry, `publish_to_user` |
-| `src/routes/auth.rs` | check-email, signup, login, refresh (rotation), logout, me |
+| `src/routes/auth.rs` | signup, login, refresh (rotation), logout, me |
 | `src/routes/users.rs` | me/patch, username-available, search, one, list, presence |
 | `src/routes/friends.rs` | request/respond/cancel, requests, sent, list, remove, block/unblock/blocked |
 | `src/routes/messages.rs` | with/:otherId (paging), chats, send (idempotent `client_message_id`), edit, delete, delete-for-me, reaction, mark-read, typing, recording |
@@ -276,7 +276,7 @@ stay HTTPS-only.
 
 | Screen | Remote source |
 |---|---|
-| Auth | `/auth/check-email`, `/auth/signup`, `/auth/login`, `/auth/logout` |
+| Auth | `/auth/signup`, `/auth/login`, `/auth/logout` |
 | Profile setup / Settings profile | `GET`/`PATCH /users/me` |
 | Chats | `GET /messages/chats` + `GET /groups`, merged and sorted by last activity |
 | Conversation | `/messages/with/:id` or `/groups/:id/messages`; sends, edits, deletes, reactions |

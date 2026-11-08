@@ -55,9 +55,6 @@ data class BlockedEnvelope(val blocked: List<UserDto> = emptyList())
 @Serializable
 data class AvailabilityEnvelope(val available: Boolean = false)
 
-@Serializable
-data class CheckEmailEnvelope(val valid: Boolean = false, val exists: Boolean = false)
-
 // ---------------------------------------------------------------- friends
 
 @Serializable

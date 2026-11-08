@@ -126,8 +126,8 @@ async fn signup_login_refresh_logout() {
     assert_eq!(body["user"]["full_name"], "Ada Lovelace");
     assert_eq!(body["user"]["is_admin"], false);
 
-    // Duplicate email is a 409.
-    let (status, _) = app
+    // Registration does not reveal whether a submitted email already has an account.
+    let (status, body) = app
         .call(
             "POST",
             "/auth/signup",
@@ -135,7 +135,8 @@ async fn signup_login_refresh_logout() {
             Some(json!({ "email": "ADA@example.com", "password": "secret1" })),
         )
         .await;
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "Unable to create an account with these details");
 
     // Short password and bad email are 400s.
     let (status, _) = app
@@ -148,16 +149,9 @@ async fn signup_login_refresh_logout() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let (status, body) = app
-        .call(
-            "GET",
-            "/auth/check-email?email=ada@example.com",
-            None,
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["exists"], true);
+    // The old public existence-check route is intentionally removed.
+    let (status, _) = app.call("GET", "/auth/check-email?email=ada@example.com", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Login, then rotate the refresh token.
     let (status, body) = app
@@ -344,7 +338,7 @@ async fn friend_request_lifecycle() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["friends"][0]["profile"]["full_name"], "Grace");
 
-    // Blocking removes the friendship and hides both users from each other.
+    // Blocking is account-wide and does not destroy the friendship/history.
     let (status, _) = app
         .call(
             "POST",
@@ -355,7 +349,14 @@ async fn friend_request_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = app.call("GET", "/friends", Some(&ada_token), None).await;
-    assert_eq!(body["friends"].as_array().map(Vec::len), Some(0));
+    assert_eq!(body["friends"].as_array().map(Vec::len), Some(1));
+    let (status, _) = app.call(
+        "POST",
+        "/messages",
+        Some(&ada_token),
+        Some(json!({ "receiver_id": grace_id, "content": "blocked send" })),
+    ).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let (_, body) = app.call("GET", "/friends/blocked", Some(&ada_token), None).await;
     assert_eq!(body["blocked"][0]["full_name"], "Grace");
 
@@ -370,6 +371,13 @@ async fn friend_request_lifecycle() {
     assert_eq!(status, StatusCode::OK);
     let (_, body) = app.call("GET", "/friends/blocked", Some(&ada_token), None).await;
     assert_eq!(body["blocked"].as_array().map(Vec::len), Some(0));
+    let (status, _) = app.call(
+        "POST",
+        "/messages",
+        Some(&ada_token),
+        Some(json!({ "receiver_id": grace_id, "content": "unblocked" })),
+    ).await;
+    assert_eq!(status, StatusCode::CREATED);
 }
 
 #[tokio::test]
@@ -377,6 +385,16 @@ async fn messaging_flow() {
     let app = app();
     let (ada_token, ada_id) = app.signup("ada@example.com", "Ada").await;
     let (grace_token, grace_id) = app.signup("grace@example.com", "Grace").await;
+    let (outsider_token, outsider_id) = app.signup("outsider@example.com", "Outside").await;
+
+    // A user cannot bypass the friend request/accept flow by posting directly to the API.
+    let (status, _) = app.call(
+        "POST",
+        "/messages",
+        Some(&ada_token),
+        Some(json!({ "receiver_id": outsider_id, "content": "unsolicited" })),
+    ).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     app.befriend(&ada_token, &grace_id, &grace_token).await;
 
     let (status, body) = app
@@ -443,6 +461,15 @@ async fn messaging_flow() {
     let (_, body) = app.call("GET", "/messages/chats", Some(&grace_token), None).await;
     assert_eq!(body["chats"][0]["unreadCount"], 0);
 
+    // A third account cannot mutate a reaction on a message it does not participate in.
+    let (status, _) = app.call(
+        "POST",
+        &format!("/messages/{message_id}/reaction"),
+        Some(&outsider_token),
+        Some(json!({ "emoji": "😈" })),
+    ).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
     // Reactions toggle.
     let (status, body) = app
         .call(
@@ -498,6 +525,42 @@ async fn messaging_flow() {
         .await;
     assert_eq!(body["messages"][0]["is_deleted"], true);
     assert_eq!(body["messages"][0]["content"], "");
+
+    // Delete chat is per-account: it hides the old thread and preview, but a later message
+    // starts a fresh visible thread and the other user's history remains intact.
+    let (status, _) = app.call(
+        "POST",
+        &format!("/messages/with/{ada_id}/delete-for-me"),
+        Some(&grace_token),
+        None,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = app.call("GET", "/messages/chats", Some(&grace_token), None).await;
+    assert_eq!(body["chats"].as_array().map(Vec::len), Some(0));
+    let (_, body) = app.call(
+        "GET",
+        &format!("/messages/with/{ada_id}"),
+        Some(&grace_token),
+        None,
+    ).await;
+    assert_eq!(body["messages"].as_array().map(Vec::len), Some(0));
+    let (_, body) = app.call(
+        "GET",
+        &format!("/messages/with/{grace_id}"),
+        Some(&ada_token),
+        None,
+    ).await;
+    assert_eq!(body["messages"].as_array().map(Vec::len), Some(1));
+
+    let (status, _) = app.call(
+        "POST",
+        "/messages",
+        Some(&ada_token),
+        Some(json!({ "receiver_id": grace_id, "content": "new thread" })),
+    ).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, body) = app.call("GET", "/messages/chats", Some(&grace_token), None).await;
+    assert_eq!(body["chats"].as_array().map(Vec::len), Some(1));
 }
 
 #[tokio::test]

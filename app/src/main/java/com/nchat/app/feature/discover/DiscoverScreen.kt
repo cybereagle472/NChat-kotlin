@@ -108,6 +108,8 @@ fun DiscoverScreen(
     onSearch: (String) -> Unit = {},
     /** Requests this device sent that the server has not confirmed yet (reference: `sentRequestIds`). */
     sentRequestIds: Set<String> = emptySet(),
+    /** Search failures are distinct from a successful query with no matches. */
+    searchError: String? = null,
     /**
      * People this account already has a conversation with. The Find tab treats them as
      * contactable — offering Message instead of Add — even when the server has no friendship
@@ -309,23 +311,29 @@ fun DiscoverScreen(
                     // While typing, the server's answer is authoritative — it searches every
                     // account, not just the ones already on this device. With an empty query the
                     // tab falls back to the suggestions page, exactly like the reference.
-                    val visibleUsers = (if (query.isBlank()) {
-                        suggestions
-                    } else {
-                        searchResults.ifEmpty { suggestions.filter { it.matches(query) } }
-                    }).map(resolve)
+                    val visibleUsers = (if (query.isBlank()) suggestions else searchResults).map(resolve)
 
                     if (visibleUsers.isEmpty()) {
                         item(key = "find-empty") {
-                            EmptyCard(
-                                emoji = "🔍",
-                                title = if (query.isBlank()) "No users yet" else "No users found",
-                                message = if (query.isBlank()) {
-                                    "Check back later for new people"
-                                } else {
-                                    "Try a different search"
-                                }
-                            )
+                            if (query.isNotBlank() && searchError != null) {
+                                EmptyCard(
+                                    emoji = "⚠️",
+                                    title = "Search unavailable",
+                                    message = searchError,
+                                    actionLabel = "Retry",
+                                    onAction = { onSearch(query) }
+                                )
+                            } else {
+                                EmptyCard(
+                                    emoji = "🔍",
+                                    title = if (query.isBlank()) "No users yet" else "No users found",
+                                    message = if (query.isBlank()) {
+                                        "Check back later for new people"
+                                    } else {
+                                        "Try a different search"
+                                    }
+                                )
+                            }
                         }
                     } else {
                         item(key = "find-label") {

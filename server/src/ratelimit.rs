@@ -1,8 +1,8 @@
 //! Small in-memory rate limiter for the credential endpoints.
 //!
 //! Not a replacement for an edge (Cloudflare/nginx already absorbs floods in front of a
-//! deployment), but it stops the cheap attack that matters for privacy: password guessing
-//! against `/auth/login` and account enumeration through `/auth/check-email`.
+//! deployment), but it slows password guessing against `/auth/login` and automated account
+//! creation through `/auth/signup`.
 //!
 //! Deliberately dependency-free and process-local — a self-hosted NChat is usually a single
 //! instance, and a limiter that cannot be bypassed by restarting the app is worth more than

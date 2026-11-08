@@ -166,6 +166,8 @@ class ConversationViewModel(
         repository.retrySend(chatId, messageId)
     }
 
+    fun loadOlder() = repository.loadOlder(chatId)
+
     fun onDeleteMessage(messageId: String, forEveryone: Boolean) {
         repository.deleteMessage(chatId, messageId, forEveryone)
         if (_activeMessageId.value == messageId) _activeMessageId.value = null

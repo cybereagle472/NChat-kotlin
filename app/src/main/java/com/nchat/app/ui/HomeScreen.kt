@@ -99,37 +99,10 @@ fun HomeScreen(
     val visibleGraph = remember(friendGraph, blockedIds) {
         friendGraph.filterNot { it.id in blockedIds }
     }
-    /*
-     * A conversation is a relationship too.
-     *
-     * The server's `/friends` view and the message history can disagree — an older build's block
-     * deleted the `friendships` row while the accepted request stayed, so somebody you have
-     * chatted with for months is "nobody" as far as the friend graph is concerned. Any 1:1
-     * thread the chat list knows about, but the graph does not, is treated as a friend here:
-     * they appear in Friends, and Find offers Message instead of an Add button that can only ever
-     * fail with 409.
-     */
-    val chatOnlyFriends = remember(chats, visibleGraph, blockedIds) {
-        val known = visibleGraph.mapTo(HashSet()) { it.id }
-        chats.filterNot { it.isGroup }.mapNotNull { chat ->
-            if (chat.id in blockedIds || !known.add(chat.id)) return@mapNotNull null
-            Friend(
-                id = chat.id,
-                name = chat.title,
-                avatarUrl = chat.avatarUrl,
-                handle = "",
-                isOnline = chat.isOnline,
-                relation = FriendRelation.Friend
-            )
-        }
-    }
-    val friends = remember(visibleGraph, chatOnlyFriends) {
-        visibleGraph.filter { it.relation == FriendRelation.Friend } + chatOnlyFriends
-    }
-    /** Everything Discover should know about: the real graph plus the threads it is missing. */
-    val discoverGraph = remember(visibleGraph, chatOnlyFriends) {
-        visibleGraph + chatOnlyFriends
-    }
+    // Conversation history and current friendship are independent. Keep existing threads in
+    // Chats, but do not synthesize a friendship from a chat row (otherwise unfriend is undone).
+    val discoverGraph = visibleGraph
+    val friends = remember(visibleGraph) { visibleGraph.filter { it.relation == FriendRelation.Friend } }
     val friendGraphError by ServiceLocator.friendRepository.graphError.collectAsStateWithLifecycle()
     // Why the Friends tab has nothing to show when nothing failed — see the KDoc on
     // `FriendRepository.graphNote` ("server answered 0 friends" vs "rows we could not read").
@@ -138,6 +111,7 @@ fun HomeScreen(
     val me by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
     val friendActionError by ServiceLocator.friendRepository.actionError.collectAsStateWithLifecycle()
+    val friendSearchError by ServiceLocator.friendRepository.searchError.collectAsStateWithLifecycle()
     // Everyone this account already has a 1:1 conversation with: Find offers them Message
     // instead of Add, even when the server holds no friendship row for them.
     val chatPeerIds = remember(chats) { chats.filterNot { it.isGroup }.map { it.id }.toSet() }
@@ -308,6 +282,7 @@ fun HomeScreen(
                         // A blocked contact is hidden from Find too; unblock them from
                         // Settings ▸ Privacy ▸ Blocked users or from the chat itself.
                         searchResults = findResults.filterNot { it.id in blockedIds },
+                        searchError = friendSearchError,
                         onSearch = { ServiceLocator.friendRepository.search(it) },
                         sentRequestIds = pendingSent,
                         chatIds = chatPeerIds,
