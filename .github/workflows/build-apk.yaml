@@ -64,8 +64,9 @@ jobs:
       - name: Verify release APK version and signature
         run: |
           set -euo pipefail
+          {
           APK=app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
           python3 - <<'PYCODE'
           import json, os, re, subprocess
 
@@ -83,6 +84,7 @@ jobs:
               raise SystemExit('APK package or version does not match version.json')
           print('Signed APK package and version match the update manifest.')
           PYCODE
+          } 2>&1 | tee -a /tmp/gradle-build.log
       - name: Capture build log on failure
         if: failure()
         run: |
