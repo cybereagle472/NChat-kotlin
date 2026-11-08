@@ -49,6 +49,7 @@ import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.update.AutoUpdater
 import com.nchat.app.core.update.InstallResult
 import com.nchat.app.core.update.UpdateInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -76,7 +77,12 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
     var notice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        val found = runCatching { AutoUpdater.checkForUpdate() }.getOrNull() ?: return@LaunchedEffect
+        val found = try {
+            AutoUpdater.checkForUpdate()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            null
+        } ?: return@LaunchedEffect
         if (found.versionCode > BuildConfig.VERSION_CODE) info = found
     }
 
@@ -125,7 +131,7 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "NChat ${update.versionName} is ready to install.",
+                text = "NChat ${update.versionName} is available to download.",
                 color = NcTheme.extra.textSecondary,
                 fontSize = 14.sp,
                 lineHeight = 20.sp
@@ -225,6 +231,11 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+                TextButton(enabled = !installing, onClick = {
+                    if (!AutoUpdater.openReleasePage(context)) notice = "Could not open a browser on this device."
+                }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Open release page in browser")
+                }
             }
 
             // ------------------------------------------------------------- actions
@@ -275,6 +286,7 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
                                         is InstallResult.Failed -> notice = result.message
                                     }
                                 } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
                                     notice = error.message ?: "Could not download the update."
                                 } finally {
                                     installing = false

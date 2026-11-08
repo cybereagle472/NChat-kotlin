@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.nchat.app.core.update.AutoUpdater
 import com.nchat.app.core.update.InstallResult
 import com.nchat.app.core.update.UpdateInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,7 @@ class SettingsViewModel : ViewModel() {
                     )
                 }
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 _state.update {
                     it.copy(
                         checking = false,
@@ -80,21 +82,13 @@ class SettingsViewModel : ViewModel() {
                     }
                 }
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 _state.update {
                     it.copy(
                         installing = false,
                         progress = null,
                         dialogVisible = false,
                         notice = error.message ?: "Update failed. Please try again."
-                    )
-                }
-            } catch (error: Throwable) {
-                _state.update {
-                    it.copy(
-                        installing = false,
-                        progress = null,
-                        dialogVisible = false,
-                        notice = "Update failed. Please restart NChat and try again."
                     )
                 }
             }
