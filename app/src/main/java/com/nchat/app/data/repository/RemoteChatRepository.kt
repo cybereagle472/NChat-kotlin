@@ -543,8 +543,11 @@ class RemoteChatRepository(
     private fun mirrorToDisk(chatId: String, flow: MutableStateFlow<List<Message>>) {
         val store = messages ?: return
         val job = scope.launch {
+            val writeGate = ConversationCacheWriteGate()
             flow.collect { rows ->
-                if (rows.isEmpty()) return@collect
+                // The initial empty flow is a placeholder until disk restoration; later empty
+                // snapshots represent real deletions and must cancel older scheduled writes.
+                if (!writeGate.shouldWrite(rows.isEmpty())) return@collect
                 val owner = tokens.userId.orEmpty()
                 if (owner.isBlank()) return@collect
                 val snapshot = rows
