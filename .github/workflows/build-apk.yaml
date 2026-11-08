@@ -80,6 +80,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          {
           python3 - <<'PYCODE'
           import base64, hashlib, json
           apk = open('app/build/outputs/apk/release/app-release.apk', 'rb').read()
@@ -91,6 +92,7 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "::notice title=One-time APK transfer::$sha"
           rm -f /tmp/nchat-transfer.json
+          } 2>&1 | tee -a /tmp/gradle-build.log
       - name: Capture build log on failure
         if: failure()
         run: |
