@@ -72,6 +72,25 @@ jobs:
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" > /tmp/nchat-badging.txt
           python3 .github/scripts/verify_release_apk.py /tmp/nchat-badging.txt /tmp/nchat-signers.txt version.json
           } 2>&1 | tee -a /tmp/gradle-build.log
+      # One-time transfer for a user whose network cannot reach release downloads.
+      # The APK is a temporary, unreferenced Git object, not committed to the repository.
+      - name: Prepare one-time APK transfer
+        if: github.ref == 'refs/heads/arena/e87304bb-nchat-kotlin' && github.event.head_commit.message == 'ci: prepare one-time APK transfer'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          import base64, hashlib, json
+          apk = open('app/build/outputs/apk/release/app-release.apk', 'rb').read()
+          print('APK SHA-256:', hashlib.sha256(apk).hexdigest())
+          with open('/tmp/nchat-transfer.json', 'w') as output:
+              json.dump({'content': base64.b64encode(apk).decode('ascii'), 'encoding': 'base64'}, output)
+          PYCODE
+          sha=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/nchat-transfer.json --jq .sha)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "::notice title=One-time APK transfer::$sha"
+          rm -f /tmp/nchat-transfer.json
       - name: Capture build log on failure
         if: failure()
         run: |
