@@ -890,8 +890,8 @@ class RemoteChatRepository(
                 if (created == null) {
                     val transient = isTransientSendFailure(failure)
                     if (transient && outbox != null) return@launch
-                    if (!transient) outbox?.remove(localId)
-                    markFailed(chatId, localId, failure?.describeSend())
+                    if (!transient) failAndDequeue(chatId, localId, failure)
+                    else markFailed(chatId, localId, failure?.describeSend())
                     return@launch
                 }
                 outbox?.remove(localId)
@@ -991,8 +991,8 @@ class RemoteChatRepository(
                     if (transient && outbox != null) return@launch
                     // A permanent refusal must not remain queued and be sent later
                     // when the connection returns. The failed bubble stays retryable.
-                    if (!transient) outbox?.remove(localId)
-                    markFailed(chatId, localId, failure?.describeSend())
+                    if (!transient) failAndDequeue(chatId, localId, failure)
+                    else markFailed(chatId, localId, failure?.describeSend())
                     return@launch
                 }
                 outbox?.remove(localId)
@@ -1178,15 +1178,25 @@ class RemoteChatRepository(
         val transient = isTransientSendFailure(error)
         // Retrying a permanent refusal on every reconnect cannot make it succeed.
         if (!transient) {
-            store?.remove(entry.clientId)
-            markFailed(entry.chatId, entry.clientId, error?.describeSend())
+            failAndDequeue(entry.chatId, entry.clientId, error)
             return
         }
         val attempts = store?.bumpAttempts(entry.clientId) ?: MAX_OUTBOX_ATTEMPTS
-        if (attempts >= MAX_OUTBOX_ATTEMPTS) {
-            store?.remove(entry.clientId)
-            markFailed(entry.chatId, entry.clientId, error?.describeSend())
+        if (attempts == 0 && store?.find(entry.clientId) != null) {
+            NcToaster.show("Couldn't update the message queue; check device storage")
+        } else if (attempts >= MAX_OUTBOX_ATTEMPTS) {
+            failAndDequeue(entry.chatId, entry.clientId, error)
         }
+    }
+
+    /** A failed removal leaves the old entry eligible for a later retry; don't hide that fact. */
+    private fun failAndDequeue(chatId: String, clientId: String, error: Throwable?) {
+        val reason = if (outbox != null && !outbox.remove(clientId)) {
+            "couldn't update the queue; this message may retry later"
+        } else {
+            error?.describeSend()
+        }
+        markFailed(chatId, clientId, reason)
     }
 
     /** Puts queued messages back on screen when a conversation is opened. */
