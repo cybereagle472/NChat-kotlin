@@ -55,8 +55,6 @@ data class BlockedEnvelope(val blocked: List<UserDto> = emptyList())
 @Serializable
 data class AvailabilityEnvelope(val available: Boolean = false)
 
-@Serializable
-
 // ---------------------------------------------------------------- friends
 
 @Serializable

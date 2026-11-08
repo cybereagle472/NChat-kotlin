@@ -15,7 +15,7 @@ class BlockedContactsStore internal constructor(private val root: File) {
         File(context.applicationContext.filesDir, "blocked").also {
             // Older versions used one unscoped file. It has no owner metadata, so importing it
             // into whichever account signs in first could leak one account's private list.
-            runCatching { File(it.parentFile, "blocked.json").delete() }
+            kotlin.runCatching { File(it.parentFile, "blocked.json").delete() }
         }
     )
 
