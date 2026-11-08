@@ -1345,36 +1345,9 @@ class RemoteChatRepository(
         if (!original.isMine || original.deleted || original.kind != MessageKind.Text) return
 
         if (original.clientMessageId == original.id) {
-            // Do not change what is displayed while a request containing the old text is in flight.
-            if (!deliveryGate.tryAcquire(messageId)) {
-                NcToaster.show("Message is being sent — try editing it when sending finishes")
-                return
-            }
-            try {
-                val current = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
-                if (current.clientMessageId != current.id) return
-                val pending = outbox?.find(messageId)
-                if (pending != null) {
-                    if (pending.ownerId.isNotEmpty() && pending.ownerId != myId) {
-                        NcToaster.show("This message belongs to a different account")
-                        return
-                    }
-                    if (outbox?.replaceIfPresent(pending.copy(text = body)) != true) {
-                        NcToaster.show("Couldn't save the edited message on this device")
-                        return
-                    }
-                } else if (!current.failed) {
-                    NcToaster.show("The queued message is unavailable to edit")
-                    return
-                }
-                updateMessages(chatId) { messages ->
-                    messages.map { if (it.id == messageId) it.copy(text = body) else it }
-                }
-                previewFromLast(chatId)
-                NcToaster.show("Message updated")
-            } finally {
-                deliveryGate.release(messageId)
-            }
+            // A lost acknowledgement means even a queued message may already be on the server.
+            // Editing its retry payload would not edit the existing server row.
+            NcToaster.show("Wait until the message is sent before editing it")
             return
         }
 
@@ -1402,7 +1375,7 @@ class RemoteChatRepository(
                     }
                 }
                 previewFromLast(chatId)
-                NcToaster.show("Couldn't edit — ${error?.describeSend() ?: "try again"}")
+                NcToaster.show("Couldn't confirm the edit — ${error?.describeSend() ?: "try again"}")
                 return@launch
             }
             updateMessages(chatId) { messages ->

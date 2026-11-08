@@ -791,10 +791,7 @@ fun ConversationScreen(
             anchor = anchors[activeMessageId],
             showCopy = activeMessage.text.isNotBlank() && !activeMessage.deleted,
             showReply = !activeMessage.deleted,
-            // The backend only supports editing sent direct messages. Pending group
-            // messages can still be edited locally before they leave the outbox.
-            showEdit = canEditMessage(activeMessage) &&
-                (!isGroupChat || activeMessage.clientMessageId == activeMessage.id),
+            showEdit = canEditMessage(activeMessage, isGroupChat),
             onEdit = {
                 editing = activeMessage
                 viewModel.onSelectMessage(null)
@@ -1134,13 +1131,6 @@ fun ConversationScreen(
         )
     }
 }
-
-/** Own text messages can be edited for 15 minutes, matching `MessageActions.tsx`. */
-private fun canEditMessage(message: Message): Boolean =
-    message.isMine &&
-        !message.deleted &&
-        message.kind == MessageKind.Text &&
-        System.currentTimeMillis() - message.timestamp < 15 * 60 * 1000L
 
 /**
  * Full-screen photo / video viewer.
