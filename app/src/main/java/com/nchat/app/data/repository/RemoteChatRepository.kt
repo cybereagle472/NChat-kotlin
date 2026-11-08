@@ -817,17 +817,21 @@ class RemoteChatRepository(
                     NcToaster.show("Upload failed — ${error.describeSend()}")
                     return@launch
                 }
+                val uploadedUrl = media.url.shareableMediaUrl()
+                if (uploadedUrl == null) {
+                    setUploadProgress(chatId, localId, null)
+                    markFailed(chatId, localId, "The upload did not return a shareable URL")
+                    return@launch
+                }
                 // The file is on the server; what is left is a small JSON post, not worth a ring.
                 //
                 // The bubble switches to the uploaded file immediately instead of waiting for the
                 // message row: the sender sees their photo the moment it lands, the same second the
                 // ring disappears, rather than a grey gradient until the acknowledgement arrives.
                 setUploadProgress(chatId, localId, null)
-                if (media.url.isNotBlank()) {
-                    updateMessages(chatId) { messages ->
-                        messages.map {
-                            if (it.id == localId) it.copy(mediaUrl = media.url) else it
-                        }
+                updateMessages(chatId) { messages ->
+                    messages.map {
+                        if (it.id == localId) it.copy(mediaUrl = uploadedUrl) else it
                     }
                 }
                 val thumb = thumbnail?.let { preview ->
@@ -837,7 +841,7 @@ class RemoteChatRepository(
                     val result = runCatching { api.uploadMedia("thumb-$stem.jpg", "image/jpeg", preview) }
                     val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
-                    result.getOrNull()?.url
+                    result.getOrNull()?.url.shareableMediaUrl()
                 }
                 if (!enqueue(
                     OutboxEntry(
@@ -847,7 +851,7 @@ class RemoteChatRepository(
                         ownerId = myId,
                         text = body,
                         type = kind.wireType(),
-                        mediaUrl = media.url,
+                        mediaUrl = uploadedUrl,
                         thumbnailUrl = thumb,
                         fileName = fileName,
                         fileSize = media.fileSize?.toString()
@@ -857,14 +861,14 @@ class RemoteChatRepository(
                 val created = sendWithRetry(onFailure = { failure = it }) {
                     // Same as voice: the URL goes in `content` too, so a client that only reads
                     // `content` (the reference web app) still finds the file.
-                    val wireBody = media.url
+                    val wireBody = uploadedUrl
                     if (isGroup(chatId)) {
                         api.sendGroupMessage(
                             chatId,
                             wireBody,
                             type = kind.wireType(),
                             clientMessageId = localId,
-                            mediaUrl = media.url,
+                            mediaUrl = uploadedUrl,
                             thumbnailUrl = thumb,
                             duration = null
                         )
@@ -874,7 +878,7 @@ class RemoteChatRepository(
                             wireBody,
                             type = kind.wireType(),
                             clientMessageId = localId,
-                            mediaUrl = media.url,
+                            mediaUrl = uploadedUrl,
                             thumbnailUrl = thumb,
                             fileName = fileName,
                             fileSize = media.fileSize?.toString()
@@ -910,11 +914,9 @@ class RemoteChatRepository(
         // A tombstone has nothing to forward — it would arrive as the words "This message was
         // deleted", which is the one thing forwarding must never do.
         if (source.deleted) return
-        val media = source.mediaUrl?.takeIf { it.isRemoteUrl() }
-        if (source.kind != MessageKind.Text && media == null) {
-            // The file is not on the server (a clip whose upload never finished): forward what
-            // can be forwarded instead of a bubble with nothing behind it.
-            sendMessage(targetChatId, source.snippet().ifBlank { "Forwarded message" })
+        val media = source.mediaUrl.shareableMediaUrl()
+        if (source.kind !in setOf(MessageKind.Text, MessageKind.Location) && media == null) {
+            NcToaster.show("Send the attachment before forwarding it")
             return
         }
         val localId = newClientId()
@@ -1051,8 +1053,16 @@ class RemoteChatRepository(
         try {
             val store = outbox
             // The flush snapshot can be stale after a successful send or deletion.
-            var row = if (store != null) store.find(entry.clientId) ?: return else entry
-            if (row.ownerId.isNotEmpty() && row.ownerId != myId) return
+            val saved = if (store != null) store.find(entry.clientId) ?: return else entry
+            if (saved.ownerId.isNotEmpty() && saved.ownerId != myId) return
+            var row = saved.prepareMediaForDelivery() ?: run {
+                onDeliveryFailure(saved, IllegalStateException("The attachment is not available to send"))
+                return
+            }
+            if (row != saved && store != null && !store.replaceIfPresent(row)) {
+                NcToaster.show("Couldn't update the message queue; check device storage")
+                return
+            }
             /*
              * A voice note recorded without a network arrives here with its audio on disk and no
              * URL: the upload is part of delivery, not a condition for queueing. Once it succeeds
@@ -1152,8 +1162,9 @@ class RemoteChatRepository(
                 bytes
             ) { fraction -> setUploadProgress(entry.chatId, entry.clientId, fraction) }
         }.mapCatching { media ->
-            if (media.url.isBlank()) throw IOException("The upload returned no file URL")
-            media
+            val url = media.url.shareableMediaUrl()
+                ?: throw IOException("The upload did not return a shareable URL")
+            media.copy(url = url)
         }
     }
 
@@ -1287,8 +1298,8 @@ class RemoteChatRepository(
     /**
      * Resend a bubble the server never accepted.
      *
-     * Voice and media already uploaded keep their URL, so the retry is just the message again;
-     * a clip whose *upload* failed has no file to point at and is reported instead of pretending.
+     * Uploaded media keep their URL. A failed voice upload can retry only when its own
+     * local clip is still available; local-only URIs are never sent to the server.
      */
     override fun retrySend(chatId: String, messageId: String) {
         if (!deliveryGate.tryAcquire(messageId)) {
@@ -1304,16 +1315,21 @@ class RemoteChatRepository(
             val previous = outbox?.find(messageId)?.takeIf {
                 it.chatId == chatId && (it.ownerId.isEmpty() || it.ownerId == myId)
             }
-            val mediaUrl = previous?.mediaUrl ?: message.mediaUrl?.takeIf { it.isRemoteUrl() }
-            val localClip = previous?.localFile ?: message.mediaUrl
-                ?.takeIf { it.startsWith("file://") }
-                ?.removePrefix("file://")
+            val mediaUrl = previous?.mediaUrl.shareableMediaUrl() ?: message.mediaUrl.shareableMediaUrl()
+            val localClip = previous?.localFile
+                ?: voiceClips?.ownedPathFromUri(message.id, message.mediaUrl)
             if (message.kind !in setOf(MessageKind.Text, MessageKind.Location) &&
                 mediaUrl == null && localClip == null) {
                 NcToaster.show("The attachment is no longer available to retry")
                 return
             }
-            entry = previous?.copy(ownerId = myId, attempts = 0) ?: OutboxEntry(
+            entry = previous?.copy(
+                ownerId = myId,
+                attempts = 0,
+                mediaUrl = mediaUrl,
+                localFile = localClip,
+                mimeType = previous.mimeType ?: localClip?.let { mimeTypeOf(it) }
+            ) ?: OutboxEntry(
                 clientId = message.id,
                 chatId = chatId,
                 isGroup = isGroup(chatId),
@@ -1447,7 +1463,8 @@ class RemoteChatRepository(
                     NcToaster.show("Couldn't remove the queued message from this device")
                     return
                 }
-                voiceClips?.delete(queued?.localFile)
+                val localClip = queued?.localFile ?: voiceClips?.ownedPathFromUri(messageId, target.mediaUrl)
+                voiceClips?.delete(localClip)
                 updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
                 previewFromLast(chatId)
                 if (reportSuccess) NcToaster.show("Removed locally; it may have been sent and could reappear")
@@ -2325,7 +2342,7 @@ class RemoteChatRepository(
          * tile for their photos, a poster-less video and a voice note with nothing to play.
          */
         val media = mediaUrl?.takeIf { it.isNotBlank() }
-            ?: content.trim().takeIf { kind != MessageKind.Text && it.isRemoteUrl() }
+            ?: content.trim().takeIf { kind != MessageKind.Text && it.isPlayableUrl() }
         // When `content` *is* the URL there is no caption to print under the bubble.
         val caption = when {
             isDeleted -> "This message was deleted"
@@ -2441,7 +2458,7 @@ class RemoteChatRepository(
     }
 
     /** Whether this string is something a media player / image loader can actually open. */
-    private fun String.isRemoteUrl(): Boolean =
+    private fun String.isPlayableUrl(): Boolean =
         startsWith("http://", ignoreCase = true) ||
             startsWith("https://", ignoreCase = true) ||
             startsWith("file://", ignoreCase = true) ||

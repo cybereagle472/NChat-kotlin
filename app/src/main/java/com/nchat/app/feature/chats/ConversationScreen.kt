@@ -841,14 +841,11 @@ fun ConversationScreen(
                 /*
                  * WhatsApp opens that person's chat with the message already quoted. From inside
                  * the group we cannot pre-fill another chat's composer, so the message is copied
-                 * into their direct chat instead — the recipient gets the same content, privately,
-                 * and the toast says what happened.
+                 * into their direct chat instead. A send failure is reported by the repository.
                  */
                 val author = activeMessage.authorId
-                val name = activeMessage.authorName
                 viewModel.onForward(activeMessage.id, listOf(author))
                 viewModel.onSelectMessage(null)
-                NcToaster.show("Sent privately to $name")
             },
             onCopy = {
                 clipboard.setText(AnnotatedString(activeMessage.text))
@@ -897,9 +894,6 @@ fun ConversationScreen(
                 onForward = { targets ->
                     viewModel.onForward(messageId, targets)
                     forwardingId = null
-                    NcToaster.show(
-                        if (targets.size == 1) "Forwarded to 1 chat" else "Forwarded to ${targets.size} chats"
-                    )
                 }
             )
         }
@@ -1082,12 +1076,8 @@ fun ConversationScreen(
             chats = chats,
             onDismiss = { forwardingSelection = false },
             onForward = { targets ->
-                val count = selection.size
                 viewModel.forwardSelectedMessages(targets)
                 forwardingSelection = false
-                NcToaster.show(
-                    if (count == 1) "Forwarded 1 message" else "Forwarded $count messages"
-                )
             }
         )
     }
