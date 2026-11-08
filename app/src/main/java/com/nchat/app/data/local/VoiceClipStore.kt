@@ -29,7 +29,7 @@ class VoiceClipStore internal constructor(private val dir: File) {
     fun save(clientId: String, bytes: ByteArray, extension: String): String? = runCatching {
         if (bytes.isEmpty()) return null
         dir.mkdirs()
-        val safeId = clientId.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "voice" }
+        val safeId = safeId(clientId)
         val safeExt = extension.lowercase().replace(Regex("[^a-z0-9]"), "").ifBlank { "m4a" }
         val file = File(dir, "$safeId.$safeExt")
         file.writeBytes(bytes)
@@ -43,12 +43,25 @@ class VoiceClipStore internal constructor(private val dir: File) {
         file.takeIf { it.length() > 0 }?.readBytes()
     }.getOrNull()
 
+    /** Resolve only this message's own clip, not another pending recording or an arbitrary URI. */
+    internal fun ownedPathFromUri(clientId: String, uri: String?): String? = runCatching {
+        if (uri == null || !uri.startsWith("file://")) return null
+        val file = File(uri.removePrefix("file://")).canonicalFile
+        if (file.parentFile != dir.canonicalFile || file.name.substringBeforeLast('.', "") != safeId(clientId)) {
+            return null
+        }
+        file.takeIf { it.isFile }?.absolutePath
+    }.getOrNull()
+
     fun delete(path: String?) {
         runCatching {
             val file = path?.let { File(it) } ?: return
             if (inside(file)) file.delete()
         }
     }
+
+    private fun safeId(clientId: String): String =
+        clientId.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "voice" }
 
     /** Only files this store owns can ever be deleted — never a caller's arbitrary path. */
     private fun inside(file: File): Boolean = runCatching {
