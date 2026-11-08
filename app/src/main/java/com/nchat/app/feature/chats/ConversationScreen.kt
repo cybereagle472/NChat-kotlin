@@ -791,7 +791,7 @@ fun ConversationScreen(
             anchor = anchors[activeMessageId],
             showCopy = activeMessage.text.isNotBlank() && !activeMessage.deleted,
             showReply = !activeMessage.deleted,
-            showEdit = canEditMessage(activeMessage),
+            showEdit = canEditMessage(activeMessage, isGroupChat),
             onEdit = {
                 editing = activeMessage
                 viewModel.onSelectMessage(null)
@@ -1127,18 +1127,10 @@ fun ConversationScreen(
             onSave = { text ->
                 viewModel.onEditMessage(message.id, text)
                 editing = null
-                NcToaster.show("Message edited")
             }
         )
     }
 }
-
-/** Own text messages can be edited for 15 minutes, matching `MessageActions.tsx`. */
-private fun canEditMessage(message: Message): Boolean =
-    message.isMine &&
-        !message.deleted &&
-        message.kind == MessageKind.Text &&
-        System.currentTimeMillis() - message.timestamp < 15 * 60 * 1000L
 
 /**
  * Full-screen photo / video viewer.

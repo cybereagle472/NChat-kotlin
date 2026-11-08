@@ -672,7 +672,7 @@ class RemoteChatRepository(
         )
         appendLocal(chatId, local)
         preview(chatId, local, DeliveryState.Sending)
-        outbox?.add(
+        if (!enqueue(
             OutboxEntry(
                 clientId = localId,
                 chatId = chatId,
@@ -681,7 +681,7 @@ class RemoteChatRepository(
                 text = body,
                 replyTo = replyToId
             )
-        )
+        )) return
         dispatch(chatId, localId) { clientId ->
             if (isGroup(chatId)) {
                 api.sendGroupMessage(chatId, body, clientMessageId = clientId, replyTo = replyToId)
@@ -698,7 +698,7 @@ class RemoteChatRepository(
         appendLocal(chatId, local)
         preview(chatId, local, DeliveryState.Sending)
         // Queued like any other message: sharing a position in a tunnel must not be lost.
-        outbox?.add(
+        if (!enqueue(
             OutboxEntry(
                 clientId = localId,
                 chatId = chatId,
@@ -707,7 +707,7 @@ class RemoteChatRepository(
                 text = coords,
                 type = "location"
             )
-        )
+        )) return
         dispatch(chatId, localId) { clientId ->
             if (isGroup(chatId)) {
                 api.sendGroupMessage(chatId, coords, type = "location", clientMessageId = clientId)
@@ -779,7 +779,7 @@ class RemoteChatRepository(
             markFailed(chatId, localId, "Couldn't save the recording on this device")
             return
         }
-        outbox?.add(entry)
+        if (!enqueue(entry)) return
         // Offline is not a failure — the entry above *is* the send, and `flushOutbox()` (on the
         // way back up) finishes it. The bubble keeps its clock, exactly like a queued text.
         if (!online()) return
@@ -845,7 +845,7 @@ class RemoteChatRepository(
                     if (error is CancellationException) throw error
                     result.getOrNull()?.url
                 }
-                outbox?.add(
+                if (!enqueue(
                     OutboxEntry(
                         clientId = localId,
                         chatId = chatId,
@@ -858,7 +858,7 @@ class RemoteChatRepository(
                         fileName = fileName,
                         fileSize = media.fileSize?.toString()
                     )
-                )
+                )) return@launch
                 var failure: Throwable? = null
                 val created = sendWithRetry(onFailure = { failure = it }) {
                     // Same as voice: the URL goes in `content` too, so a client that only reads
@@ -890,8 +890,8 @@ class RemoteChatRepository(
                 if (created == null) {
                     val transient = isTransientSendFailure(failure)
                     if (transient && outbox != null) return@launch
-                    if (!transient) outbox?.remove(localId)
-                    markFailed(chatId, localId, failure?.describeSend())
+                    if (!transient) failAndDequeue(chatId, localId, failure)
+                    else markFailed(chatId, localId, failure?.describeSend())
                     return@launch
                 }
                 outbox?.remove(localId)
@@ -946,9 +946,18 @@ class RemoteChatRepository(
             duration = source.durationLabel?.let { durationSeconds(it) },
             fileName = source.fileName
         )
-        outbox?.add(entry)
+        if (!enqueue(entry)) return
         if (!online()) return
         scope.launch { deliver(entry) }
+    }
+
+    /** Persist before dispatch; never show an unsaved entry as safely queued. */
+    private fun enqueue(entry: OutboxEntry): Boolean {
+        if (outbox != null && !outbox.add(entry)) {
+            markFailed(entry.chatId, entry.clientId, "Couldn't save the message on this device")
+            return false
+        }
+        return true
     }
 
     /** Sends the queued row, then swaps the optimistic bubble for the server's. */
@@ -982,8 +991,8 @@ class RemoteChatRepository(
                     if (transient && outbox != null) return@launch
                     // A permanent refusal must not remain queued and be sent later
                     // when the connection returns. The failed bubble stays retryable.
-                    if (!transient) outbox?.remove(localId)
-                    markFailed(chatId, localId, failure?.describeSend())
+                    if (!transient) failAndDequeue(chatId, localId, failure)
+                    else markFailed(chatId, localId, failure?.describeSend())
                     return@launch
                 }
                 outbox?.remove(localId)
@@ -1070,7 +1079,12 @@ class RemoteChatRepository(
                     mediaUrl = media.url,
                     fileSize = media.fileSize?.toString() ?: row.fileSize
                 )
-                if (store != null && !store.replaceIfPresent(row)) return
+                if (store != null && !store.replaceIfPresent(row)) {
+                    if (store.find(row.clientId) != null) {
+                        NcToaster.show("Couldn't save the uploaded recording; check device storage")
+                    }
+                    return
+                }
                 updateMessages(row.chatId) { messages ->
                     messages.map { if (it.id == row.clientId) it.copy(mediaUrl = media.url) else it }
                 }
@@ -1164,15 +1178,25 @@ class RemoteChatRepository(
         val transient = isTransientSendFailure(error)
         // Retrying a permanent refusal on every reconnect cannot make it succeed.
         if (!transient) {
-            store?.remove(entry.clientId)
-            markFailed(entry.chatId, entry.clientId, error?.describeSend())
+            failAndDequeue(entry.chatId, entry.clientId, error)
             return
         }
         val attempts = store?.bumpAttempts(entry.clientId) ?: MAX_OUTBOX_ATTEMPTS
-        if (attempts >= MAX_OUTBOX_ATTEMPTS) {
-            store?.remove(entry.clientId)
-            markFailed(entry.chatId, entry.clientId, error?.describeSend())
+        if (attempts == 0 && store?.find(entry.clientId) != null) {
+            NcToaster.show("Couldn't update the message queue; check device storage")
+        } else if (attempts >= MAX_OUTBOX_ATTEMPTS) {
+            failAndDequeue(entry.chatId, entry.clientId, error)
         }
+    }
+
+    /** A failed removal leaves the old entry eligible for a later retry; don't hide that fact. */
+    private fun failAndDequeue(chatId: String, clientId: String, error: Throwable?) {
+        val reason = if (outbox != null && !outbox.remove(clientId)) {
+            "couldn't update the queue; this message may retry later"
+        } else {
+            error?.describeSend()
+        }
+        markFailed(chatId, clientId, reason)
     }
 
     /** Puts queued messages back on screen when a conversation is opened. */
@@ -1311,7 +1335,7 @@ class RemoteChatRepository(
                 mimeType = localClip?.let { mimeTypeOf(it) },
                 createdAt = message.timestamp
             )
-            outbox?.add(entry)
+            if (!enqueue(entry)) return
             updateMessages(chatId) { list ->
                 list.map { if (it.id == messageId) it.copy(failed = false) else it }
             }
@@ -1327,22 +1351,48 @@ class RemoteChatRepository(
     override fun editMessage(chatId: String, messageId: String, text: String) {
         val body = text.trim()
         if (body.isEmpty()) return
-        updateMessages(chatId) { messages ->
-            messages.map { message ->
-                if (message.id != messageId || !message.isMine || message.deleted) message
-                else message.copy(text = body, isEdited = true)
-            }
+        val original = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
+        if (!original.isMine || original.deleted || original.kind != MessageKind.Text) return
+
+        if (original.clientMessageId == original.id) {
+            // A lost acknowledgement means even a queued message may already be on the server.
+            // Editing its retry payload would not edit the existing server row.
+            NcToaster.show("Wait until the message is sent before editing it")
+            return
         }
-        // Editing the newest message changes the chat-list row too; nothing else re-derives it.
+
+        // The existing backend contract has no edit endpoint for sent group messages.
+        if (isGroup(chatId)) {
+            NcToaster.show("Editing sent group messages isn't supported yet")
+            return
+        }
+        updateMessages(chatId) { messages ->
+            messages.map { if (it.id == messageId) it.copy(text = body, isEdited = true) else it }
+        }
         previewFromLast(chatId)
-        if (isPending(chatId, messageId)) return
         scope.launch {
-            val response = runCatching { api.editMessage(messageId, body) }.getOrNull()
-            val updated = response?.message ?: return@launch
+            val response = runCatching { api.editMessage(messageId, body) }
+            val error = response.exceptionOrNull()
+            if (error is CancellationException) throw error
+            val updated = response.getOrNull()?.message
+            if (updated == null) {
+                // Don't overwrite a newer change that arrived while this request was in flight.
+                updateMessages(chatId) { messages ->
+                    messages.map {
+                        if (it.id == messageId && it.text == body) {
+                            it.copy(text = original.text, isEdited = original.isEdited)
+                        } else it
+                    }
+                }
+                previewFromLast(chatId)
+                NcToaster.show("Couldn't confirm the edit — ${error?.describeSend() ?: "try again"}")
+                return@launch
+            }
             updateMessages(chatId) { messages ->
                 messages.map { if (it.id == messageId) updated.toModel(chatId) else it }
             }
             previewFromLast(chatId)
+            NcToaster.show("Message edited")
         }
     }
 
@@ -1399,7 +1449,10 @@ class RemoteChatRepository(
             }
             try {
                 val queued = outbox?.find(messageId)
-                outbox?.remove(messageId)
+                if (outbox != null && !outbox.remove(messageId)) {
+                    NcToaster.show("Couldn't remove the queued message from this device")
+                    return
+                }
                 voiceClips?.delete(queued?.localFile)
                 updateMessages(chatId) { messages -> messages.filterNot { it.id == messageId } }
                 previewFromLast(chatId)
