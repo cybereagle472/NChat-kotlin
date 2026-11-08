@@ -156,6 +156,7 @@ import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.FriendRelation
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.data.model.hasUnconfirmedDelivery
 import com.nchat.app.feature.groups.GroupInfoScreen
 import com.nchat.app.feature.profile.ProfileViewScreen
 import kotlinx.coroutines.delay
@@ -968,6 +969,7 @@ fun ConversationScreen(
     pendingDelete?.let { doomed ->
         DeleteMessageDialog(
             canDeleteForEveryone = canDeleteForEveryone(doomed, isGroupChat),
+            deliveryUnconfirmed = doomed.hasUnconfirmedDelivery(),
             onDismiss = { pendingDelete = null },
             // The confirmation is the server's, not the tap's: `deleteMessage` reports what
             // actually happened (and puts the message back if the worker refused it).
@@ -1091,20 +1093,16 @@ fun ConversationScreen(
     }
 
     if (bulkDeleteOpen) {
+        val selectedMessages = messages.filter { it.id in selection }
         DeleteMessagesDialog(
             count = selection.size,
+            canDeleteForEveryone = canDeleteAllForEveryone(selectedMessages, selection.size, isGroupChat),
+            hasUnconfirmed = selectedMessages.any { it.hasUnconfirmedDelivery() },
             onDismiss = { bulkDeleteOpen = false },
             onDelete = { forEveryone ->
-                val count = selection.size
                 bulkDeleteOpen = false
+                // Each request can fail independently; do not claim the whole batch succeeded.
                 viewModel.deleteSelectedMessages(forEveryone)
-                NcToaster.show(
-                    if (forEveryone) {
-                        if (count == 1) "Message deleted for everyone" else "$count messages deleted for everyone"
-                    } else {
-                        if (count == 1) "Message deleted" else "$count messages deleted"
-                    }
-                )
             }
         )
     }
@@ -1573,26 +1571,13 @@ private fun EmptyConversation(title: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * Whether "delete for everyone" is offered.
- *
- * The two backends do not agree, and the UI has to follow each of them: a **group** message can
- * be recalled for an hour (`groups.ts:513-521` rejects anything older with a 400), while a
- * **1:1** message has no window at all — `messages.ts:247` only checks that the caller is the
- * sender. The old code applied the group's hour to both, so a direct message older than an hour
- * was unrecallable on the phone while the web app happily recalled it.
- */
-private fun canDeleteForEveryone(message: Message, isGroup: Boolean): Boolean =
-    message.isMine &&
-        !message.deleted &&
-        (!isGroup || System.currentTimeMillis() - message.timestamp < 60 * 60 * 1000L)
-
-/**
  * `GroupMessageActions` delete confirmation: pick "Delete for Everyone" (own message,
  * under an hour), "Delete for Me", or back out.
  */
 @Composable
 private fun DeleteMessageDialog(
     canDeleteForEveryone: Boolean,
+    deliveryUnconfirmed: Boolean,
     onDismiss: () -> Unit,
     onDeleteForEveryone: () -> Unit,
     onDeleteForMe: () -> Unit
@@ -1644,10 +1629,10 @@ private fun DeleteMessageDialog(
                     modifier = Modifier.padding(top = NcSpace.md)
                 )
                 Text(
-                    text = if (canDeleteForEveryone) {
-                        "Choose how you want to delete this message"
-                    } else {
-                        "This message will be deleted for you only"
+                    text = when {
+                        deliveryUnconfirmed -> "Removing this message stops local retries. It may already have been sent and could reappear."
+                        canDeleteForEveryone -> "Choose how you want to delete this message"
+                        else -> "This message will be deleted for you only"
                     },
                     fontSize = 13.sp,
                     color = NcTheme.extra.textTertiary,
@@ -1664,7 +1649,7 @@ private fun DeleteMessageDialog(
                     )
                 }
                 DialogButton(
-                    label = "Delete for Me",
+                    label = if (deliveryUnconfirmed) "Remove Locally" else "Delete for Me",
                     background = Color.Transparent,
                     contentColor = Color(0xFFDC2626),
                     border = Color(0xFFFECACA),
@@ -2101,6 +2086,8 @@ private fun FooterAction(
 @Composable
 private fun DeleteMessagesDialog(
     count: Int,
+    canDeleteForEveryone: Boolean,
+    hasUnconfirmed: Boolean,
     onDismiss: () -> Unit,
     onDelete: (forEveryone: Boolean) -> Unit
 ) {
@@ -2120,14 +2107,20 @@ private fun DeleteMessagesDialog(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Delete for everyone also removes them from the other side.",
+                text = when {
+                    hasUnconfirmed -> "Unconfirmed messages may already have been sent and could reappear after local removal."
+                    canDeleteForEveryone -> "Delete for everyone also removes them from the other side."
+                    else -> "Delete for everyone isn't available for all selected messages."
+                },
                 color = extra.textTertiary,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = NcSpace.lg, vertical = 6.dp)
             )
-            DialogChoice("Delete for me") { onDelete(false) }
-            DialogChoice("Delete for everyone", destructive = true) { onDelete(true) }
+            DialogChoice(if (hasUnconfirmed) "Delete for me / remove locally" else "Delete for me") { onDelete(false) }
+            if (canDeleteForEveryone) {
+                DialogChoice("Delete for everyone", destructive = true) { onDelete(true) }
+            }
             DialogChoice("Cancel") { onDismiss() }
         }
     }

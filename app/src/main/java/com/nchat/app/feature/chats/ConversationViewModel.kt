@@ -194,7 +194,7 @@ class ConversationViewModel(
     fun deleteSelectedMessages(forEveryone: Boolean) {
         val ids = _selection.value
         _selection.value = emptySet()
-        ids.forEach { id -> repository.deleteMessage(chatId, id, forEveryone) }
+        ids.forEach { id -> repository.deleteMessage(chatId, id, forEveryone, reportSuccess = false) }
     }
 
     /** Forwards every ticked message to [targetChatIds], one copy per message and target. */
