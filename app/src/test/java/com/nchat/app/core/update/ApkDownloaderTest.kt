@@ -24,12 +24,17 @@ class ApkDownloaderTest {
         private val bytes: ByteArray = byteArrayOf(),
         private val length: Long = bytes.size.toLong(),
         private val location: String? = null,
+        private val retryAfter: String? = null,
         private val stream: (() -> InputStream)? = null
     ) : HttpURLConnection(url) {
         var disconnected = false
         override fun getResponseCode(): Int = status
         override fun getContentLengthLong(): Long = length
-        override fun getHeaderField(name: String?): String? = if (name == "Location") location else null
+        override fun getHeaderField(name: String?): String? = when (name) {
+            "Location" -> location
+            "Retry-After" -> retryAfter
+            else -> null
+        }
         override fun getInputStream(): InputStream = stream?.invoke() ?: ByteArrayInputStream(bytes)
         override fun disconnect() { disconnected = true }
         override fun usingProxy(): Boolean = false
@@ -51,6 +56,25 @@ class ApkDownloaderTest {
         assertArrayEquals(payload, part.readBytes())
         assertEquals(3, connections.size)
         assertTrue(connections.all { it.disconnected })
+    }
+
+    @Test
+    fun honorsServerRetryAfterForGatewayTimeouts() = runBlocking {
+        var attempts = 0
+        val delays = mutableListOf<Long>()
+        val downloader = ApkDownloader(
+            open = { url ->
+                attempts++
+                FakeConnection(url, if (attempts == 1) 504 else 200, payload, retryAfter = "3")
+            },
+            pause = { delays += it },
+            minBytes = 4,
+            maxBytes = 100
+        )
+        val part = folder.root.resolve("download.part.apk")
+        downloader.download(listOf("https://primary.example/app.apk"), part, {})
+        assertEquals(listOf(3_000L), delays)
+        assertArrayEquals(payload, part.readBytes())
     }
 
     @Test
@@ -79,7 +103,7 @@ class ApkDownloaderTest {
             throw AssertionError("Expected download failure")
         } catch (e: java.io.IOException) { e }
         assertTrue(error.message!!.contains("another network"))
-        assertEquals(3, attempts)
+        assertEquals(5, attempts)
         assertFalse(part.exists())
     }
 

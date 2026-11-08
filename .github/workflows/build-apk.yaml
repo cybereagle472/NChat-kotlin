@@ -82,6 +82,18 @@ jobs:
           git add -f .ci/last-failure.log
           git commit -m "ci: capture build failure log [skip ci]" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
+      - name: Read release metadata
+        id: release-metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          manifest = json.loads(Path("version.json").read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"tag={manifest['releaseTag']}\n")
+          Path("release-notes.md").write_text(manifest["releaseNotes"].strip() + "\n", encoding="utf-8")
+          PY
       - name: Prepare stable APK filename
         run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/nchat-ui-lab.apk
       - name: Upload APK artifact
@@ -95,9 +107,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nchat-build-${{ github.run_number }}
-          name: NChat build ${{ github.run_number }}
-          body: "Kotlin + Compose client: rebuilt design system, navigation, chat list and conversation UI."
+          tag_name: ${{ steps.release-metadata.outputs.tag }}
+          name: NChat ${{ steps.release-metadata.outputs.tag }}
+          body_path: release-notes.md
           files: app/build/outputs/apk/release/nchat-ui-lab.apk
           make_latest: true
           fail_on_unmatched_files: true

@@ -1,10 +1,25 @@
 package com.nchat.app.core.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UpdateSignerPolicyTest {
+    @Test
+    fun certificateFingerprintIsStableSha256Hex() {
+        assertEquals(
+            "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+            certificateSha256(byteArrayOf(1, 2, 3))
+        )
+    }
+
+    @Test
+    fun fallsBackToLegacySignerDataOnlyWhenModernDataIsEmpty() {
+        assertEquals(setOf("modern"), preferredSignerSet(setOf("modern"), setOf("legacy")))
+        assertEquals(setOf("legacy"), preferredSignerSet(emptySet(), setOf("legacy")))
+    }
+
     @Test
     fun checksMatchingSignersAndVerifiedRotationHistory() {
         assertTrue(compatibleUpdateSigners(setOf("old"), setOf("old"), emptySet()))

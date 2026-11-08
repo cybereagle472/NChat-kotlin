@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -224,13 +225,15 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
 
             notice?.let { message ->
                 Spacer(modifier = Modifier.height(NcSpace.sm))
-                Text(
-                    text = message,
-                    color = Color(0xFFDC2626),
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SelectionContainer {
+                    Text(
+                        text = message,
+                        color = Color(0xFFDC2626),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 TextButton(enabled = !installing, onClick = {
                     if (!AutoUpdater.openReleasePage(context)) notice = "Could not open a browser on this device."
                 }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
