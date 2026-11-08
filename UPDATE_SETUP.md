@@ -2,7 +2,7 @@
 
 Android only accepts an in-place APK update when the signing certificate matches the installed app. Keep the release keystore backed up permanently.
 
-**Current setup:** the workflow uses the committed demo signing key so existing installs can update. This key and password are public and must not be treated as secure production credentials. The steps below are for a later migration to a private signing key. Android normally cannot update the existing demo-signed installation with a differently signed APK; plan the migration and warn users that uninstalling may remove local-only data.
+**Current setup:** the workflow uses the committed demo signing key so existing installs can update. CI also verifies that the signed APK's certificate SHA-256 is `429c0bb9664496faaa275638852d4e6b366bfb203c4e5c6d6b60101106e67912`; the pinned fingerprint in `.github/scripts/verify_release_apk.py` must be deliberately updated as part of a signing-key migration. This key and password are public and must not be treated as secure production credentials. The steps below are for a later migration to a private signing key. Android normally cannot update the existing demo-signed installation with a differently signed APK; plan the migration and warn users that uninstalling may remove local-only data.
 
 ## 1. Create a permanent signing key (Termux)
 

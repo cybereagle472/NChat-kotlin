@@ -45,6 +45,8 @@ jobs:
             echo "::notice title=Backend configured::The address comes from the repository variable (never from git)."
           fi
 
+      - name: Test release verification
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Run Android unit tests
         run: |
           set -o pipefail
@@ -66,24 +68,9 @@ jobs:
           set -euo pipefail
           {
           APK=app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
-          python3 - <<'PYCODE'
-          import json, os, re, subprocess
-
-          apk = 'app/build/outputs/apk/release/app-release.apk'
-          aapt = os.path.join(os.environ['ANDROID_HOME'], 'build-tools/34.0.0/aapt')
-          badging = subprocess.check_output([aapt, 'dump', 'badging', apk], text=True)
-          package = next(line for line in badging.splitlines() if line.startswith('package: '))
-          print(package)
-          fields = dict(re.findall(r"(?:^|\s)(name|versionCode|versionName)='([^']*)'", package))
-          with open('version.json', encoding='utf-8') as stream:
-              expected = json.load(stream)
-          if (fields.get('name') != 'com.nchat.app'
-                  or fields.get('versionCode') != str(expected['versionCode'])
-                  or fields.get('versionName') != expected['versionName']):
-              raise SystemExit('APK package or version does not match version.json')
-          print('Signed APK package and version match the update manifest.')
-          PYCODE
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/nchat-signers.txt
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" > /tmp/nchat-badging.txt
+          python3 .github/scripts/verify_release_apk.py /tmp/nchat-badging.txt /tmp/nchat-signers.txt version.json
           } 2>&1 | tee -a /tmp/gradle-build.log
       - name: Capture build log on failure
         if: failure()
