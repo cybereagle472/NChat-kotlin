@@ -1,6 +1,6 @@
 {
-  "versionCode": 76,
-  "versionName": "1.0.68",
+  "versionCode": 77,
+  "versionName": "1.0.69",
   "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk",
-  "releaseNotes": "NChat 1.0.68 — Status, finished: text, photo and video, start to finish. (1) Posting works for all three kinds. Text statuses let you pick one of six backgrounds and one of three fonts over the real colour, and the composer is now a full screen rather than a small dialog, so you write against the background it will be seen on. Photos come from the camera or your gallery and are downscaled and stripped of location data before upload. Videos come from your gallery, show a real frame from the clip with its length, take a caption, and play in the viewer with sound and their true duration — before this a video status showed a blank screen behind a five-second bar. (2) Posting shows real progress and a real error: a failed upload used to vanish silently, now it says what happened and keeps your text and media on screen so one tap retries. (3) The status tab is a list of people, the way WhatsApp's is: one row per contact with how many updates and how long is left, unseen rings first, your own row showing '21h left' and how many people saw it. (4) In the viewer: one progress bar per update, hold to pause, tap the right or left third to move, swipe down to close, mute the sound, see the time left, delete your own update, and open a chat with the author to reply."
+  "releaseNotes": "NChat 1.0.69 improves message delivery and retry reliability, protects queued messages and voice recordings, strengthens account and media security, and fixes conversation caching and date display. Delivery can still be uncertain when a server acknowledgement is lost."
 }
