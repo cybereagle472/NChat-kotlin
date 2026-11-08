@@ -2,6 +2,8 @@
 
 Android only accepts an in-place APK update when the signing certificate matches the installed app. Keep the release keystore backed up permanently.
 
+**Current setup:** the workflow uses the committed demo signing key so existing installs can update. This key and password are public and must not be treated as secure production credentials. The steps below are for a later migration to a private signing key. Android normally cannot update the existing demo-signed installation with a differently signed APK; plan the migration and warn users that uninstalling may remove local-only data.
+
 ## 1. Create a permanent signing key (Termux)
 
 Install Java if needed:
@@ -15,7 +17,7 @@ Create the keystore. Replace the example password with a strong password and rem
 
 ```sh
 keytool -genkeypair -v -keystore nchat-release.jks -alias nchat -keyalg RSA -keysize 2048 -validity 10000 -storepass 'CHOOSE_A_STRONG_PASSWORD' -keypass 'CHOOSE_A_STRONG_PASSWORD' -dname 'CN=NChat, OU=Mobile, O=CyberEagle, L=Mansehra, ST=KPK, C=PK'
-base64 nchat-release.jks | tr -d '\\n'
+base64 nchat-release.jks | tr -d '\n'
 ```
 
 Copy the long base64 output. Keep both the original `nchat-release.jks` file and password in a safe backup. Never commit the keystore or share it publicly.
@@ -31,6 +33,6 @@ Open the repository on GitHub, then Settings -> Secrets and variables -> Actions
 
 ## 3. Build and install the first signed release
 
-After adding all four secrets, open Actions -> Build NChat APK -> Run workflow. Download the generated release APK artifact or the GitHub Release asset and install it. You can uninstall the older unsigned/debug build first as planned.
+These secrets are not used by the current demo-signing workflow. When migrating, update the workflow to use them before building. Then open Actions -> Build NChat APK -> Run workflow. Download the generated release APK artifact or the GitHub Release asset and install it. You can uninstall the older unsigned/debug build first as planned.
 
 Future releases must keep the same keystore and increase both `versionCode` in `app/build.gradle` and `versionCode` in `version.json`. The app checks the version manifest at launch and offers the APK update; Android still asks you to confirm installation.

@@ -6,7 +6,7 @@
 -- ── from 0001_init.sql ──
 
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -27,14 +27,14 @@ CREATE TABLE sessions (
   revoked_at TEXT,
   user_agent TEXT
 );
-CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
-CREATE TABLE presence (
+CREATE TABLE IF NOT EXISTS presence (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   last_active_at INTEGER NOT NULL
 );
 
-CREATE TABLE friend_requests (
+CREATE TABLE IF NOT EXISTS friend_requests (
   id TEXT PRIMARY KEY,
   sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   receiver_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -43,20 +43,20 @@ CREATE TABLE friend_requests (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(sender_id, receiver_id)
 );
-CREATE INDEX idx_fr_receiver ON friend_requests(receiver_id, status);
-CREATE INDEX idx_fr_sender ON friend_requests(sender_id, status);
+CREATE INDEX IF NOT EXISTS idx_fr_receiver ON friend_requests(receiver_id, status);
+CREATE INDEX IF NOT EXISTS idx_fr_sender ON friend_requests(sender_id, status);
 
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
   id TEXT PRIMARY KEY,
   user1_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   user2_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user1_id, user2_id)
 );
-CREATE INDEX idx_friendship_u1 ON friendships(user1_id);
-CREATE INDEX idx_friendship_u2 ON friendships(user2_id);
+CREATE INDEX IF NOT EXISTS idx_friendship_u1 ON friendships(user1_id);
+CREATE INDEX IF NOT EXISTS idx_friendship_u2 ON friendships(user2_id);
 
-CREATE TABLE blocked_users (
+CREATE TABLE IF NOT EXISTS blocked_users (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   blocked_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -64,7 +64,7 @@ CREATE TABLE blocked_users (
   UNIQUE(user_id, blocked_user_id)
 );
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   receiver_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -88,11 +88,11 @@ CREATE TABLE messages (
   gif_url TEXT, gif_preview_url TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_messages_pair_a ON messages(sender_id, receiver_id, created_at);
-CREATE INDEX idx_messages_pair_b ON messages(receiver_id, sender_id, created_at);
-CREATE UNIQUE INDEX idx_messages_client_id ON messages(sender_id, client_message_id);
+CREATE INDEX IF NOT EXISTS idx_messages_pair_a ON messages(sender_id, receiver_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_pair_b ON messages(receiver_id, sender_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(sender_id, client_message_id);
 
-CREATE TABLE groups (
+CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
@@ -102,7 +102,7 @@ CREATE TABLE groups (
   updated_at TEXT
 );
 
-CREATE TABLE group_members (
+CREATE TABLE IF NOT EXISTS group_members (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -111,10 +111,10 @@ CREATE TABLE group_members (
   joined_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(group_id, user_id)
 );
-CREATE INDEX idx_gm_group ON group_members(group_id);
-CREATE INDEX idx_gm_user ON group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_gm_group ON group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_gm_user ON group_members(user_id);
 
-CREATE TABLE group_messages (
+CREATE TABLE IF NOT EXISTS group_messages (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   sender_id TEXT NOT NULL REFERENCES users(id),
@@ -132,9 +132,9 @@ CREATE TABLE group_messages (
   reactions TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_gmsg_group ON group_messages(group_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_gmsg_group ON group_messages(group_id, created_at);
 
-CREATE TABLE calls (
+CREATE TABLE IF NOT EXISTS calls (
   id TEXT PRIMARY KEY,
   caller_id TEXT NOT NULL REFERENCES users(id),
   receiver_id TEXT NOT NULL REFERENCES users(id),
@@ -146,10 +146,10 @@ CREATE TABLE calls (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   ended_at TEXT
 );
-CREATE INDEX idx_calls_users ON calls(caller_id, receiver_id, created_at);
-CREATE INDEX idx_calls_receiver ON calls(receiver_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(caller_id, receiver_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_calls_receiver ON calls(receiver_id, created_at);
 
-CREATE TABLE statuses (
+CREATE TABLE IF NOT EXISTS statuses (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   content_type TEXT NOT NULL, -- text | image | video
@@ -165,10 +165,10 @@ CREATE TABLE statuses (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL
 );
-CREATE INDEX idx_statuses_user ON statuses(user_id, created_at);
-CREATE INDEX idx_statuses_expiry ON statuses(expires_at);
+CREATE INDEX IF NOT EXISTS idx_statuses_user ON statuses(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_statuses_expiry ON statuses(expires_at);
 
-CREATE TABLE status_views (
+CREATE TABLE IF NOT EXISTS status_views (
   id TEXT PRIMARY KEY,
   status_id TEXT NOT NULL REFERENCES statuses(id) ON DELETE CASCADE,
   viewer_id TEXT NOT NULL REFERENCES users(id),
@@ -176,13 +176,13 @@ CREATE TABLE status_views (
   UNIQUE(status_id, viewer_id)
 );
 
-CREATE TABLE muted_statuses (
+CREATE TABLE IF NOT EXISTS muted_statuses (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   muted_user_id TEXT NOT NULL,
   PRIMARY KEY (user_id, muted_user_id)
 );
 
-CREATE TABLE privacy_settings (
+CREATE TABLE IF NOT EXISTS privacy_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   last_seen_visibility TEXT NOT NULL DEFAULT 'everyone',
   profile_photo_visibility TEXT NOT NULL DEFAULT 'everyone',
@@ -192,7 +192,7 @@ CREATE TABLE privacy_settings (
   online_status_enabled INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE notification_settings (
+CREATE TABLE IF NOT EXISTS notification_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   push_enabled INTEGER NOT NULL DEFAULT 1,
   message_notifications INTEGER NOT NULL DEFAULT 1,
@@ -201,7 +201,7 @@ CREATE TABLE notification_settings (
   muted_until TEXT
 );
 
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   actor_id TEXT REFERENCES users(id),
@@ -210,9 +210,9 @@ CREATE TABLE notifications (
   is_read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_notif_user ON notifications(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, created_at);
 
-CREATE TABLE push_subscriptions (
+CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   endpoint TEXT NOT NULL UNIQUE,
@@ -221,7 +221,7 @@ CREATE TABLE push_subscriptions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE media_attachments (
+CREATE TABLE IF NOT EXISTS media_attachments (
   id TEXT PRIMARY KEY,
   message_id TEXT,
   group_message_id TEXT,
@@ -249,19 +249,19 @@ CREATE TABLE media_attachments (
 
 -- ── from 0004_group_read_state.sql ──
 
-CREATE TABLE group_read_state (
+CREATE TABLE IF NOT EXISTS group_read_state (
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   last_read_at TEXT NOT NULL,
   PRIMARY KEY (group_id, user_id)
 );
-CREATE INDEX idx_grs_group ON group_read_state(group_id);
-CREATE INDEX idx_grs_user ON group_read_state(user_id);
+CREATE INDEX IF NOT EXISTS idx_grs_group ON group_read_state(group_id);
+CREATE INDEX IF NOT EXISTS idx_grs_user ON group_read_state(user_id);
 
 
 -- ── from 0005_group_calls.sql ──
 
-CREATE TABLE group_calls (
+CREATE TABLE IF NOT EXISTS group_calls (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   caller_id TEXT NOT NULL REFERENCES users(id),
@@ -270,9 +270,9 @@ CREATE TABLE group_calls (
   created_at TEXT NOT NULL,
   ended_at TEXT
 );
-CREATE INDEX idx_gcalls_group ON group_calls(group_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_gcalls_group ON group_calls(group_id, created_at);
 
-CREATE TABLE group_call_participants (
+CREATE TABLE IF NOT EXISTS group_call_participants (
   call_id TEXT NOT NULL REFERENCES group_calls(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id),
   status TEXT NOT NULL DEFAULT 'ringing', -- 'ringing' | 'joined' | 'declined' | 'left' | 'missed'
@@ -280,5 +280,5 @@ CREATE TABLE group_call_participants (
   left_at TEXT,
   PRIMARY KEY (call_id, user_id)
 );
-CREATE INDEX idx_gcp_call ON group_call_participants(call_id);
-CREATE INDEX idx_gcp_user ON group_call_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_gcp_call ON group_call_participants(call_id);
+CREATE INDEX IF NOT EXISTS idx_gcp_user ON group_call_participants(user_id);

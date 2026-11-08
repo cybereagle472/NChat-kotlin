@@ -62,20 +62,24 @@ pub fn verify(token: &str, secret: &str) -> Option<Value> {
     let raw = URL_SAFE_NO_PAD.decode(body_b64).ok()?;
     let payload: Value = serde_json::from_slice(&raw).ok()?;
 
-    if let Some(exp) = payload.get("exp").and_then(Value::as_i64) {
-        if now_secs() > exp {
-            return None;
-        }
+    // Every token we issue has an expiry. Reject missing, malformed, and expired
+    // claims rather than accidentally accepting a perpetual bearer token.
+    let exp = payload.get("exp").and_then(Value::as_i64)?;
+    if now_secs() >= exp {
+        return None;
     }
     Some(payload)
 }
 
 /// `sub` claim of a valid token.
 pub fn subject(token: &str, secret: &str) -> Option<String> {
-    verify(token, secret)?
-        .get("sub")
-        .and_then(Value::as_str)
-        .map(str::to_string)
+    let payload = verify(token, secret)?;
+    // The worker-compatible refresh token contains `sid`; access tokens do
+    // not. Never treat a refresh credential as an API or WebSocket credential.
+    if payload.get("sid").is_some() {
+        return None;
+    }
+    payload.get("sub").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -101,6 +105,16 @@ mod tests {
         assert!(payload["exp"].as_i64().unwrap_or(0) > now_secs());
         assert!(verify(&token, "other").is_none());
         assert!(verify("not.a.token", "secret").is_none());
+    }
+
+    #[test]
+    fn refresh_token_is_not_an_access_token() {
+        let access = sign(&json!({ "sub": "user-1" }), "secret", 60).unwrap();
+        let refresh = sign(&json!({ "sub": "user-1", "sid": "session-1" }), "secret", 60).unwrap();
+        assert_eq!(subject(&access, "secret").as_deref(), Some("user-1"));
+        assert_eq!(subject(&refresh, "secret"), None);
+        let expired = sign(&json!({ "sub": "user-1" }), "secret", 0).unwrap();
+        assert!(verify(&expired, "secret").is_none());
     }
 
     #[test]

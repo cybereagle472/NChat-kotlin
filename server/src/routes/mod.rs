@@ -13,6 +13,7 @@ pub mod status;
 pub mod users;
 
 use axum::body::Bytes;
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, patch, post};
 use axum::Router;
 use serde_json::{Map, Value};
@@ -21,6 +22,11 @@ use crate::realtime;
 use crate::AppState;
 
 pub fn router(state: AppState) -> Router {
+    // Multipart framing needs a little headroom beyond the per-file limit.
+    // Keep the default 2 MiB request cap on all other routes.
+    let upload_body_limit = usize::try_from(state.max_upload_bytes)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1024 * 1024);
     Router::new()
         .route("/", get(root))
         .route("/health", get(health))
@@ -104,7 +110,7 @@ pub fn router(state: AppState) -> Router {
         .route("/group-calls/:id/decline", post(group_calls::decline))
         .route("/group-calls/:id/leave", post(group_calls::leave))
         // ---- media ----
-        .route("/media/upload", post(media::upload))
+        .route("/media/upload", post(media::upload).layer(DefaultBodyLimit::max(upload_body_limit)))
         .route("/media/link", get(media::link))
         .route(
             "/media/file/*key",

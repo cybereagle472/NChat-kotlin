@@ -24,6 +24,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.io.IOException
 
 enum class ConnectionState { Disconnected, Connecting, Connected }
 
@@ -181,7 +182,7 @@ class NChatSocket(
             var token = tokens.accessToken
             if (token.isNullOrEmpty()) {
                 _state.value = ConnectionState.Connecting
-                token = api.renewAccessToken()
+                token = renewForSocket()
                 if (token.isNullOrEmpty()) {
                     delay(1_000)
                     continue
@@ -232,7 +233,7 @@ class NChatSocket(
             if (unauthorized) {
                 // Renew once; if the refresh token is gone this signs the session out and the
                 // `tokens.userId` check above parks the loop instead of hammering the server.
-                api.renewAccessToken()
+                renewForSocket()
             }
 
             _state.value = ConnectionState.Connecting
@@ -259,6 +260,15 @@ class NChatSocket(
             if (backoff > 0L) withTimeoutOrNull(backoff) { nudge.receive() }
         }
         _state.value = ConnectionState.Disconnected
+    }
+
+    // A temporary refresh failure must not kill the reconnect coroutine or erase the session.
+    private suspend fun renewForSocket(): String? = try {
+        api.renewAccessToken()
+    } catch (_: IOException) {
+        null
+    } catch (_: ApiException) {
+        null
     }
 
     /** `{"type":"message:new",...}` → `"message:new"`; empty when the frame has no type. */

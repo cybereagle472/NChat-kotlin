@@ -18,8 +18,8 @@ android {
 
         // The backend this build talks to, resolved once and baked into BuildConfig.
         // Precedence: -PNCHAT_API_BASE > $NCHAT_API_BASE > local.properties > nchat.properties
-        // > empty (the app then asks for an address on first launch). No Kotlin source knows
-        // the address: ServerConfig.effective() -> ApiClient is the single choke point, the
+        // > empty (the app shows the missing-server screen). No Kotlin source knows
+        // the address: BuildConfig -> ApiClient is the single choke point, the
         // Android counterpart of the web client's VITE_API_URL -> API_BASE.
         def apiBase = (project.findProperty("NCHAT_API_BASE")
                 ?: System.getenv("NCHAT_API_BASE")
@@ -127,5 +127,6 @@ dependencies {
     // Signalling was already real in 1.0.40; this is what carries the voice and video.
     implementation 'io.github.webrtc-sdk:android:150.7871.01'
 
+    testImplementation 'junit:junit:4.13.2'
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }

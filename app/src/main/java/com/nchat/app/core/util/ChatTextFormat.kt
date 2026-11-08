@@ -46,7 +46,10 @@ private fun mentionAt(text: String, index: Int, mentions: List<String>): String?
         .filter { it.isNotBlank() }
         .sortedByDescending { it.length }
         .firstOrNull { name ->
-            text.regionMatches(index + 1, name, 0, name.length, ignoreCase = true)
+            val end = index + 1 + name.length
+            val next = text.getOrNull(end)
+            text.regionMatches(index + 1, name, 0, name.length, ignoreCase = true) &&
+                (next == null || (!next.isLetterOrDigit() && next != '_'))
         }
 }
 
@@ -85,7 +88,14 @@ private fun AnnotatedString.Builder.appendFormatted(
         }
         // Needs real text right after the opener, and it must not be the marker itself.
         val afterOpen = text.getOrNull(index + 1)
-        if (afterOpen == null || afterOpen.isWhitespace() || afterOpen == marker) {
+        if (afterOpen == marker) {
+            // A doubled marker is literal as a pair; don't reinterpret the second
+            // character as the opening delimiter of a formatted span.
+            plain.append(marker).append(marker)
+            index += 2
+            continue
+        }
+        if (afterOpen == null || afterOpen.isWhitespace()) {
             plain.append(marker)
             index++
             continue
@@ -124,7 +134,8 @@ private fun findClose(text: String, from: Int, marker: Char): Int {
     while (cursor < text.length) {
         val current = text[cursor]
         if (current == '\n') return -1
-        if (current == marker && cursor > from && !text[cursor - 1].isWhitespace()) {
+        if (current == marker && cursor > from && !text[cursor - 1].isWhitespace() &&
+            text[cursor - 1] != marker) {
             val next = text.getOrNull(cursor + 1)
             if (next != marker) return cursor
         }

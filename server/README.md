@@ -1,148 +1,50 @@
-# NChat backend (Rust)
+# NChat Rust backend
 
-The realtime service behind the Kotlin app. `axum` + `tokio` on top of an
-in-memory state tree that snapshots atomically to `data/db.json`.
+The self-hosted backend uses Axum and Tokio, SQLite for application data, a local
+filesystem directory for media, and an in-process WebSocket hub. Its HTTP routes
+are defined in `src/routes/mod.rs`; they are not prefixed with `/api/v1`.
 
-```
-server/
-├── Cargo.toml
-├── src/
-│   ├── main.rs      # env config, bind, graceful shutdown
-│   ├── lib.rs       # AppState, token issuing, router assembly
-│   ├── api.rs       # REST handlers (auth, users, chats, messages, receipts, typing)
-│   ├── ws.rs        # WebSocket handshake + broadcast fan-out
-│   ├── store.rs     # in-memory state, pagination, receipts, persistence
-│   ├── auth.rs      # salted SHA-256 passwords, HMAC-SHA256 bearer tokens
-│   ├── model.rs     # wire model (camelCase, mirrors the Kotlin data classes)
-│   └── error.rs     # ApiError → JSON { "error": ... }
-└── tests/api.rs     # end-to-end tests that drive the router like the app does
-```
+## Run
 
-## Run it
-
-```bash
+```sh
 cd server
-NCHAT_SECRET="change-me" PORT=8080 cargo run --release
+JWT_SECRET='replace-with-a-long-random-secret' \
+PUBLIC_API_URL='https://chat.example.com' \
+NCHAT_DATA_DIR=data cargo run --release
 ```
 
-Environment:
+The server binds `0.0.0.0:8080` by default. Terminate TLS in a trusted reverse
+proxy, and configure the Android build's `NCHAT_API_BASE` to the public HTTPS URL.
+`GET /health` returns `{"ok":true}`. Back up the database **and** media directory;
+use a SQLite-aware backup for a live WAL database.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `PORT` | `8080` | listen port (binds `0.0.0.0`) |
-| `NCHAT_DATA_DIR` | `data` | directory for `db.json` |
-| `NCHAT_SECRET` | random per boot | HMAC key for bearer tokens — **set this in production** |
-| `NCHAT_TOKEN_TTL` | `2592000` | token lifetime in seconds (30 days) |
-| `NCHAT_LOG` | `info` | `tracing` filter, e.g. `debug` |
-| `NCHAT_MEDIA_PUBLIC` | `0` | `1` makes `/media/file/*` readable by anyone with the URL (the reference worker's public-bucket behaviour). Leave it off: reads are then authorised per caller. |
-| `NCHAT_MEDIA_TTL` | `600` | Lifetime of a signed media link minted by `GET /media/link`, in seconds. |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `8080` | Listening port |
+| `NCHAT_DATA_DIR` | `data` | Directory containing `nchat.sqlite` and `media/` |
+| `JWT_SECRET` or `NCHAT_SECRET` | Random per startup | Token and media-link signing; set a persistent secret in production |
+| `PUBLIC_API_URL` | `http://localhost:<PORT>` | Public URL used in generated media links |
+| `NCHAT_POOL` | `8` | SQLite connections |
+| `NCHAT_MAX_UPLOAD_MB` | `100` | Per-file upload limit |
+| `NCHAT_AUTH_RATE` / `NCHAT_AUTH_WINDOW_SECS` | `10` / `300` | Process-local credential throttling |
+| `NCHAT_MEDIA_PUBLIC` | `0` | Set to `1` to allow anonymous media reads |
+| `NCHAT_MEDIA_TTL` | `600` | Signed media link lifetime in seconds |
+| `NCHAT_ADMIN_EMAIL` | Unset | Account allowed to use admin endpoints |
+| `CF_TURN_KEY_ID` / `CF_TURN_KEY_API_TOKEN` | Unset | Cloudflare TURN credentials for calls |
+| `NCHAT_LOG` | `info` | Logging filter |
 
-Health check: `GET /api/v1/health` → `{"status":"ok","version":"0.1.0","users":0,"chats":0}`.
+The merged `schema.sql` bootstraps fresh databases and is safe to run again on
+restart. `CREATE IF NOT EXISTS` is not a migration system: it does not add
+missing columns to an older schema. Back up and explicitly migrate existing older
+databases before deployment. The SQL files in `migrations/` describe the original
+worker migrations and are not automatically applied by this server.
 
-## REST surface
+WebSocket clients use `/realtime/connect?room=user:<id>&token=<access token>`.
+Only the authenticated user's personal room is accepted; client-sent text frames
+are not relayed. Configure reverse proxies not to log the query string, because
+it contains a bearer token. The hub is process-local: running multiple instances
+requires shared event delivery. Private media reads require authorization by
+default; `NCHAT_MEDIA_PUBLIC=1` disables that protection.
 
-All routes are prefixed with `/api/v1`. Authenticated routes take
-`Authorization: Bearer <token>` and return `401` without it.
-
-| Method | Path | Body / query | Notes |
-|---|---|---|---|
-| `POST` | `/auth/register` | `{name, password, about?, avatarEmoji?}` | returns `{token, user}` |
-| `POST` | `/auth/login` | `{name, password}` | returns `{token, user}` |
-| `GET` | `/me` | — | current user |
-| `PATCH` | `/me` | `{name?, about?, avatarEmoji?}` | rename re-slugs the handle |
-| `GET` | `/users?query=` | — | everyone except me, name/handle filtered |
-| `GET` | `/chats` | — | `ChatSummary[]`, pinned first then newest |
-| `POST` | `/chats` | `{title?, memberIds[], isGroup?}` | 1:1 chats are reused, never duplicated |
-| `PATCH` | `/chats/:id` | `{pinned?, muted?}` | per-user flags |
-| `DELETE` | `/chats/:id` | — | hides the chat for the caller only |
-| `GET` | `/chats/:id/members` | — | `User[]` |
-| `GET` | `/chats/:id/messages?before=<seq>&limit=50` | — | `{messages, nextBefore}` newest page first |
-| `POST` | `/chats/:id/messages` | `{kind?, text}` | `kind`: `text\|photo\|video\|voice\|document\|location` |
-| `PATCH` | `/messages/:id` | `{text}` | author only, text only, 15-minute window |
-| `DELETE` | `/messages/:id` | — | author only, soft delete |
-| `POST` | `/chats/:id/read` | `{messageId}` | advances the receipt cursor, returns `{seq}` |
-| `POST` | `/chats/:id/typing` | `{typing?}` | fan-out only, nothing stored |
-| `GET` | `/ws` | — | WebSocket, see below |
-
-## WebSocket
-
-Connect to `/api/v1/ws` and send the handshake as the **first** frame:
-
-```json
-{ "type": "auth", "token": "<bearer>" }
-```
-
-The server answers `{"type":"ready","userId":...}` then
-`{"type":"presence.bulk","online":[...]}`. After that you receive:
-
-```json
-{ "type": "message.new",    "chatId": "...", "message": { ... } }
-{ "type": "message.edit",   "chatId": "...", "message": { ... } }
-{ "type": "message.delete", "chatId": "...", "message": { ... } }
-{ "type": "receipt",        "chatId": "...", "userId": "...", "seq": 12 }
-{ "type": "typing",         "chatId": "...", "userId": "...", "typing": true }
-{ "type": "presence",       "userId": "...", "online": true }
-{ "type": "chat.new",       "chatId": "...", "title": "..." }
-{ "type": "chat.deleted",   "chatId": "..." }
-```
-
-Client → server frames after the handshake: `{"type":"typing","chatId":"...","typing":true}`.
-Ping frames are answered with a pong.
-
-## Media privacy
-
-`GET /media/file/*key` is answered only when one of these holds:
-
-| Caller | Result |
-|---|---|
-| No token and no signature | `401` |
-| The uploader | `200` (with `Range` → `206`) |
-| Either end of the 1:1 message that references the file | `200` |
-| A member of the group the file was posted to | `200` |
-| In the audience of the status that uses the file | `200` |
-| Any signed-in user, for a profile or group avatar | `200` |
-| Anyone else | `404` — the response never confirms that a key exists |
-
-`GET /media/link?key=<key>` (authenticated) mints a shareable link:
-
-```json
-{ "url": "<PUBLIC_API_URL>/media/file/<key>?exp=1762345678&sig=…",
-  "expires_at": 1762345678, "expires_in": 600 }
-```
-
-The signature is `HMAC-SHA256(secret, "media:<key>:<exp>")`, so a link can be neither pointed
-at a different file nor kept alive by editing `exp`. Lifetime: `NCHAT_MEDIA_TTL`.
-`NCHAT_MEDIA_PUBLIC=1` turns the check off (public-bucket parity with the reference worker).
-
-## Why this shape is fast
-
-* **One lock, no I/O on reads.** Chat lists, message pages and receipts are
-  served straight from memory; a page costs a `Vec` clone plus a JSON encode.
-* **Snapshots, not queries.** Writes go to the in-memory tree and then to
-  `db.json` through `write → rename`, so there is no query planner or fsync
-  storm between the client and the ack.
-* **One broadcast channel.** Every realtime event is a single
-  `serde_json::Value` shared by all recipients; each session filters by id.
-* **Sequence numbers as cursors.** Unread counts and pagination are integer
-  comparisons — no `COUNT(*)`, no offsets.
-* **Release profile** is `opt-level = 3`, thin LTO, single codegen unit.
-
-Next steps on this list (in order): an append-only journal instead of full
-snapshots, `MsgPack`/`bincode` frames for the WebSocket, then Argon2id
-passwords.
-
-## Notes for the next commit
-
-`Cargo.lock` is not checked in yet (the first build happens in CI). Run
-`cargo build` once locally and commit the generated lock file — binary crates
-should pin their dependency graph.
-
-## Tests
-
-```bash
-cd server && cargo test
-```
-
-The suite covers password/token round-trips, unread accounting, backwards
-pagination, 1:1 chat reuse, edit ownership and window, and full HTTP flows
-including the 401/403 paths. CI runs it in `.github/workflows/backend.yml`.
+Run backend checks with `cargo test`. This service does **not** provide end-to-end
+encryption; server operators can access message content.

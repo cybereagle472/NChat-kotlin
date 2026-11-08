@@ -90,12 +90,13 @@ class TokenStore(context: Context) {
      * The whole token pair from `POST /auth/login`, `/auth/signup` or `/auth/refresh`.
      *
      * Written synchronously: the server single-uses refresh tokens, so losing this write means
-     * losing the session (see [SecurePrefs.putStringSync]).
+     * losing the session (see [SecurePrefs.putStringsSync]).
      */
     fun saveTokens(access: String?, refresh: String?) {
         val hadSession = _signedIn.value
-        prefs.putStringSync(KEY_ACCESS, access)
-        prefs.putStringSync(KEY_REFRESH, refresh)
+        // A single commit prevents a crash between two writes from leaving a
+        // mismatched access/refresh pair on disk after token rotation.
+        prefs.putStringsSync(KEY_ACCESS to access, KEY_REFRESH to refresh)
         val signedIn = !access.isNullOrEmpty()
         _signedIn.value = signedIn
         if (hadSession && !signedIn) _sessionLost.value = true

@@ -45,6 +45,10 @@ jobs:
             echo "::notice title=Backend configured::The address comes from the repository variable (never from git)."
           fi
 
+      - name: Run Android unit tests
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:testDebugUnitTest 2>&1 | tee /tmp/gradle-build.log
       - name: Build signed release APK
         env:
           KEY_STORE_PASSWORD: NChatDemo2026!

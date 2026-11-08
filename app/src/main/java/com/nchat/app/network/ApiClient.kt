@@ -109,9 +109,10 @@ class ApiClient(
         // Uploads expire exactly like every other call: the access token lives 15 minutes, and
         // without this branch a voice note recorded after that simply failed with 401 — the
         // recorder finished, the bubble appeared and nothing was ever uploaded.
-        val first = execute(request(tokens.accessToken))
+        val attemptedToken = tokens.accessToken
+        val first = execute(request(attemptedToken))
         if (first.status == 401) {
-            val refreshed = refreshAccessToken()
+            val refreshed = refreshAccessToken(attemptedToken)
             if (refreshed != null) return ensureSuccess(execute(request(refreshed)))
         }
         return ensureSuccess(first)
@@ -125,9 +126,10 @@ class ApiClient(
     ): String {
         check(isConfigured) { "No backend configured" }
         val payload = body?.let { NcJson.body(it) }
-        val first = execute(build(method, url(path, query), payload, tokens.accessToken))
+        val attemptedToken = tokens.accessToken
+        val first = execute(build(method, url(path, query), payload, attemptedToken))
         if (first.status == 401) {
-            val refreshed = refreshAccessToken()
+            val refreshed = refreshAccessToken(attemptedToken)
             if (refreshed != null) {
                 val retry = execute(build(method, url(path, query), payload, refreshed))
                 return ensureSuccess(retry)
@@ -162,9 +164,12 @@ class ApiClient(
      * The image loader ([com.nchat.app.network.MediaImages]) calls this when a media read
      * comes back `401`; sharing the mutex means one refresh, not one per picture.
      */
-    suspend fun renewAccessToken(): String? = refreshAccessToken()
+    suspend fun renewAccessToken(): String? = refreshAccessToken(tokens.accessToken)
 
-    private suspend fun refreshAccessToken(): String? = refreshMutex.withLock {
+    private suspend fun refreshAccessToken(attemptedToken: String?): String? = refreshMutex.withLock {
+        // Another request may already have refreshed the token while we waited.
+        val current = tokens.accessToken
+        if (!current.isNullOrEmpty() && current != attemptedToken) return@withLock current
         val refresh = tokens.refreshToken
         if (refresh.isNullOrEmpty()) {
             tokens.saveTokens(null, null)
@@ -176,11 +181,13 @@ class ApiClient(
         val json = runCatching { NcJson.format.parseToJsonElement(snapshot.body).jsonObject }
             .getOrNull()
         val access = json?.get("access_token")?.jsonPrimitive?.contentOrNull
-        if (!snapshot.isSuccess || access.isNullOrEmpty()) {
-            // The session is gone for good (revoked or expired) — sign the user out.
+        if (snapshot.status == 401 || snapshot.status == 403) {
+            // Only a definitive credential rejection means the session is gone.
             tokens.saveTokens(null, null)
             return@withLock null
         }
+        if (!snapshot.isSuccess) throw ApiException(snapshot.status, messageOf(snapshot))
+        if (access.isNullOrEmpty()) throw IOException("Invalid refresh response")
         tokens.saveTokens(access, json?.get("refresh_token")?.jsonPrimitive?.contentOrNull ?: refresh)
         access
     }
@@ -194,7 +201,8 @@ class ApiClient(
      */
     private suspend fun execute(request: Request): Snapshot = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
-        val path = request.url.encodedPath + (request.url.encodedQuery?.let { "?$it" }.orEmpty())
+        // Query strings can contain email addresses, search terms, or credentials.
+        val path = request.url.encodedPath
         try {
             http.newCall(request).execute().use { response ->
                 ApiLog.record(

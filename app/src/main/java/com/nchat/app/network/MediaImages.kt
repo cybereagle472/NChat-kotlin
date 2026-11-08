@@ -4,6 +4,7 @@ import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -102,9 +103,7 @@ internal class MediaAuthInterceptor(
     }
 
     private fun isOurMedia(request: Request): Boolean {
-        if (root.isEmpty()) return false
-        if (!request.url.toString().startsWith(root)) return false
-        return request.method == "GET" && request.url.encodedPath.contains("/media/")
+        return isBackendMedia(root, request)
     }
 
     private fun Request.withToken(token: String): Request =
@@ -117,4 +116,13 @@ internal class MediaAuthInterceptor(
         .message("Session expired")
         .body("".toResponseBody(null))
         .build()
+}
+
+/** Compare actual origins, not string prefixes such as `example.com.attacker.test`. */
+internal fun isBackendMedia(root: String, request: Request): Boolean {
+    val base = root.toHttpUrlOrNull() ?: return false
+    val target = request.url
+    if (target.scheme != base.scheme || target.host != base.host || target.port != base.port) return false
+    val mediaPath = base.encodedPath.trimEnd('/') + "/media/"
+    return request.method == "GET" && target.encodedPath.startsWith(mediaPath)
 }

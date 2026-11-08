@@ -39,8 +39,8 @@ sealed interface InstallResult {
 /**
  * In-app updater.
  *
- * Every build is signed with the same committed keystore, so a new APK installs
- * straight over the previous one. All disk, network and PackageManager work happens on
+ * Android only installs an update over an existing app when its signing key
+ * is compatible with the installed version. All disk, network and PackageManager work happens on
  * [Dispatchers.IO]; only the final `startActivity` touches the main thread, and it is
  * always wrapped, because a bounced update must never crash or freeze the app.
  */

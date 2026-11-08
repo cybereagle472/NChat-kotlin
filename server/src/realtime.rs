@@ -6,8 +6,8 @@
 //! Worker broadcasts goes to a user's personal room, so a single socket per
 //! logged-in client receives every event.
 //!
-//! Here the same contract is served from one process: a room → socket map, an
-//! unbounded channel per socket, and JSON text frames passed through untouched.
+//! The Android client uses personal rooms only. Each socket has a bounded
+//! queue; a slow client is disconnected and can recover through a fresh sync.
 
 use crate::error::ApiError;
 use crate::jwt;
@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-type Sockets = HashMap<Uuid, mpsc::UnboundedSender<String>>;
+type Sockets = HashMap<Uuid, mpsc::Sender<String>>;
 
 #[derive(Clone, Default)]
 pub struct Hub {
@@ -39,9 +39,9 @@ impl Hub {
     }
 
     /// Register a socket in a room.
-    pub fn join(&self, room: &str) -> (Uuid, mpsc::UnboundedReceiver<String>) {
+    pub fn join(&self, room: &str) -> (Uuid, mpsc::Receiver<String>) {
         let id = Uuid::new_v4();
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(256);
         self.lock().entry(room.to_string()).or_default().insert(id, tx);
         (id, rx)
     }
@@ -58,15 +58,15 @@ impl Hub {
 
     /// `broadcastToRoom()` — deliver to every socket in the room.
     pub fn publish(&self, room: &str, payload: &str) {
-        let targets: Vec<mpsc::UnboundedSender<String>> = {
-            let rooms = self.lock();
-            rooms
-                .get(room)
-                .map(|sockets| sockets.values().cloned().collect())
-                .unwrap_or_default()
-        };
-        for sender in targets {
-            let _ = sender.send(payload.to_string());
+        let mut rooms = self.lock();
+        if let Some(sockets) = rooms.get_mut(room) {
+            // Remove a full or disconnected queue rather than letting a stalled
+            // connection accumulate messages indefinitely. Dropping the sender
+            // closes the socket after its already-queued events have drained.
+            sockets.retain(|_, sender| sender.try_send(payload.to_string()).is_ok());
+            if sockets.is_empty() {
+                rooms.remove(room);
+            }
         }
     }
 
@@ -78,26 +78,6 @@ impl Hub {
     pub fn publish_to_users<'a>(&self, user_ids: impl IntoIterator<Item = &'a str>, payload: &str) {
         for user_id in user_ids {
             self.publish_to_user(user_id, payload);
-        }
-    }
-
-    /// Ephemeral relay: same room, everyone but the sender.
-    fn relay(&self, room: &str, from: Uuid, payload: &str) {
-        let targets: Vec<mpsc::UnboundedSender<String>> = {
-            let rooms = self.lock();
-            rooms
-                .get(room)
-                .map(|sockets| {
-                    sockets
-                        .iter()
-                        .filter(|(id, _)| **id != from)
-                        .map(|(_, sender)| sender.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        for sender in targets {
-            let _ = sender.send(payload.to_string());
         }
     }
 
@@ -127,8 +107,10 @@ pub async fn connect(
         return ApiError::unauthorized("Invalid or expired token").into_response();
     };
 
-    // A personal room carries private events, so only its owner may join it.
-    if room.starts_with("user:") && room != format!("user:{user_id}") {
+    // The Android client receives all events in its own personal room. Other
+    // room types have no membership enforcement here, so fail closed instead
+    // of allowing arbitrary authenticated users to listen or inject frames.
+    if room != format!("user:{user_id}") {
         return ApiError::forbidden("Forbidden").into_response();
     }
 
@@ -143,9 +125,11 @@ async fn session(socket: WebSocket, state: AppState, room: String) {
         tokio::select! {
             incoming = stream.next() => {
                 match incoming {
-                    Some(Ok(Message::Text(text))) => state.hub.relay(&room, id, &text),
-                    Some(Ok(Message::Ping(_))) => {
-                        if sink.send(Message::Pong(Default::default())).await.is_err() {
+                    // Personal rooms are server-to-client only. Relaying client text
+                    // would let one session forge events for another session.
+                    Some(Ok(Message::Text(_))) => {},
+                    Some(Ok(Message::Ping(payload))) => {
+                        if sink.send(Message::Pong(payload)).await.is_err() {
                             break;
                         }
                     }
@@ -167,4 +151,19 @@ async fn session(socket: WebSocket, state: AppState, room: String) {
     }
 
     state.hub.leave(&room, id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slow_consumers_are_removed_instead_of_growing_without_bound() {
+        let hub = Hub::new();
+        let (_id, _rx) = hub.join("user:one");
+        for _ in 0..257 {
+            hub.publish("user:one", "event");
+        }
+        assert_eq!(hub.room_size("user:one"), 0);
+    }
 }

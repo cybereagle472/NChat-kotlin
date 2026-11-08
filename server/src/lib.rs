@@ -118,5 +118,11 @@ impl AppState {
 pub fn build_app(state: AppState) -> Router {
     routes::router(state)
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(
+            |request: &axum::http::Request<axum::body::Body>| {
+                // WebSocket clients may put a bearer token in the query string.
+                // Never put the full URI into application logs.
+                tracing::info_span!("http_request", method = %request.method(), path = %request.uri().path())
+            },
+        ))
 }

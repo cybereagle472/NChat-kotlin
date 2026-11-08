@@ -24,7 +24,7 @@ one address per screen means every future move touches dozens of files, and mixe
 nchat.properties / -PNCHAT_API_BASE / $NCHAT_API_BASE / local.properties
         │  Gradle, build time — exactly one value
         ▼  BuildConfig.NCHAT_API_BASE
-ServerConfig.effective()   ← Settings ▸ Server (per-install override)
+BuildConfig.NCHAT_API_BASE   (fixed for this build)
         ▼
 ApiClient (root + socketRoot) ──► repositories ──► screens
 ```
@@ -71,7 +71,8 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
 | Media reads | Streamed in chunks with `Range` support — a 200 MB video no longer costs 200 MB of RAM per request. Authorisation is checked **before** the first byte: the caller's token must belong to the conversation that owns the file (uploader, either end of a 1:1 message, a member of the group, or a status audience), or the URL must carry a valid `?exp=&sig=` signature from `/media/link`. A stranger gets `404`, not `403`, so a response never confirms that a key exists. |
 | Admin routes | `/admin/*` accepts only the account named in `NCHAT_ADMIN_EMAIL`. **There is no default address in the source**: with the variable unset, nobody is an admin. |
 | CORS | Permissive (`*`), exactly like the reference worker, because the web client is a separate origin. The APK does not use CORS. Tighten it at the edge (`NCHAT_ALLOWED_ORIGINS` is the tracked next step). |
-| Logging | `TraceLayer` logs method + path + status. No tokens, no request bodies, no passwords. |
+| Logging | Application request spans omit query strings. Configure reverse proxies and other access logs to omit them too: the WebSocket URL contains an access token. |
+| APK signing | The current release workflow uses a public demo key for update compatibility. Anyone can sign builds with it; replace it before a security-sensitive production release. Key rotation affects upgrades for existing installs. |
 
 ## 5. Deliberate limits (say them out loud)
 
@@ -90,7 +91,8 @@ ApiClient (root + socketRoot) ──► repositories ──► screens
    search), not a patch.
 3. **No push-based 2FA / device list yet.** Sessions are bearer tokens; revoking one device
    means rotating the password (which invalidates every session) or clearing that install.
-4. **The APK does not pin certificates.** Pinning would harden against corporate MITM proxies,
+4. **Blocking is device-local in the Android app.** It does not enforce a server-side block or synchronize to another device.
+5. **The APK does not pin certificates.** Pinning would harden against corporate MITM proxies,
    but it also blocks a rebuild against a new host (the address is baked in at build time, so a
    rotation would ship a locked APK). Revisit if the backend host becomes permanent.
 
