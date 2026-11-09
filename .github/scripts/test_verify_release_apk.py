@@ -3,13 +3,13 @@ import unittest
 from verify_release_apk import DEMO_SIGNER_SHA256, verify
 
 
-BADGING = ("package: name='com.nchat.app' versionCode='80' versionName='1.0.72' "
+BADGING = ("package: name='com.nchat.app' versionCode='82' versionName='1.0.74' "
            "compileSdkVersion='34' compileSdkVersionCodename='14'")
 MANIFEST = {
-    "versionCode": 80,
-    "versionName": "1.0.72",
-    "releaseTag": "nchat-v1.0.72",
-    "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.72/nchat-ui-lab.apk",
+    "versionCode": 82,
+    "versionName": "1.0.74",
+    "releaseTag": "nchat-v1.0.74",
+    "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.74/nchat-ui-lab.apk",
     "signingCertSha256": DEMO_SIGNER_SHA256,
 }
 SIGNER = f"Signer #1 certificate SHA-256 digest: {DEMO_SIGNER_SHA256}\n"

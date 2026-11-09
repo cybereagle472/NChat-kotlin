@@ -23,6 +23,19 @@ internal fun isTransientUpdateFailure(error: IOException): Boolean = when (error
     else -> true
 }
 
+/** Use Android's independent system download transport after a recoverable direct-transfer error. */
+internal fun shouldUseAndroidDownloadFallback(error: IOException): Boolean {
+    var cause: Throwable? = error
+    while (cause != null) {
+        when (cause) {
+            is InvalidUpdateDownload -> return false
+            is UpdateHttpException -> return isTransientUpdateFailure(cause)
+        }
+        cause = cause.cause
+    }
+    return true
+}
+
 /** Bounded retries and optional independent mirrors; all update and redirect URLs must use HTTPS. */
 internal class ApkDownloader(
     private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
@@ -75,7 +88,8 @@ internal class ApkDownloader(
                 requestMethod = "GET"
                 instanceFollowRedirects = false
                 setRequestProperty("User-Agent", "NChat-Updater")
-                setRequestProperty("Accept", "application/vnd.android.package-archive")
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept-Encoding", "identity")
             }
             try {
                 val status = connection.responseCode
@@ -139,7 +153,7 @@ internal class ApkDownloader(
     }
 
     private companion object {
-        const val MAX_ATTEMPTS = 5
+        const val MAX_ATTEMPTS = 3
         const val MAX_SOURCES = 4
         const val MAX_BACKOFF_MS = 20_000L
         const val MAX_REDIRECTS = 8
