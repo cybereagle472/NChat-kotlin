@@ -1,11 +1,11 @@
 {
-  "versionCode": 80,
-  "versionName": "1.0.72",
-  "releaseTag": "nchat-v1.0.72",
-  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.72/nchat-ui-lab.apk",
+  "versionCode": 81,
+  "versionName": "1.0.73",
+  "releaseTag": "nchat-v1.0.73",
+  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.73/nchat-ui-lab.apk",
   "apkUrls": [
     "https://github.com/cybereagle472/NChat-kotlin/releases/latest/download/nchat-ui-lab.apk"
   ],
   "signingCertSha256": "429c0bb9664496faaa275638852d4e6b366bfb203c4e5c6d6b60101106e67912",
-  "releaseNotes": "NChat 1.0.72 fixes account-scoped blocks and friend actions, secures direct messaging, makes chat deletion persist, adds older message history, and improves update verification and download retries."
+  "releaseNotes": "NChat 1.0.73 is a maintenance release to test in-app update delivery after the 1.0.72 updater fixes. It preserves the same signing certificate and package identity."
 }
