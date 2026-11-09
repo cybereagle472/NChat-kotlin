@@ -6,7 +6,7 @@
 > **Repository:** `cybereagle472/NChat-kotlin`.
 > **Branch:** `arena/d8051bf9-nchat-kotlin` (active, initially at `d87b70302fbacff185e8f5c829fce03ee3ef7595`; not pushed at audit start).
 > **Start commit:** `d87b70302fbacff185e8f5c829fce03ee3ef7595`.
-> **End commit:** `END_COMMIT_PENDING` (filled by the handover commit after the substantive Phase 0 commit).
+> **End commit:** `f45480678630810eff1a525469d83d1feca0021f` (substantive Phase 0 commit; the handover commit that records this hash is a metadata-only follow-up).
 > **Scope of this turn:** Phase 0 only — repository discovery, architecture/security audit, documentation consolidation, competitor comparison, implementation roadmap, and verification baseline. No application code, database, API, configuration, secret, or deployment was changed.
 > **Consolidation:** This file supersedes and consolidates the nine project-owned Markdown files previously in this repository. Their still-relevant content is preserved below; stale claims are explicitly labelled. Full verbatim history remains recoverable from Git history. No dependency/vendor/legal files were removed; the MIT `LICENSE` in the separate backend repository is untouched.
 
@@ -865,6 +865,7 @@ Do not proceed to destructive DB operations, production deployment, secret rotat
 | 2026-11-09 | Documentation consolidation | source-file verification after full reading; Appendix D ledger | Still-relevant technical, architecture, setup, API, plan, prior-agent, known-bug, development, deployment, legal/security content preserved; stale claims labelled; no dependency/vendor/legal files removed; backend files not deleted |
 | 2026-11-09 | Backend stale-claim scan | `grep -RniE 'disappearing\|e2ee\|end.to.end\|two.step\|otp\|account deletion\|invite\|report' worker/src src`, service-file inventory, `package.json` | No disappearing/E2EE/two-step/OTP/account-deletion/report route or service; `src/services/` has 11 files, no `disappearingService`, `encryptionService`, or `pushNotificationService`; React 18.3.1; no Radix/ESLint dependencies |
 | 2026-11-09 | Application code changes | `git status`/diff after this change | None: only `agent.md` added and nine project-owned `.md` files deleted; no schema/API/config/deployment/secret changes |
+| 2026-11-09 | Phase 0 substantive commit | `git commit` on `arena/d8051bf9-nchat-kotlin` | `f45480678630810eff1a525469d83d1feca0021f`; 10 files changed, 1082 insertions, 2104 deletions; working tree clean after commit |
 
 **Current project health:** Android main build/CI green; web/worker local typecheck/build green; Rust integration suite green on a recent prior commit but not re-run on HEAD; Cloudflare deployment blocked/failing; security status has multiple confirmed high-risk authorization gaps; no feature claims of full product completion; no known active Android compile regression; no production deployment performed; no destructive operation performed.
 
@@ -1055,7 +1056,7 @@ Legal/security/compliance-relevant content from `SECURITY.md`, `UPDATE_SETUP.md`
 - **Task:** Inspect latest NChat repositories, map architecture/features/security, create `agent.md`, consolidate Markdown, produce competitor comparison and roadmap, establish verification baseline. No application code changes.
 - **Agent:** Arena.ai Agent Mode.
 - **Start commit:** `d87b70302fbacff185e8f5c829fce03ee3ef7595`.
-- **End commit:** `END_COMMIT_PENDING` (see header; filled by the handover commit).
+- **End commit:** `f45480678630810eff1a525469d83d1feca0021f` (substantive Phase 0 commit; the following commit is metadata-only and records this hash in `agent.md`).
 - **Files modified:** `agent.md` added; nine project-owned `.md` files removed (Appendix D); transient `.github/scripts/__pycache__` removed. No source/config/database/API/deployment changes.
 - **Database changes:** none.
 - **API changes:** none.
