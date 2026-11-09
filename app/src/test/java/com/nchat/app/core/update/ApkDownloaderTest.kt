@@ -103,8 +103,16 @@ class ApkDownloaderTest {
             throw AssertionError("Expected download failure")
         } catch (e: java.io.IOException) { e }
         assertTrue(error.message!!.contains("another network"))
-        assertEquals(5, attempts)
+        assertEquals(3, attempts)
         assertFalse(part.exists())
+    }
+
+    @Test
+    fun selectsSystemDownloadFallbackOnlyForTransientOrNetworkFailures() {
+        assertTrue(shouldUseAndroidDownloadFallback(java.io.IOException("gateway", UpdateHttpException(504))))
+        assertTrue(shouldUseAndroidDownloadFallback(java.io.IOException("socket timeout")))
+        assertFalse(shouldUseAndroidDownloadFallback(java.io.IOException("not found", UpdateHttpException(404))))
+        assertFalse(shouldUseAndroidDownloadFallback(java.io.IOException("invalid APK", InvalidUpdateDownload("bad package"))))
     }
 
     @Test

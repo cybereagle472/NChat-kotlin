@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.nchat.app.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -139,10 +140,32 @@ object AutoUpdater {
         if (apk.exists() && !apk.delete()) {
             throw IOException("Could not remove an invalid cached update. Free device storage and retry.")
         }
+        val sources = listOf(info.apkUrl) + info.fallbackApkUrls
+        val validate: (File) -> String? = { file ->
+            if (!hasZipHeader(file)) "The downloaded file is not a valid APK."
+            else validateArchive(context, file, info.versionCode, info.signingCertSha256)
+        }
         try {
-            ApkDownloader().download(listOf(info.apkUrl) + info.fallbackApkUrls, temp, onProgress) { file ->
-                if (!hasZipHeader(file)) "The downloaded file is not a valid APK."
-                else validateArchive(context, file, info.versionCode, info.signingCertSha256)
+            try {
+                ApkDownloader().download(sources, temp, onProgress, validate)
+            } catch (directError: IOException) {
+                if (!shouldUseAndroidDownloadFallback(directError)) throw directError
+                try {
+                    AndroidDownloadManagerFallback(context).download(sources, temp, onProgress)
+                    validate(temp)?.let { throw InvalidUpdateDownload(it) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (invalid: InvalidUpdateDownload) {
+                    // Do not hide signature/package/version diagnostics behind a generic transport error.
+                    throw invalid
+                } catch (systemError: Exception) {
+                    val directMessage = directError.message ?: "The direct APK download failed."
+                    val systemMessage = systemError.message ?: "Android's download service failed."
+                    throw IOException(
+                        "$directMessage Android's download service also failed: $systemMessage Try another network or use the official release page.",
+                        systemError
+                    )
+                }
             }
             // Same-directory rename; keep the previous file if replacement fails.
             check(temp.renameTo(apk)) { "Could not prepare the downloaded update." }
