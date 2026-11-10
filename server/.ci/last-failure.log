@@ -1,0 +1,456 @@
+# backend failure — run 42790409920
+## where
+/home/runner/work/NChat-kotlin/NChat-kotlin/server
+total 216
+drwxr-xr-x 7 runner runner   4096 Nov 10 09:25 .
+drwxr-xr-x 3 runner runner   4096 Nov 10 09:24 ..
+drwxr-xr-x 2 runner runner   4096 Nov 10 09:24 .ci
+drwxr-xr-x 7 runner runner   4096 Nov 10 09:24 .git
+drwxr-xr-x 4 runner runner   4096 Nov 10 09:24 .github
+-rw-r--r-- 1 runner runner    107 Nov 10 09:24 .gitignore
+-rw-r--r-- 1 runner runner 137266 Nov 10 09:24 agent.md
+drwxr-xr-x 3 runner runner   4096 Nov 10 09:24 app
+-rw-r--r-- 1 runner runner    485 Nov 10 09:24 build.gradle
+-rw-r--r-- 1 runner runner    149 Nov 10 09:24 gradle.properties
+-rw-r--r-- 1 runner runner   1617 Nov 10 09:24 nchat.properties
+-rw-r--r-- 1 runner runner   3882 Nov 10 09:24 rust-build.log
+-rw-r--r-- 1 runner runner   2405 Nov 10 09:25 rust-clippy.log
+-rw-r--r-- 1 runner runner  18789 Nov 10 09:26 rust-test.log
+drwxr-xr-x 7 runner runner   4096 Nov 10 09:26 server
+-rw-r--r-- 1 runner runner     15 Nov 10 09:24 settings.gradle
+-rw-r--r-- 1 runner runner    505 Nov 10 09:24 version.json
+## build
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 215 packages to highest compatible versions
+[1m[92m      Adding[0m axum v0.7.9 [1m[33m(available: v0.8.9)[0m
+[1m[92m      Adding[0m base64 v0.22.1 [1m[33m(available: v0.23.1)[0m
+[1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+[1m[92m      Adding[0m hmac v0.12.1 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m pbkdf2 v0.12.2 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m rand v0.8.8 [1m[33m(available: v0.10.3)[0m
+[1m[92m      Adding[0m reqwest v0.12.28 [1m[33m(available: v0.13.5)[0m
+[1m[92m      Adding[0m rusqlite v0.31.0 [1m[33m(available: v0.41.1)[0m
+[1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.1)[0m
+[1m[92m      Adding[0m tower-http v0.5.2 [1m[33m(available: v0.7.1)[0m
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m itoa v1.0.19
+[1m[92m  Downloaded[0m syn v3.0.10
+[1m[92m  Downloaded[0m uuid v1.29.2
+[1m[92m   Compiling[0m syn v3.0.10
+[1m[92m   Compiling[0m itoa v1.0.19
+[1m[92m   Compiling[0m uuid v1.29.2
+[1m[92m   Compiling[0m http v1.5.0
+[1m[92m   Compiling[0m serde_json v1.0.154
+[1m[92m   Compiling[0m serde_path_to_error v0.1.20
+[1m[92m   Compiling[0m http-body v1.1.0
+[1m[92m   Compiling[0m http-body-util v0.1.5
+[1m[92m   Compiling[0m tungstenite v0.24.0
+[1m[92m   Compiling[0m tower-http v0.5.2
+[1m[92m   Compiling[0m synstructure v0.14.0
+[1m[92m   Compiling[0m zerofrom-derive v0.1.8
+[1m[92m   Compiling[0m yoke-derive v0.8.4
+[1m[92m   Compiling[0m zerovec-derive v0.11.7
+[1m[92m   Compiling[0m displaydoc v0.2.7
+[1m[92m   Compiling[0m tokio-macros v2.7.2
+[1m[92m   Compiling[0m futures-macro v0.3.34
+[1m[92m   Compiling[0m zerofrom v0.1.8
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m yoke v0.8.4
+[1m[92m   Compiling[0m zerovec v0.11.9
+[1m[92m   Compiling[0m tokio v1.54.1
+[1m[92m   Compiling[0m futures-util v0.3.34
+[1m[92m   Compiling[0m tinystr v0.8.5
+[1m[92m   Compiling[0m icu_locale_core v2.4.0
+[1m[92m   Compiling[0m potential_utf v0.1.6
+[1m[92m   Compiling[0m zerotrie v0.2.5
+[1m[92m   Compiling[0m icu_collections v2.4.0
+[1m[92m   Compiling[0m icu_provider v2.4.0
+[1m[92m   Compiling[0m icu_normalizer v2.4.0
+[1m[92m   Compiling[0m icu_properties v2.4.0
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m serde_urlencoded v0.7.1
+[1m[92m   Compiling[0m async-trait v0.1.92
+[1m[92m   Compiling[0m multer v3.1.0
+[1m[92m   Compiling[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m idna v1.1.0
+[1m[92m   Compiling[0m axum-core v0.4.5
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m hyper v1.12.0
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m tokio-rustls v0.26.6
+[1m[92m   Compiling[0m tower-http v0.6.11
+[1m[92m   Compiling[0m hyper-util v0.1.21
+[1m[92m   Compiling[0m tokio-tungstenite v0.24.0
+[1m[92m   Compiling[0m tokio-util v0.7.20
+[1m[92m   Compiling[0m hyper-rustls v0.27.10
+[1m[92m   Compiling[0m axum v0.7.9
+[1m[92m   Compiling[0m reqwest v0.12.28
+[1m[92m   Compiling[0m nchat-server v0.2.0 (/home/runner/work/NChat-kotlin/NChat-kotlin/server)
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:540:7
+    [1m[94m|[0m
+[1m[94m540[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 27.08s
+## test
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:540:7
+    [1m[94m|[0m
+[1m[94m540[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/nchat_server-5a8b203e46431de4)
+
+running 15 tests
+test jwt::tests::rejects_tampering ... ok
+test jwt::tests::round_trip ... ok
+test jwt::tests::refresh_token_is_not_an_access_token ... ok
+test privacy::tests::visibility_tiers ... ok
+test ratelimit::tests::blocks_after_the_budget ... ok
+test db::tests::reopening_preserves_existing_data ... ok
+test realtime::tests::slow_consumers_are_removed_instead_of_growing_without_bound ... ok
+test routes::auth::tests::email_rules_match_the_reference ... ok
+test routes::media::tests::expired_links_are_rejected ... ok
+test routes::media::tests::media_paths_cannot_escape_the_media_dir ... ok
+test routes::media::tests::resolved_path_stays_under_the_root ... ok
+test routes::media::tests::signatures_bind_the_key_and_the_expiry ... ok
+test ratelimit::tests::window_expires ... ok
+test password::tests::matches_the_typescript_vector ... ok
+test password::tests::round_trip ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.56s
+
+[1m[92m     Running[0m unittests src/main.rs (target/debug/deps/nchat_server-5e8f0b996274aecf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/api.rs (target/debug/deps/api-4b76a31b0ab6cafe)
+
+running 9 tests
+test health_and_root ... ok
+test auth_is_enforced ... ok
+test privacy_redaction_is_applied_to_other_viewers ... ok
+test friend_request_lifecycle ... ok
+test profiles_and_usernames ... ok
+test messaging_flow ... ok
+test websocket_restricts_rooms_and_rejects_refresh_credentials ... ok
+test user_search_finds_people_and_hides_blocked ... ok
+test signup_login_refresh_logout ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.91s
+
+[1m[92m     Running[0m tests/authz.rs (target/debug/deps/authz-ebbcca39603eb2d0)
+
+running 42 tests
+test admin_stats_are_denied_to_ordinary_accounts ... ok
+test blocked_friend_cannot_record_a_status_view ... FAILED
+test blocked_friend_cannot_open_status_media ... FAILED
+test account_level_status_visibility_is_enforced ... FAILED
+test blocked_user_cannot_ring ... ok
+test call_signal_cannot_impersonate_another_event ... FAILED
+test expired_status_cannot_be_viewed ... FAILED
+test ended_group_call_relays_no_more_signals ... FAILED
+test forged_expired_and_refresh_tokens_are_not_api_credentials ... ok
+test finished_call_relays_no_more_signals ... FAILED
+test friend_request_is_answered_only_by_its_receiver ... ok
+test friend_view_is_recorded_once_and_reported_to_the_author ... ok
+test group_call_signal_cannot_be_aimed_outside_the_call ... FAILED
+test group_call_signal_cannot_impersonate_another_event ... FAILED
+test group_member_list_is_for_members_only ... FAILED
+test group_projections_do_not_expose_member_emails ... FAILED
+test only_the_author_can_list_who_viewed_a_status ... FAILED
+test new_status_is_not_pushed_to_blocked_friends ... FAILED
+test ordinary_member_cannot_administer_the_group ... ok
+test outsider_cannot_destroy_a_group_by_leaving_it ... FAILED
+test outsider_cannot_decline_a_group_call ... FAILED
+test outsider_cannot_leave_a_group_call ... FAILED
+test outsider_cannot_mark_a_group_message_deleted_for_themselves ... FAILED
+test outsider_cannot_react_to_a_group_message ... FAILED
+test outsider_cannot_start_join_or_signal_a_group_call ... ok
+test protected_routes_refuse_requests_without_a_valid_token ... ok
+test outsider_cannot_touch_someone_elses_call ... ok
+test outsider_is_refused_on_every_group_route ... ok
+test outsider_leaving_a_group_is_refused_and_not_announced ... FAILED
+test removed_member_can_still_hang_up ... ok
+test removed_member_cannot_delete_their_old_message_for_everyone ... FAILED
+test removed_member_loses_access_to_the_group ... ok
+test removing_someone_who_is_not_a_member_announces_nothing ... FAILED
+test status_feed_respects_blocks_in_both_directions ... FAILED
+test status_for_nobody_stays_with_its_author ... FAILED
+test status_media_follows_the_audience_of_its_status ... FAILED
+test status_media_is_readable_by_friends_and_not_by_strangers ... ok
+test status_with_an_audience_the_server_cannot_evaluate_fails_closed ... FAILED
+test stranger_cannot_record_a_status_view ... FAILED
+test strangers_cannot_reach_each_other_through_direct_message_routes ... ok
+test third_party_cannot_act_on_someone_elses_direct_message ... ok
+test unfriending_a_stranger_sends_them_nothing ... FAILED
+
+failures:
+
+---- blocked_friend_cannot_record_a_status_view stdout ----
+
+thread 'blocked_friend_cannot_record_a_status_view' (4032) panicked at tests/authz.rs:1169:5:
+assertion `left == right` failed: a blocked friend registered as a viewer: {"success":true}
+  left: 200
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- blocked_friend_cannot_open_status_media stdout ----
+
+thread 'blocked_friend_cannot_open_status_media' (4031) panicked at tests/authz.rs:1257:5:
+assertion `left == right` failed: a blocked friend still opens the picture behind the author's status
+  left: 200
+ right: 404
+
+---- account_level_status_visibility_is_enforced stdout ----
+
+thread 'account_level_status_visibility_is_enforced' (4029) panicked at tests/authz.rs:1111:5:
+"status visibility: nobody" was ignored by the broadcast: [Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:19.693Z"), "expires_at": String("2026-11-11T09:25:19.693Z"), "full_name": String("Ada"), "id": String("a2ab2b36-84ba-4305-a1b2-bbe80f327dac"), "privacy": String("contacts"), "text_content": String("hello"), "user_id": String("d94b973c-423c-4c53-8e96-e29252c31d96"), "username": Null}, "type": String("status:new")}]
+
+---- call_signal_cannot_impersonate_another_event stdout ----
+
+thread 'call_signal_cannot_impersonate_another_event' (4036) panicked at tests/authz.rs:1394:5:
+assertion `left == right` failed: the sender chose the event type: {"callId":"some-other-call","candidate":{"candidate":"candidate:1","sdpMLineIndex":0,"sdpMid":"0"},"from":"d3b0f2ef-0976-4fd1-a610-309dc75a42cd","type":"message:new"}
+  left: String("message:new")
+ right: "call:signal"
+
+---- expired_status_cannot_be_viewed stdout ----
+
+thread 'expired_status_cannot_be_viewed' (4038) panicked at tests/authz.rs:1188:5:
+assertion `left == right` failed: a view was recorded on an expired status: {"success":true}
+  left: 200
+ right: 404
+
+---- ended_group_call_relays_no_more_signals stdout ----
+
+thread 'ended_group_call_relays_no_more_signals' (4037) panicked at tests/authz.rs:1659:5:
+an ended call still delivers events: [Object {"call_id": String("931441ee-5fc3-4f20-bfb4-4df02a2e2584"), "candidate": String("late"), "from": String("102b7ee6-f60a-48c7-92ec-10cb06911d1c"), "type": String("group-call:signal")}]
+
+---- finished_call_relays_no_more_signals stdout ----
+
+thread 'finished_call_relays_no_more_signals' (4039) panicked at tests/authz.rs:1445:5:
+a finished call still delivers events: [Object {"callId": String("5fade492-4cef-4e00-a651-071aef191ad0"), "candidate": String("late"), "from": String("2de515dd-1201-407f-9402-cd296a27cfb2"), "type": String("call:signal")}]
+
+---- group_call_signal_cannot_be_aimed_outside_the_call stdout ----
+
+thread 'group_call_signal_cannot_be_aimed_outside_the_call' (4043) panicked at tests/authz.rs:1624:5:
+assertion `left == right` failed: a member pushed a call event at someone outside the group: {"success":true}
+  left: 200
+ right: 403
+
+---- group_call_signal_cannot_impersonate_another_event stdout ----
+
+thread 'group_call_signal_cannot_impersonate_another_event' (4044) panicked at tests/authz.rs:1584:5:
+assertion `left == right` failed: the sender chose the event type: {"call_id":"some-other-call","from":"3e0407f0-08f3-4616-b8cb-bb54d5153dd3","offer_sdp":{"sdp":"v=0","type":"offer"},"type":"group:deleted"}
+  left: String("group:deleted")
+ right: "group-call:signal"
+
+---- group_member_list_is_for_members_only stdout ----
+
+thread 'group_member_list_is_for_members_only' (4045) panicked at tests/authz.rs:716:5:
+assertion `left == right` failed: an outsider listed the members: {"members":[{"avatar_url":null,"email":"ada@example.com","full_name":"Ada","group_id":"ba2ab308-f938-4e4c-8eb4-7852eed1a1bd","id":"69f89f67-8454-466f-bb62-657a5269413e","is_muted":false,"joined_at":"2026-11-10T09:25:33.675Z","role":"admin","user_id":"83cad98d-905b-4429-aa46-0b03f2c5215e","username":null},{"avatar_url":null,"email":"grace@example.com","full_name":"Grace","group_id":"ba2ab308-f938-4e4c-8eb4-7852eed1a1bd","id":"bef4df98-ff1d-4136-ac7c-9dba2c61ab83","is_muted":false,"joined_at":"2026-11-10T09:25:33.675Z","role":"member","user_id":"43dca0bf-3115-4d37-a9bf-e33a863fd9d5","username":null}]}
+  left: 200
+ right: 403
+
+---- group_projections_do_not_expose_member_emails stdout ----
+
+thread 'group_projections_do_not_expose_member_emails' (4046) panicked at tests/authz.rs:743:9:
+a realtime event carries an email: {"group":{"created_at":"2026-11-10T09:25:34.258Z","created_by":"17d5c8ac-ce3a-4d81-bd37-e04f23a58b6e","id":"dd3734ea-044a-4a9a-9fb1-dfbde8f1853a","members":[{"group_id":"dd3734ea-044a-4a9a-9fb1-dfbde8f1853a","is_muted":false,"joined_at":"2026-11-10T09:25:34.258Z","last_read_at":null,"profile":{"avatar_url":null,"email":"ada@example.com","full_name":"Ada","id":"17d5c8ac-ce3a-4d81-bd37-e04f23a58b6e","username":null},"role":"admin","user_id":"17d5c8ac-ce3a-4d81-bd37-e04f23a58b6e"},{"group_id":"dd3734ea-044a-4a9a-9fb1-dfbde8f1853a","is_muted":false,"joined_at":"2026-11-10T09:25:34.258Z","last_read_at":null,"profile":{"avatar_url":null,"email":"grace@example.com","full_name":"Grace","id":"8e1f8531-84d5-4045-b776-37f625dfa301","username":null},"role":"member","user_id":"8e1f8531-84d5-4045-b776-37f625dfa301"}],"name":"Squad"},"type":"group:created"}
+
+---- only_the_author_can_list_who_viewed_a_status stdout ----
+
+thread 'only_the_author_can_list_who_viewed_a_status' (4050) panicked at tests/authz.rs:1212:9:
+assertion `left == right` failed: a friend who viewed it read the viewer list: {"views":[{"avatar_url":null,"full_name":"Grace","id":"144e5bec-56cc-4418-ad24-ccc584ca01e8","status_id":"8d179d52-e9c5-48af-a172-3e128c6b0643","username":null,"viewed_at":"2026-11-10 09:25:35","viewer_id":"a240d95a-a694-4a1e-881e-249356c1ae04"}]}
+  left: 200
+ right: 404
+
+---- new_status_is_not_pushed_to_blocked_friends stdout ----
+
+thread 'new_status_is_not_pushed_to_blocked_friends' (4049) panicked at tests/authz.rs:1042:5:
+a friend the author blocked was pushed [Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:37.013Z"), "expires_at": String("2026-11-11T09:25:37.013Z"), "full_name": String("Ada"), "id": String("cedfe8bb-2fe0-4fc7-af21-38f835d84da6"), "privacy": String("contacts"), "text_content": String("hello"), "user_id": String("d8aa25ee-625e-4aa9-89ef-92d89f8390d8"), "username": Null}, "type": String("status:new")}]
+
+---- outsider_cannot_destroy_a_group_by_leaving_it stdout ----
+
+thread 'outsider_cannot_destroy_a_group_by_leaving_it' (4054) panicked at tests/authz.rs:780:5:
+assertion `left == right` failed: an outsider "left" a group they were never in: {"success":true}
+  left: 200
+ right: 403
+
+---- outsider_cannot_decline_a_group_call stdout ----
+
+thread 'outsider_cannot_decline_a_group_call' (4052) panicked at tests/authz.rs:1500:5:
+assertion `left == right` failed: an outsider declined a call they were never invited to: {"success":true}
+  left: 200
+ right: 403
+
+---- outsider_cannot_leave_a_group_call stdout ----
+
+thread 'outsider_cannot_leave_a_group_call' (4055) panicked at tests/authz.rs:1522:5:
+assertion `left == right` failed: an outsider "left" a call they were never in: {"success":true}
+  left: 200
+ right: 403
+
+---- outsider_cannot_mark_a_group_message_deleted_for_themselves stdout ----
+
+thread 'outsider_cannot_mark_a_group_message_deleted_for_themselves' (4056) panicked at tests/authz.rs:877:5:
+assertion `left == right` failed: an outsider wrote to a group message: {"success":true}
+  left: 200
+ right: 404
+
+---- outsider_cannot_react_to_a_group_message stdout ----
+
+thread 'outsider_cannot_react_to_a_group_message' (4057) panicked at tests/authz.rs:843:5:
+assertion `left == right` failed: an outsider reacted to a group message: {"reactions":{"👀":["de029b90-b9dd-41f5-a9fb-0adaec351c08"]}}
+  left: 200
+ right: 404
+
+---- outsider_leaving_a_group_is_refused_and_not_announced stdout ----
+
+thread 'outsider_leaving_a_group_is_refused_and_not_announced' (4061) panicked at tests/authz.rs:812:9:
+assertion `left == right` failed: leave d4e5816f-dc66-4952-80f1-f691f88879e9: {"success":true}
+  left: 200
+ right: 403
+
+---- removed_member_cannot_delete_their_old_message_for_everyone stdout ----
+
+thread 'removed_member_cannot_delete_their_old_message_for_everyone' (4065) panicked at tests/authz.rs:918:5:
+assertion `left == right` failed: a removed member still changed the group's history: {"success":true}
+  left: 200
+ right: 404
+
+---- removing_someone_who_is_not_a_member_announces_nothing stdout ----
+
+thread 'removing_someone_who_is_not_a_member_announces_nothing' (4067) panicked at tests/authz.rs:954:5:
+someone who was never a member was sent [Object {"group_id": String("a5667d07-f77d-409a-9cae-89086df00aa4"), "type": String("group-member:left"), "user_id": String("f2d229e4-cc34-44b2-a339-6f528eae3ed5")}]
+
+---- status_feed_respects_blocks_in_both_directions stdout ----
+
+thread 'status_feed_respects_blocks_in_both_directions' (4068) panicked at tests/authz.rs:1008:5:
+a friend the author blocked still sees the author's status
+
+---- status_for_nobody_stays_with_its_author stdout ----
+
+thread 'status_for_nobody_stays_with_its_author' (4071) panicked at tests/authz.rs:1062:5:
+a private status was pushed: [Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:54.346Z"), "expires_at": String("2026-11-11T09:25:54.346Z"), "full_name": String("Ada"), "id": String("9084b0d3-9405-41d9-8fa0-db78246d6575"), "privacy": String("nobody"), "text_content": String("hello"), "user_id": String("3204266a-e007-4a91-a360-55faa7b2763d"), "username": Null}, "type": String("status:new")}]
+
+---- status_media_follows_the_audience_of_its_status stdout ----
+
+thread 'status_media_follows_the_audience_of_its_status' (4072) panicked at tests/authz.rs:1276:5:
+assertion `left == right` failed: media of a status with an unknown audience was served to a friend
+  left: 200
+ right: 404
+
+---- status_with_an_audience_the_server_cannot_evaluate_fails_closed stdout ----
+
+thread 'status_with_an_audience_the_server_cannot_evaluate_fails_closed' (4074) panicked at tests/authz.rs:1090:5:
+statuses with an unknown audience were pushed: [Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:57.332Z"), "expires_at": String("2026-11-11T09:25:57.332Z"), "full_name": String("Ada"), "id": String("25026514-5195-427b-915e-ca168a946708"), "privacy": String("only_share_with"), "text_content": String("hello"), "user_id": String("961e499e-55dd-49d3-a4a8-328f059e948b"), "username": Null}, "type": String("status:new")}, Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:57.333Z"), "expires_at": String("2026-11-11T09:25:57.333Z"), "full_name": String("Ada"), "id": String("046c32da-3ab9-4bc7-bc4e-7acf16422bee"), "privacy": String("contacts_except"), "text_content": String("hello"), "user_id": String("961e499e-55dd-49d3-a4a8-328f059e948b"), "username": Null}, "type": String("status:new")}, Object {"status": Object {"avatar_url": Null, "content_type": String("text"), "created_at": String("2026-11-10T09:25:57.334Z"), "expires_at": String("2026-11-11T09:25:57.334Z"), "full_name": String("Ada"), "id": String("adc1b120-de2c-4791-b6a0-08879ffa0612"), "privacy": String("something-else"), "text_content": String("hello"), "user_id": String("961e499e-55dd-49d3-a4a8-328f059e948b"), "username": Null}, "type": String("status:new")}]
+
+---- stranger_cannot_record_a_status_view stdout ----
+
+thread 'stranger_cannot_record_a_status_view' (4075) panicked at tests/authz.rs:1136:5:
+assertion `left == right` failed: a stranger registered as a viewer: {"success":true}
+  left: 200
+ right: 404
+
+---- unfriending_a_stranger_sends_them_nothing stdout ----
+
+thread 'unfriending_a_stranger_sends_them_nothing' (4080) panicked at tests/authz.rs:1831:5:
+someone who was never a friend pushed [Object {"type": String("friend:removed"), "userId": String("2c8e66cf-b6c6-4043-a465-1e16d3ae1f70")}]
+
+
+failures:
+    account_level_status_visibility_is_enforced
+    blocked_friend_cannot_open_status_media
+    blocked_friend_cannot_record_a_status_view
+    call_signal_cannot_impersonate_another_event
+    ended_group_call_relays_no_more_signals
+    expired_status_cannot_be_viewed
+    finished_call_relays_no_more_signals
+    group_call_signal_cannot_be_aimed_outside_the_call
+    group_call_signal_cannot_impersonate_another_event
+    group_member_list_is_for_members_only
+    group_projections_do_not_expose_member_emails
+    new_status_is_not_pushed_to_blocked_friends
+    only_the_author_can_list_who_viewed_a_status
+    outsider_cannot_decline_a_group_call
+    outsider_cannot_destroy_a_group_by_leaving_it
+    outsider_cannot_leave_a_group_call
+    outsider_cannot_mark_a_group_message_deleted_for_themselves
+    outsider_cannot_react_to_a_group_message
+    outsider_leaving_a_group_is_refused_and_not_announced
+    removed_member_cannot_delete_their_old_message_for_everyone
+    removing_someone_who_is_not_a_member_announces_nothing
+    status_feed_respects_blocks_in_both_directions
+    status_for_nobody_stays_with_its_author
+    status_media_follows_the_audience_of_its_status
+    status_with_an_audience_the_server_cannot_evaluate_fails_closed
+    stranger_cannot_record_a_status_view
+    unfriending_a_stranger_sends_them_nothing
+
+test result: FAILED. 15 passed; 27 failed; 0 ignored; 0 measured; 0 filtered out; finished in 45.40s
+
+[1m[91merror[0m: test failed, to rerun pass `--test authz`
+## clippy
+[1m[92m    Checking[0m itoa v1.0.19
+[1m[92m    Checking[0m zerofrom v0.1.8
+[1m[92m    Checking[0m tokio v1.54.1
+[1m[92m    Checking[0m futures-util v0.3.34
+[1m[92m    Checking[0m yoke v0.8.4
+[1m[92m    Checking[0m http v1.5.0
+[1m[92m    Checking[0m zerovec v0.11.9
+[1m[92m    Checking[0m http-body v1.1.0
+[1m[92m    Checking[0m tinystr v0.8.5
+[1m[92m    Checking[0m potential_utf v0.1.6
+[1m[92m    Checking[0m icu_locale_core v2.4.0
+[1m[92m    Checking[0m zerotrie v0.2.5
+[1m[92m    Checking[0m icu_collections v2.4.0
+[1m[92m    Checking[0m http-body-util v0.1.5
+[1m[92m    Checking[0m serde v1.0.229
+[1m[92m    Checking[0m icu_provider v2.4.0
+[1m[92m    Checking[0m icu_normalizer v2.4.0
+[1m[92m    Checking[0m icu_properties v2.4.0
+[1m[92m    Checking[0m serde_urlencoded v0.7.1
+[1m[92m    Checking[0m tungstenite v0.24.0
+[1m[92m    Checking[0m serde_json v1.0.154
+[1m[92m    Checking[0m multer v3.1.0
+[1m[92m    Checking[0m axum-core v0.4.5
+[1m[92m    Checking[0m serde_path_to_error v0.1.20
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m    Checking[0m uuid v1.29.2
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m    Checking[0m tower-http v0.5.2
+[1m[92m    Checking[0m hyper v1.12.0
+[1m[92m    Checking[0m tower v0.5.3
+[1m[92m    Checking[0m tokio-rustls v0.26.6
+[1m[92m    Checking[0m tower-http v0.6.11
+[1m[92m    Checking[0m tokio-tungstenite v0.24.0
+[1m[92m    Checking[0m tokio-util v0.7.20
+[1m[92m    Checking[0m hyper-util v0.1.21
+[1m[92m    Checking[0m hyper-rustls v0.27.10
+[1m[92m    Checking[0m axum v0.7.9
+[1m[92m    Checking[0m reqwest v0.12.28
+[1m[92m    Checking[0m nchat-server v0.2.0 (/home/runner/work/NChat-kotlin/NChat-kotlin/server)
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:540:7
+    [1m[94m|[0m
+[1m[94m540[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 10.86s
