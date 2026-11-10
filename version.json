@@ -1,9 +1,9 @@
 {
-  "versionCode": 82,
-  "versionName": "1.0.74",
-  "releaseTag": "nchat-v1.0.74",
-  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.74/nchat-ui-lab.apk",
+  "versionCode": 83,
+  "versionName": "1.0.75",
+  "releaseTag": "nchat-v1.0.75",
+  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.75/nchat-ui-lab.apk",
   "apkUrls": [],
   "signingCertSha256": "429c0bb9664496faaa275638852d4e6b366bfb203c4e5c6d6b60101106e67912",
-  "releaseNotes": "NChat 1.0.74 improves in-app update downloads with a second Android system-download path when direct downloads time out. Package identity and the verified signing key are unchanged."
+  "releaseNotes": "NChat 1.0.75 repairs in-app updates.\n\nOn Android 9, Android 10 and some Android 13 phones, NChat could download an update and then refuse it with \"not signed by NChat's verified release key\". The file was fine: the app asked Android who signed it in a way those Android versions do not answer. This version asks in a way that every Android version from 9 up answers.\n\nIf this update is refused that way on your phone, tap \"Open release page in browser\" and install 1.0.75 from there once. Later updates then install from inside the app.\n\nAlso new: NChat looks for an update when you come back to the app, not only when it starts. The first-time step \"allow NChat to install apps\" is now shown as a step, not as an error, and the update continues by itself when you return.\n\nNothing else in the app changed. Package identity and the verified signing key are unchanged."
 }
