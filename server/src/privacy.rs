@@ -202,6 +202,60 @@ pub fn are_friends(conn: &Connection, a: &str, b: &str) -> rusqlite::Result<bool
     Ok(found.is_some())
 }
 
+/// `true` when either of the two users has blocked the other.
+pub fn blocked_either_way(conn: &Connection, a: &str, b: &str) -> rusqlite::Result<bool> {
+    let found: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM blocked_users
+             WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+             LIMIT 1",
+            params![a, b, b, a],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(found.is_some())
+}
+
+/// May `viewer_id` see a status (story) that `owner_id` posted with the
+/// per-status audience `status_privacy`?
+///
+/// This is the one place that answers the question; the feed, the live
+/// `status:new` push, view receipts and the status's media all go through it
+/// (the feed repeats the same rule in SQL so that it can filter in one query).
+///
+/// A status has two audience settings: the one chosen when it was posted
+/// (`statuses.privacy`) and the owner's account-wide `status_visibility`. The
+/// stricter of the two wins, and on top of that:
+///
+/// - the owner always sees their own status;
+/// - a block in either direction hides it, even between friends — blocking
+///   keeps the friendship row, so friendship alone proves nothing;
+/// - a per-status audience this server cannot evaluate is treated as `nobody`.
+///   The web client's types name `contacts_except` and `only_share_with`, but
+///   no list of people is stored for them, so showing such a status to every
+///   friend would be the opposite of what was asked for.
+///
+/// The reference worker stores both settings and enforces neither.
+pub fn status_visible_to(
+    conn: &Connection,
+    owner_id: &str,
+    viewer_id: &str,
+    status_privacy: &str,
+) -> rusqlite::Result<bool> {
+    if owner_id == viewer_id {
+        return Ok(true);
+    }
+    let Some(per_status) = Visibility::parse(status_privacy) else {
+        return Ok(false);
+    };
+    if blocked_either_way(conn, owner_id, viewer_id)? {
+        return Ok(false);
+    }
+    let account = get_privacy_settings(conn, owner_id)?.status_visibility;
+    let is_friend = are_friends(conn, owner_id, viewer_id)?;
+    Ok(per_status.allows(false, is_friend) && account.allows(false, is_friend))
+}
+
 /// `getFriendIdSet` — which of `other_ids` are friends of `user_id`.
 pub fn friend_id_set(
     conn: &Connection,
@@ -319,6 +373,7 @@ pub fn apply_privacy_to_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::Db;
 
     #[test]
     fn visibility_tiers() {
@@ -327,5 +382,79 @@ mod tests {
         assert!(Visibility::Contacts.allows(false, true));
         assert!(!Visibility::Nobody.allows(false, false));
         assert!(Visibility::Nobody.allows(true, false));
+    }
+
+    /// The whole truth table of `status_visible_to`, one line per case.
+    #[test]
+    fn status_audience_is_the_stricter_of_both_settings_and_respects_blocks() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Db::open(dir.path().join("nchat.sqlite"), 1).expect("db");
+        db.with(|conn| {
+            // `friend`, `blocked` and `blocker` are all friends of `owner`;
+            // `owner` blocked `blocked`, and `blocker` blocked `owner`.
+            for id in ["owner", "friend", "stranger", "blocked", "blocker"] {
+                conn.execute(
+                    "INSERT INTO users (id, email, password_hash, full_name)
+                     VALUES (?1, ?1 || '@example.com', 'hash', ?1)",
+                    [id],
+                )?;
+            }
+            for id in ["friend", "blocked", "blocker"] {
+                conn.execute(
+                    "INSERT INTO friendships (id, user1_id, user2_id) VALUES (?1, 'owner', ?1)",
+                    [id],
+                )?;
+            }
+            conn.execute(
+                "INSERT INTO blocked_users (id, user_id, blocked_user_id)
+                 VALUES ('b1', 'owner', 'blocked'), ('b2', 'blocker', 'owner')",
+                [],
+            )?;
+
+            let sees = |viewer: &str, privacy: &str| {
+                status_visible_to(conn, "owner", viewer, privacy)
+            };
+
+            // Account setting untouched: `contacts`.
+            assert!(sees("owner", "nobody")?, "the owner always sees their own status");
+            assert!(sees("friend", "contacts")?);
+            assert!(sees("friend", "everyone")?);
+            assert!(!sees("stranger", "contacts")?);
+            assert!(
+                !sees("stranger", "everyone")?,
+                "the account setting (contacts) is stricter than the status (everyone)"
+            );
+            assert!(!sees("friend", "nobody")?);
+            for unknown in ["only_share_with", "contacts_except", "", "Contacts"] {
+                assert!(!sees("friend", unknown)?, "unknown audience {unknown:?} must fail closed");
+            }
+            assert!(!sees("blocked", "contacts")?, "blocked by the owner, still a friend");
+            assert!(!sees("blocker", "contacts")?, "blocked the owner, still a friend");
+            assert!(!sees("blocked", "everyone")?);
+            assert!(!sees("blocker", "everyone")?);
+            assert!(blocked_either_way(conn, "owner", "blocked")?);
+            assert!(blocked_either_way(conn, "owner", "blocker")?);
+            assert!(!blocked_either_way(conn, "owner", "friend")?);
+
+            // Account setting `everyone`: now the per-status audience decides.
+            let mut settings = PrivacySettings::defaults("owner");
+            settings.status_visibility = Visibility::Everyone;
+            upsert_privacy_settings(conn, &settings)?;
+            assert!(sees("stranger", "everyone")?);
+            assert!(!sees("stranger", "contacts")?);
+            assert!(sees("friend", "contacts")?);
+            assert!(!sees("blocked", "everyone")?, "a block beats `everyone`");
+            assert!(!sees("blocker", "everyone")?, "a block beats `everyone`");
+
+            // Account setting `nobody`: nothing gets out, whatever the status says.
+            settings.status_visibility = Visibility::Nobody;
+            upsert_privacy_settings(conn, &settings)?;
+            assert!(!sees("friend", "contacts")?);
+            assert!(!sees("friend", "everyone")?);
+            assert!(!sees("stranger", "everyone")?);
+            assert!(sees("owner", "contacts")?);
+            Ok(())
+        })
+        .expect("queries");
     }
 }

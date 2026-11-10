@@ -247,7 +247,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 /// results and member lists, so any signed-in user may load them.
 mod access {
     use super::*;
-    use crate::privacy::{are_friends, Visibility};
+    use crate::privacy::status_visible_to;
 
     pub fn can_read(state: &AppState, user_id: &str, key: &str) -> ApiResult<bool> {
         // `Db::with` hands back a `rusqlite::Result`; `?` turns a failed query into a 500.
@@ -317,13 +317,11 @@ mod access {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            // Same rule as the feed: the stricter of the status's own audience and
+            // the author's account setting, never across a block, and an audience
+            // this server does not know counts as "nobody".
             for (author, privacy) in statuses {
-                if author == user_id {
-                    return Ok(true);
-                }
-                let friend = are_friends(conn, user_id, &author)?;
-                let audience = Visibility::parse(&privacy).unwrap_or(Visibility::Contacts);
-                if audience.allows(false, friend) {
+                if status_visible_to(conn, &author, user_id, &privacy)? {
                     return Ok(true);
                 }
             }

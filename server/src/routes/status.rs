@@ -8,6 +8,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
+use crate::privacy::status_visible_to;
 use crate::util::{iso_in_secs, new_id, now_iso};
 use crate::AppState;
 
@@ -104,11 +105,21 @@ pub async fn create(
         broadcast["avatar_url"] = json!(avatar);
     }
 
-    for friend in friend_ids(&state, &user_id)? {
-        state.hub.publish_to_user(
-            &friend,
-            &json!({ "type": "status:new", "status": broadcast }).to_string(),
-        );
+    // Only the friends who may actually see this status are told about it: a
+    // push to someone the feed would hide it from is the same leak by another road.
+    let friends = friend_ids(&state, &user_id)?;
+    let audience = state.db.with(|conn| {
+        let mut audience = Vec::with_capacity(friends.len());
+        for friend in &friends {
+            if status_visible_to(conn, &user_id, friend, &privacy)? {
+                audience.push(friend.clone());
+            }
+        }
+        Ok(audience)
+    })?;
+    let event = json!({ "type": "status:new", "status": broadcast }).to_string();
+    for friend in &audience {
+        state.hub.publish_to_user(friend, &event);
     }
 
     Ok((StatusCode::CREATED, Json(json!({ "status": row.to_json() }))))
@@ -208,6 +219,14 @@ pub async fn mine(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
     Ok(Json(json!({ "statuses": statuses })))
 }
 
+/// `GET /status/feed` — unexpired statuses of the caller's friends.
+///
+/// The audience rule is `privacy::status_visible_to`, written out in SQL so the
+/// whole feed is one query. A feed only ever lists friends, so for a friend the
+/// rule reduces to: the status is for `everyone` or `contacts` (anything else,
+/// including values this server does not know, is hidden), the author has not
+/// set their account to `nobody`, and neither side has blocked the other.
+/// `?1` is the caller, `?2` is "now".
 pub async fn feed(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let now = now_iso();
@@ -216,17 +235,23 @@ pub async fn feed(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
         let mut statement = conn.prepare(
             "SELECT s.*, u.full_name, u.username, u.avatar_url,
                     EXISTS(SELECT 1 FROM status_views sv
-                           WHERE sv.status_id = s.id AND sv.viewer_id = ?) AS viewed_by_me
+                           WHERE sv.status_id = s.id AND sv.viewer_id = ?1) AS viewed_by_me
              FROM statuses s
              JOIN users u ON u.id = s.user_id
              JOIN friendships f
-               ON (f.user1_id = ? AND f.user2_id = s.user_id)
-               OR (f.user2_id = ? AND f.user1_id = s.user_id)
-             WHERE s.expires_at > ?
-               AND s.user_id NOT IN (SELECT muted_user_id FROM muted_statuses WHERE user_id = ?)
+               ON (f.user1_id = ?1 AND f.user2_id = s.user_id)
+               OR (f.user2_id = ?1 AND f.user1_id = s.user_id)
+             LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
+             WHERE s.expires_at > ?2
+               AND s.privacy IN ('everyone', 'contacts')
+               AND COALESCE(ps.status_visibility, 'contacts') != 'nobody'
+               AND s.user_id NOT IN (SELECT muted_user_id FROM muted_statuses WHERE user_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM blocked_users b
+                               WHERE (b.user_id = ?1 AND b.blocked_user_id = s.user_id)
+                                  OR (b.user_id = s.user_id AND b.blocked_user_id = ?1))
              ORDER BY s.created_at ASC",
         )?;
-        let mapped = statement.query_map(params![user_id, user_id, user_id, now, user_id], |row| {
+        let mapped = statement.query_map(params![user_id, now], |row| {
             let mut value = Row::from_row(row)?.to_json();
             value["full_name"] = json!(row.get::<_, String>("full_name")?);
             value["username"] = json!(row.get::<_, Option<String>>("username")?);
@@ -251,17 +276,29 @@ pub async fn view(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
 
-    let owner: Option<String> = state.db.with(|conn| {
-        conn.query_row("SELECT user_id FROM statuses WHERE id = ?", [&id], |row| {
-            row.get(0)
-        })
+    // An expired status is gone for everybody, exactly as in the feed.
+    let now = now_iso();
+    let status: Option<(String, String)> = state.db.with(|conn| {
+        conn.query_row(
+            "SELECT user_id, privacy FROM statuses WHERE id = ? AND expires_at > ?",
+            params![id, now],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
         .optional()
     })?;
-    let owner = owner.ok_or_else(|| ApiError::not_found("Status not found"))?;
+    let (owner, privacy) = status.ok_or_else(|| ApiError::not_found("Status not found"))?;
 
     // Viewing your own status is not a view.
     if owner == user_id {
         return Ok(Json(json!({ "success": true })));
+    }
+
+    // A view is a write (a receipt row, a counter, a push to the author), so it is
+    // only accepted from someone the status was shown to. Everyone else gets the
+    // same answer as for an id that does not exist.
+    let visible = state.db.with(|conn| status_visible_to(conn, &owner, &user_id, &privacy))?;
+    if !visible {
+        return Err(ApiError::not_found("Status not found"));
     }
 
     let inserted = state.db.with(|conn| {
@@ -316,7 +353,19 @@ pub async fn views(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    state.current_user(&headers)?;
+    let user_id = state.current_user(&headers)?;
+
+    // Who looked at a status is the author's information and nobody else's.
+    let owner: Option<String> = state.db.with(|conn| {
+        conn.query_row("SELECT user_id FROM statuses WHERE id = ?", [&id], |row| {
+            row.get(0)
+        })
+        .optional()
+    })?;
+    if owner.as_deref() != Some(user_id.as_str()) {
+        return Err(ApiError::not_found("Status not found"));
+    }
+
     let views = state.db.with(|conn| {
         let mut statement = conn.prepare(
             "SELECT sv.id, sv.status_id, sv.viewer_id, sv.viewed_at,
