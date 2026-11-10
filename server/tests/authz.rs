@@ -1410,7 +1410,15 @@ async fn call_signal_cannot_impersonate_another_event() {
             Some(json!({
                 "type": "message:new",
                 "callId": "some-other-call",
+                "call_id": "some-other-call",
+                "groupCallId": "some-other-call",
+                "group_call_id": "some-other-call",
                 "from": grace.id,
+                "from_id": grace.id,
+                "senderId": grace.id,
+                "sender_id": grace.id,
+                "user_id": grace.id,
+                "to": grace.id,
                 "candidate": { "candidate": "candidate:1", "sdpMid": "0", "sdpMLineIndex": 0 },
             })),
         )
@@ -1438,6 +1446,23 @@ async fn call_signal_cannot_impersonate_another_event() {
         event["candidate"]["candidate"], "candidate:1",
         "the signalling data itself must pass through: {event}"
     );
+    // Clients read "which call" and "from whom" under several spellings (the
+    // Android app tries each of these), so none of them may come from the sender.
+    for alias in [
+        "call_id",
+        "groupCallId",
+        "group_call_id",
+        "from_id",
+        "senderId",
+        "sender_id",
+        "user_id",
+        "to",
+    ] {
+        assert!(
+            event.get(alias).is_none(),
+            "the sender set `{alias}` on the delivered event: {event}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1600,7 +1625,14 @@ async fn group_call_signal_cannot_impersonate_another_event() {
                 "to": grace.id,
                 "type": "group:deleted",
                 "call_id": "some-other-call",
+                "callId": "some-other-call",
+                "groupCallId": "some-other-call",
+                "group_call_id": "some-other-call",
                 "from": grace.id,
+                "from_id": grace.id,
+                "senderId": grace.id,
+                "sender_id": grace.id,
+                "user_id": grace.id,
                 "offer_sdp": { "type": "offer", "sdp": "v=0" },
             })),
         )
@@ -1628,7 +1660,122 @@ async fn group_call_signal_cannot_impersonate_another_event() {
         event["offer_sdp"]["type"], "offer",
         "the SDP itself must pass through untouched: {event}"
     );
-    assert!(event.get("to").is_none(), "{event}");
+    for alias in [
+        "to",
+        "callId",
+        "groupCallId",
+        "group_call_id",
+        "from_id",
+        "senderId",
+        "sender_id",
+        "user_id",
+    ] {
+        assert!(
+            event.get(alias).is_none(),
+            "the sender set `{alias}` on the delivered event: {event}"
+        );
+    }
+}
+
+/// The attack the envelope rules exist for. The Android client starts an audio
+/// connection to whoever a signal for its current group call is from, and it
+/// reads the call id from `callId` before `call_id`. If Mallory could send Ada
+/// a signal from her own call that names Ada's private call, Ada's phone would
+/// start connecting to Mallory as though she were on a call she was never
+/// invited to. Call ids are random, so Mallory has to have seen this one — as
+/// someone who was removed from the group during the call would have.
+#[tokio::test]
+async fn signal_from_one_group_call_cannot_pose_as_another() {
+    let Cast {
+        app,
+        ada,
+        grace,
+        mallory,
+    } = cast().await;
+    let (_group_id, private_call) = group_call_in_progress(&app, &ada, &grace).await;
+    // Nothing stops Mallory from putting Ada into a group of her own and
+    // starting a call there, so she can signal Ada perfectly legitimately.
+    let mallory_group = app.create_group(&mallory, &[&ada]).await;
+    let mallory_call = app.start_group_call(&mallory, &mallory_group).await;
+    let mut ada_inbox = app.listen(&ada);
+
+    let (status, body) = app
+        .call(
+            "POST",
+            &format!("/group-calls/{mallory_call}/signal"),
+            Some(&mallory.token),
+            Some(json!({
+                "to": ada.id,
+                "callId": private_call,
+                "call_id": private_call,
+                "groupCallId": private_call,
+                "group_call_id": private_call,
+                "sdp": { "type": "offer", "sdp": "v=0" },
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let events = ada_inbox.drain();
+    assert_eq!(events.len(), 1, "{events:?}");
+    let event = &events[0];
+    assert_eq!(event["call_id"].as_str(), Some(mallory_call.as_str()), "{event}");
+    assert_eq!(event["from"].as_str(), Some(mallory.id.as_str()), "{event}");
+    assert!(
+        !event.to_string().contains(&private_call),
+        "a signal names a call its sender is not part of: {event}"
+    );
+
+    // And the way back is closed too: Ada's side of the private call cannot be
+    // made to signal someone who is not in that call's group.
+    let mut mallory_inbox = app.listen(&mallory);
+    let (status, body) = app
+        .call(
+            "POST",
+            &format!("/group-calls/{private_call}/signal"),
+            Some(&ada.token),
+            Some(json!({ "to": mallory.id, "sdp": { "type": "answer", "sdp": "v=0" } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let events = mallory_inbox.drain();
+    assert!(events.is_empty(), "the outsider was sent {events:?}");
+}
+
+#[tokio::test]
+async fn member_removed_from_the_group_gets_no_more_call_signals() {
+    let Cast {
+        app, ada, grace, ..
+    } = cast().await;
+    let (group_id, call_id) = group_call_in_progress(&app, &ada, &grace).await;
+    let (status, body) = app
+        .call(
+            "DELETE",
+            &format!("/groups/{group_id}/members/{}", grace.id),
+            Some(&ada.token),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut grace_inbox = app.listen(&grace);
+
+    // Grace keeps her participant row, which is what lets her hang up, but she
+    // is no longer in the group: the call's signalling has to stop reaching her.
+    let (status, body) = app
+        .call(
+            "POST",
+            &format!("/group-calls/{call_id}/signal"),
+            Some(&ada.token),
+            Some(json!({ "to": grace.id, "candidate": "x" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "signalling still reaches someone who was removed from the group: {body}"
+    );
+    let events = grace_inbox.drain();
+    assert!(events.is_empty(), "the removed member was sent {events:?}");
 }
 
 #[tokio::test]
