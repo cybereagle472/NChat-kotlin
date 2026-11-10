@@ -145,6 +145,48 @@ class ApkDownloaderTest {
         assertArrayEquals(payload, part.readBytes())
     }
 
+    /**
+     * The manifest announces a version as soon as the release is merged; the APK is uploaded a
+     * few minutes later. In between the file is simply not there, and that is not the network.
+     */
+    @Test
+    fun aFileThatIsNotPublishedYetIsNotBlamedOnTheNetwork() = runBlocking {
+        val downloader = downloader { url -> FakeConnection(url, 404) }
+        val part = folder.root.resolve("download.part.apk")
+        val error = try {
+            downloader.download(listOf("https://primary.example/app"), part, {})
+            throw AssertionError("Expected download failure")
+        } catch (e: java.io.IOException) { e }
+        assertTrue(error.message!!.contains("HTTP 404"))
+        assertTrue(error.message!!.contains("try again shortly"))
+        assertFalse(error.message!!.contains("another network"))
+        // Android's download service is not asked for a file that is not there either.
+        assertFalse(shouldUseAndroidDownloadFallback(error))
+    }
+
+    /** A file that arrived whole and failed the signer check does not get "try another network". */
+    @Test
+    fun aFileRefusedByTheChecksKeepsItsOwnExplanation() = runBlocking {
+        val downloader = downloader { url -> FakeConnection(url, 200, payload) }
+        val part = folder.root.resolve("download.part.apk")
+        val error = try {
+            downloader.download(listOf("https://primary.example/app"), part, {},
+                validate = { "Signed by someone else." })
+            throw AssertionError("Expected the file to be refused")
+        } catch (e: java.io.IOException) { e }
+        assertEquals("Signed by someone else.", error.message)
+        assertFalse(part.exists())
+    }
+
+    @Test
+    fun transportFailuresStillPointAtTheNetworkAndTheBrowser() {
+        assertTrue(downloadFailureMessage(UpdateHttpException(503)).contains("HTTP 503"))
+        assertTrue(downloadFailureMessage(UpdateHttpException(503)).contains("another network"))
+        assertTrue(downloadFailureMessage(InvalidUpdateDownload("The update URL must use HTTPS.")).contains("another network"))
+        assertTrue(downloadFailureMessage(java.io.IOException("connection reset")).contains("another network"))
+        assertTrue(downloadFailureMessage(null).contains("another network"))
+    }
+
     @Test
     fun cancellationRemovesPartialFile() = runBlocking {
         val downloader = downloader { url -> FakeConnection(url, 200, payload, stream = {

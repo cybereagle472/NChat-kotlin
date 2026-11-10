@@ -151,7 +151,7 @@ object AutoUpdater {
                 if (!shouldUseAndroidDownloadFallback(directError)) throw directError
                 try {
                     AndroidDownloadManagerFallback(context).download(sources, temp, onProgress)
-                    validate(temp)?.let { throw InvalidUpdateDownload(it) }
+                    validate(temp)?.let { throw InvalidUpdateDownload(it, refusedAfterChecks = true) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (invalid: InvalidUpdateDownload) {
@@ -190,10 +190,7 @@ object AutoUpdater {
             return InstallResult.Failed("The update file is missing. Please download it again.")
         }
 
-        val canInstall = withContext(Dispatchers.IO) {
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                context.packageManager.canRequestPackageInstalls()
-        }
+        val canInstall = withContext(Dispatchers.IO) { canInstallPackages(context) }
         if (!canInstall) {
             withContext(Dispatchers.Main) { openUnknownSourcesSettings(context) }
             return InstallResult.NeedsPermission
@@ -244,6 +241,18 @@ object AutoUpdater {
         } else {
             InstallResult.Failed("No package installer is available on this device.")
         }
+    }
+
+    /**
+     * Whether Android lets NChat hand an APK to the installer ("Install unknown apps").
+     *
+     * Before Android 8 there is no per-app switch. A device that throws here is treated as
+     * "not allowed", which leads to the settings screen rather than to a crash.
+     */
+    fun canInstallPackages(context: Context): Boolean = try {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+    } catch (_: Exception) {
+        false
     }
 
     /** A manual route when GitHub's download endpoint is unavailable to the app. */
@@ -297,21 +306,26 @@ object AutoUpdater {
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)
         val current = currentSigners(installed)
         val incoming = currentSigners(archive)
-        val expected = setOf(expectedSigner)
-        if (incoming != expected) {
-            return "The downloaded APK is not signed by NChat's verified release key. Expected SHA-256: ${expectedSigner}. Received: ${describeSigners(incoming)}. Please retry or use the official release page."
-        }
         val history = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             currentSigners(archive.signingInfo?.signingCertificateHistory)
         } else emptySet()
-        if (!compatibleUpdateSigners(current, incoming, history)) {
-            return "This installed copy has a different signing key, so Android cannot update it in place. Installed SHA-256: ${describeSigners(current)}. Official update SHA-256: ${describeSigners(incoming)}. Do not uninstall; send these fingerprints to NChat support."
+        when (judgeUpdateSigners(current, incoming, history, expectedSigner)) {
+            SignerVerdict.TRUSTED -> null
+            SignerVerdict.UNREADABLE ->
+                "NChat could not read the signing certificate of the downloaded update on this phone ($deviceLabel), so nothing was installed. You can install this version from the release page in your browser."
+            SignerVerdict.NOT_RELEASE_KEY ->
+                "The downloaded APK is not signed by NChat's verified release key. Expected SHA-256: ${expectedSigner}. Received: ${describeSigners(incoming)}. Device: $deviceLabel. Please retry or use the official release page."
+            SignerVerdict.INSTALLED_KEY_DIFFERS ->
+                "This installed copy has a different signing key, so Android cannot update it in place. Installed SHA-256: ${describeSigners(current)}. Official update SHA-256: ${describeSigners(incoming)}. Device: $deviceLabel. Do not uninstall; send these fingerprints to NChat support."
         }
-        null
-      } catch (_: Exception) {
-          "Could not verify the downloaded update. Please try again."
+      } catch (error: Exception) {
+          "Could not verify the downloaded update (${error.javaClass.simpleName}, $deviceLabel). Please try again."
       }
     }
+
+    /** Named in the messages a user may be asked to read out: the answer depends on the release. */
+    private val deviceLabel: String
+        get() = "Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}"
 
     @Suppress("DEPRECATION")
     private fun currentSigners(info: PackageInfo): Set<String> {

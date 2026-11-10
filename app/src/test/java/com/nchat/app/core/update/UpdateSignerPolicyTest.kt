@@ -32,7 +32,7 @@ class UpdateSignerPolicyTest {
 
     /**
      * `PackageManager.getPackageArchiveInfo` loads the certificates of an APK *file* only when it
-     * is asked with a flag that release checks for. In AOSP, Android 9 (`android-9.0.0_r1`),
+     * is asked with a flag that the Android release in question checks for. In AOSP, Android 9 (`android-9.0.0_r1`),
      * Android 10 (`android-10.0.0_r1`) and the first Android 13 builds (`android-13.0.0_r1` to
      * `_r3`) check `GET_SIGNATURES` alone: asked with only `GET_SIGNING_CERTIFICATES` they return
      * no signer, and the updater then refuses every download as "not signed by NChat's verified
@@ -51,6 +51,56 @@ class UpdateSignerPolicyTest {
             assertTrue("API $sdk must ask with GET_SIGNATURES", (flags and legacy) != 0)
             assertTrue("API $sdk must ask with GET_SIGNING_CERTIFICATES", (flags and modern) != 0)
         }
+    }
+
+    private val releaseKey = "a".repeat(64)
+    private val otherKey = "b".repeat(64)
+
+    /**
+     * "Android gave no certificate for this file" and "this file has the wrong certificate" both
+     * stop the update, but they are different findings: only the second is a file that must not
+     * be installed. The first used to be reported as the second.
+     */
+    @Test
+    fun aSignerThatCannotBeReadIsRefusedButNotCalledAWrongSigner() {
+        assertEquals(
+            SignerVerdict.UNREADABLE,
+            judgeUpdateSigners(setOf(releaseKey), emptySet(), emptySet(), releaseKey)
+        )
+        assertEquals(
+            SignerVerdict.UNREADABLE,
+            judgeUpdateSigners(emptySet(), emptySet(), emptySet(), releaseKey)
+        )
+    }
+
+    @Test
+    fun onlyTheReleaseKeyOverACompatibleInstallIsTrusted() {
+        assertEquals(
+            SignerVerdict.TRUSTED,
+            judgeUpdateSigners(setOf(releaseKey), setOf(releaseKey), emptySet(), releaseKey)
+        )
+        // A rotated key: the installed key is in the new file's verified history.
+        assertEquals(
+            SignerVerdict.TRUSTED,
+            judgeUpdateSigners(setOf(otherKey), setOf(releaseKey), setOf(otherKey, releaseKey), releaseKey)
+        )
+        assertEquals(
+            SignerVerdict.NOT_RELEASE_KEY,
+            judgeUpdateSigners(setOf(releaseKey), setOf(otherKey), emptySet(), releaseKey)
+        )
+        // A second signer next to the release key is not "the release key".
+        assertEquals(
+            SignerVerdict.NOT_RELEASE_KEY,
+            judgeUpdateSigners(setOf(releaseKey), setOf(releaseKey, otherKey), emptySet(), releaseKey)
+        )
+        assertEquals(
+            SignerVerdict.INSTALLED_KEY_DIFFERS,
+            judgeUpdateSigners(setOf(otherKey), setOf(releaseKey), emptySet(), releaseKey)
+        )
+        assertEquals(
+            SignerVerdict.INSTALLED_KEY_DIFFERS,
+            judgeUpdateSigners(emptySet(), setOf(releaseKey), emptySet(), releaseKey)
+        )
     }
 
     @Test
