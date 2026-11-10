@@ -1,12 +1,13 @@
 # agent.md — NChat permanent engineering memory
 
 > **Document status:** Phase 0 baseline. This is the single source of truth for project state.
-> **Last verified:** 2026-11-09 (UTC).
+> **Last verified:** 2026-11-10 (UTC; Phase 0 baseline merged to main).
 > **Verified by:** Arena.ai Agent Mode.
 > **Repository:** `cybereagle472/NChat-kotlin`.
-> **Branch:** `arena/d8051bf9-nchat-kotlin` (active, initially at `d87b70302fbacff185e8f5c829fce03ee3ef7595`; not pushed at audit start).
+> **Branch:** `arena/d8051bf9-nchat-kotlin` (active; Phase 0 was pushed here and merged to `main` through PR #87; the branch remains active and is not deleted).
 > **Start commit:** `d87b70302fbacff185e8f5c829fce03ee3ef7595`.
 > **End commit:** `f45480678630810eff1a525469d83d1feca0021f` (substantive Phase 0 commit; the handover commit that records this hash is a metadata-only follow-up).
+> **Main merge commit:** `a867fdd881740889ee153013323072c1ebb8ea79` (PR #87, merged 2026-11-10 08:05:44 UTC; `agent.md` is now the only project-owned Markdown file on `main`).
 > **Scope of this turn:** Phase 0 only — repository discovery, architecture/security audit, documentation consolidation, competitor comparison, implementation roadmap, and verification baseline. No application code, database, API, configuration, secret, or deployment was changed.
 > **Consolidation:** This file supersedes and consolidates the nine project-owned Markdown files previously in this repository. Their still-relevant content is preserved below; stale claims are explicitly labelled. Full verbatim history remains recoverable from Git history. No dependency/vendor/legal files were removed; the MIT `LICENSE` in the separate backend repository is untouched.
 
@@ -45,11 +46,11 @@ A GitHub repository search for `NChat user:cybereagle472` returned only the two 
 
 | Repository | Commit | Author date (UTC) | Subject | Verification |
 |---|---|---|---|---|
-| `NChat-kotlin` `main` | `d87b70302fbacff185e8f5c829fce03ee3ef7595` | 2026-11-09 08:15:46 | `Merge pull request #86 ... Add system downloader fallback for APK updates` | `git log`, `gh api repos/.../commits`, check-runs |
-| `NChat-kotlin` working branch | `d87b70302fbacff185e8f5c829fce03ee3ef7595` | — | Branched from main at the same commit; branch initially absent from `origin` | `git branch -vv`, `git ls-remote --heads origin arena/d8051bf9-nchat-kotlin` returned empty |
+| `NChat-kotlin` `main` | `a867fdd881740889ee153013323072c1ebb8ea79` | 2026-11-10 08:05:44 | `Merge pull request #87 ... Add Phase 0 agent.md to main` | `gh pr view 87`, `git ls-remote`, `git show origin/main:agent.md` |
+| `NChat-kotlin` working branch | `e2ca5c2685ae29d8e86a6d3011a0b7918262f768` | 2026-11-09 15:14:49 / 15:16 UTC | Phase 0 baseline pushed to the active session branch, then merged to `main` via PR #87; branch retained | `git log`, `git ls-remote --heads origin arena/d8051bf9-nchat-kotlin`, `gh pr view 87` |
 | `nchat-friends` `main` | `616a9e69407b072de29f640f35ea05c6f48b9768` | 2026-11-03 18:35:35 | `Merge pull request #11 ... Record verification that the username-search feature is fully merged` | Fresh shallow clone, `git log`, GitHub API |
 
-**Deployment/CI heads:** the Android APK workflow succeeded on `d87b703` (run `42584666249`). Both Cloudflare Workers Builds check-runs failed on backend `616a9e6` (build IDs in the Cloudflare dashboard are referenced by GitHub check-run output; detailed logs are outside this sandbox’s allowed network). The Rust backend workflow last succeeded on 2026-11-08 at `b6e5721f43e6a8945ab63197bfc03a2f1a3faaac` (run `42491305703`); it did not run on `d87b703` because that commit did not touch `server/**`.
+**Deployment/CI heads:** the Android APK workflow succeeded on `d87b703` (run `42584666249`). Both Cloudflare Workers Builds check-runs failed on backend `616a9e6` (build IDs in the Cloudflare dashboard are referenced by GitHub check-run output; detailed logs are outside this sandbox’s allowed network). The Rust backend workflow last succeeded on 2026-11-08 at `b6e5721f43e6a8945ab63197bfc03a2f1a3faaac` (run `42491305703`); it did not run on `d87b703` because that commit did not touch `server/**`. PR #87’s Android `build` and Rust `Build and test` checks both passed before the `main` merge; the merged `main` head is `a867fdd881740889ee153013323072c1ebb8ea79`.
 
 ---
 
@@ -730,6 +731,7 @@ Measure first in a safe staging environment; increase concurrency gradually; doc
 
 | SHA | Date UTC | Subject |
 |---|---|---|
+| `a867fdd88174` | 2026-11-10 08:05:44 | Merge PR #87 — Add Phase 0 agent.md to main |
 | `d87b70302fba` | 2026-11-09 08:15:46 | Merge PR #86 — Add system downloader fallback for APK updates |
 | `bc36307321ae` | 2026-11-09 08:11:38 | Add system downloader fallback for APK updates |
 | `429164eead3f` | 2026-11-09 07:57:15 | Merge PR #85 |
@@ -867,7 +869,10 @@ Do not proceed to destructive DB operations, production deployment, secret rotat
 | 2026-11-09 | Application code changes | `git status`/diff after this change | None: only `agent.md` added and nine project-owned `.md` files deleted; no schema/API/config/deployment/secret changes |
 | 2026-11-09 | Phase 0 substantive commit | `git commit` on `arena/d8051bf9-nchat-kotlin` | `f45480678630810eff1a525469d83d1feca0021f`; 10 files changed, 1082 insertions, 2104 deletions; working tree clean after commit |
 
-**Current project health:** Android main build/CI green; web/worker local typecheck/build green; Rust integration suite green on a recent prior commit but not re-run on HEAD; Cloudflare deployment blocked/failing; security status has multiple confirmed high-risk authorization gaps; no feature claims of full product completion; no known active Android compile regression; no production deployment performed; no destructive operation performed.
+| 2026-11-10 | PR #87 checks | `gh pr checks 87 --watch` | Android `build` passed in 58 s; Rust `Build and test` passed in 1 m 3 s; PR mergeable |
+| 2026-11-10 | Phase 0 on main | `gh pr merge 87 --merge`, `gh pr view 87`, `git ls-remote`, `git show origin/main:agent.md` | PR #87 merged at 2026-11-10 08:05:44 UTC as `a867fdd881740889ee153013323072c1ebb8ea79`; `agent.md` present on `main` (1083 lines); `agent.md` is the only project-owned Markdown file there; no direct push to `main` |
+
+**Current project health:** Android main build/CI green and PR #87 checks passed on the merged Phase 0 change; web/worker local typecheck/build green; Rust integration suite green on a recent prior commit but not re-run on HEAD; Cloudflare deployment blocked/failing; security status has multiple confirmed high-risk authorization gaps; no feature claims of full product completion; no known active Android compile regression; no production deployment performed; no destructive operation performed; `agent.md` is now available to future agents from `main`.
 
 ---
 
@@ -1065,6 +1070,21 @@ Legal/security/compliance-relevant content from `SECURITY.md`, `UPDATE_SETUP.md`
 - **Known limitations:** no local Java/Gradle/cargo; no Cloudflare dashboard logs; no real devices/emulator/FCM/TURN/staging DB; no production deployment or destructive operations; no E2E/manual/load/security regression tests executed.
 - **Remaining work:** Phase 1–11 roadmap in §33.
 - **Next recommended task:** With explicit go-ahead, create a local/staging authorization regression suite and begin Phase 1 with Cloudflare private media + WebSocket room authorization. Do not proceed with production changes, secret rotation, or deployment without authorization.
+
+### 2026-11-10 — Phase 0 baseline merged to main
+
+- **Task:** Make the permanent `agent.md` handover document available on `main` as requested, without switching to or directly pushing to `main`.
+- **Agent:** Arena.ai Agent Mode.
+- **Start commit:** `e2ca5c2685ae29d8e86a6d3011a0b7918262f768` (active session branch head after Phase 0).
+- **End commit:** `a867fdd881740889ee153013323072c1ebb8ea79` (`main` merge commit for PR #87).
+- **Files modified:** documentation-only `agent.md` metadata/evidence update on the session branch; the earlier nine Markdown removals are included in the merge. No source/config/database/API/deployment changes.
+- **Database changes:** none.
+- **API changes:** none.
+- **Tests executed:** PR #87 Android APK workflow and Rust backend workflow checks; `git show origin/main:agent.md`; exact 36-section/one-status-per-feature verification retained from Phase 0.
+- **Test results:** PR #87 Android `build` success (58 s); Rust `Build and test` success (1 m 3 s); PR `MERGED`; `agent.md` present on `main`; session branch still active and clean at its Phase 0 head.
+- **Known limitations:** no local Java/Gradle/cargo; no Cloudflare dashboard logs; no real devices/emulator/FCM/TURN/staging DB; no production deployment or destructive operations; no E2E/manual/load/security regression tests executed.
+- **Remaining work:** Phase 1–11 roadmap in §33.
+- **Next recommended task:** Future agents should read `agent.md` from `main` (or the active session branch) completely, verify the latest commit, then proceed only with explicit authorization for Phase 1 security work.
 
 ---
 
