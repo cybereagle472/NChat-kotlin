@@ -98,14 +98,12 @@ fn is_participant(state: &AppState, call_id: &str, user_id: &str) -> ApiResult<b
 
 /// Someone who belongs to this call: a current member of its group, or a user
 /// with a participant row. The second half matters for a member who is removed
-/// from the group while they are on the call — they must still be able to hang up.
+/// from the group while they are on the call — they must still be able to hang
+/// up. It is used for declining and leaving only; signalling requires current
+/// membership on both ends.
 fn belongs_to_call(state: &AppState, call: &GroupCallRow, user_id: &str) -> ApiResult<bool> {
     Ok(is_member(state, &call.group_id, user_id)? || is_participant(state, &call.id, user_id)?)
 }
-
-/// The envelope of a relayed `group-call:signal` event; a signal body cannot
-/// override these (see `calls::signal` for why). `to` is routing, not payload.
-const SIGNAL_RESERVED_KEYS: [&str; 4] = ["type", "call_id", "from", "to"];
 
 /// `joinedParticipantsOf()` — everyone already in the call, minus `excluding`.
 fn joined_participants(
@@ -320,8 +318,9 @@ pub async fn join(
 /// to one other participant (`to`).
 ///
 /// Three things the reference does not check: the body cannot replace the
-/// event envelope, the recipient has to belong to the call (otherwise any
-/// member could push events to any user id), and an ended call relays nothing.
+/// event envelope (`routes::is_signal_envelope_key`), the recipient has to be
+/// a member of the call's group (otherwise any member could push events to any
+/// user id), and an ended call relays nothing.
 pub async fn signal(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -343,13 +342,16 @@ pub async fn signal(
     if call.status != "active" {
         return Ok(Json(json!({ "success": true })));
     }
-    if !belongs_to_call(&state, &call, &to)? {
+    // The recipient has to be in the group as well. A participant row is not
+    // enough here: someone removed from the group mid-call keeps their row so
+    // that they can hang up, and must not go on receiving the call's signalling.
+    if !is_member(&state, &call.group_id, &to)? {
         return Err(ApiError::forbidden("Not authorized"));
     }
 
     let mut payload = json!({ "type": "group-call:signal", "call_id": id, "from": user_id });
     for (key, value) in body {
-        if SIGNAL_RESERVED_KEYS.contains(&key.as_str()) {
+        if crate::routes::is_signal_envelope_key(&key) {
             continue;
         }
         payload[key] = value;

@@ -139,6 +139,41 @@ pub fn parse_body(bytes: &Bytes) -> Map<String, Value> {
     }
 }
 
+/// The keys of a relayed call-signalling event that belong to the server.
+///
+/// `POST /calls/:id/signal` and `POST /group-calls/:id/signal` copy the request
+/// body — opaque WebRTC data — into the event they deliver. Around it sits an
+/// envelope that says what the event is, which call it belongs to, who sent it
+/// and who it is for. A sender must not be able to write any of that, under any
+/// spelling a client reads.
+///
+/// The spellings matter. The Android client takes the call id of a group-call
+/// event from `callId` before `call_id` (then `groupCallId`, `group_call_id`)
+/// and the sender from `from`, `from_id`, `senderId`, `sender_id` or `user_id`,
+/// and it starts an audio connection to whoever a signal for its current group
+/// call is from. If a body could relabel a signal as belonging to a different
+/// call, someone who knows that call's id but is not in it — a member who was
+/// removed from the group, say — could get a participant's phone to start
+/// connecting to them.
+const SIGNAL_ENVELOPE_KEYS: [&str; 11] = [
+    "type",
+    "to",
+    "call_id",
+    "callId",
+    "group_call_id",
+    "groupCallId",
+    "from",
+    "from_id",
+    "sender_id",
+    "senderId",
+    "user_id",
+];
+
+/// `true` for a body key that a signal relay must not copy into the event.
+pub fn is_signal_envelope_key(key: &str) -> bool {
+    SIGNAL_ENVELOPE_KEYS.contains(&key)
+}
+
 /// `typeof body.x === 'string' ? body.x : default`.
 pub fn text_field(body: &Map<String, Value>, key: &str) -> Option<String> {
     body.get(key).and_then(Value::as_str).map(str::to_string)

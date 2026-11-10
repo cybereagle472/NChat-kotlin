@@ -218,19 +218,14 @@ pub async fn create(
     ))
 }
 
-/// The envelope of a relayed `call:signal` event. The body of a signal request
-/// is opaque WebRTC data and is copied into the event, but these three keys are
-/// the server's: they say what the event is, which call it belongs to and who
-/// sent it.
-const SIGNAL_ENVELOPE_KEYS: [&str; 3] = ["type", "callId", "from"];
-
 /// `POST /calls/:id/signal` — relay ICE candidates (or any other signalling
 /// data) to the other participant.
 ///
 /// The reference spreads the request body over the envelope
 /// (`{ type, callId, from, ...body }`), so a participant could send
 /// `{"type": "message:new", ...}` and have the server deliver a forged event of
-/// any kind to the other side. Here the envelope keys cannot be overridden.
+/// any kind to the other side. Here the envelope cannot be overridden, under
+/// any of its spellings (`routes::is_signal_envelope_key`).
 pub async fn signal(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -257,7 +252,7 @@ pub async fn signal(
 
     let mut payload = json!({ "type": "call:signal", "callId": id, "from": user_id });
     for (key, value) in payload_body {
-        if SIGNAL_ENVELOPE_KEYS.contains(&key.as_str()) {
+        if crate::routes::is_signal_envelope_key(&key) {
             continue;
         }
         payload[key] = value;
