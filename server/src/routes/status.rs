@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::privacy::status_visible_to;
+use crate::routes::media::ensure_attachable;
+use crate::routes::{ensure_lengths, limits};
 use crate::util::{iso_in_secs, new_id, now_iso};
 use crate::AppState;
 
@@ -37,7 +39,22 @@ pub async fn create(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_send(&user_id)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("content_type", limits::SHORT),
+            ("content_url", limits::URL),
+            ("text_content", limits::CAPTION),
+            ("background_color", limits::SHORT),
+            ("font_style", limits::SHORT),
+            ("thumbnail_url", limits::PREVIEW),
+            ("duration", limits::SHORT),
+            ("caption", limits::CAPTION),
+            ("privacy", limits::SHORT),
+        ],
+    )?;
 
     let id = new_id();
     let created_at = now_iso();
@@ -46,6 +63,16 @@ pub async fn create(
         .unwrap_or_else(|| "text".to_string());
     let privacy = crate::routes::text_field(&body, "privacy")
         .unwrap_or_else(|| "contacts".to_string());
+
+    // A status opens the files it names to its whole audience, so naming a file needs
+    // the right to open it.
+    let content_url = crate::routes::text_field(&body, "content_url");
+    let thumbnail_url = crate::routes::text_field(&body, "thumbnail_url");
+    ensure_attachable(
+        &state,
+        &user_id,
+        &[content_url.as_deref(), thumbnail_url.as_deref()],
+    )?;
 
     state.db.with(|conn| {
         conn.execute(
@@ -57,11 +84,11 @@ pub async fn create(
                 id,
                 user_id,
                 content_type,
-                crate::routes::text_field(&body, "content_url"),
+                content_url,
                 crate::routes::text_field(&body, "text_content"),
                 crate::routes::text_field(&body, "background_color"),
                 crate::routes::text_field(&body, "font_style"),
-                crate::routes::text_field(&body, "thumbnail_url"),
+                thumbnail_url,
                 crate::routes::text_field(&body, "duration"),
                 crate::routes::text_field(&body, "caption"),
                 privacy,

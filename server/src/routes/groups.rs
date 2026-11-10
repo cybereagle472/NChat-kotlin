@@ -12,6 +12,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
+use crate::routes::media::ensure_attachable;
+use crate::routes::{all_users_exist, ensure_lengths, limits};
 use crate::util::{clamp_limit, new_id, now_iso, parse_iso_millis};
 use crate::AppState;
 
@@ -281,7 +283,16 @@ pub async fn create(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_contact(&user_id)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("name", limits::NAME),
+            ("description", limits::DESCRIPTION),
+            ("avatar_url", limits::URL),
+        ],
+    )?;
 
     let name = crate::routes::text_field(&body, "name")
         .unwrap_or_default()
@@ -293,19 +304,33 @@ pub async fn create(
     let description = crate::routes::text_field(&body, "description");
     let avatar_url = crate::routes::text_field(&body, "avatar_url");
     let invited = crate::routes::string_list(&body, "memberIds");
+    if invited.len() > limits::MEMBERS {
+        return Err(ApiError::bad_request("Too many members in one request"));
+    }
 
     let group_id = new_id();
     let created_at = now_iso();
 
     let mut members: Vec<String> = vec![user_id.clone()];
     for id in invited {
-        if !members.contains(&id) {
+        if !id.is_empty() && !members.contains(&id) {
             members.push(id);
         }
     }
 
+    // Checked before anything is written. An id that names nobody used to fail the
+    // insert of that member, after the group and the members before it were stored: the
+    // caller got a server error and a group they had not finished making.
+    if !all_users_exist(&state, &members[1..])? {
+        return Err(ApiError::not_found("User not found"));
+    }
+    // Every signed-in account may load a group's picture.
+    ensure_attachable(&state, &user_id, &[avatar_url.as_deref()])?;
+
     state.db.with(|conn| {
-        conn.execute(
+        // All of it or none of it.
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO groups (id, name, description, avatar_url, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?)",
             params![
@@ -318,7 +343,7 @@ pub async fn create(
             ],
         )?;
         for member in &members {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO group_members (id, group_id, user_id, role, joined_at)
                  VALUES (?, ?, ?, ?, ?)",
                 params![
@@ -330,6 +355,7 @@ pub async fn create(
                 ],
             )?;
         }
+        tx.commit()?;
         Ok(())
     })?;
 
@@ -489,6 +515,7 @@ pub async fn add_members(
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
+    state.count_contact(&user_id)?;
     let Some((role, _)) = membership(&state, &group_id, &user_id)? else {
         return Err(ApiError::forbidden("Not a member of this group"));
     };
@@ -503,6 +530,13 @@ pub async fn add_members(
         .collect();
     if new_ids.is_empty() {
         return Ok(Json(json!({ "success": true })));
+    }
+    if new_ids.len() > limits::MEMBERS {
+        return Err(ApiError::bad_request("Too many members in one request"));
+    }
+    // `INSERT OR IGNORE` ignores a member who is already there, not one who does not exist.
+    if !all_users_exist(&state, &new_ids)? {
+        return Err(ApiError::not_found("User not found"));
     }
 
     let joined_at = now_iso();
@@ -737,6 +771,14 @@ pub async fn update(
     }
 
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("name", limits::NAME),
+            ("description", limits::DESCRIPTION),
+            ("avatar_url", limits::URL),
+        ],
+    )?;
     let current = state.db.with(|conn| {
         conn.query_row("SELECT * FROM groups WHERE id = ?", [&group_id], GroupRow::from_row)
             .optional()
@@ -759,7 +801,11 @@ pub async fn update(
         }
         None => current.description,
     };
-    let avatar_url = crate::routes::text_field(&body, "avatar_url").or(current.avatar_url);
+    // Only a picture this request brings is checked; the one already stored was checked
+    // when it was set.
+    let new_avatar = crate::routes::text_field(&body, "avatar_url");
+    ensure_attachable(&state, &user_id, &[new_avatar.as_deref()])?;
+    let avatar_url = new_avatar.or(current.avatar_url);
 
     state.db.with(|conn| {
         conn.execute(
@@ -855,10 +901,23 @@ pub async fn send_message(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_send(&user_id)?;
     if membership(&state, &group_id, &user_id)?.is_none() {
         return Err(ApiError::forbidden("Not a member of this group"));
     }
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("content", limits::MESSAGE),
+            ("type", limits::SHORT),
+            ("client_message_id", limits::SHORT),
+            ("media_url", limits::URL),
+            ("thumbnail_url", limits::PREVIEW),
+            ("duration", limits::SHORT),
+            ("reply_to", limits::SHORT),
+        ],
+    )?;
     let client_message_id = crate::routes::text_field(&body, "client_message_id");
 
     // Idempotent retry, same as 1:1.
@@ -877,14 +936,24 @@ pub async fn send_message(
         }
     }
 
+    // Every member can open the files a group message names, so naming a file needs the
+    // right to open it. Forwarding passes: the forwarder can open what they were sent.
+    let media_url = crate::routes::text_field(&body, "media_url");
+    let thumbnail_url = crate::routes::text_field(&body, "thumbnail_url");
+    ensure_attachable(
+        &state,
+        &user_id,
+        &[media_url.as_deref(), thumbnail_url.as_deref()],
+    )?;
+
     let row = GroupMessageRow {
         id: new_id(),
         group_id: group_id.clone(),
         sender_id: user_id.clone(),
         content: crate::routes::text_field(&body, "content").unwrap_or_default(),
         kind: crate::routes::text_field(&body, "type").unwrap_or_else(|| "text".to_string()),
-        media_url: crate::routes::text_field(&body, "media_url"),
-        thumbnail_url: crate::routes::text_field(&body, "thumbnail_url"),
+        media_url,
+        thumbnail_url,
         duration: crate::routes::text_field(&body, "duration"),
         client_message_id,
         reply_to: crate::routes::text_field(&body, "reply_to"),
@@ -1034,6 +1103,7 @@ pub async fn react_message(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(&body, &[("emoji", limits::EMOJI)])?;
     let emoji = crate::routes::text_field(&body, "emoji").unwrap_or_default();
     if emoji.is_empty() {
         return Err(ApiError::bad_request("emoji is required"));
@@ -1064,6 +1134,13 @@ pub async fn react_message(
     if list.contains(&user_id) {
         list.retain(|value| value != &user_id);
     } else {
+        // The whole map is stored with the message and pushed to every member on every
+        // change, and each different reaction is one more entry in it.
+        if !map.contains_key(&emoji) && map.len() >= limits::REACTIONS {
+            return Err(ApiError::bad_request(
+                "This message has too many different reactions",
+            ));
+        }
         list.push(user_id.clone());
     }
     if list.is_empty() {

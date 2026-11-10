@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::privacy::{apply_privacy, are_friends, get_privacy_settings};
+use crate::routes::{all_users_exist, ensure_lengths, limits};
 use crate::util::{clamp_limit, new_id, now_iso};
 use crate::AppState;
 
@@ -118,7 +119,10 @@ pub async fn create(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    // Every call rings somebody's phone.
+    state.count_contact(&user_id)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(&body, &[("receiver_id", limits::SHORT)])?;
     let receiver_id = crate::routes::text_field(&body, "receiver_id").unwrap_or_default();
     let call_type = crate::routes::text_field(&body, "call_type").unwrap_or_default();
 
@@ -132,6 +136,11 @@ pub async fn create(
     }
     if receiver_id == user_id {
         return Err(ApiError::bad_request("Cannot call yourself"));
+    }
+    // An id that names nobody is the caller's mistake; the insert below would report
+    // it as the database's.
+    if !all_users_exist(&state, std::slice::from_ref(&receiver_id))? {
+        return Err(ApiError::not_found("User not found"));
     }
 
     let blocked: Option<i64> = state.db.with(|conn| {

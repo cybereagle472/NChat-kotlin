@@ -209,6 +209,10 @@ pub async fn start(
         return Ok((StatusCode::OK, Json(result)));
     }
 
+    // Starting a call rings every member; joining one that is running (above) rings
+    // nobody and is not counted.
+    state.count_contact(&user_id)?;
+
     let id = new_id();
     let created_at = now_iso();
     let members = group_member_ids(&state, &group_id)?;
