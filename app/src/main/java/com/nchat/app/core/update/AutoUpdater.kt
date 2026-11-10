@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
@@ -284,12 +283,7 @@ object AutoUpdater {
         expectedSigner: String
     ): String? {
       return try {
-        @Suppress("DEPRECATION")
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
-        } else {
-            PackageManager.GET_SIGNATURES
-        }
+        val flags = signerLookupFlags(Build.VERSION.SDK_INT)
         @Suppress("DEPRECATION")
         val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
             ?: return "The downloaded file is not a valid Android package."

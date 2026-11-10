@@ -1,6 +1,15 @@
 package com.nchat.app.core.update
 
+import android.content.pm.PackageManager
 import java.security.MessageDigest
+
+/**
+ * PackageManager flags used to read who signed an APK: the downloaded file, and the installed
+ * app it is compared with.
+ */
+@Suppress("DEPRECATION")
+internal fun signerLookupFlags(sdkInt: Int): Int =
+    if (sdkInt >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
 
 /** Lowercase SHA-256 certificate fingerprint, with no separators. */
 internal fun certificateSha256(certificate: ByteArray): String =
