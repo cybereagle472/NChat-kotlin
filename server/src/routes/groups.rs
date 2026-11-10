@@ -198,6 +198,11 @@ fn broadcast_to_members(state: &AppState, ids: &[String], payload: &Value) {
 
 /// `groupWithMembers()` — group row plus every member with a privacy-masked
 /// `last_read_at` and their profile.
+///
+/// The reference also put each member's e-mail address into `profile`. Group
+/// payloads go to every member (and to people at the moment they are added), so
+/// that handed a login identifier to anyone who shares a group with you. It is
+/// left out here; both clients only ever used it as a last-resort display name.
 fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Value>> {
     let group = state.db.with(|conn| {
         conn.query_row("SELECT * FROM groups WHERE id = ?", [group_id], GroupRow::from_row)
@@ -212,7 +217,7 @@ fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Valu
             "SELECT gm.group_id, gm.user_id, gm.role, gm.is_muted, gm.joined_at,
                     grs.last_read_at AS last_read_at,
                     COALESCE(ps.read_receipts, 1) AS read_receipts,
-                    u.full_name, u.username, u.avatar_url, u.email
+                    u.full_name, u.username, u.avatar_url
              FROM group_members gm
              JOIN users u ON u.id = gm.user_id
              LEFT JOIN group_read_state grs
@@ -235,7 +240,6 @@ fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Valu
                     "full_name": row.get::<_, String>("full_name")?,
                     "username": row.get::<_, Option<String>>("username")?,
                     "avatar_url": row.get::<_, Option<String>>("avatar_url")?,
-                    "email": row.get::<_, String>("email")?,
                 },
             }))
         })?;
@@ -436,17 +440,23 @@ pub async fn one(
     Ok(Json(json!({ "group": group })))
 }
 
-/// `GET /groups/:id/members` — deliberately no membership check, matching the
-/// reference (it is only used by the member picker in the client).
+/// `GET /groups/:id/members` — the member list, for members.
+///
+/// The reference answers any signed-in caller here, which lets a stranger who
+/// learns a group id read who is in the group. Membership is required, exactly
+/// as on `GET /groups/:id`, and e-mail addresses are not part of the answer.
 pub async fn members(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(group_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    state.current_user(&headers)?;
+    let user_id = state.current_user(&headers)?;
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::forbidden("Not a member of this group"));
+    }
     let members = state.db.with(|conn| {
         let mut statement = conn.prepare(
-            "SELECT gm.*, u.full_name, u.username, u.avatar_url, u.email
+            "SELECT gm.*, u.full_name, u.username, u.avatar_url
              FROM group_members gm JOIN users u ON u.id = gm.user_id
              WHERE gm.group_id = ?",
         )?;
@@ -461,7 +471,6 @@ pub async fn members(
                 "full_name": row.get::<_, String>("full_name")?,
                 "username": row.get::<_, Option<String>>("username")?,
                 "avatar_url": row.get::<_, Option<String>>("avatar_url")?,
-                "email": row.get::<_, String>("email")?,
             }))
         })?;
         let mut out = Vec::new();
@@ -547,22 +556,25 @@ pub async fn remove_member(
         return Err(ApiError::forbidden("Only admins can remove other members"));
     }
 
-    state.db.with(|conn| {
+    let removed = state.db.with(|conn| {
         conn.execute(
             "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
             params![group_id, target_id],
-        )?;
-        Ok(())
+        )
     })?;
 
-    let ids = member_ids(&state, &group_id)?;
-    let payload = json!({
-        "type": "group-member:left",
-        "group_id": group_id,
-        "user_id": target_id,
-    });
-    broadcast_to_members(&state, &ids, &payload);
-    state.hub.publish_to_user(&target_id, &payload.to_string());
+    // Only a removal that happened is announced. Without this an admin could
+    // push `group-member:left` for their group to any user id at all.
+    if removed > 0 {
+        let ids = member_ids(&state, &group_id)?;
+        let payload = json!({
+            "type": "group-member:left",
+            "group_id": group_id,
+            "user_id": target_id,
+        });
+        broadcast_to_members(&state, &ids, &payload);
+        state.hub.publish_to_user(&target_id, &payload.to_string());
+    }
 
     Ok(Json(json!({ "success": true })))
 }
@@ -586,6 +598,14 @@ pub async fn leave(
         }
         Ok(out)
     })?;
+
+    // Only a member can leave. The reference skips this check, and because the
+    // "last member left" branch below deletes the group and its messages, anyone
+    // who knew the id of a one-member group could delete it. An unknown group
+    // gets the same answer, so the response does not reveal which ids exist.
+    if !members.iter().any(|(id, _)| id == &user_id) {
+        return Err(ApiError::forbidden("Not a member of this group"));
+    }
 
     let admins: Vec<&String> = members
         .iter()
@@ -915,17 +935,22 @@ pub async fn delete_message_for_me(
     Path(message_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
-    let current: Option<Option<String>> = state.db.with(|conn| {
+    let current: Option<(String, Option<String>)> = state.db.with(|conn| {
         conn.query_row(
-            "SELECT deleted_for FROM group_messages WHERE id = ?",
+            "SELECT group_id, deleted_for FROM group_messages WHERE id = ?",
             [&message_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
     })?;
-    let Some(current) = current else {
+    let Some((group_id, current)) = current else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // This writes to the message row, so it is for current members only. To
+    // anyone else the message does not exist (the 1:1 routes answer the same way).
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
 
     let mut list: Vec<String> = current
         .as_deref()
@@ -963,6 +988,11 @@ pub async fn delete_message_for_everyone(
     let Some((group_id, sender_id, created_at)) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // Someone who has left or been removed no longer edits the group's history,
+    // not even their own messages in it.
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
     if sender_id != user_id {
         return Err(ApiError::forbidden("You can only delete your own messages"));
     }
@@ -1020,6 +1050,11 @@ pub async fn react_message(
     let Some((group_id, reactions)) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // The reference lets any signed-in caller react to any group message whose
+    // id they know, and then broadcasts the result to the whole group.
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
 
     let mut map: std::collections::BTreeMap<String, Vec<String>> = reactions
         .as_deref()
