@@ -58,6 +58,20 @@ pub struct AppState {
     pub media_requires_auth: bool,
     /// Lifetime of a signed media link, in seconds (`NCHAT_MEDIA_TTL`, default 600).
     pub media_link_ttl: i64,
+    /// How many reverse proxies stand between clients and this server
+    /// (`NCHAT_TRUSTED_PROXIES`, default 0).
+    pub trusted_proxies: usize,
+    /// Password hashes one client address may ask for, sign-in and sign-up together
+    /// (`NCHAT_AUTH_ADDRESS_RATE`, default three times `NCHAT_AUTH_RATE`, same window).
+    pub address_limiter: Arc<ratelimit::RateLimiter>,
+    /// Messages, statuses and uploads one account may send (`NCHAT_SEND_RATE`, default
+    /// 300 a minute).
+    pub send_limiter: Arc<ratelimit::RateLimiter>,
+    /// Friend requests, new groups, added members and calls one account may start
+    /// (`NCHAT_CONTACT_RATE`, default 30 in five minutes).
+    pub contact_limiter: Arc<ratelimit::RateLimiter>,
+    /// Web origins a browser may call this API from (`NCHAT_CORS_ORIGINS`).
+    pub cors_origins: Arc<Vec<String>>,
 }
 
 impl AppState {
@@ -80,6 +94,20 @@ impl AppState {
             password_iterations: password::ITERATIONS,
             media_requires_auth: true,
             media_link_ttl: 600,
+            trusted_proxies: 0,
+            address_limiter: Arc::new(ratelimit::RateLimiter::new(
+                30,
+                std::time::Duration::from_secs(300),
+            )),
+            send_limiter: Arc::new(ratelimit::RateLimiter::new(
+                300,
+                std::time::Duration::from_secs(60),
+            )),
+            contact_limiter: Arc::new(ratelimit::RateLimiter::new(
+                30,
+                std::time::Duration::from_secs(300),
+            )),
+            cors_origins: Arc::new(Vec::new()),
         }
     }
 
@@ -124,6 +152,40 @@ impl AppState {
     pub fn with_media_link_ttl(mut self, seconds: i64) -> Self {
         self.media_link_ttl = seconds.max(1);
         self
+    }
+
+    pub fn with_trusted_proxies(mut self, count: usize) -> Self {
+        self.trusted_proxies = count;
+        self
+    }
+
+    pub fn with_address_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
+        self.address_limiter = Arc::new(limiter);
+        self
+    }
+
+    pub fn with_send_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
+        self.send_limiter = Arc::new(limiter);
+        self
+    }
+
+    pub fn with_contact_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
+        self.contact_limiter = Arc::new(limiter);
+        self
+    }
+
+    pub fn with_cors_origins(mut self, origins: Vec<String>) -> Self {
+        self.cors_origins = Arc::new(origins);
+        self
+    }
+
+    /// Makes the account with this e-mail address the administrator. Returns whether
+    /// such an account exists.
+    ///
+    /// Not implemented yet: this commit only adds the settings that the tests of the
+    /// next commit need in order to compile. Nothing reads them.
+    pub fn apply_admin_email(&self, _email: &str) -> rusqlite::Result<bool> {
+        Ok(false)
     }
 
     /// `requireAuth` middleware — `Authorization: Bearer <jwt>` → user id.
