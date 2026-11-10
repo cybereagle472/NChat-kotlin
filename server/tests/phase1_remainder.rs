@@ -1685,3 +1685,110 @@ async fn text_far_beyond_any_sensible_length_is_refused() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "a message of 65,536 characters");
 }
+
+/// A reaction is an emoji. The reactions of a message are stored with it and pushed,
+/// all of them, every time one changes; so one reaction has a size, and so has the
+/// number of different reactions one message can carry.
+#[tokio::test]
+async fn reactions_on_one_message_are_bounded() {
+    let app = app();
+    let ada = app.signup("ada@test.local", "Ada").await;
+    let grace = app.signup("grace@test.local", "Grace").await;
+    app.befriend(&ada, &grace).await;
+    let group_id = app.create_group(&ada, &[&grace]).await;
+
+    let (status, body) = app
+        .call(
+            "POST",
+            "/messages",
+            Some(&ada.token),
+            Some(json!({ "receiver_id": grace.id, "content": "hello" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "message: {body}");
+    let direct = format!(
+        "/messages/{}/reaction",
+        body["message"]["id"].as_str().expect("id")
+    );
+    let (status, body) = app
+        .call(
+            "POST",
+            &format!("/groups/{group_id}/messages"),
+            Some(&ada.token),
+            Some(json!({ "content": "hello, group" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "group message: {body}");
+    let in_group = format!(
+        "/groups/messages/{}/reaction",
+        body["message"]["id"].as_str().expect("id")
+    );
+
+    for uri in [&direct, &in_group] {
+        // A text is not a reaction.
+        let (status, _) = app
+            .call(
+                "POST",
+                uri,
+                Some(&grace.token),
+                Some(json!({ "emoji": long(5_000) })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: a reaction of 5,000 characters");
+
+        // Emoji are, including the ones made of several code points.
+        for emoji in ["👍", "👍🏽", "👨‍👩‍👧‍👦"] {
+            let (status, body) = app
+                .call("POST", uri, Some(&grace.token), Some(json!({ "emoji": emoji })))
+                .await;
+            assert_eq!(status, StatusCode::OK, "{uri}: {emoji}: {body}");
+        }
+
+        // Sixty-four different reactions fit on one message; three are there already.
+        for number in 3..64 {
+            let (status, body) = app
+                .call(
+                    "POST",
+                    uri,
+                    Some(&grace.token),
+                    Some(json!({ "emoji": format!("r{number}") })),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{uri}: reaction number {number}: {body}");
+        }
+        let (status, _) = app
+            .call(
+                "POST",
+                uri,
+                Some(&grace.token),
+                Some(json!({ "emoji": "one-too-many" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: the 65th different reaction");
+
+        // The limit is on different reactions, not on people: Ada can still join one
+        // that is there, and taking one away makes room for another.
+        let (status, body) = app
+            .call("POST", uri, Some(&ada.token), Some(json!({ "emoji": "👍" })))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{uri}: joining a reaction: {body}");
+        let (status, body) = app
+            .call("POST", uri, Some(&grace.token), Some(json!({ "emoji": "r63" })))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{uri}: taking a reaction back: {body}");
+        let (status, body) = app
+            .call(
+                "POST",
+                uri,
+                Some(&grace.token),
+                Some(json!({ "emoji": "one-too-many" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{uri}: a reaction in the freed place: {body}");
+        assert_eq!(
+            body["reactions"].as_object().map(|map| map.len()),
+            Some(64),
+            "{uri}: {body}"
+        );
+    }
+}
