@@ -1,0 +1,491 @@
+# backend failure — run 42854637982
+## where
+/home/runner/work/NChat-kotlin/NChat-kotlin/server
+total 284
+drwxr-xr-x 7 runner runner   4096 Nov 10 16:27 .
+drwxr-xr-x 3 runner runner   4096 Nov 10 16:27 ..
+drwxr-xr-x 2 runner runner   4096 Nov 10 16:27 .ci
+drwxr-xr-x 7 runner runner   4096 Nov 10 16:27 .git
+drwxr-xr-x 4 runner runner   4096 Nov 10 16:27 .github
+-rw-r--r-- 1 runner runner    107 Nov 10 16:27 .gitignore
+-rw-r--r-- 1 runner runner 206002 Nov 10 16:27 agent.md
+drwxr-xr-x 3 runner runner   4096 Nov 10 16:27 app
+-rw-r--r-- 1 runner runner    485 Nov 10 16:27 build.gradle
+-rw-r--r-- 1 runner runner    149 Nov 10 16:27 gradle.properties
+-rw-r--r-- 1 runner runner   1617 Nov 10 16:27 nchat.properties
+-rw-r--r-- 1 runner runner   3882 Nov 10 16:27 rust-build.log
+-rw-r--r-- 1 runner runner   2404 Nov 10 16:27 rust-clippy.log
+-rw-r--r-- 1 runner runner  17311 Nov 10 16:29 rust-test.log
+drwxr-xr-x 7 runner runner   4096 Nov 10 16:29 server
+-rw-r--r-- 1 runner runner     15 Nov 10 16:27 settings.gradle
+-rw-r--r-- 1 runner runner   1205 Nov 10 16:27 version.json
+## build
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 215 packages to highest compatible versions
+[1m[92m      Adding[0m axum v0.7.9 [1m[33m(available: v0.8.9)[0m
+[1m[92m      Adding[0m base64 v0.22.1 [1m[33m(available: v0.23.1)[0m
+[1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+[1m[92m      Adding[0m hmac v0.12.1 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m pbkdf2 v0.12.2 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m rand v0.8.8 [1m[33m(available: v0.10.3)[0m
+[1m[92m      Adding[0m reqwest v0.12.28 [1m[33m(available: v0.13.5)[0m
+[1m[92m      Adding[0m rusqlite v0.31.0 [1m[33m(available: v0.41.1)[0m
+[1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.1)[0m
+[1m[92m      Adding[0m tower-http v0.5.2 [1m[33m(available: v0.7.1)[0m
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m itoa v1.0.19
+[1m[92m  Downloaded[0m syn v3.0.10
+[1m[92m  Downloaded[0m uuid v1.29.2
+[1m[92m   Compiling[0m syn v3.0.10
+[1m[92m   Compiling[0m itoa v1.0.19
+[1m[92m   Compiling[0m uuid v1.29.2
+[1m[92m   Compiling[0m http v1.5.0
+[1m[92m   Compiling[0m serde_json v1.0.154
+[1m[92m   Compiling[0m serde_path_to_error v0.1.20
+[1m[92m   Compiling[0m http-body v1.1.0
+[1m[92m   Compiling[0m http-body-util v0.1.5
+[1m[92m   Compiling[0m tungstenite v0.24.0
+[1m[92m   Compiling[0m tower-http v0.5.2
+[1m[92m   Compiling[0m synstructure v0.14.0
+[1m[92m   Compiling[0m zerofrom-derive v0.1.8
+[1m[92m   Compiling[0m yoke-derive v0.8.4
+[1m[92m   Compiling[0m zerovec-derive v0.11.7
+[1m[92m   Compiling[0m displaydoc v0.2.7
+[1m[92m   Compiling[0m tokio-macros v2.7.2
+[1m[92m   Compiling[0m futures-macro v0.3.34
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m zerofrom v0.1.8
+[1m[92m   Compiling[0m yoke v0.8.4
+[1m[92m   Compiling[0m zerovec v0.11.9
+[1m[92m   Compiling[0m tokio v1.54.1
+[1m[92m   Compiling[0m futures-util v0.3.34
+[1m[92m   Compiling[0m tinystr v0.8.5
+[1m[92m   Compiling[0m icu_locale_core v2.4.0
+[1m[92m   Compiling[0m potential_utf v0.1.6
+[1m[92m   Compiling[0m zerotrie v0.2.5
+[1m[92m   Compiling[0m icu_provider v2.4.0
+[1m[92m   Compiling[0m icu_collections v2.4.0
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m async-trait v0.1.92
+[1m[92m   Compiling[0m icu_properties v2.4.0
+[1m[92m   Compiling[0m icu_normalizer v2.4.0
+[1m[92m   Compiling[0m serde_urlencoded v0.7.1
+[1m[92m   Compiling[0m axum-core v0.4.5
+[1m[92m   Compiling[0m multer v3.1.0
+[1m[92m   Compiling[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m idna v1.1.0
+[1m[92m   Compiling[0m hyper v1.12.0
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m hyper-util v0.1.21
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m tokio-rustls v0.26.6
+[1m[92m   Compiling[0m tower-http v0.6.11
+[1m[92m   Compiling[0m tokio-tungstenite v0.24.0
+[1m[92m   Compiling[0m tokio-util v0.7.20
+[1m[92m   Compiling[0m hyper-rustls v0.27.10
+[1m[92m   Compiling[0m axum v0.7.9
+[1m[92m   Compiling[0m reqwest v0.12.28
+[1m[92m   Compiling[0m nchat-server v0.2.0 (/home/runner/work/NChat-kotlin/NChat-kotlin/server)
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:538:7
+    [1m[94m|[0m
+[1m[94m538[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 25.37s
+## test
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:538:7
+    [1m[94m|[0m
+[1m[94m538[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/nchat_server-5a8b203e46431de4)
+
+running 20 tests
+test jwt::tests::rejects_tampering ... ok
+test jwt::tests::round_trip ... ok
+test jwt::tests::refresh_token_is_not_an_access_token ... ok
+test password::tests::a_stored_count_outside_the_limits_is_refused_without_running_it ... ok
+test password::tests::a_requested_count_is_kept_inside_the_limits ... ok
+test db::tests::reopening_preserves_existing_data ... ok
+test password::tests::matches_the_typescript_vector ... ok
+test privacy::tests::status_audience_is_the_stricter_of_both_settings_and_respects_blocks ... ok
+test password::tests::upgrades_only_go_one_way ... ok
+test privacy::tests::visibility_tiers ... ok
+test ratelimit::tests::blocks_after_the_budget ... ok
+test realtime::tests::slow_consumers_are_removed_instead_of_growing_without_bound ... ok
+test routes::auth::tests::email_rules_match_the_reference ... ok
+test routes::media::tests::expired_links_are_rejected ... ok
+test routes::media::tests::media_paths_cannot_escape_the_media_dir ... ok
+test routes::media::tests::resolved_path_stays_under_the_root ... ok
+test routes::media::tests::signatures_bind_the_key_and_the_expiry ... ok
+test ratelimit::tests::window_expires ... ok
+test password::tests::the_configured_count_is_what_gets_written ... ok
+test password::tests::round_trip ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.58s
+
+[1m[92m     Running[0m unittests src/main.rs (target/debug/deps/nchat_server-5e8f0b996274aecf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/api.rs (target/debug/deps/api-4b76a31b0ab6cafe)
+
+running 9 tests
+test auth_is_enforced ... ok
+test health_and_root ... ok
+test privacy_redaction_is_applied_to_other_viewers ... ok
+test profiles_and_usernames ... ok
+test friend_request_lifecycle ... ok
+test messaging_flow ... ok
+test websocket_restricts_rooms_and_rejects_refresh_credentials ... ok
+test user_search_finds_people_and_hides_blocked ... ok
+test signup_login_refresh_logout ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.32s
+
+[1m[92m     Running[0m tests/auth_hardening.rs (target/debug/deps/auth_hardening-e92c62f4526a8109)
+
+running 6 tests
+test a_few_bad_guesses_from_elsewhere_do_not_lock_the_owner_out ... ok
+test a_stronger_stored_hash_is_left_alone ... ok
+test a_new_claimed_address_for_every_guess_does_not_buy_more_guesses ... ok
+test a_wrong_password_never_rewrites_the_stored_hash ... ok
+test a_hash_copied_from_another_backend_is_still_the_same_password ... ok
+test a_weaker_stored_hash_is_upgraded_by_the_next_successful_sign_in ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.60s
+
+[1m[92m     Running[0m tests/authz.rs (target/debug/deps/authz-ebbcca39603eb2d0)
+
+running 45 tests
+test admin_stats_are_denied_to_ordinary_accounts ... ok
+test blocked_friend_cannot_open_status_media ... ok
+test blocked_friend_cannot_record_a_status_view ... ok
+test account_level_status_visibility_is_enforced ... ok
+test blocked_user_cannot_ring ... ok
+test ended_group_call_relays_no_more_signals ... ok
+test expired_status_cannot_be_viewed ... ok
+test call_signal_cannot_impersonate_another_event ... ok
+test finished_call_relays_no_more_signals ... ok
+test forged_expired_and_refresh_tokens_are_not_api_credentials ... ok
+test friend_request_is_answered_only_by_its_receiver ... ok
+test friend_view_is_recorded_once_and_reported_to_the_author ... ok
+test group_call_signal_cannot_be_aimed_outside_the_call ... ok
+test group_call_signal_cannot_impersonate_another_event ... ok
+test group_member_list_is_for_members_only ... ok
+test group_projections_do_not_expose_member_emails ... ok
+test member_removed_from_the_group_gets_no_more_call_signals ... ok
+test new_status_is_not_pushed_to_blocked_friends ... ok
+test only_the_author_can_delete_a_status ... ok
+test only_the_author_can_list_who_viewed_a_status ... ok
+test ordinary_member_cannot_administer_the_group ... ok
+test outsider_cannot_destroy_a_group_by_leaving_it ... ok
+test outsider_cannot_decline_a_group_call ... ok
+test outsider_cannot_leave_a_group_call ... ok
+test outsider_cannot_mark_a_group_message_deleted_for_themselves ... ok
+test outsider_cannot_react_to_a_group_message ... ok
+test outsider_cannot_start_join_or_signal_a_group_call ... ok
+test protected_routes_refuse_requests_without_a_valid_token ... ok
+test outsider_cannot_touch_someone_elses_call ... ok
+test outsider_is_refused_on_every_group_route ... ok
+test outsider_leaving_a_group_is_refused_and_not_announced ... ok
+test removed_member_can_still_hang_up ... ok
+test removed_member_cannot_delete_their_old_message_for_everyone ... ok
+test removed_member_loses_access_to_the_group ... ok
+test removing_someone_who_is_not_a_member_announces_nothing ... ok
+test signal_from_one_group_call_cannot_pose_as_another ... ok
+test status_for_nobody_stays_with_its_author ... ok
+test status_feed_respects_blocks_in_both_directions ... ok
+test status_media_follows_the_audience_of_its_status ... ok
+test status_media_is_readable_by_friends_and_not_by_strangers ... ok
+test status_with_an_audience_the_server_cannot_evaluate_fails_closed ... ok
+test stranger_cannot_record_a_status_view ... ok
+test strangers_cannot_reach_each_other_through_direct_message_routes ... ok
+test third_party_cannot_act_on_someone_elses_direct_message ... ok
+test unfriending_a_stranger_sends_them_nothing ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 49.40s
+
+[1m[92m     Running[0m tests/groups_status_calls.rs (target/debug/deps/groups_status_calls-c39657d1b5469085)
+
+running 4 tests
+test call_signalling_lifecycle ... ok
+test group_calls_start_join_and_end ... ok
+test group_lifecycle_messages_and_read_state ... ok
+test statuses_reach_friends_only_and_track_views ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.30s
+
+[1m[92m     Running[0m tests/media.rs (target/debug/deps/media-82b2de4209a825b6)
+
+running 5 tests
+test public_mode_still_serves_anonymous_reads ... ok
+test signed_links_are_key_bound_and_expire ... ok
+test upload_larger_than_axums_default_body_limit ... ok
+test conversation_members_can_read_but_strangers_cannot ... ok
+test upload_store_range_read_and_owner_only_delete ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s
+
+[1m[92m     Running[0m tests/phase1_remainder.rs (target/debug/deps/phase1_remainder-5c9dd62960d21b2f)
+
+running 24 tests
+test a_photo_used_in_a_status_and_in_a_chat_stays_open_to_both ... FAILED
+test a_photo_forwarded_from_a_private_chat_opens_for_the_group ... FAILED
+test a_second_spelling_of_a_media_address_opens_nothing ... FAILED
+test a_star_in_the_list_allows_every_origin ... ok
+test a_server_error_does_not_describe_the_database ... FAILED
+test an_id_that_names_nobody_is_refused_cleanly ... FAILED
+test an_upload_can_be_read_back_whatever_its_name ... FAILED
+test an_uploaded_file_cannot_run_as_a_web_page ... FAILED
+test behind_a_trusted_proxy_the_address_the_proxy_saw_is_what_counts ... FAILED
+test everyone_still_gets_their_own_email_address ... ok
+test contacting_people_runs_out_per_account ... FAILED
+test forwarding_a_group_photo_does_not_take_it_away_from_the_group ... FAILED
+test listed_web_origins_are_allowed_and_only_those ... FAILED
+test knowing_a_media_address_is_not_enough_to_attach_it ... FAILED
+test pages_on_other_sites_get_no_permission_by_default ... FAILED
+test registering_the_configured_admin_address_does_not_make_an_admin ... FAILED
+test other_peoples_email_addresses_are_not_served ... FAILED
+test a_claimed_address_does_not_buy_more_sign_ups ... FAILED
+test sending_runs_out_per_account ... FAILED
+test sign_in_attempts_from_one_address_run_out_across_accounts ... FAILED
+test the_configured_admin_address_grants_the_role_when_it_is_applied ... FAILED
+test the_admin_role_is_what_opens_admin_stats ... FAILED
+test text_far_beyond_any_sensible_length_is_refused ... FAILED
+test an_unknown_account_is_refused_no_faster_than_a_wrong_password ... FAILED
+
+failures:
+
+---- a_photo_used_in_a_status_and_in_a_chat_stays_open_to_both stdout ----
+
+thread 'a_photo_used_in_a_status_and_in_a_chat_stays_open_to_both' (3687) panicked at tests/phase1_remainder.rs:1166:5:
+assertion `left == right` failed: a friend who sees the status, after the photo was also sent in a chat
+  left: 404
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_photo_forwarded_from_a_private_chat_opens_for_the_group stdout ----
+
+thread 'a_photo_forwarded_from_a_private_chat_opens_for_the_group' (3686) panicked at tests/phase1_remainder.rs:1080:5:
+assertion `left == right` failed: a member of the group it was forwarded to
+  left: 404
+ right: 200
+
+---- a_second_spelling_of_a_media_address_opens_nothing stdout ----
+
+thread 'a_second_spelling_of_a_media_address_opens_nothing' (3688) panicked at tests/phase1_remainder.rs:1321:5:
+assertion `left == right` failed: Mallory, under a second spelling of the address
+  left: 200
+ right: 404
+
+---- a_server_error_does_not_describe_the_database stdout ----
+
+thread 'a_server_error_does_not_describe_the_database' (3693) panicked at tests/phase1_remainder.rs:1439:9:
+a failed request says "presence": {"error":"database error: no such table: presence"}
+
+---- an_id_that_names_nobody_is_refused_cleanly stdout ----
+
+thread 'an_id_that_names_nobody_is_refused_cleanly' (3695) panicked at tests/phase1_remainder.rs:1487:9:
+a friend request for an id that names nobody was answered 500 Internal Server Error: {"error":"database error: FOREIGN KEY constraint failed"}
+
+---- an_upload_can_be_read_back_whatever_its_name stdout ----
+
+thread 'an_upload_can_be_read_back_whatever_its_name' (3697) panicked at tests/phase1_remainder.rs:1416:5:
+the file's key is "b591b02c-c3e5-4f03-ba6c-61fb9b642ed6/ccba1b05-f993-4727-99b2-99a670685149.j?pg"
+
+---- an_uploaded_file_cannot_run_as_a_web_page stdout ----
+
+thread 'an_uploaded_file_cannot_run_as_a_web_page' (3698) panicked at tests/phase1_remainder.rs:1367:9:
+assertion `left == right` failed: page.html is served with the type its uploader chose
+  left: Some("text/html")
+ right: Some("application/octet-stream")
+
+---- behind_a_trusted_proxy_the_address_the_proxy_saw_is_what_counts stdout ----
+
+thread 'behind_a_trusted_proxy_the_address_the_proxy_saw_is_what_counts' (3700) panicked at tests/phase1_remainder.rs:520:5:
+assertion `left == right` failed: the 31st attempt of one client behind the proxy
+  left: 401
+ right: 429
+
+---- contacting_people_runs_out_per_account stdout ----
+
+thread 'contacting_people_runs_out_per_account' (3702) panicked at tests/phase1_remainder.rs:731:9:
+assertion `left == right` failed: a friend request over the budget
+  left: 201
+ right: 429
+
+---- forwarding_a_group_photo_does_not_take_it_away_from_the_group stdout ----
+
+thread 'forwarding_a_group_photo_does_not_take_it_away_from_the_group' (3705) panicked at tests/phase1_remainder.rs:1131:5:
+assertion `left == right` failed: a group member, after somebody else forwarded the photo
+  left: 404
+ right: 200
+
+---- listed_web_origins_are_allowed_and_only_those stdout ----
+
+thread 'listed_web_origins_are_allowed_and_only_those' (3708) panicked at tests/phase1_remainder.rs:790:5:
+assertion `left == right` failed: the listed origin
+  left: Some("*")
+ right: Some("https://chat.example")
+
+---- knowing_a_media_address_is_not_enough_to_attach_it stdout ----
+
+thread 'knowing_a_media_address_is_not_enough_to_attach_it' (3706) panicked at tests/phase1_remainder.rs:1274:9:
+assertion `left == right` failed: a message took the address of a file Mallory cannot open: {"message":{"content":"","created_at":"2026-11-10T16:29:07.449Z","id":"33b7a1ad-d85f-4f20-8188-878ed1189a33","is_deleted":false,"is_edited":false,"is_read":false,"media_url":"http://test.local/media/file/92e9ef15-927e-4e9c-b6d7-231d84d370da/ac8ecc44-1808-4366-986f-a3f2a233c138.jpg","receiver_id":"7b209a49-6b05-4baf-9e5d-da21391ef5fc","sender_id":"c8a24d24-9ab1-4136-bda5-ee527fdf4d88","type":"image"}}
+  left: 201
+ right: 403
+
+---- pages_on_other_sites_get_no_permission_by_default stdout ----
+
+thread 'pages_on_other_sites_get_no_permission_by_default' (3711) panicked at tests/phase1_remainder.rs:765:5:
+assertion `left == right` failed: a plain read
+  left: Some("*")
+ right: None
+
+---- registering_the_configured_admin_address_does_not_make_an_admin stdout ----
+
+thread 'registering_the_configured_admin_address_does_not_make_an_admin' (3712) panicked at tests/phase1_remainder.rs:890:5:
+assertion `left == right` failed: whoever registered the configured address became the administrator
+  left: 200
+ right: 403
+
+---- other_peoples_email_addresses_are_not_served stdout ----
+
+thread 'other_peoples_email_addresses_are_not_served' (3710) panicked at tests/phase1_remainder.rs:994:9:
+an event pushed to Grace shows an e-mail address: {"request":{"id":"14da1091-8014-4be5-8755-e7fb01c7fdc0","receiver_id":"2ec85346-36ec-48f7-8a5f-a9d1518d237d","sender_id":"24445373-5b56-438e-905d-b738f692e55b","sender_profile":{"email":"heidi@test.local","full_name":"Heidi","id":"24445373-5b56-438e-905d-b738f692e55b","is_online":false},"status":"pending"},"type":"friend:request"}
+
+---- a_claimed_address_does_not_buy_more_sign_ups stdout ----
+
+thread 'a_claimed_address_does_not_buy_more_sign_ups' (3685) panicked at tests/phase1_remainder.rs:443:5:
+40 of 40 sign-ups from one address were accepted; the last ten answers were [201, 201, 201, 201, 201, 201, 201, 201, 201, 201]
+
+---- sending_runs_out_per_account stdout ----
+
+thread 'sending_runs_out_per_account' (3713) panicked at tests/phase1_remainder.rs:621:5:
+assertion `left == right` failed: the fourth message
+  left: 201
+ right: 429
+
+---- sign_in_attempts_from_one_address_run_out_across_accounts stdout ----
+
+thread 'sign_in_attempts_from_one_address_run_out_across_accounts' (3714) panicked at tests/phase1_remainder.rs:483:5:
+40 of 40 sign-in attempts from one address were checked; the last ten answers were [401, 401, 401, 401, 401, 401, 401, 401, 401, 401]
+
+---- the_configured_admin_address_grants_the_role_when_it_is_applied stdout ----
+
+thread 'the_configured_admin_address_grants_the_role_when_it_is_applied' (3717) panicked at tests/phase1_remainder.rs:909:5:
+an account with that address exists
+
+---- the_admin_role_is_what_opens_admin_stats stdout ----
+
+thread 'the_admin_role_is_what_opens_admin_stats' (3716) panicked at tests/phase1_remainder.rs:861:5:
+assertion `left == right` failed: the account with the role: {"error":"Forbidden"}
+  left: 403
+ right: 200
+
+---- text_far_beyond_any_sensible_length_is_refused stdout ----
+
+thread 'text_far_beyond_any_sensible_length_is_refused' (3715) panicked at tests/phase1_remainder.rs:1605:9:
+assertion `left == right` failed: a display name of absurd length
+  left: 200
+ right: 400
+
+---- an_unknown_account_is_refused_no_faster_than_a_wrong_password stdout ----
+
+thread 'an_unknown_account_is_refused_no_faster_than_a_wrong_password' (3696) panicked at tests/phase1_remainder.rs:580:5:
+a wrong password took 867.266347ms, an unknown account took 335.818µs
+
+
+failures:
+    a_claimed_address_does_not_buy_more_sign_ups
+    a_photo_forwarded_from_a_private_chat_opens_for_the_group
+    a_photo_used_in_a_status_and_in_a_chat_stays_open_to_both
+    a_second_spelling_of_a_media_address_opens_nothing
+    a_server_error_does_not_describe_the_database
+    an_id_that_names_nobody_is_refused_cleanly
+    an_unknown_account_is_refused_no_faster_than_a_wrong_password
+    an_upload_can_be_read_back_whatever_its_name
+    an_uploaded_file_cannot_run_as_a_web_page
+    behind_a_trusted_proxy_the_address_the_proxy_saw_is_what_counts
+    contacting_people_runs_out_per_account
+    forwarding_a_group_photo_does_not_take_it_away_from_the_group
+    knowing_a_media_address_is_not_enough_to_attach_it
+    listed_web_origins_are_allowed_and_only_those
+    other_peoples_email_addresses_are_not_served
+    pages_on_other_sites_get_no_permission_by_default
+    registering_the_configured_admin_address_does_not_make_an_admin
+    sending_runs_out_per_account
+    sign_in_attempts_from_one_address_run_out_across_accounts
+    text_far_beyond_any_sensible_length_is_refused
+    the_admin_role_is_what_opens_admin_stats
+    the_configured_admin_address_grants_the_role_when_it_is_applied
+
+test result: FAILED. 2 passed; 22 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.96s
+
+[1m[91merror[0m: test failed, to rerun pass `--test phase1_remainder`
+## clippy
+[1m[92m    Checking[0m itoa v1.0.19
+[1m[92m    Checking[0m zerofrom v0.1.8
+[1m[92m    Checking[0m tokio v1.54.1
+[1m[92m    Checking[0m futures-util v0.3.34
+[1m[92m    Checking[0m yoke v0.8.4
+[1m[92m    Checking[0m http v1.5.0
+[1m[92m    Checking[0m zerovec v0.11.9
+[1m[92m    Checking[0m tinystr v0.8.5
+[1m[92m    Checking[0m http-body v1.1.0
+[1m[92m    Checking[0m potential_utf v0.1.6
+[1m[92m    Checking[0m icu_locale_core v2.4.0
+[1m[92m    Checking[0m zerotrie v0.2.5
+[1m[92m    Checking[0m icu_collections v2.4.0
+[1m[92m    Checking[0m http-body-util v0.1.5
+[1m[92m    Checking[0m icu_provider v2.4.0
+[1m[92m    Checking[0m serde v1.0.229
+[1m[92m    Checking[0m icu_properties v2.4.0
+[1m[92m    Checking[0m icu_normalizer v2.4.0
+[1m[92m    Checking[0m tungstenite v0.24.0
+[1m[92m    Checking[0m serde_urlencoded v0.7.1
+[1m[92m    Checking[0m serde_json v1.0.154
+[1m[92m    Checking[0m multer v3.1.0
+[1m[92m    Checking[0m axum-core v0.4.5
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m    Checking[0m serde_path_to_error v0.1.20
+[1m[92m    Checking[0m uuid v1.29.2
+[1m[92m    Checking[0m tower-http v0.5.2
+[1m[92m    Checking[0m hyper v1.12.0
+[1m[92m    Checking[0m tower v0.5.3
+[1m[92m    Checking[0m tokio-rustls v0.26.6
+[1m[92m    Checking[0m tower-http v0.6.11
+[1m[92m    Checking[0m tokio-tungstenite v0.24.0
+[1m[92m    Checking[0m tokio-util v0.7.20
+[1m[92m    Checking[0m hyper-util v0.1.21
+[1m[92m    Checking[0m hyper-rustls v0.27.10
+[1m[92m    Checking[0m axum v0.7.9
+[1m[92m    Checking[0m reqwest v0.12.28
+[1m[92m    Checking[0m nchat-server v0.2.0 (/home/runner/work/NChat-kotlin/NChat-kotlin/server)
+[1m[33mwarning[0m[1m: trait `SetContentLength` is never used[0m
+   [1m[94m--> [0msrc/routes/media.rs:538:7
+    [1m[94m|[0m
+[1m[94m538[0m [1m[94m|[0m trait SetContentLength {
+    [1m[94m|[0m       [1m[33m^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `nchat-server` (lib test) generated 1 warning (1 duplicate)
+[1m[33mwarning[0m: `nchat-server` (lib) generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 9.88s
