@@ -1,14 +1,14 @@
 # agent.md — NChat permanent engineering memory
 
-> **Document status:** Phase 0 baseline, plus the Rust-backend half of Phase 1 (critical security, §33), added 2026-11-10 on a session branch that is not merged. This is the single source of truth for project state.
-> **Last verified:** 2026-11-10 (UTC; Phase 0 baseline merged to main). Phase 1 Rust work: verified by CI the same day on its session branch (§36).
+> **Document status:** Phase 0 baseline, plus the Rust-backend half of Phase 1 (critical security, §33), added 2026-11-10 on a session branch that is not merged. This is the single source of truth for project state. A second Phase 1 turn the same day, on the same branch, repaired the in-app updater (Android 1.0.75) and hardened sign-in on the Rust backend (§19.4, Appendix E).
+> **Last verified:** 2026-11-10 (UTC; Phase 0 baseline merged to main). Phase 1 Rust work: verified by CI the same day on its session branch (§36). Second Phase 1 turn: CI green for both workflows on `2b30f1d` (§36); nothing was run on a device.
 > **Verified by:** Arena.ai Agent Mode.
 > **Repository:** `cybereagle472/NChat-kotlin`.
 > **Branch:** `arena/d8051bf9-nchat-kotlin` (active; Phase 0 was pushed here and merged to `main` through PR #87; the branch remains active and is not deleted). Phase 1 (Rust): `arena/56647832-nchat-kotlin` — active and pushed; not merged, and no pull request had been opened when this was written.
 > **Start commit:** `d87b70302fbacff185e8f5c829fce03ee3ef7595`. Phase 1 (Rust): `ec0f86cd2899eac3fa3ad5885f3b8442a6e946cc` (`main` after PR #88).
-> **End commit:** `f45480678630810eff1a525469d83d1feca0021f` (substantive Phase 0 commit; the handover commit that records this hash is a metadata-only follow-up). Phase 1 (Rust): `a1d23985852abfe66e47f0004cb01c387625560f` — the last commit that touches `server/`; the commits after it on that branch change only `agent.md`.
+> **End commit:** `f45480678630810eff1a525469d83d1feca0021f` (substantive Phase 0 commit; the handover commit that records this hash is a metadata-only follow-up). Phase 1 (Rust): `a1d23985852abfe66e47f0004cb01c387625560f` — the last commit that touches `server/`; the commits after it on that branch change only `agent.md`. Second Phase 1 turn: `2b30f1d9f0da08c54fa055efc1ce7c37d062fe0f` — the last commit of that turn that touches code; later commits change only `agent.md`.
 > **Main merge commit:** `a867fdd881740889ee153013323072c1ebb8ea79` (PR #87, merged 2026-11-10 08:05:44 UTC; `agent.md` is now the only project-owned Markdown file on `main`). `main` has since moved to `ec0f86cd2899eac3fa3ad5885f3b8442a6e946cc` (PR #88, 2026-11-10 08:09:29 UTC, `agent.md` only). The Phase 1 branch has no merge commit.
-> **Scope of this turn:** Phase 0 only — repository discovery, architecture/security audit, documentation consolidation, competitor comparison, implementation roadmap, and verification baseline. No application code, database, API, configuration, secret, or deployment was changed. **Scope of the Phase 1 turn (2026-11-10):** the Rust backend only — `server/src` and `server/tests`. No Android, database-schema, route-table, configuration, workflow, secret, or deployment change. The Cloudflare Worker repository `nchat-friends` was read, not changed: the gaps fixed here are still open there, except where §19.3 says the Worker differs.
+> **Scope of this turn:** Phase 0 only — repository discovery, architecture/security audit, documentation consolidation, competitor comparison, implementation roadmap, and verification baseline. No application code, database, API, configuration, secret, or deployment was changed. **Scope of the Phase 1 turn (2026-11-10):** the Rust backend only — `server/src` and `server/tests`. No Android, database-schema, route-table, configuration, workflow, secret, or deployment change. The Cloudflare Worker repository `nchat-friends` was read, not changed: the gaps fixed here are still open there, except where §19.3 says the Worker differs. **Scope of the second Phase 1 turn (2026-11-10):** the Android updater (`app/…/core/update`, `feature/update/UpdateGate.kt`, one call in `MainActivity.onResume`), a version bump to 1.0.75 / 83 with `version.json`, and sign-in on the Rust backend (`server/src/{password,lib,main}.rs`, `routes/auth.rs`, `tests/auth_hardening.rs`). No database schema, route, workflow, secret or deployment change; nothing merged, nothing released.
 > **Consolidation:** This file supersedes and consolidates the nine project-owned Markdown files previously in this repository. Their still-relevant content is preserved below; stale claims are explicitly labelled. Full verbatim history remains recoverable from Git history. No dependency/vendor/legal files were removed; the MIT `LICENSE` in the separate backend repository is untouched.
 
 **Status vocabulary (exactly one primary status per feature):** `NOT_STARTED`, `DISCOVERED`, `IN_PROGRESS`, `PARTIALLY_IMPLEMENTED`, `IMPLEMENTED_UNVERIFIED`, `TESTING`, `BLOCKED`, `COMPLETED`, `DEPRECATED`. `COMPLETED` is used only where this audit has explicit test or CI evidence, never merely because a screen, route, or table exists.
@@ -19,7 +19,7 @@
 
 NChat is a modern messaging product with three visible codebases and two backend runtimes:
 
-1. A native Android client in Kotlin/Jetpack Compose (`com.nchat.app`, currently version `1.0.74`, `versionCode 82`).
+1. A native Android client in Kotlin/Jetpack Compose (`com.nchat.app`, currently version `1.0.74`, `versionCode 82`). *Update 2026-11-10:* `1.0.75` / `versionCode 83` on the Phase 1 branch; `main` and the published release are still `1.0.74` / `82`.
 2. A React/TypeScript web client and a Cloudflare Workers/Hono backend in `cybereagle472/nchat-friends`.
 3. A wire-compatible self-hosted Rust/Axum/SQLite backend in this repository under `server/`.
 
@@ -325,7 +325,7 @@ The Rust route table in `server/src/routes/mod.rs` mirrors the above with these 
 - ViewModels expose `StateFlow`; repositories merge REST, socket events, local caches, and outbox state. `RemoteChatRepository.kt` is 2,634 lines and is a known decomposition debt.
 - Local JSON stores: `ChatListCache`, `GroupListCache`, `FriendGraphCache`, `MessageStore`, `OutboxStore`, `BlockedContactsStore`, `DraftStore`, `StarredStore`, `PinnedMessageStore`, `ArchivedStore`, `WallpaperStore`, `VoiceClipStore`, `StorageReport`. These are account-scoped and cleared on sign-out; no Room/SQLCipher local database.
 - Permissions declared: INTERNET, ACCESS_NETWORK_STATE, RECORD_AUDIO, CAMERA, MODIFY_AUDIO_SETTINGS, BLUETOOTH_CONNECT, REQUEST_INSTALL_PACKAGES, POST_NOTIFICATIONS, FOREGROUND_SERVICE(_DATA_SYNC), REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, coarse/fine location. Runtime requests exist for notifications, call mic/camera, location, gallery/camera pickers, and battery exemption. There is no privacy-policy/terms onboarding, contacts permission/sync, or comprehensive permission-denial recovery UI.
-- Startup/update: `StartupUpdateGate` reads `version.json`, shows a full-screen update page with release notes and live progress, falls back to Android DownloadManager for direct-transfer timeouts, verifies package/version/signing certificate, and installs via non-exported `FileProvider`.
+- Startup/update: `StartupUpdateGate` reads `version.json`, shows a full-screen update page with release notes and live progress, falls back to Android DownloadManager for direct-transfer timeouts, verifies package/version/signing certificate, and installs via non-exported `FileProvider`. *Update 2026-11-10 (1.0.75, Phase 1 branch):* the page also looks for a release when the app returns to the foreground — `MainActivity.onResume` → `UpdateForeground` → `updateCheckDue` (six hours after an answer, one minute after a failed look) — and a look that finds a release makes the offer again; the “Install unknown apps” step is shown as a step, and the install continues by itself on return; the signer of a file is asked for with both PackageManager flags on Android 9+ (§19.4 #24). The gate is still inside `HomeRoot`, so only signed-in users see it.
 - Accessibility/dark mode/tablet/landscape: no dedicated implementation or tests found. `configChanges` handles orientation/size/uiMode in the Activity; resource configurations are English-only.
 - Crash handling: `CrashLog` writes `last-crash.txt` and an external copy; `CrashReportScreen` displays it on next launch. `ApiLog` records request path/status/duration/error and Settings ▸ Sync check probes endpoints.
 
@@ -411,7 +411,7 @@ All dates are 2026-11-09 unless a row says otherwise: rows touched by the Phase 
 | Disappearing / view-once media | NOT_STARTED | N/A | no TTL/view-once columns | Schema, enforcement, client expiry, media deletion | 2026-11-09 |
 | Report user/message | NOT_STARTED | N/A | no route/table | Report flow, moderation, privacy-preserving evidence | 2026-11-09 |
 | Admin/stats | IMPLEMENTED_UNVERIFIED | `/admin/stats` | Source; no Android surface **2026-11-10:** (Rust, Phase 1 branch) test `admin_stats_are_denied_to_ordinary_accounts` | Role-based auth instead of hardcoded email; tests **2026-11-10:** a Rust denial test exists; role-based authorization still open in both backends | 2026-11-10 |
-| In-app updater | IMPLEMENTED_UNVERIFIED | `core/update/*`, `version.json`, workflow | Source + 7 Python signing tests + green Android CI | Install/upgrade on real devices, mirror/failure tests | 2026-11-09 |
+| In-app updater | IMPLEMENTED_UNVERIFIED | `core/update/*`, `feature/update/UpdateGate.kt`, `version.json`, workflow | Source + 7 Python signing tests + green Android CI. *2026-11-10:* repaired on the Phase 1 branch as 1.0.75 (§19.4 #24–#27); 22 JVM tests on the pure rules, one of them seen failing before the signer fix | Install/upgrade on a real device (never done in any recorded session), mirror/failure tests, the page behaviour added in 1.0.75 | 2026-11-10 |
 | UI/UX design system | IMPLEMENTED_UNVERIFIED | `core/designsystem/*`, feature screens | Source + historical design rules | Compose UI tests, accessibility, dark mode, tablet, low-end profiling | 2026-11-09 |
 | Accessibility / dark mode / tablets | NOT_STARTED | N/A | no dedicated implementation/tests | Full audit and implementation | 2026-11-09 |
 | Performance/load measurement | NOT_STARTED | N/A | no measured results in repo | Instrumented API/DB/WS/media/call/Android benchmarks | 2026-11-09 |
@@ -515,6 +515,45 @@ Found while writing the authorization suite (`server/tests/authz.rs`). **Rust** 
 - **Already tracked elsewhere:** `CorsLayer::permissive()`, no event sequence or cursor, PBKDF2 at 100,000 (§33 items 6–8).
 - **Smaller:** a member removing themselves through `DELETE /groups/:id/members/:self` skips the last-admin rule that `leave` applies; `DELETE /status/:id` answers 200 to non-authors, though nothing is deleted (guarded by `only_the_author_can_delete_a_status`).
 
+### 19.4 Findings of the second Phase 1 turn: in-app updater and sign-in (2026-11-10)
+
+Numbering continues from §19.3. State on branch `arena/56647832-nchat-kotlin`, not merged. “Red” and “green” name the CI runs in which the test failed before the change and passed after it.
+
+| # | Finding | Severity | State | Evidence and limits |
+|---|---|---|---|---|
+| 24 | **The updater refused every update on Android 9, Android 10 and early Android 13.** `AutoUpdater.validateArchive` asked `PackageManager.getPackageArchiveInfo` for a file's signer with `GET_SIGNING_CERTIFICATES` only. In AOSP those releases load a file's certificates only for `GET_SIGNATURES` (`android-9.0.0_r1`, `android-10.0.0_r1`, `android-13.0.0_r1`, `_r2` and `_r3`; the corrected check is present at `android-13.0.0_r16` and at every later Android 13 tag that was read). Android 11, 12 and 14+ accept either flag (tags in §36); on Android 7–8 the app already used the old flag. No signer came back, and the download was refused as “not signed by NChat's verified release key … Received: unavailable”. | High for the phones concerned: no update can install | FIXED `c5eed26` — `signerLookupFlags` asks with both flags on API 28+ | Red: `6bc65dc`, APK run `42802241927` (58 tests, 1 failed: `asksForAnApkFilesCertificatesTheWayEveryAndroidReleaseLoadsThem`). Green: `5091dbb`, run `42802654826`. The platform behaviour was **read in AOSP source, not seen on a device**; vendor builds may differ, and which Android 13 phones kept the early code is unknown. The owner's report (“downloaded, then an error”) fits; the exact message and the Android version were not available. |
+| 25 | The update page looked for a release once, when the screen was created. `BackgroundSyncService` keeps the process alive, so that can be days ago, and a look that failed at start-up was never repeated. | Medium | FIXED `4b3f2a1` — `UpdateForeground`, `updateCheckDue` | `UpdateCheckPolicyTest` (4 tests) covers the rule. The wiring in `UpdateGate.kt` has no test and has not run on a device. |
+| 26 | The first update on a phone needs Android's “Install unknown apps” switch. The page printed that step in the red used for errors and waited for a second tap on Update now. | Medium — it reads as a failure, and it also fits the owner's report | FIXED `4b3f2a1` — shown as a step; the install continues on return once the switch is on; the downloaded file is reused | No test; not run on a device. |
+| 27 | Messages: “no certificate could be read” was reported as “wrong signer”; a file refused by the checks got “try another network”; so did HTTP 404 in the minutes between the manifest and its APK being published. | Low | FIXED `4b3f2a1` — `judgeUpdateSigners`, `downloadFailureMessage`; messages name the Android version | `UpdateSignerPolicyTest`, `ApkDownloaderTest`. Every refusal still refuses: no check was loosened. |
+| 28 | **Rust `/auth/login` could be guessed without limit.** The limiter's key was “address + e-mail”, and the address is the first hop of `X-Forwarded-For`, which the client writes. A new value per request was a new budget per request. | High | FIXED `dd4b497` — a second budget per account, with no part the client chooses (`NCHAT_AUTH_ACCOUNT_RATE`, default 3 × `NCHAT_AUTH_RATE`) | Red: `6eee8c6`, Rust run `42805222571` (“60 of 60 guesses were checked”). Green: `2b30f1d`, run `42805578387`. Accepted cost, written in the code: enough wrong guesses keep the owner from signing in on a new device until the window moves on; existing sessions are not affected. **Worker:** no rate limiting of any kind in `worker/src` or `wrangler.toml` at `616a9e6`; what Cloudflare's edge does is not visible in the source. |
+| 29 | Rust password hashes: a stored hash was never upgraded, so raising the round count would have protected new accounts only; and the stored count was run as found — `0`, or four billion. | Medium | FIXED `dd4b497` — configurable count (`NCHAT_PBKDF2_ITERATIONS`, never below 100 000), upgrade after the next successful sign-in, never a downgrade, a stored count of 0 or above 10 000 000 refused before any work | Red and green as #28 for the upgrade (“the 1 000-round hash is still stored”). The ceiling has unit tests but **no red run**: showing it fail would mean running billions of rounds in CI. The default count is unchanged, so nothing is rewritten until an operator raises it. Plan: §27. **Worker:** `lib/password.ts` reads the count from the stored text; it has no upgrade, no ceiling, and compares with `===`. |
+
+**Not fixed — seen during this turn.** Source reading unless stated.
+
+*Updater*
+
+- **The update to 1.0.75 is carried out by 1.0.74.** On the phones of #24 it will be refused once more. The release notes in `version.json` say to install 1.0.75 from the release page once; from then on the repaired code does the updating.
+- **No update offer before sign-in.** `StartupUpdateGate` is inside `HomeRoot()`. A build whose sign-in is broken cannot offer its own fix.
+- **The installer's verdict is not seen.** The APK is handed over with `startActivity` (`ACTION_VIEW`, then `ACTION_INSTALL_PACKAGE`), which returns nothing; “App not installed” cannot be reported or explained by the app. `PackageInstaller` sessions return a result.
+- **Settings ▸ Check for updates** still wants a second tap after the permission step (`SettingsViewModel`); only the start-up page continues by itself.
+- **Process death on the permission screen.** Some Android versions are reported to restart an app when “Install unknown apps” is granted (not verified here). The page then comes back at the restart and one more tap is needed; nothing is downloaded twice.
+- **Manifest before APK.** `version.json` is read from raw `main`, so a release is announced a few minutes before CI has published its APK. 1.0.75 explains the 404; it does not remove the window.
+- **The signing key is public** (ADR 012). The pin proves “signed with the demo key”, which anybody can do. Owner's decision; migration notes in §27.
+
+*Sign-in, Rust*
+
+- `ratelimit::client_key` still trusts the first `X-Forwarded-For` hop, so the per-address limiter is only as good as the proxy in front. The repair is to use the connection's peer address and count trusted proxies from the right (`ConnectInfo`, plus a setting for how many proxies there are).
+- **Sign-up is not limited per address:** its key contains the e-mail, so a new e-mail is a new budget. Each sign-up also costs one PBKDF2 run.
+- **Timing shows whether an e-mail has an account:** `login` answers at once for an unknown e-mail and after a PBKDF2 run for a known one. Hashing a dummy value would close that and would let anyone make the server hash at will, so it needs the address work first.
+- PBKDF2 runs on the async worker threads. The limiter maps grow with every distinct key inside a window: the sweep in `RateLimiter::allow` starts above 10 000 keys, removes only expired entries, and then runs on every call. Both sign-in keys contain text the client chooses (the claimed address, the e-mail).
+- **Admin by unverified e-mail:** `/admin/stats` trusts `NCHAT_ADMIN_EMAIL`, and nothing verifies e-mail addresses. If that account does not exist yet, whoever registers the address is the admin. The route returns four counts.
+
+*Reviewed, nothing to change (Rust, source reading)*
+
+- **§33 item 6, first half:** `messages::send` writes the row, returns on error, and only then publishes. `db.rs` sets WAL and leaves `synchronous` at SQLite's default. Other event types were not checked one by one.
+- **SSRF:** the only outbound request is the TURN credential call in `routes/calls.rs`, to a fixed Cloudflare host with a key id from the environment. No URL comes from a request.
+- **CORS:** `CorsLayer::permissive()` with bearer tokens in a header and no cookies is not by itself a cross-site request forgery path. An allowlist is still part of item 7; it needs the list of web origins from the owner.
+
 ---
 
 ## 20. Completed work
@@ -524,6 +563,8 @@ Found while writing the authorization suite (`server/tests/authz.rs`). **Rust** 
 **Historically shipped implementation work (source exists; product-level completion is not claimed without E2E evidence):** remote repositories and JWT transport (1.0.18/1.0.19); media rendering/upload and status composer (1.0.19/1.0.20); build-time backend address (1.0.21); Keystore token storage, upload limits, path traversal fix (1.0.22); private Rust media, photo compression, chat cache, no server switcher (1.0.23); crash reporting (1.0.24); defensive preference reads (1.0.25); API log/Sync check (1.0.26); full user search and profile avatar (1.0.27); status/group-info routes (1.0.28); real voice audio (1.0.30); non-destructive device blocking (1.0.31); session-loss handling (1.0.32); history recovery (1.0.33); account isolation (1.0.34); optimistic send/retry (1.0.35); persistent outbox (1.0.36); UUID idempotency IDs (1.0.37); friend graph error states (1.0.38); realtime resync/typing expiry (1.0.39); real call signaling and status view recording (1.0.40); WebRTC media layer and TURN (1.0.41); durable friend graph (1.0.42); durable message cache and connectivity watch (1.0.43); continuously mirrored chat/group lists (1.0.44); real voice waveform and offline clip queue (1.0.45); previews/replies/deletes/reactions/forwarding (1.0.46); authenticated media playback (1.0.47); gesture ownership/upload progress (1.0.48); swipe reply/double-tap reaction/voice speed (1.0.49); in-chat search/multi-select/starred/drafts/photo pager (1.0.50); system notifications (1.0.51); text formatting/swipe archive/pinned message/message info (1.0.52); camera/location (1.0.53); mentions/private reply (1.0.54); storage manager/media index (1.0.55); group voice calls mesh (1.0.56/1.0.57); FCM-less background socket (1.0.58); call bug fixes (1.0.59); notification photos and event alerts (1.0.60); chat-list grid (1.0.61); notification deep links (1.0.62); background call ring/decline (1.0.63); full-screen update page/mention notifications (1.0.64); wallpapers/group sender runs (1.0.65); Groups/Status empty states (1.0.66); emoji picker (1.0.67); complete status composer/viewer (1.0.68); 1.0.69–1.0.74 release/onboarding/update-signing/system-downloader hardening (see §32).
 
 **Completed with objective evidence on 2026-11-10 (Phase 1, Rust backend only; branch `arena/56647832-nchat-kotlin`, not merged):** an authorization regression suite for the Rust API (`server/tests/authz.rs`, 45 tests) and the fixes it called for — group membership checks and e-mail redaction (§33 item 3), the status audience (§33 item 4), call-signal integrity, and two false announcements (§19.3). Evidence: the suite failed in CI before the fixes (runs `42790409920`, `42794405563`) and `cargo test` is green after them (run `42794684951` on `a1d2398`); see §36. Not completed: everything on the Worker side of Phase 1, and items 6–8.
+
+**Completed with objective evidence on 2026-11-10 (second Phase 1 turn; same branch, not merged):** on the Rust backend, a per-account sign-in budget and an upgrade path for password hashes, each with a test that failed in CI before the change and passes after it (§19.4 #28–#29). On Android, the signer lookup of the in-app updater, with a test that failed before the fix (§19.4 #24). The rest of the updater repair (§19.4 #25–#27) is written and builds in CI but is **not** claimed as completed: its page behaviour has no test, and nothing has run on a device.
 
 ---
 
@@ -541,7 +582,8 @@ Found while writing the authorization suite (`server/tests/authz.rs`). **Rust** 
 - UI/accessibility: strong phone-portrait design system, but no dark mode, tablet/foldable layout, or accessibility/UI automation evidence.
 - Tests: unit and Rust integration tests exist; no Android UI tests, E2E journeys, migration tests against a copy, load tests, or security regression suite. *Update 2026-11-10:* a security (authorization) regression suite now exists for the Rust backend on the Phase 1 branch; there is none for the Worker or for Android.
 - Deployment: Android and local web/worker builds are green; Cloudflare Workers Builds failed at backend main head.
-- Phase 1 critical security (added 2026-11-10): the Rust half is done on a branch that is not merged; the Worker half is not started; items 6–8 of §33 are open in both.
+- Phase 1 critical security (added 2026-11-10): the Rust half is done on a branch that is not merged; the Worker half is not started; items 6–8 of §33 are open in both. *Update (second turn):* item 8 and part of item 7 are now done in Rust; the rest stands. By the owner's decision the branch is merged only when all of Phase 1 is finished (§33).
+- In-app updater (added 2026-11-10): exists since 1.0.8; repaired as 1.0.75 on the Phase 1 branch; never proven on a device; not offered before sign-in; the system installer's result is not observed (§19.4).
 
 ---
 
@@ -590,6 +632,9 @@ Phase 1 critical security; Phase 2 account lifecycle; Phase 3 reliable messaging
 18. (2026-11-10) Android `CallRepository.handleGroupEvent` matches group-call events by fragments of their name. It drops a participant only for an event whose type contains `leave`, but both backends send `group-call:participant-left`, so that branch never runs for the event the servers actually send, and a leaver is not taken out of the roster by it (source reading; not tested on a device). It also reads the call id from `callId` before `call_id`, which is what made §19.3 #13 possible.
 19. (2026-11-10) The user projections return every user's `email` to any signed-in caller in both backends (§19.3, residual risks). Needs a product decision before code.
 20. (2026-11-10) Rust media access lets the first kind of conversation that references a file decide alone (§19.3 #23).
+21. (2026-11-10) The updater hands the APK to the system with `startActivity` (`ACTION_VIEW`, then `ACTION_INSTALL_PACKAGE`) and never learns whether the install succeeded; `PackageInstaller` sessions would report it. The update page exists only for signed-in users, keeps its state in the composable (lost on process death) and has no test; `SettingsViewModel` repeats the download-and-install flow with the older behaviour.
+22. (2026-11-10) `version.json` is read from raw `main`, so a version is announced before its APK exists. Publishing the manifest with the release, or reading the release API, would remove the window.
+23. (2026-11-10) Rust sign-in: `ratelimit::client_key` trusts a client-written header, sign-up is limited per address-and-e-mail only, and PBKDF2 runs on async worker threads (§19.4).
 
 ---
 
@@ -613,7 +658,7 @@ Phase 1 critical security; Phase 2 account lifecycle; Phase 3 reliable messaging
 |---|---|---|---|
 | Android build | `NCHAT_API_BASE` / `-PNCHAT_API_BASE` / `local.properties:nchat.apiBase` / `nchat.properties:apiBase` | committed `apiBase=` empty; CI repository variable injects value | single build-time backend root; empty shows `MissingServerScreen`; bare host normalized to HTTPS |
 | Android release | `KEY_STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` | workflow supplies public demo values | signs `app/release.keystore` restored from `.github/nchat-demo-keystore.b64` |
-| Android manifest | `versionCode` 82, `versionName` 1.0.74 | `version.json` must match | in-app updater and CI APK verification |
+| Android manifest | `versionCode` 82, `versionName` 1.0.74 on `main`; *2026-11-10:* 83 / 1.0.75 on the Phase 1 branch | `version.json` must match | in-app updater and CI APK verification |
 | Rust server | `PORT` | 8080 | binds `0.0.0.0:8080` |
 | Rust server | `NCHAT_DATA_DIR` | `data` | `nchat.sqlite` + `media/` |
 | Rust server | `JWT_SECRET` / `NCHAT_SECRET` | random ephemeral if unset (warning) | JWT and media-link signing; set persistent secret in production |
@@ -621,6 +666,8 @@ Phase 1 critical security; Phase 2 account lifecycle; Phase 3 reliable messaging
 | Rust server | `NCHAT_POOL` | 8 | SQLite connections |
 | Rust server | `NCHAT_MAX_UPLOAD_MB` | 100 | per-upload cap, 413 on exceed |
 | Rust server | `NCHAT_AUTH_RATE` / `NCHAT_AUTH_WINDOW_SECS` | 10 / 300 | process-local signup/login throttle |
+| Rust server | `NCHAT_AUTH_ACCOUNT_RATE` | 3 × `NCHAT_AUTH_RATE` (30) | sign-in attempts per account in the same window, whatever address they claim to come from (added 2026-11-10, Phase 1 branch) |
+| Rust server | `NCHAT_PBKDF2_ITERATIONS` | 100000; a lower value counts as 100000, a higher one as 10000000 | rounds for new and upgraded password hashes — read §27 before raising it (added 2026-11-10, Phase 1 branch) |
 | Rust server | `NCHAT_MEDIA_PUBLIC` | 0 | `1` disables private media enforcement |
 | Rust server | `NCHAT_MEDIA_TTL` | 600 s | signed media link lifetime |
 | Rust server | `NCHAT_ADMIN_EMAIL` | unset = no admin | `/admin/stats` gate |
@@ -652,6 +699,9 @@ Phase 1 critical security; Phase 2 account lifecycle; Phase 3 reliable messaging
 8. On `main`, upload artifact and publish GitHub Release using `version.json` `releaseTag` and notes.
 9. Local build command requires a JDK/Android SDK/Gradle install not present in this sandbox: `gradle :app:assembleRelease`; set `NCHAT_API_BASE` to an HTTPS backend. A missing address is not an error for local builds but shows MissingServerScreen.
 10. Version bumps must update `app/build.gradle` and `version.json` in the same commit; keep `versionCode` monotonically increasing and the signing key unchanged.
+11. *(2026-11-10)* A release reaches phones in two steps that are minutes apart: `version.json` on `main` is visible as soon as the merge lands (the raw file host can serve an older copy for a few minutes — general knowledge, not measured from this sandbox; the app asks with `Cache-Control: no-cache`); the APK only when the `main` run has built and published it. In between the download answers 404; from 1.0.75 the app says so.
+12. *(2026-11-10)* An update is carried out by the version that is installed, not by the one being installed. A repair to the updater therefore helps from the following update on, and the notes of the repairing release must say what to do if the old code fails.
+13. *(2026-11-10)* When a branch that carries a version bump waits — as the Phase 1 branch does — check before merging that `main` has not used that version, and that `releaseNotes` describe everything in the APK since the last release.
 
 ### Rust backend
 
@@ -666,6 +716,15 @@ cargo test
 ```
 
 Terminate TLS in a trusted reverse proxy; set `NCHAT_API_BASE` in the Android build to the public HTTPS URL. `GET /health` returns `{"ok":true}`. Back up the SQLite database and media directory; use a SQLite-aware backup for live WAL.
+
+**Password hash work factor — the plan for §33 item 8 (2026-11-10).** Both backends store `rounds:salt:key` (PBKDF2-HMAC-SHA256, 16-byte salt, 32-byte key) and both read `rounds` from the stored text, so a hash made with another count keeps verifying. On the Rust backend (Phase 1 branch) raising the count needs no script and no password reset:
+
+1. Set `NCHAT_PBKDF2_ITERATIONS` (a value below 100 000 counts as 100 000, one above 10 000 000 as 10 000 000). New accounts get the new count at once.
+2. Each existing account is upgraded after its next successful sign-in, the only time the server holds the password. A stronger hash is never replaced by a weaker one, so turning the setting back down rewrites nothing.
+3. Watch progress with `SELECT substr(password_hash, 1, instr(password_hash, ':') - 1) AS rounds, COUNT(*) FROM users GROUP BY 1;`. Accounts that never sign in keep their old hash; forcing them is a product decision (expiry or reset), not a migration step.
+4. Try it on a copy first, never on the live file: `sqlite3 data/nchat.sqlite ".backup /tmp/nchat-copy/nchat.sqlite"` (the directory must exist; the server looks for a file of exactly that name in `NCHAT_DATA_DIR`), start a second server with `NCHAT_DATA_DIR=/tmp/nchat-copy`, another `PORT` and the new setting; sign in with a test account; run the query on the copy. These manual steps are written from the source and have not been carried out — there is no toolchain and no real database in the agent's sandbox. `server/tests/auth_hardening.rs` is the automated form: its rows were computed by another implementation (Python `hashlib`) and copied into the test database.
+
+**The constraint is the other backend.** A hash written with more rounds than the Worker's runtime will compute cannot be verified there, so such accounts stop being portable from Rust to the Worker. Cloudflare's Web Crypto is reported to cap PBKDF2 at 100 000 iterations — **not verified in this project**; verify it in the Worker session before deciding anything. If it holds, the Worker cannot go higher with PBKDF2 at all, and a stronger work factor there means another algorithm and a new stored prefix that both backends recognise. Until that is decided, leave the Rust setting at its default. The Worker also lacks the two guards Rust now has: an upper bound on the stored count, and an upgrade path.
 
 ### Cloudflare Worker / web frontend
 
@@ -702,9 +761,9 @@ Create a private permanent keystore with `keytool`, back it up, add `SIGNING_KEY
 | Suite | Command / workflow | Current evidence |
 |---|---|---|
 | APK verification Python tests | `python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v` | 7 tests, all OK in this session |
-| Android JVM unit tests | `gradle :app:testDebugUnitTest` in CI | Green on `d87b703` via run `42584666249`; 21 test files tracked, cannot run locally (no Java/Gradle) |
+| Android JVM unit tests | `gradle :app:testDebugUnitTest` in CI | Green on `d87b703` via run `42584666249`; 21 test files tracked, cannot run locally (no Java/Gradle) *Update 2026-11-10 (second Phase 1 turn):* 67 `@Test` in 22 files on the branch; red by design on `6bc65dc` (run `42802241927`: 58 tests, 1 failed), green on `5091dbb`, `8a506c8`, `6eee8c6`, `2b30f1d` (runs `42802654826`, `42803934030`, `42805221994`, `42805578589`). |
 | Android release build/signature | `gradle :app:assembleRelease` + apksigner/aapt/Python verification in CI | Green on `d87b703`; pinned fingerprint checked |
-| Rust build/clippy/test | `cargo build --all-targets`, `cargo clippy --all-targets`, `cargo test` with zero-test guard | 18 tokio integration tests + unit tests defined; last green run `42491305703` on prior SHA; no local cargo *Update 2026-11-10:* Phase 1 branch — 63 tokio integration tests (`api` 9, `authz` 45, `groups_status_calls` 4, `media` 5) + 16 unit tests, green on `a1d2398` (run `42794684951`). `main` at `a867fdd` is green with the earlier 18 (run `42779970114`). |
+| Rust build/clippy/test | `cargo build --all-targets`, `cargo clippy --all-targets`, `cargo test` with zero-test guard | 18 tokio integration tests + unit tests defined; last green run `42491305703` on prior SHA; no local cargo *Update 2026-11-10:* Phase 1 branch — 63 tokio integration tests (`api` 9, `authz` 45, `groups_status_calls` 4, `media` 5) + 16 unit tests, green on `a1d2398` (run `42794684951`). `main` at `a867fdd` is green with the earlier 18 (run `42779970114`). *Update 2026-11-10 (second turn):* 69 tokio integration tests (adds `auth_hardening.rs`, 6) and 20 unit tests by source count; red by design on `6eee8c6` (run `42805222571`: `auth_hardening` 4 passed, 2 failed), green on `2b30f1d` (run `42805578387`). |
 | Worker typecheck | `cd worker && npm ci && npm run typecheck` | Exit 0 in fresh backend clone, this session |
 | Web frontend | `npm ci && npm run type-check && npm run build` | Exit 0; 1649 modules; Vite built in 3.14 s, this session |
 | Web lint | `npm run lint` | Known broken because ESLint is not installed; do not treat as a green gate |
@@ -763,12 +822,15 @@ Measure first in a safe staging environment; increase concurrency gradually; doc
 | 007 | Rust media private by default; Cloudflare migration pending | Self-hosted server must check conversation membership; R2 public read remains high-risk |
 | 008 | WebRTC 1:1 P2P + TURN; group calls mesh, no SFU yet | Suitable for small calls only; SFU evaluation required before scale claims |
 | 009 | No E2EE until a protocol/key-lifecycle project | TLS/JWT/Keystore are not E2EE; server stores plaintext |
-| 010 | PBKDF2 100k retained for Worker/Rust byte compatibility | OWASP now recommends 600k for PBKDF2-HMAC-SHA256; migration debt recorded |
+| 010 | PBKDF2 100k retained for Worker/Rust byte compatibility | OWASP now recommends 600k for PBKDF2-HMAC-SHA256; migration debt recorded **Note 2026-11-10:** Rust can now write a higher count and upgrade to it (`NCHAT_PBKDF2_ITERATIONS`); the default stays 100k for compatibility — see §27. |
 | 011 | Static Compose backgrounds, no tab cross-fade, no per-row entry animations/shadows | Root cause of historical tab-switch jank; preserve for low-end devices |
 | 012 | Public demo signing key retained for update compatibility | Any rotation breaks existing installs; requires explicit migration plan |
 | 013 | CI is source of truth when local Gradle/cargo unavailable | Never claim local compile success; stale `.ci/last-failure.log` is not status |
 | 014 | One central `agent.md`; no conflicting status docs | Enables handover across agents/models; this file supersedes nine docs |
 | 015 | Device-local drafts/stars/pins/archive/wallpaper are intentional | Worker has no wire fields; must not be presented as account-synced |
+| 016 | Updates stay optional: the update page keeps “Not now”; nothing is forced (owner, 2026-11-10) | The page asks again at the next start and, from 1.0.75, at most every six hours when the app returns to the foreground. A forced update would need a new manifest field and the owner's decision |
+| 017 | The Phase 1 branch is merged only when all of Phase 1 is finished (owner, 2026-11-10) | Keeps `main` and the released app as they are until then. Cost: the updater repair (1.0.75) and the Rust fixes wait with it, and the branch must be checked against `main` before merging (§27, Android rule 13) |
+| 018 | Sign-in attempts are limited per account as well as per address (Rust, 2026-11-10) | The address is client-written unless a trusted proxy sets it; a per-account budget cannot be reset by the client. Accepted cost: a targeted, temporary sign-in lockout for new devices |
 
 ---
 
@@ -817,6 +879,23 @@ Additional version-marker commit: `d1be4f5d16` “Release NChat 1.0.69” (2026-
 
 Dates are author dates. The two `ci: backend failure log [skip ci]` commits were made by the workflow on the two red-by-design runs; each log was removed again by the commit that follows the fix. Commits after `a1d23985852a` on this branch change only `agent.md`.
 
+### `NChat-kotlin` branch `arena/56647832-nchat-kotlin` — second Phase 1 turn: updater repair, sign-in; not merged (most recent first)
+
+| SHA | Date UTC | Subject |
+|---|---|---|
+| `2b30f1d9f0da` | 2026-11-10 11:12:33 | ci: remove the backend failure log of the expected red run |
+| `dd4b49758093` | 2026-11-10 11:12:33 | fix(server): a per-account sign-in budget, and weaker password hashes are upgraded |
+| `5f0b2d95b8b4` | 2026-11-10 11:10:43 | ci: backend failure log [skip ci] |
+| `6eee8c692c54` | 2026-11-10 11:10:00 | test(server): sign-in guesses and weak stored password hashes |
+| `8a506c863d8b` | 2026-11-10 11:00:51 | release: NChat 1.0.75 (versionCode 83), in-app update repair |
+| `4b3f2a167ad8` | 2026-11-10 11:00:51 | fix(update): look again on return, continue after the install permission, say what failed |
+| `5091dbb83c3e` | 2026-11-10 10:51:25 | ci: put the stale Android failure log back to main's copy |
+| `c5eed2642216` | 2026-11-10 10:51:25 | fix(update): read the signer of a downloaded APK on Android 9, 10 and early 13 |
+| `be9759610f0b` | 2026-11-10 10:50:23 | ci: capture build failure log [skip ci] |
+| `6bc65dc113ea` | 2026-11-10 10:48:25 | test(update): the updater must read an APK file's signer on every Android release |
+
+Below these is `e2709bd` (“docs(agent.md): record the Rust half of Phase 1”). The two `[skip ci]` commits were made by the workflows on the two red-by-design runs. `.ci/last-failure.log` exists on `main` as a stale copy, so it was put back to `main`'s content rather than deleted; `server/.ci/last-failure.log` does not exist on `main` and was deleted. “release:” in `8a506c863d8b` is a version bump on a branch — nothing was published. Commits after `2b30f1d9f0da` change only `agent.md`.
+
 ### `nchat-friends` `main` (most recent first)
 
 | SHA | Date UTC | Subject |
@@ -855,7 +934,7 @@ Appendix B preserves the condensed 1.0.1–1.0.68 release history and important 
 7. Add server-side rate limits, CORS allowlist, admin role, and CSRF/XSS/SSRF/input-validation review.
 8. Plan PBKDF2 iteration migration with stored-prefix compatibility and a copy-based test. Deliverable: security remediation report + passing tests.
 
-**Phase 1 status — 2026-11-10.** The Rust half is done on branch `arena/56647832-nchat-kotlin` (not merged). “Done” means: a test failed in CI before the fix and passes after it.
+**Phase 1 status — 2026-11-10.** The Rust half is done on branch `arena/56647832-nchat-kotlin` (not merged). “Done” means: a test failed in CI before the fix and passes after it. *Clarification added after the second turn:* “the Rust half” in that sentence means items 1–5 and the added call-signal row. Items 6 and 7 are not finished in Rust either; the table says how far each one is.
 
 | Item | Rust backend | Cloudflare Worker |
 |---|---|---|
@@ -864,12 +943,17 @@ Appendix B preserves the condensed 1.0.1–1.0.68 release history and important 
 | 3 Group membership checks, e-mail redaction | Done — `0ec858c` | NOT_STARTED |
 | 4 Status privacy | Done — `b647f5a` (§9 item 11) | NOT_STARTED |
 | 5 DM participant/friend/block checks | Was already enforced; now covered by `authz.rs` | NOT_STARTED; blocking policy not reconciled |
-| 6 Durable persistence, sequence, cursor | NOT_STARTED | NOT_STARTED |
-| 7 Rate limits, CORS allowlist, admin role, input review | NOT_STARTED | NOT_STARTED |
-| 8 PBKDF2 migration plan | NOT_STARTED | NOT_STARTED |
+| 6 Durable persistence, sequence, cursor | NOT_STARTED as work. Reviewed 2026-11-10: `messages::send` already persists before it publishes (§19.4). Sequence, cursor and missed-event recovery are a protocol change for both servers and the app; they overlap Phase 3 and need a design decision first | NOT_STARTED |
+| 7 Rate limits, CORS allowlist, admin role, input review | IN_PROGRESS — per-account sign-in budget done (`dd4b497`, §19.4 #28); SSRF, CORS and the admin gate reviewed (§19.4). Open: the real client address behind a proxy, a per-address sign-up limit, limits beyond sign-in, the CORS allowlist, sign-in timing | NOT_STARTED — no rate limiting at all in `worker/src` (§19.4 #28) |
+| 8 PBKDF2 migration plan | Done as far as it can be without real data — `dd4b497`: the upgrade mechanism, the plan in §27, and tests whose stored hashes were computed by another implementation and copied into the test database. **Not done:** a run against a copy of a real database (none is available to the agent). The default count is unchanged on purpose | NOT_STARTED — the runtime's PBKDF2 limit has to be verified first (§27) |
 | Added: call-signal integrity and false announcements (§19.3 #11–#19) | Done — `0ec858c`, `84ceec5`, `d247d39`, `feb3600` | NOT_STARTED |
+| Added: in-app updater repair, Android 1.0.75 (§19.4 #24–#27) | Not a server item. Android: done on the branch (`c5eed26`, `4b3f2a1`, `8a506c8`); not run on a device; not released | Not applicable |
 
-**Next precise task (as of 2026-11-10):** port the same checks to the Worker in `nchat-friends`, test-first: `worker/src/routes/groups.ts`, `status.ts`, `calls.ts`, `groupCalls.ts`, `friends.ts`, then `media.ts` and the realtime room rule. `server/tests/authz.rs` is the specification — each test is one request and the answer it must get. This needs a session on that repository and, first, a way to run Worker tests (there is none). Decisions to get from the owner before or alongside: whether other users' e-mail addresses stay in `/users` and `/friends` responses, whether to fix §19.3 #23, and merging the Phase 1 branch.
+**Owner decisions, 2026-11-10 (second turn).** Given as answers to two structured questions; the owner's free-text wording was not kept, so none is quoted. (1) *Merge:* the Phase 1 branch goes to `main` only when **all** of Phase 1 is finished (answer `all_phase1_then_merge`). No pull request and no merge before that; this also keeps 1.0.75 from phones until then. (2) *Updates stay optional:* “Not now” is kept; nothing is forced. (3) *What had happened with earlier updates:* the answer was “Downloaded, then an error”. The exact message and the Android version were not given; ask for both if it happens again. Still unanswered from the first turn: other users' e-mail addresses in `/users` and `/friends` responses, and §19.3 #23.
+
+**What “all of Phase 1” still needs (2026-11-10, after the second turn).** *Worker:* everything — items 1–5, the call-signal findings, rate limiting, the password guards. It needs a session on `nchat-friends`, and first a way to run Worker tests. *Rust:* the rest of item 7 (listed in the table) and item 6's sequence and cursor, which is a design decision before it is code. *Android:* nothing is required by Phase 1 itself; `handleGroupEvent` not matching `group-call:participant-left` (§24 #18) is a known client bug outside it.
+
+**Next precise task (as of 2026-11-10):** port the same checks to the Worker in `nchat-friends`, test-first: `worker/src/routes/groups.ts`, `status.ts`, `calls.ts`, `groupCalls.ts`, `friends.ts`, then `media.ts` and the realtime room rule. `server/tests/authz.rs` is the specification — each test is one request and the answer it must get. This needs a session on that repository and, first, a way to run Worker tests (there is none). Decisions to get from the owner before or alongside: whether other users' e-mail addresses stay in `/users` and `/friends` responses, whether to fix §19.3 #23, and merging the Phase 1 branch. *Update after the second turn:* unchanged — the Worker is the next task, and it is now also what unblocks the merge; `server/tests/auth_hardening.rs` joins `authz.rs` as specification. In this repository the next contained step is the client address behind a proxy (`ratelimit::client_key`, `ConnectInfo`, a trusted-proxy count), test-first.
 
 **Phase 2 — Core account lifecycle:** phone/OTP or documented email verification, country/format validation, duplicate detection, expiry/resend/attempt limits, device/IP rate limits, default privacy/notification/security settings, session/device registry, logout/re-login, account deletion/export. Deliverable: tested complete lifecycle.
 
@@ -952,7 +1036,6 @@ Do not proceed to destructive DB operations, production deployment, secret rotat
 | 2026-11-09 | Backend stale-claim scan | `grep -RniE 'disappearing\|e2ee\|end.to.end\|two.step\|otp\|account deletion\|invite\|report' worker/src src`, service-file inventory, `package.json` | No disappearing/E2EE/two-step/OTP/account-deletion/report route or service; `src/services/` has 11 files, no `disappearingService`, `encryptionService`, or `pushNotificationService`; React 18.3.1; no Radix/ESLint dependencies |
 | 2026-11-09 | Application code changes | `git status`/diff after this change | None: only `agent.md` added and nine project-owned `.md` files deleted; no schema/API/config/deployment/secret changes |
 | 2026-11-09 | Phase 0 substantive commit | `git commit` on `arena/d8051bf9-nchat-kotlin` | `f45480678630810eff1a525469d83d1feca0021f`; 10 files changed, 1082 insertions, 2104 deletions; working tree clean after commit |
-
 | 2026-11-10 | PR #87 checks | `gh pr checks 87 --watch` | Android `build` passed in 58 s; Rust `Build and test` passed in 1 m 3 s; PR mergeable |
 | 2026-11-10 | Phase 0 on main | `gh pr merge 87 --merge`, `gh pr view 87`, `git ls-remote`, `git show origin/main:agent.md` | PR #87 merged at 2026-11-10 08:05:44 UTC as `a867fdd881740889ee153013323072c1ebb8ea79`; `agent.md` present on `main` (1083 lines); `agent.md` is the only project-owned Markdown file there; no direct push to `main` |
 | 2026-11-10 | `main` head re-check | `git ls-remote origin main`, `gh pr view 88`, `gh run list --workflow backend.yml --branch main` | `main` is `ec0f86cd2899eac3fa3ad5885f3b8442a6e946cc` (PR #88, `agent.md` only). Rust backend run `42779970114` was green on `a867fdd` at 08:05:48Z, so the “not re-run on HEAD” statements elsewhere in this file were already out of date for the 18-test suite |
@@ -966,10 +1049,22 @@ Do not proceed to destructive DB operations, production deployment, secret rotat
 | 2026-11-10 | Local Rust compile or test | `command -v cargo rustc` | No toolchain. The repository's Rust code was never compiled or tested locally. Before each push a tree-sitter syntax check was run on the changed files; it is not compile evidence |
 | 2026-11-10 | Worker source re-read | fresh `git clone --depth 1` of `nchat-friends` (`616a9e69407b072de29f640f35ea05c6f48b9768`); reads of `worker/src/routes/{groups,status,calls,groupCalls,friends}.ts`, `worker/package.json` | The gaps fixed in Rust this turn are still open in the Worker, except where §19.3 says the Worker differs (#20, #22, #23). No test files and no test script exist there. Nothing was executed or changed |
 | 2026-11-10 | Phase 1 application code changes | `git diff --stat ec0f86c..a1d2398` | 9 files changed, 2400 insertions, 55 deletions: `server/src/privacy.rs`, `server/src/routes/{calls,friends,group_calls,groups,media,mod,status}.rs`, `server/tests/authz.rs` (new, 2029 lines). Route table unchanged (72 `route(` lines); `server/schema.sql`, `app/` and `.github/` untouched |
+| 2026-11-10 | Updater: which flag loads a file's certificates | AOSP source read through the GitHub contents API (`aosp-mirror/platform_frameworks_base`): `PackageManager.getPackageArchiveInfo`, `ApplicationPackageManager`, `PackageParser.generatePackageInfo` | Only `GET_SIGNATURES` collects a file's certificates at `android-7.0.0_r1`, `8.0.0_r1`, `9.0.0_r1`, `10.0.0_r1`, `13.0.0_r1`, `_r2` and `_r3`. Either flag does at `11.0.0_r1`, at `12.0.0_r1` and `12.1.0_r1` (there in `ApplicationPackageManager`), at `13.0.0_r16`, `_r30`, `_r41`, `_r52`, `_r67` and `_r84`, and at `14.0.0_r1`, `14.0.0_r75`, `15.0.0_r1` and `16.0.0_r3`. `PackageParser` at `9.0.0_r1`, `10.0.0_r1` and `13.0.0_r1` leaves `signingInfo` null when no certificates were collected. Tags between `13.0.0_r3` and `_r16` were not read. Source reading; no device; vendor builds not covered |
+| 2026-11-10 | Updater: signer test alone (red by design) | push `6bc65dc`; APK run `42802241927` | Failure at “Run Android unit tests”: 58 tests, 1 failed — `UpdateSignerPolicyTest.asksForAnApkFilesCertificatesTheWayEveryAndroidReleaseLoadsThem` |
+| 2026-11-10 | Updater: signer fix | push `5091dbb` (the fix is `c5eed26`); APK run `42802654826` | Success: unit tests, signed release build, release verification |
+| 2026-11-10 | Updater: page behaviour, messages, version 1.0.75 | push `8a506c8`; APK run `42803934030` | Success; `verify_release_apk.py` accepted 1.0.75 / 83 with the pinned signer; the publish step was skipped (not `main`) |
+| 2026-11-10 | Release-script tests | `python3 -m unittest` in `.github/scripts` | 7 tests OK, locally |
+| 2026-11-10 | Sign-in: tests alone (red by design) | push `6eee8c6`; Rust run `42805222571` | Failure: `auth_hardening` 4 passed, 2 failed — “60 of 60 guesses were checked…” and “the 1 000-round hash is still stored”. The passing four include hashes computed by Python verifying in Rust. Unit tests 16/16, `api` 9/9; later targets did not run |
+| 2026-11-10 | Sign-in: fix | push `2b30f1d` (the fix is `dd4b497`); Rust run `42805578387`; APK run `42805578589` | Both success. Rust: Build and Test steps success, failure-log step skipped |
+| 2026-11-10 | Worker sign-in, read only | clone at `616a9e6`: case-insensitive search of `worker/src` and `worker/wrangler.toml` for rate-limit, throttle, “too many” and 429; read of `worker/src/lib/password.ts` | No match: no application-level limit. The password check reads the stored count and has no bound and no upgrade |
+| 2026-11-10 | Device or emulator test of the updater | — | **Not done; not possible here.** Nothing about install behaviour is verified |
+| 2026-11-10 | Code changes of the second turn | `git diff --stat e2709bd..2b30f1d` | 16 files, 955 insertions, 84 deletions: 7 Android source files, 3 Android test files, `app/build.gradle`, `version.json`, 4 Rust source files, `server/tests/auth_hardening.rs` |
 
 **Current project health:** Android main build/CI green and PR #87 checks passed on the merged Phase 0 change; web/worker local typecheck/build green; Rust integration suite green on a recent prior commit but not re-run on HEAD; Cloudflare deployment blocked/failing; security status has multiple confirmed high-risk authorization gaps; no feature claims of full product completion; no known active Android compile regression; no production deployment performed; no destructive operation performed; `agent.md` is now available to future agents from `main`.
 
 **Current project health — update 2026-11-10 (Phase 1 branch, not merged):** Rust backend — build and all tests green in CI on `a1d2398`, now including an authorization suite; the Rust authorization gaps of §19.1 #4–#7 and §19.3 #11–#22 are closed there, #23 and the residual risks are open. Cloudflare Worker (the reference backend, ADR 002) — unchanged: those gaps are still present there (§19.3 lists the three that take a different shape), as are public media and open realtime rooms, and its deployment still fails. Android — no change; APK workflow green on the branch. Rust format check red (advisory) on `main` and on the branch; clippy not observable. No deployment, schema change, secret change or destructive operation was performed.
+
+**Current project health — update 2026-11-10, second Phase 1 turn (same branch, not merged):** Android — the in-app updater is repaired in source as 1.0.75 and CI is green (unit tests, signed release build, release verification), but **no update has been installed on a device in any recorded session**, so the feature stays `IMPLEMENTED_UNVERIFIED`; the published app is still 1.0.74, with the signer defect of §19.4 #24. Rust backend — build and tests green on `2b30f1d`; sign-in is limited per account and password hashes can be upgraded. Cloudflare Worker — unchanged, and now known to have no sign-in limit at all. Phase 1 is **not** complete, and by the owner's decision nothing is merged until it is. No deployment, release, schema change, secret change or destructive operation was performed.
 
 ---
 
@@ -1110,6 +1205,7 @@ Version codes are from historical `eagle-x.md`; current manifest is 1.0.74 / cod
 | 1.0.69 | — | release marker commit `d1be4f5d16`; subsequent QA/profile/onboarding work |
 | 1.0.70–1.0.73 | — | release/QA iterations around profile setup, onboarding/chat relationships, APK signing, update flow; see §32 commits |
 | 1.0.74 | 82 | system DownloadManager fallback for in-app APK update timeouts; current `version.json` |
+| 1.0.75 | 83 | in-app update repair: signer lookup on Android 9/10/13, a look for a release when the app returns to the foreground, the install-permission step continues by itself, clearer failures. **On the Phase 1 branch only — not merged, not released** (2026-11-10) |
 
 ---
 
@@ -1128,6 +1224,14 @@ Version codes are from historical `eagle-x.md`; current manifest is 1.0.74 / cod
 **Test-first for authorization (added 2026-11-10):** push the test alone and let CI show it failing, then push the fix. A test that has never been seen to fail proves little, and here it is also the only way to learn that the code compiles. Read the client before trusting a fix: the first signal-relay fix protected the keys the server writes, while the Android client reads the same fact under other spellings (§19.3 #13).
 
 **Toolchains and supply chain (added 2026-11-10, after an incident):** never download or run a compiler, formatter or package from an unofficial mirror to make up for a missing local toolchain — not even inside a home-made sandbox. On 2026-11-10 an agent that could not reach the official Rust hosts fetched a Rust toolchain from a third-party GitHub mirror whose origin could not be verified, and ran it on a throwaway project. The isolation it had built was not sound: the restricted account it used could have become `root`, and the environment held a GitHub token. An audit found no sign of misuse; everything was removed; nothing from that toolchain reached the repository; the owner was told and advised to reconnect GitHub so that the token is replaced. The rule: if the official source is unreachable, the tool is unavailable. Write the tests, check syntax with tree-sitter, and let CI compile (ADR 013).
+
+**Updater (added 2026-11-10):** ask `getPackageArchiveInfo` with `GET_SIGNATURES | GET_SIGNING_CERTIFICATES` on Android 9+ — the new flag alone returns no signer on Android 9, 10 and early 13 (`signerLookupFlags`; do not “simplify” it). An update is carried out by the installed version, so a repair to the updater only helps from the following release. A notice on the update page is either a step or an error: never print a step in red. The update manifest goes live minutes before its APK.
+
+**Platform behaviour without a device (added 2026-11-10):** read the platform's own source at the exact release tags (`aosp-mirror/platform_frameworks_base` through the GitHub contents API with `Accept: application/vnd.github.raw`), cite the tags, and say plainly that it is source reading. Vendor builds can differ.
+
+**Tests that prove a limit (added 2026-11-10):** a test for “this expensive thing is refused” must assert the cheap decision first, so that a broken guard fails the test instead of running the expensive thing in CI. Do not make such a test fail on purpose.
+
+**Rate-limit keys (added 2026-11-10):** nothing a client can write belongs in the only key of a limit. `X-Forwarded-For` is client-written unless a trusted proxy replaces it.
 
 **Performance/layout:** static backgrounds; tab switching is a composition swap; no per-row entrance animations or shadows; nav affordances ≤150 ms; stable keys and hoisted `LazyListState`; derived lists in `remember(data,key)`; one weighted flexible child per row; single-line tokens/ellipsis; fixed leading/trailing columns; ask what happens at 1.3× font scale on a 360 dp screen.
 
@@ -1203,6 +1307,21 @@ Legal/security/compliance-relevant content from `SECURITY.md`, `UPDATE_SETUP.md`
 - **Known limitations:** the repository's Rust code was never compiled or tested locally; green CI logs cannot be read from the sandbox, so the pass counts of green runs come from the source, not from a log; the format check fails (advisory) on `main` and here, and clippy's result cannot be observed; the Worker was read, not executed; no device or end-to-end test. One process failure of this turn is recorded in Appendix C (toolchains and supply chain).
 - **Remaining work:** the Worker half of Phase 1 (status table in §33); items 6–8; finding #23 and the residual risks in §19.3; merging the branch.
 - **Next recommended task:** port the checks to the Worker in `nchat-friends`, test-first, with `server/tests/authz.rs` as the specification; get the owner's decisions on other users' e-mail addresses in API responses and on §19.3 #23.
+
+### 2026-11-10 — Phase 1, second turn: in-app updater repair (Android 1.0.75) and sign-in hardening (Rust)
+
+- **Task:** the owner's message concerned an in-app update system and a merge to `main` (its wording was not kept). Answered first: the work is in `NChat-kotlin` only; Phase 1 is not complete; an updater has existed since 1.0.8 and was found defective, so it is repaired rather than built a second time. Then the owner's decisions: merge only when all of Phase 1 is finished; updates stay optional (§33; ADR 016, 017). Work: repair the updater, then continue Phase 1 on the Rust backend.
+- **Agent:** Arena.ai Agent Mode.
+- **Start commit:** `e2709bd` on `arena/56647832-nchat-kotlin` (13 commits above `main`, `ec0f86c`).
+- **End commit:** `2b30f1d9f0da08c54fa055efc1ce7c37d062fe0f` — the last commit that touches code; later commits change only `agent.md`. Not merged; no pull request — the owner tied both to the completion of Phase 1.
+- **Files modified:** Android — `core/update/{AutoUpdater,ApkDownloader,UpdateSignerPolicy}.kt`, new `core/update/UpdateCheckPolicy.kt`, `feature/update/UpdateGate.kt`, `MainActivity.kt` (one call in `onResume`); tests `core/update/{ApkDownloaderTest,UpdateSignerPolicyTest}.kt` and new `UpdateCheckPolicyTest.kt`; `app/build.gradle`; `version.json`. Rust — `server/src/{password,lib,main}.rs`, `server/src/routes/auth.rs`, new `server/tests/auth_hardening.rs`. `agent.md`.
+- **Database changes:** none. Password hashes are rewritten only if an operator raises `NCHAT_PBKDF2_ITERATIONS`, one account at a time, at sign-in.
+- **API changes:** no route added, removed or renamed. `/auth/login` already answered 429 per claimed address; it now also answers 429 per account, whatever address the attempts claim to come from. New settings `NCHAT_AUTH_ACCOUNT_RATE` and `NCHAT_PBKDF2_ITERATIONS` (§26). Android: `versionCode` 83, `versionName` 1.0.75; nothing changed in how the app talks to the server.
+- **Tests executed:** GitHub Actions only, both workflows on every push; `python3 -m unittest` for the release scripts, locally. Before pushing Rust, a tree-sitter syntax check (not compile evidence); nothing comparable for Kotlin.
+- **Test results:** red by design on `6bc65dc` (Android, 1 of 58) and `6eee8c6` (Rust, 2 of 6 in `auth_hardening`); green on `5091dbb`, `8a506c8`, `6eee8c6` (Android) and on `2b30f1d` (both workflows). By source count: 67 Android JVM tests, 69 Rust integration tests, 20 Rust unit tests.
+- **Known limitations:** nothing was installed or run on a phone or an emulator — the updater's defect was found by reading Android's source, and its repair is untested where it matters. The Compose changes in `UpdateGate.kt` have no test. 1.0.75 exists only on the branch: phones keep 1.0.74 until the merge, and the update to 1.0.75 is itself carried out by 1.0.74. The per-account sign-in limit can be used to keep someone from signing in on a new device for a few minutes. Green CI logs cannot be read from the sandbox; format and clippy results are not observable.
+- **Remaining work:** §33, “What ‘all of Phase 1’ still needs”; the unfixed lists in §19.3 and §19.4.
+- **Next recommended task:** the Worker half, in a session on `nchat-friends`, with `server/tests/authz.rs` and `server/tests/auth_hardening.rs` as the specification. If the owner reports another failed update, get the exact message and the Android version first.
 
 ---
 
