@@ -341,24 +341,29 @@ pub async fn remove(
     Path(friend_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
-    state.db.with(|conn| {
-        conn.execute(
+    let removed = state.db.with(|conn| {
+        let friendships = conn.execute(
             "DELETE FROM friendships
              WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)",
             params![user_id, friend_id, friend_id, user_id],
         )?;
-        conn.execute(
+        let requests = conn.execute(
             "DELETE FROM friend_requests
              WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
             params![user_id, friend_id, friend_id, user_id],
         )?;
-        Ok(())
+        Ok(friendships + requests)
     })?;
 
-    state.hub.publish_to_user(
-        &friend_id,
-        &json!({ "type": "friend:removed", "userId": user_id }).to_string(),
-    );
+    // Tell the other side only when something between the two of them was
+    // actually removed. Unconditionally, this route let any signed-in user push
+    // a `friend:removed` event to any user id.
+    if removed > 0 {
+        state.hub.publish_to_user(
+            &friend_id,
+            &json!({ "type": "friend:removed", "userId": user_id }).to_string(),
+        );
+    }
     Ok(Json(json!({ "success": true })))
 }
 
