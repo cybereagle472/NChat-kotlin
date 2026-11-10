@@ -83,6 +83,30 @@ fn group_member_ids(state: &AppState, group_id: &str) -> ApiResult<Vec<String>> 
     })?)
 }
 
+/// `true` when the user was rung for this call or has joined it.
+fn is_participant(state: &AppState, call_id: &str, user_id: &str) -> ApiResult<bool> {
+    let found: Option<i64> = state.db.with(|conn| {
+        conn.query_row(
+            "SELECT 1 FROM group_call_participants WHERE call_id = ? AND user_id = ?",
+            params![call_id, user_id],
+            |row| row.get(0),
+        )
+        .optional()
+    })?;
+    Ok(found.is_some())
+}
+
+/// Someone who belongs to this call: a current member of its group, or a user
+/// with a participant row. The second half matters for a member who is removed
+/// from the group while they are on the call — they must still be able to hang up.
+fn belongs_to_call(state: &AppState, call: &GroupCallRow, user_id: &str) -> ApiResult<bool> {
+    Ok(is_member(state, &call.group_id, user_id)? || is_participant(state, &call.id, user_id)?)
+}
+
+/// The envelope of a relayed `group-call:signal` event; a signal body cannot
+/// override these (see `calls::signal` for why). `to` is routing, not payload.
+const SIGNAL_RESERVED_KEYS: [&str; 4] = ["type", "call_id", "from", "to"];
+
 /// `joinedParticipantsOf()` — everyone already in the call, minus `excluding`.
 fn joined_participants(
     state: &AppState,
@@ -292,6 +316,12 @@ pub async fn join(
     Ok(Json(join_call(&state, &call, &user_id)?))
 }
 
+/// `POST /group-calls/:id/signal` — relay an SDP offer/answer or ICE candidate
+/// to one other participant (`to`).
+///
+/// Three things the reference does not check: the body cannot replace the
+/// event envelope, the recipient has to belong to the call (otherwise any
+/// member could push events to any user id), and an ended call relays nothing.
 pub async fn signal(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -309,10 +339,17 @@ pub async fn signal(
     if !is_member(&state, &call.group_id, &user_id)? {
         return Err(ApiError::forbidden("Not authorized"));
     }
+    // Late candidates after everyone has left are normal; they just go nowhere.
+    if call.status != "active" {
+        return Ok(Json(json!({ "success": true })));
+    }
+    if !belongs_to_call(&state, &call, &to)? {
+        return Err(ApiError::forbidden("Not authorized"));
+    }
 
     let mut payload = json!({ "type": "group-call:signal", "call_id": id, "from": user_id });
     for (key, value) in body {
-        if key == "to" {
+        if SIGNAL_RESERVED_KEYS.contains(&key.as_str()) {
             continue;
         }
         payload[key] = value;
@@ -328,6 +365,11 @@ pub async fn decline(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let call = get_call(&state, &id)?.ok_or_else(|| ApiError::not_found("Call not found"))?;
+    // The reference lets any signed-in caller "decline" any call, which sends a
+    // `participant-declined` event to the person who started it.
+    if !belongs_to_call(&state, &call, &user_id)? {
+        return Err(ApiError::forbidden("Not authorized"));
+    }
 
     state.db.with(|conn| {
         conn.execute(
@@ -358,6 +400,11 @@ pub async fn leave(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let call = get_call(&state, &id)?.ok_or_else(|| ApiError::not_found("Call not found"))?;
+    // Without this, anyone could announce `participant-left` to everybody on a
+    // call they were never part of.
+    if !belongs_to_call(&state, &call, &user_id)? {
+        return Err(ApiError::forbidden("Not authorized"));
+    }
     let now = now_iso();
 
     state.db.with(|conn| {
