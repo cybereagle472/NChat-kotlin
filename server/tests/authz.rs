@@ -1224,6 +1224,35 @@ async fn only_the_author_can_list_who_viewed_a_status() {
 }
 
 #[tokio::test]
+async fn only_the_author_can_delete_a_status() {
+    let Cast {
+        app,
+        ada,
+        grace,
+        mallory,
+    } = cast().await;
+    let status_id = app.post_status(&ada, json!({})).await;
+    let path = format!("/status/{status_id}");
+
+    // The route answers 200 to anyone; what matters is that nothing is deleted.
+    for user in [&grace, &mallory] {
+        app.call("DELETE", &path, Some(&user.token), None).await;
+    }
+    assert_eq!(
+        app.feed(&grace).await,
+        vec![status_id.clone()],
+        "someone other than the author deleted the status"
+    );
+
+    let (status, body) = app.call("DELETE", &path, Some(&ada.token), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        app.feed(&grace).await.is_empty(),
+        "the author could not delete their own status"
+    );
+}
+
+#[tokio::test]
 async fn status_media_is_readable_by_friends_and_not_by_strangers() {
     let Cast {
         app,
