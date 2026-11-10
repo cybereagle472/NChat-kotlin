@@ -60,6 +60,41 @@ async fn main() {
         .filter(|value| *value > 0)
         .unwrap_or(auth_rate.saturating_mul(3));
 
+    // Which address a request is counted against. 0: the address of the connection, which
+    // is right when clients reach this port directly. n: the n-th entry from the right of
+    // X-Forwarded-For, which is right when exactly n reverse proxies stand in front and
+    // nothing else can reach this port. See `ratelimit::client_address`.
+    let trusted_proxies: usize = std::env::var("NCHAT_TRUSTED_PROXIES")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0);
+    // Password hashes one client address may ask for, across accounts, sign-in and sign-up
+    // together. Three times the per-(client, account) budget unless set.
+    let auth_address_rate: usize = std::env::var("NCHAT_AUTH_ADDRESS_RATE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(auth_rate.saturating_mul(3));
+    // What one signed-in account may do: messages, statuses and uploads a minute, and
+    // friend requests, new groups, added members and calls in five minutes.
+    let send_rate: usize = std::env::var("NCHAT_SEND_RATE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(300);
+    let contact_rate: usize = std::env::var("NCHAT_CONTACT_RATE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30);
+    // Websites a browser may call this API from, comma-separated. Empty: none.
+    let cors_origins: Vec<String> = std::env::var("NCHAT_CORS_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|origin| origin.trim().to_string())
+        .filter(|origin| !origin.is_empty())
+        .collect();
+
     // PBKDF2 rounds for new and upgraded password hashes. Never below what both backends
     // write today; see `password.rs` for what raising it means for the other backend.
     let password_iterations: u32 = std::env::var("NCHAT_PBKDF2_ITERATIONS")
@@ -114,6 +149,20 @@ async fn main() {
             auth_account_rate,
             std::time::Duration::from_secs(auth_window_secs),
         ))
+        .with_address_limiter(nchat_server::ratelimit::RateLimiter::new(
+            auth_address_rate,
+            std::time::Duration::from_secs(auth_window_secs),
+        ))
+        .with_send_limiter(nchat_server::ratelimit::RateLimiter::new(
+            send_rate,
+            std::time::Duration::from_secs(60),
+        ))
+        .with_contact_limiter(nchat_server::ratelimit::RateLimiter::new(
+            contact_rate,
+            std::time::Duration::from_secs(300),
+        ))
+        .with_trusted_proxies(trusted_proxies)
+        .with_cors_origins(cors_origins.clone())
         .with_password_iterations(password_iterations)
         .with_public_media(media_public)
         .with_media_link_ttl(media_ttl);
@@ -121,12 +170,45 @@ async fn main() {
         max_upload_mb,
         auth_rate,
         auth_account_rate,
+        auth_address_rate,
         auth_window_secs,
+        send_rate,
+        contact_rate,
+        trusted_proxies,
         password_iterations,
         media_public,
         media_ttl,
         "limits ready"
     );
+    if cors_origins.is_empty() {
+        tracing::info!("no web origin may call this API (NCHAT_CORS_ORIGINS is empty)");
+    } else {
+        tracing::info!(origins = ?cors_origins, "web origins that may call this API");
+    }
+
+    // The administrator is an account that has the role. Naming an address here gives the
+    // role to the account that has that address now, and takes it from everybody else. It
+    // is read once: an account made later does not get the role until the next start,
+    // and the log says whose account it was given to.
+    let admin_email = std::env::var("NCHAT_ADMIN_EMAIL").unwrap_or_default();
+    if !admin_email.trim().is_empty() {
+        match state.apply_admin_email(&admin_email) {
+            Ok(true) => tracing::info!(
+                "the account with the NCHAT_ADMIN_EMAIL address is the administrator"
+            ),
+            Ok(false) => tracing::warn!(
+                "NCHAT_ADMIN_EMAIL names an address that has no account, so nobody is the \
+                 administrator. Sign up with that address, check that the account is yours, \
+                 then restart the server"
+            ),
+            Err(error) => tracing::error!(%error, "could not apply NCHAT_ADMIN_EMAIL"),
+        }
+    }
+
+    // Start-up is also when the decoy for unknown accounts is made, so that the first
+    // such sign-in costs what every later one costs.
+    let _ = state.decoy_password_hash();
+
     let app = build_app(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -139,9 +221,14 @@ async fn main() {
     };
     tracing::info!(%addr, public_api_url = %public_api_url, "NChat backend listening");
 
-    if let Err(error) = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
+    // `with_connect_info` is what tells a handler where a connection comes from; the
+    // credential limits count against that address.
+    if let Err(error) = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
     {
         tracing::error!(%error, "server stopped with an error");
     }
