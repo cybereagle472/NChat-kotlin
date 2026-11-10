@@ -43,6 +43,14 @@ pub struct AppState {
     pub max_upload_bytes: u64,
     /// Throttles `/auth/login` and `/auth/signup` (`NCHAT_AUTH_RATE`, default 10 / 5 min).
     pub auth_limiter: Arc<ratelimit::RateLimiter>,
+    /// Sign-in attempts per account, whatever address they claim to come from
+    /// (`NCHAT_AUTH_ACCOUNT_RATE`, default three times `NCHAT_AUTH_RATE`, same window).
+    /// `auth_limiter`'s key includes an address the client can write; this one has no
+    /// such part.
+    pub account_limiter: Arc<ratelimit::RateLimiter>,
+    /// PBKDF2 rounds for new and upgraded password hashes (`NCHAT_PBKDF2_ITERATIONS`,
+    /// default and minimum [`password::ITERATIONS`]). See `password.rs` before raising it.
+    pub password_iterations: u32,
     /// When `true` (the default), `/media/file/*` only answers a caller who is part of
     /// the conversation that owns the object, or a short-lived signed link. The
     /// reference relied on R2 bucket privacy; a self-hosted server has to check.
@@ -65,6 +73,11 @@ impl AppState {
                 10,
                 std::time::Duration::from_secs(300),
             )),
+            account_limiter: Arc::new(ratelimit::RateLimiter::new(
+                30,
+                std::time::Duration::from_secs(300),
+            )),
+            password_iterations: password::ITERATIONS,
             media_requires_auth: true,
             media_link_ttl: 600,
         }
@@ -87,6 +100,18 @@ impl AppState {
 
     pub fn with_auth_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
         self.auth_limiter = Arc::new(limiter);
+        self
+    }
+
+    pub fn with_account_limiter(mut self, limiter: ratelimit::RateLimiter) -> Self {
+        self.account_limiter = Arc::new(limiter);
+        self
+    }
+
+    /// Rounds for new and upgraded hashes. Tests use small values; `main` never goes
+    /// below [`password::ITERATIONS`].
+    pub fn with_password_iterations(mut self, iterations: u32) -> Self {
+        self.password_iterations = iterations.clamp(1, password::MAX_ITERATIONS);
         self
     }
 

@@ -52,6 +52,25 @@ async fn main() {
         .filter(|value| *value > 0)
         .unwrap_or(300);
 
+    // Sign-in attempts per account, whatever address they claim to come from. Three times
+    // the per-address budget unless set: room for a phone, a laptop and a mistake.
+    let auth_account_rate: usize = std::env::var("NCHAT_AUTH_ACCOUNT_RATE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(auth_rate.saturating_mul(3));
+
+    // PBKDF2 rounds for new and upgraded password hashes. Never below what both backends
+    // write today; see `password.rs` for what raising it means for the other backend.
+    let password_iterations: u32 = std::env::var("NCHAT_PBKDF2_ITERATIONS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(nchat_server::password::ITERATIONS)
+        .clamp(
+            nchat_server::password::ITERATIONS,
+            nchat_server::password::MAX_ITERATIONS,
+        );
+
     // Media privacy. The reference stored files in a private R2 bucket and handed out
     // URLs; here a read is authorised per caller (see `routes::media`). `NCHAT_MEDIA_PUBLIC=1`
     // is an escape hatch for a deployment that still expects public links.
@@ -91,12 +110,19 @@ async fn main() {
             auth_rate,
             std::time::Duration::from_secs(auth_window_secs),
         ))
+        .with_account_limiter(nchat_server::ratelimit::RateLimiter::new(
+            auth_account_rate,
+            std::time::Duration::from_secs(auth_window_secs),
+        ))
+        .with_password_iterations(password_iterations)
         .with_public_media(media_public)
         .with_media_link_ttl(media_ttl);
     tracing::info!(
         max_upload_mb,
         auth_rate,
+        auth_account_rate,
         auth_window_secs,
+        password_iterations,
         media_public,
         media_ttl,
         "limits ready"

@@ -85,6 +85,28 @@ fn find_by_email(state: &AppState, email: &str) -> ApiResult<Option<UserRow>> {
     Ok(row)
 }
 
+/// Replaces a hash made with fewer rounds than the current setting. Called right after
+/// the password has been verified, which is the only time the server holds it.
+///
+/// Best effort: the sign-in has already succeeded, so a failed write is logged and the
+/// old hash stays until the next sign-in. The `AND password_hash = ?` makes the write a
+/// compare-and-swap, so it can never undo a hash that changed in the meantime.
+fn upgrade_password_hash(state: &AppState, user: &UserRow, password: &str) {
+    if !password::needs_rehash(&user.password_hash, state.password_iterations) {
+        return;
+    }
+    let upgraded = password::hash_password_with(password, state.password_iterations);
+    let outcome = state.db.with(|conn| {
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?",
+            params![upgraded, user.id, user.password_hash],
+        )
+    });
+    if let Err(error) = outcome {
+        tracing::warn!(%error, "could not upgrade a stored password hash");
+    }
+}
+
 pub async fn signup(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -116,7 +138,7 @@ pub async fn signup(
     }
     // Hash before checking for duplicates: otherwise the fast duplicate path becomes a timing
     // oracle even though the response text and status are intentionally indistinguishable.
-    let password_hash = password::hash_password(&password);
+    let password_hash = password::hash_password_with(&password, state.password_iterations);
     if find_by_email(&state, &email)?.is_some() {
         return Err(ApiError::bad_request("Unable to create an account with these details"));
     }
@@ -176,6 +198,17 @@ pub async fn login(
             "Too many attempts — try again in a few minutes",
         ));
     }
+    // The address in the key above is whatever the request claims (`client_key` reads
+    // `X-Forwarded-For`), so a guesser who invents a new one for every request never
+    // reaches that limit. This budget is per account and has no part the client chooses.
+    // The price is that enough wrong guesses can keep the owner from signing in on a new
+    // device for the rest of the window; sessions that already exist are not affected.
+    if !email.is_empty() && !state.account_limiter.allow(&format!("account|{email}")) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many attempts — try again in a few minutes",
+        ));
+    }
 
     let user = find_by_email(&state, &email)?;
     let Some(user) = user else {
@@ -184,6 +217,7 @@ pub async fn login(
     if !password::verify_password(&password, &user.password_hash) {
         return Err(ApiError::unauthorized("Invalid email or password"));
     }
+    upgrade_password_hash(&state, &user, &password);
 
     let mut response = issue_tokens(&state, &user.id)?;
     response["user"] = user.user_public();
