@@ -18,7 +18,8 @@ the history for this folder. This file is the short version.
 
 So a merge to `main` that touches this folder is a deployment.
 
-The build settings, on Cloudflare under the Worker `nchat-friends` → Settings → Builds:
+The build settings, on Cloudflare under the Worker `nchat-friends` → Settings → Builds, as they
+have to be:
 
 | Setting | Value |
 |---|---|
@@ -30,24 +31,25 @@ The build settings, on Cloudflare under the Worker `nchat-friends` → Settings 
 | Build watch paths, include | `worker/*` |
 | Builds for other branches (preview builds) | off |
 
-The owner set them. No agent can read the dashboard, so if a build behaves in a way these
-values do not explain, ask the owner to read them out.
+The owner set them on 2026-11-11. No agent can read the dashboard, so if a build behaves in a
+way these values do not explain, ask the owner to report them again.
 
 ## Never change
 
 - **The Worker's name, `nchat-friends`**, in `wrangler.toml` or in the Cloudflare dashboard.
   The name is the first part of the address, `https://nchat-friends.usa66486.workers.dev`.
   That address is built into every installed app, and every photo, voice note and profile
-  picture is stored with it. A rename in the dashboard on 2026-11-11 took the app offline
-  until the name was set back. The name says nothing about which repository the code is in.
+  picture is stored with it. When the Worker was renamed in the dashboard on 2026-11-11, that
+  address stopped answering until the name was set back. The name says nothing about which
+  repository the code is in.
 - **`PUBLIC_API_URL`** in `wrangler.toml`. The backend puts it in front of the link of every
   uploaded file, so it has to be the address above.
 - The database and bucket names and ids, and the Durable Object block, in `wrangler.toml`.
 
 ## Secrets
 
-They are kept on Cloudflare only (the Worker → Settings → Runtime variables and secrets) and
-never in this repository, in a chat or in a guide: `JWT_SECRET` (required; it signs every
+They are kept on Cloudflare only, in the Worker's settings, and never in this repository, in a
+chat or in a guide: `JWT_SECRET` (required; it signs every
 sign-in), `CF_TURN_KEY_ID` and `CF_TURN_KEY_API_TOKEN` (optional; they make calls connect
 more reliably). A deploy keeps them.
 
