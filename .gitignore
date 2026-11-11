@@ -8,3 +8,8 @@ local.properties
 .ci/
 server/target/
 server/data/
+
+# Cloudflare backend (worker/): dependencies, local wrangler state, local secrets
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
