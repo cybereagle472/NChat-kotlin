@@ -18,6 +18,7 @@ use axum::routing::{get, patch, post};
 use axum::Router;
 use serde_json::{Map, Value};
 
+use crate::error::{ApiError, ApiResult};
 use crate::realtime;
 use crate::AppState;
 
@@ -137,6 +138,116 @@ pub fn parse_body(bytes: &Bytes) -> Map<String, Value> {
         Ok(Value::Object(map)) => map,
         _ => Map::new(),
     }
+}
+
+/// The keys of a relayed call-signalling event that belong to the server.
+///
+/// `POST /calls/:id/signal` and `POST /group-calls/:id/signal` copy the request
+/// body — opaque WebRTC data — into the event they deliver. Around it sits an
+/// envelope that says what the event is, which call it belongs to, who sent it
+/// and who it is for. A sender must not be able to write any of that, under any
+/// spelling a client reads.
+///
+/// The spellings matter. The Android client takes the call id of a group-call
+/// event from `callId` before `call_id` (then `groupCallId`, `group_call_id`)
+/// and the sender from `from`, `from_id`, `senderId`, `sender_id` or `user_id`,
+/// and it starts an audio connection to whoever a signal for its current group
+/// call is from. If a body could relabel a signal as belonging to a different
+/// call, someone who knows that call's id but is not in it — a member who was
+/// removed from the group, say — could get a participant's phone to start
+/// connecting to them.
+const SIGNAL_ENVELOPE_KEYS: [&str; 11] = [
+    "type",
+    "to",
+    "call_id",
+    "callId",
+    "group_call_id",
+    "groupCallId",
+    "from",
+    "from_id",
+    "sender_id",
+    "senderId",
+    "user_id",
+];
+
+/// `true` for a body key that a signal relay must not copy into the event.
+pub fn is_signal_envelope_key(key: &str) -> bool {
+    SIGNAL_ENVELOPE_KEYS.contains(&key)
+}
+
+/// The longest text this server stores in each kind of field, in characters.
+///
+/// The request body is capped at 2 MiB, which bounds a request but not what is done with
+/// it: a display name is copied into every list it appears in, a message is pushed to
+/// every member of a group. These are far above anything the clients write (the Android
+/// client stops a bio at 150 characters) and far below what hurts.
+pub mod limits {
+    /// Display names and group names.
+    pub const NAME: usize = 100;
+    pub const USERNAME: usize = 50;
+    pub const BIO: usize = 500;
+    /// A group's description.
+    pub const DESCRIPTION: usize = 2_048;
+    /// The text of a status, and a caption.
+    pub const CAPTION: usize = 4_096;
+    /// The text of a message.
+    pub const MESSAGE: usize = 65_536;
+    pub const URL: usize = 2_048;
+    /// `thumbnail_url`. Not always an address: a voice note keeps its waveform there (a
+    /// short JSON array), and a client may keep a small inline preview there. It is
+    /// bounded like text, because this server cannot tell which it is.
+    pub const PREVIEW: usize = 65_536;
+    /// Ids, type names, colours, durations, file names: short by nature.
+    pub const SHORT: usize = 512;
+    /// One reaction. An emoji is a handful of code points, even with modifiers.
+    pub const EMOJI: usize = 32;
+    /// Different reactions on one message.
+    pub const REACTIONS: usize = 64;
+    pub const EMAIL: usize = 254;
+    pub const PASSWORD: usize = 1_024;
+    /// A search text; a longer one matches nobody.
+    pub const SEARCH: usize = 100;
+    /// Ids in one `memberIds` list.
+    pub const MEMBERS: usize = 256;
+}
+
+/// Refuses a body in which a named text field is longer than its limit.
+///
+/// Only fields that are present and are text are looked at, so the lenient parsing
+/// around this (`text_field`) keeps its meaning.
+pub fn ensure_lengths(body: &Map<String, Value>, rules: &[(&str, usize)]) -> ApiResult<()> {
+    for (key, max) in rules {
+        if let Some(Value::String(text)) = body.get(*key) {
+            // A text has at most as many characters as bytes, so short ones are not counted.
+            if text.len() > *max && text.chars().count() > *max {
+                return Err(ApiError::bad_request(format!(
+                    "{key} is too long (at most {max} characters)"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `true` when every one of `ids` names an account.
+///
+/// The tables that hold other people's ids refer to `users`, so an id that names nobody
+/// used to surface as a failed insert: a server error for what is the caller's mistake,
+/// after whatever the handler had already written.
+pub fn all_users_exist(state: &AppState, ids: &[String]) -> ApiResult<bool> {
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let found = state.db.with(|conn| {
+        let mut statement = conn.prepare("SELECT 1 FROM users WHERE id = ?")?;
+        for id in ids {
+            if !statement.exists([id])? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })?;
+    Ok(found)
 }
 
 /// `typeof body.x === 'string' ? body.x : default`.

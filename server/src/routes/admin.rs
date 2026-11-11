@@ -1,8 +1,14 @@
 //! `/admin/*` — port of `worker/src/routes/admin.ts`.
 //!
-//! The reference gates the panel on a hardcoded admin email rather than the
-//! `is_admin` column. The e-mail address that may reach these routes is deployment
-//! configuration (`NCHAT_ADMIN_EMAIL`) — it is deliberately not baked into the source.
+//! The reference gates the panel on a hardcoded admin e-mail address. Here the
+//! administrator is the account whose `users.is_admin` is set, and nothing else is
+//! looked at while a request is handled.
+//!
+//! An address is not an identity: this server does not verify that an address belongs
+//! to whoever signs up with it. If a request were allowed in because the caller's
+//! address equals a configured one, then registering that address would be all it takes.
+//! So `NCHAT_ADMIN_EMAIL` is read once, at start-up, and turned into the role for the
+//! account that has the address at that moment (`AppState::apply_admin_email`).
 
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -17,23 +23,18 @@ use crate::AppState;
 pub async fn stats(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
 
-    let email: Option<String> = state.db.with(|conn| {
+    let is_admin: Option<i64> = state.db.with(|conn| {
         use rusqlite::OptionalExtension;
-        conn.query_row("SELECT email FROM users WHERE id = ?", [&user_id], |row| {
-            row.get(0)
-        })
+        conn.query_row(
+            "SELECT is_admin FROM users WHERE id = ?",
+            [&user_id],
+            |row| row.get(0),
+        )
         .optional()
     })?;
-
-    // No default: a self-hosted server must name its own admin, otherwise nobody is one.
-    let admin_email = std::env::var("NCHAT_ADMIN_EMAIL").unwrap_or_default().trim().to_lowercase();
-    if admin_email.is_empty() {
-        return Err(ApiError::forbidden(
-            "No administrator is configured (set NCHAT_ADMIN_EMAIL)",
-        ));
-    }
-    match email {
-        Some(email) if email.eq_ignore_ascii_case(&admin_email) => {}
+    // No default: until a deployment gives somebody the role, nobody has it.
+    match is_admin {
+        Some(flag) if flag != 0 => {}
         _ => return Err(ApiError::forbidden("Forbidden")),
     }
 

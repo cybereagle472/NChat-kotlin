@@ -1,23 +1,46 @@
 //! `/auth/*` — port of `worker/src/routes/auth.ts`.
 
+use std::net::SocketAddr;
+
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::error::{ApiError, ApiResult};
 use crate::models::UserRow;
 use crate::password;
-use crate::ratelimit::client_key;
-use crate::routes::{parse_body, text_field};
+use crate::routes::{ensure_lengths, limits, parse_body, text_field};
 use crate::util::{iso_in_secs, new_id, now_iso};
 use crate::{jwt, AppState};
 
 const ACCESS_TTL_SECS: i64 = 15 * 60;
 const REFRESH_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
+fn too_many_attempts() -> ApiError {
+    ApiError::too_many_requests("Too many attempts — try again in a few minutes")
+}
+
+/// The e-mail address as it goes into a rate-limit key.
+///
+/// The limiters keep their keys in memory for a whole window, and a sign-in request may
+/// name an "address" as long as the body limit allows. Anything longer than a real
+/// address is replaced by its digest: the same text still lands in the same bucket, and
+/// a key is never more than a few hundred bytes.
+fn account_key(email: &str) -> String {
+    if email.len() <= 320 {
+        email.to_string()
+    } else {
+        format!(
+            "sha256:{}",
+            URL_SAFE_NO_PAD.encode(Sha256::digest(email.as_bytes()))
+        )
+    }
+}
 
 /// `\w+@\w+\.\w+` with the same constraints as the reference regex
 /// (`^[^\s@]+@[^\s@]+\.[^\s@]+$`).
@@ -85,22 +108,51 @@ fn find_by_email(state: &AppState, email: &str) -> ApiResult<Option<UserRow>> {
     Ok(row)
 }
 
+/// Replaces a hash made with fewer rounds than the current setting. Called right after
+/// the password has been verified, which is the only time the server holds it.
+///
+/// Best effort: the sign-in has already succeeded, so a failed write is logged and the
+/// old hash stays until the next sign-in. The `AND password_hash = ?` makes the write a
+/// compare-and-swap, so it can never undo a hash that changed in the meantime.
+fn upgrade_password_hash(state: &AppState, user: &UserRow, password: &str) {
+    if !password::needs_rehash(&user.password_hash, state.password_iterations) {
+        return;
+    }
+    let upgraded = password::hash_password_with(password, state.password_iterations);
+    let outcome = state.db.with(|conn| {
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?",
+            params![upgraded, user.id, user.password_hash],
+        )
+    });
+    if let Err(error) = outcome {
+        tracing::warn!(%error, "could not upgrade a stored password hash");
+    }
+}
+
 pub async fn signup(
     State(state): State<AppState>,
+    peer: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let body = parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("email", limits::EMAIL),
+            ("password", limits::PASSWORD),
+            ("full_name", limits::NAME),
+        ],
+    )?;
     let email = text_field(&body, "email")
         .unwrap_or_default()
         .trim()
         .to_lowercase();
+    let address = state.client_address(peer.map(|ConnectInfo(address)| address), &headers);
 
-    if !state.auth_limiter.allow(&client_key(&headers, &email)) {
-        return Err(ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many attempts — try again in a few minutes",
-        ));
+    if !state.auth_limiter.allow(&format!("{address}|{email}")) {
+        return Err(too_many_attempts());
     }
     let password = text_field(&body, "password").unwrap_or_default();
     let full_name = text_field(&body, "full_name").unwrap_or_default().trim().to_string();
@@ -114,9 +166,15 @@ pub async fn signup(
     if password.len() < 6 {
         return Err(ApiError::bad_request("Password must be at least 6 characters"));
     }
+    // Every sign-up that gets this far costs a password hash and, if the address is new,
+    // an account. The limit above has the e-mail address in its key, so it never notices
+    // one client that uses a new address every time; this one counts the client alone.
+    if !state.address_limiter.allow(&address) {
+        return Err(too_many_attempts());
+    }
     // Hash before checking for duplicates: otherwise the fast duplicate path becomes a timing
     // oracle even though the response text and status are intentionally indistinguishable.
-    let password_hash = password::hash_password(&password);
+    let password_hash = password::hash_password_with(&password, state.password_iterations);
     if find_by_email(&state, &email)?.is_some() {
         return Err(ApiError::bad_request("Unable to create an account with these details"));
     }
@@ -157,6 +215,7 @@ pub async fn signup(
 
 pub async fn login(
     State(state): State<AppState>,
+    peer: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
@@ -166,24 +225,40 @@ pub async fn login(
         .trim()
         .to_lowercase();
     let password = text_field(&body, "password").unwrap_or_default();
+    let address = state.client_address(peer.map(|ConnectInfo(address)| address), &headers);
+    let account = account_key(&email);
 
-    // Password guessing is the cheapest attack on a private chat server: throttle per
-    // (client, address) pair instead of only per client, so a shared NAT does not lock
-    // out everyone behind it.
-    if !state.auth_limiter.allow(&client_key(&headers, &email)) {
-        return Err(ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many attempts — try again in a few minutes",
-        ));
+    // Three budgets, each for a different way of guessing.
+    //
+    // Per (client, account): the everyday one. A shared address — an office, a mobile
+    // carrier — does not lock out everyone behind it because one person keeps mistyping.
+    if !state.auth_limiter.allow(&format!("{address}|{account}")) {
+        return Err(too_many_attempts());
+    }
+    // Per account, from anywhere: many clients guessing at one account. The price is that
+    // enough wrong guesses can keep the owner from signing in on a new device for the rest
+    // of the window; sessions that already exist are not affected.
+    if !email.is_empty() && !state.account_limiter.allow(&format!("account|{account}")) {
+        return Err(too_many_attempts());
+    }
+    // Per client, across accounts: one client working through a list of accounts. Neither
+    // limit above ever sees that, because every attempt names somebody else.
+    if !state.address_limiter.allow(&address) {
+        return Err(too_many_attempts());
     }
 
     let user = find_by_email(&state, &email)?;
     let Some(user) = user else {
+        // The answer is the same as for a wrong password, and so is the work: without
+        // this, "no such account" came back in a millisecond and "wrong password" after
+        // a hash, and the clock said which addresses have accounts.
+        let _ = password::verify_password(&password, state.decoy_password_hash());
         return Err(ApiError::unauthorized("Invalid email or password"));
     };
     if !password::verify_password(&password, &user.password_hash) {
         return Err(ApiError::unauthorized("Invalid email or password"));
     }
+    upgrade_password_hash(&state, &user, &password);
 
     let mut response = issue_tokens(&state, &user.id)?;
     response["user"] = user.user_public();

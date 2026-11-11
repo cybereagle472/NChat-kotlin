@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use tokio::io::AsyncReadExt;
 
 use crate::error::{ApiError, ApiResult};
+use crate::routes::limits;
 use crate::util::{new_id, now_secs};
 use crate::AppState;
 
@@ -44,6 +45,7 @@ pub async fn upload(
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_send(&user_id)?;
 
     struct Stored {
         key: String,
@@ -66,10 +68,14 @@ pub async fn upload(
             .content_type()
             .unwrap_or("application/octet-stream")
             .to_string();
+        // Both are stored and sent back; neither is content.
+        if file_name.chars().count() > limits::SHORT || mime.chars().count() > limits::SHORT {
+            return Err(ApiError::bad_request("file name or type is too long"));
+        }
 
         // `${userId}/${newId()}${ext ? '.' + ext : ''}` — same key shape as R2.
         let extension = file_name.rsplit_once('.').map(|(_, ext)| ext.to_string());
-        let key = match extension.filter(|ext| !ext.is_empty() && is_plain_extension(ext)) {
+        let key = match extension.filter(|ext| is_plain_extension(ext)) {
             Some(ext) => format!("{user_id}/{}.{ext}", new_id()),
             None => format!("{user_id}/{}", new_id()),
         };
@@ -170,13 +176,56 @@ pub async fn upload(
     ))
 }
 
-/// R2 accepts any extension, but a key is also a path on disk here, so refuse
-/// anything that could escape the media directory.
+/// R2 accepts any extension, but here a key is a path on disk and the end of a URL.
+/// The uploader's extension is kept only when it is plain letters and digits; with
+/// anything else the file is stored without one.
+///
+/// It used to be enough that the extension could not leave the media directory. That
+/// let through `?`, `#` and `%`, which mean something in a URL: a file called
+/// `holiday.j?pg` was stored under a key that no request could ever name again.
 fn is_plain_extension(extension: &str) -> bool {
-    extension.len() <= 16
-        && !extension.contains('/')
-        && !extension.contains('\\')
-        && !extension.contains("..")
+    !extension.is_empty()
+        && extension.len() <= 16
+        && extension.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// The `Content-Type` a stored file is sent back with, and whether a browser may show
+/// it in place.
+///
+/// The type was chosen by whoever uploaded the file. Sent back as it is, an upload
+/// labelled `text/html` (or an SVG, which can carry script) would run as a page of this
+/// server's own origin for anyone who opens a share link. So only the kinds a chat shows
+/// in place keep their type — sound, video and plain pictures, none of which a browser
+/// executes. Everything else is sent as a download.
+fn served_type(stored: Option<&str>) -> (HeaderValue, bool) {
+    const DOWNLOAD: &str = "application/octet-stream";
+    let stored = stored.unwrap_or(DOWNLOAD).trim();
+    let essence = stored
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let shown_in_place = essence.starts_with("audio/")
+        || essence.starts_with("video/")
+        || matches!(
+            essence.as_str(),
+            "image/jpeg"
+                | "image/jpg"
+                | "image/png"
+                | "image/gif"
+                | "image/webp"
+                | "image/bmp"
+                | "image/avif"
+                | "image/heic"
+                | "image/heif"
+        );
+    if shown_in_place {
+        if let Ok(value) = HeaderValue::from_str(stored) {
+            return (value, true);
+        }
+    }
+    (HeaderValue::from_static(DOWNLOAD), false)
 }
 
 use std::path::{Component, Path as FsPath, PathBuf};
@@ -241,68 +290,73 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 /// Who may read a stored object.
 ///
-/// A file is private to the conversation it belongs to: the uploader, both ends
-/// of a 1:1 message, every member of the group it was sent to, or the audience
-/// of a status. Avatars are the documented exception — they are shown in search
-/// results and member lists, so any signed-in user may load them.
+/// A file is open to its uploader and to everybody who can see something it is attached
+/// to: both ends of a 1:1 message, every member of a group it was sent to, the audience
+/// of a status. Avatars are the documented exception — they are shown in search results
+/// and member lists, so any signed-in user may load them.
+///
+/// A file can be attached in several places: a photo is forwarded from a chat into a
+/// group, or posted as a status and also sent to one friend. Each place is asked in turn
+/// and one "yes" is enough. (Until this was written each kind of place answered for all
+/// of them: once a file appeared in any 1:1 message, only the two ends of such messages
+/// could open it, and a group it was forwarded to — or had been posted to first — got
+/// "not found".)
 mod access {
     use super::*;
-    use crate::privacy::{are_friends, Visibility};
+    use crate::privacy::status_visible_to;
 
     pub fn can_read(state: &AppState, user_id: &str, key: &str) -> ApiResult<bool> {
         // `Db::with` hands back a `rusqlite::Result`; `?` turns a failed query into a 500.
         Ok(state.db.with(|conn| {
-            let owned: Option<i64> = conn
+            // Only a file this server has a record of, and only under the name it gave
+            // it. The disk reads `a//b` as `a/b`, but every comparison below is on text:
+            // if a second spelling were served, somebody could write that spelling into a
+            // message of their own and be let in as that message's sender, past
+            // `ensure_attachable`, which looks for the name as it was given.
+            let uploader: Option<String> = conn
                 .query_row(
-                    "SELECT 1 FROM media_attachments WHERE file_path = ? AND uploader_id = ?",
-                    params![key, user_id],
+                    "SELECT uploader_id FROM media_attachments WHERE file_path = ?",
+                    [key],
                     |row| row.get(0),
                 )
                 .optional()?;
-            if owned.is_some() {
+            let Some(uploader) = uploader else {
+                return Ok(false);
+            };
+            if uploader == user_id {
                 return Ok(true);
             }
 
             // ---- 1:1 messages ------------------------------------------------
-            let mut statement = conn.prepare(
-                "SELECT sender_id, receiver_id FROM messages
-                 WHERE instr(coalesce(media_url, ''), ?1) > 0
-                    OR instr(coalesce(thumbnail_url, ''), ?1) > 0",
-            )?;
-            let pairs = statement
-                .query_map([key], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            if !pairs.is_empty() {
-                return Ok(pairs
-                    .iter()
-                    .any(|(sender, receiver)| sender == user_id || receiver == user_id));
+            let in_a_chat: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM messages
+                     WHERE (sender_id = ?2 OR receiver_id = ?2)
+                       AND (instr(coalesce(media_url, ''), ?1) > 0
+                            OR instr(coalesce(thumbnail_url, ''), ?1) > 0)
+                     LIMIT 1",
+                    params![key, user_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if in_a_chat.is_some() {
+                return Ok(true);
             }
 
             // ---- group messages ----------------------------------------------
-            let mut statement = conn.prepare(
-                "SELECT group_id FROM group_messages
-                 WHERE instr(coalesce(media_url, ''), ?1) > 0
-                    OR instr(coalesce(thumbnail_url, ''), ?1) > 0",
-            )?;
-            let groups = statement
-                .query_map([key], |row| row.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            if !groups.is_empty() {
-                for group_id in groups {
-                    let member: Option<i64> = conn
-                        .query_row(
-                            "SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?",
-                            params![group_id, user_id],
-                            |row| row.get(0),
-                        )
-                        .optional()?;
-                    if member.is_some() {
-                        return Ok(true);
-                    }
-                }
-                return Ok(false);
+            let in_a_group: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM group_messages m
+                     JOIN group_members g ON g.group_id = m.group_id AND g.user_id = ?2
+                     WHERE instr(coalesce(m.media_url, ''), ?1) > 0
+                        OR instr(coalesce(m.thumbnail_url, ''), ?1) > 0
+                     LIMIT 1",
+                    params![key, user_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if in_a_group.is_some() {
+                return Ok(true);
             }
 
             // ---- statuses (unexpired, audience-checked) -----------------------
@@ -317,13 +371,11 @@ mod access {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            // Same rule as the feed: the stricter of the status's own audience and
+            // the author's account setting, never across a block, and an audience
+            // this server does not know counts as "nobody".
             for (author, privacy) in statuses {
-                if author == user_id {
-                    return Ok(true);
-                }
-                let friend = are_friends(conn, user_id, &author)?;
-                let audience = Visibility::parse(&privacy).unwrap_or(Visibility::Contacts);
-                if audience.allows(false, friend) {
+                if status_visible_to(conn, &author, user_id, &privacy)? {
                     return Ok(true);
                 }
             }
@@ -342,6 +394,54 @@ mod access {
             Ok(avatar.is_some())
         })?)
     }
+}
+
+/// Refuses to store a media address that names a file the caller cannot open.
+///
+/// Access to a file follows the messages, statuses and profiles that mention it (see
+/// `access::can_read`). Without this check, mentioning a file was a way to get it:
+/// anybody who knew a file's address — from a share link that has since expired, say —
+/// could put it into a message of their own and be let in as that message's sender, or
+/// make it their profile picture, which every signed-in account may load.
+///
+/// `can_read` looks for a file's key anywhere inside a stored address, so this looks for
+/// every known key anywhere inside the new address: the same test from the other side.
+/// An address that names no file of this server is none of its business.
+///
+/// Call it before the row is written, for every address the request wants stored.
+pub fn ensure_attachable(
+    state: &AppState,
+    user_id: &str,
+    addresses: &[Option<&str>],
+) -> ApiResult<()> {
+    // With public media there is nothing to protect: every file is open to everybody.
+    if !state.media_requires_auth {
+        return Ok(());
+    }
+    for address in addresses.iter().flatten() {
+        if address.is_empty() {
+            continue;
+        }
+        let keys: Vec<String> = state.db.with(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT file_path FROM media_attachments
+                 WHERE file_path != '' AND instr(?1, file_path) > 0",
+            )?;
+            let keys = statement
+                .query_map([*address], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(keys)
+        })?;
+        // One connection at a time: `can_read` takes its own.
+        for key in keys {
+            if !access::can_read(state, user_id, &key)? {
+                return Err(ApiError::forbidden(
+                    "You cannot attach a file you do not have access to",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `GET /media/file/*key` — read with byte-range support (HTTP 206).
@@ -403,7 +503,7 @@ pub async fn file(
         )
         .optional()
     })?;
-    let mime = row.unwrap_or_else(|| "application/octet-stream".to_string());
+    let (content_type, shown_in_place) = served_type(row.as_deref());
 
     // `Range: bytes=start-end` → 206 with Content-Range, like R2 does.
     let range = headers
@@ -429,7 +529,10 @@ pub async fn file(
     };
 
     let mut builder = Response::builder()
-        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_TYPE, content_type)
+        // The type above is the whole answer: a browser must not guess a better one
+        // from the bytes.
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_LENGTH, length)
         .header(
@@ -444,6 +547,16 @@ pub async fn file(
         .status(status);
     if let Some((start, end)) = range {
         builder = builder.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
+    }
+    if !shown_in_place {
+        // Saved, not opened. The policy is for a browser that opens it anyway: no script,
+        // no requests, no access to this origin.
+        builder = builder
+            .header(header::CONTENT_DISPOSITION, "attachment")
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox",
+            );
     }
 
     if offset > 0 {
@@ -610,5 +723,56 @@ mod tests {
         let dir = FsPath::new("/srv/nchat/media");
         let path = safe_media_path(dir, "user-1/abc.png").expect("in-root key");
         assert!(path.starts_with(dir));
+    }
+
+    #[test]
+    fn an_extension_is_kept_only_when_it_is_plain() {
+        for kept in ["jpg", "JPG", "mp4", "webm", "m4a", "7z"] {
+            assert!(is_plain_extension(kept), "{kept}");
+        }
+        for dropped in ["", "j?pg", "p#df", "%2e", "a/b", "a\\b", "..", "é", "tar gz"] {
+            assert!(!is_plain_extension(dropped), "{dropped:?}");
+        }
+        assert!(is_plain_extension(&"x".repeat(16)));
+        assert!(!is_plain_extension(&"x".repeat(17)));
+    }
+
+    #[test]
+    fn only_kinds_a_browser_does_not_run_keep_their_type() {
+        for stored in [
+            "image/jpeg",
+            "IMAGE/PNG",
+            "image/webp",
+            "audio/webm;codecs=opus",
+            "audio/mp4",
+            "video/mp4",
+        ] {
+            let (value, shown_in_place) = served_type(Some(stored));
+            assert!(shown_in_place, "{stored}");
+            assert_eq!(value.to_str().ok(), Some(stored), "{stored}");
+        }
+        for stored in [
+            "text/html",
+            "text/html; charset=utf-8",
+            "application/xhtml+xml",
+            "image/svg+xml",
+            "IMAGE/SVG+XML; charset=utf-8",
+            "application/pdf",
+            "text/plain",
+            "",
+            // Looks like sound, cannot be a header.
+            "audio/a\nb",
+        ] {
+            let (value, shown_in_place) = served_type(Some(stored));
+            assert!(!shown_in_place, "{stored:?}");
+            assert_eq!(
+                value.to_str().ok(),
+                Some("application/octet-stream"),
+                "{stored:?}"
+            );
+        }
+        let (value, shown_in_place) = served_type(None);
+        assert!(!shown_in_place);
+        assert_eq!(value.to_str().ok(), Some("application/octet-stream"));
     }
 }

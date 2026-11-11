@@ -15,7 +15,14 @@ internal class UpdateHttpException(
     /** A numeric Retry-After value, clamped by the downloader to a safe maximum. */
     val retryAfterMillis: Long? = null
 ) : IOException("HTTP $status")
-internal class InvalidUpdateDownload(message: String) : IOException(message)
+/**
+ * [refusedAfterChecks]: the file arrived whole and the package/signer checks then turned it away.
+ * The message already says what was wrong; "try another network" would be the wrong advice.
+ */
+internal class InvalidUpdateDownload(
+    message: String,
+    val refusedAfterChecks: Boolean = false
+) : IOException(message)
 
 internal fun isTransientUpdateFailure(error: IOException): Boolean = when (error) {
     is InvalidUpdateDownload -> false
@@ -36,6 +43,28 @@ internal fun shouldUseAndroidDownloadFallback(error: IOException): Boolean {
     return true
 }
 
+private const val RETRY_ELSEWHERE = "Try another network or open the release page in your browser."
+
+/**
+ * What the update page says when every download source has failed.
+ *
+ * HTTP 404 is singled out. The manifest that announces a version reaches phones as soon as the
+ * release is merged; the APK it points at is built and uploaded a few minutes later. In that
+ * window the file is simply not there yet, and "try another network" would send the user away
+ * to fix something that is not broken.
+ */
+internal fun downloadFailureMessage(error: IOException?): String = when {
+    error is UpdateHttpException && error.status == 404 ->
+        "This update is not on the download server (HTTP 404). A new version can take a few " +
+            "minutes to appear there: please try again shortly. If it keeps happening, open the " +
+            "release page in your browser."
+    error is UpdateHttpException -> "The download server returned HTTP ${error.status}. $RETRY_ELSEWHERE"
+    error is InvalidUpdateDownload && error.refusedAfterChecks ->
+        error.message ?: "The update file is invalid."
+    error is InvalidUpdateDownload -> "${error.message ?: "The update file is invalid."} $RETRY_ELSEWHERE"
+    else -> "The update could not be downloaded. $RETRY_ELSEWHERE"
+}
+
 /** Bounded retries and optional independent mirrors; all update and redirect URLs must use HTTPS. */
 internal class ApkDownloader(
     private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
@@ -53,7 +82,7 @@ internal class ApkDownloader(
                 currentCoroutineContext().ensureActive()
                 try {
                     downloadOnce(source, temp, onProgress)
-                    validate(temp)?.let { throw InvalidUpdateDownload(it) }
+                    validate(temp)?.let { throw InvalidUpdateDownload(it, refusedAfterChecks = true) }
                     return
                 } catch (error: CancellationException) {
                     temp.delete()
@@ -69,12 +98,7 @@ internal class ApkDownloader(
                 }
             }
         }
-        val detail = when (val error = lastError) {
-            is UpdateHttpException -> "The download server returned HTTP ${error.status}."
-            is InvalidUpdateDownload -> error.message ?: "The update file is invalid."
-            else -> "The update could not be downloaded."
-        }
-        throw IOException("$detail Try another network or open the release page in your browser.", lastError)
+        throw IOException(downloadFailureMessage(lastError), lastError)
     }
 
     private suspend fun downloadOnce(source: String, temp: File, onProgress: (Float?) -> Unit) {

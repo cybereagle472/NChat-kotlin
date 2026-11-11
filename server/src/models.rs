@@ -39,13 +39,24 @@ impl UserRow {
         })
     }
 
-    /// `userPublic()` in `routes/auth.ts`.
+    /// `userPublic()` in `routes/auth.ts`: an account as its owner sees it.
+    ///
+    /// The only projection with the e-mail address and the admin flag in it. It is for
+    /// answers about the caller's own account (`/auth/*`, and through [`Self::own_profile`]
+    /// `/users/me`); what other people get is [`Self::profile`] or [`Self::brief`].
     pub fn user_public(&self) -> Value {
+        let mut value = self.shared_fields();
+        let object = value.as_object_mut().expect("object");
+        object.insert("email".into(), json!(self.email));
+        object.insert("is_admin".into(), json!(self.is_admin));
+        value
+    }
+
+    /// What every projection of a profile has in common.
+    fn shared_fields(&self) -> Value {
         let mut value = json!({
             "id": self.id,
-            "email": self.email,
             "full_name": self.full_name,
-            "is_admin": self.is_admin,
             "created_at": self.created_at,
         });
         let object = value.as_object_mut().expect("object");
@@ -61,9 +72,8 @@ impl UserRow {
         value
     }
 
-    /// `profilePublic()` in `routes/users.ts` (presence + username history).
-    pub fn profile(&self, last_active: Option<i64>) -> Value {
-        let mut value = self.user_public();
+    /// Presence and username history, added to either kind of profile.
+    fn add_presence(&self, value: &mut Value, last_active: Option<i64>) {
         let object = value.as_object_mut().expect("object");
         if let Some(changed) = &self.username_last_changed {
             object.insert("username_last_changed".into(), json!(changed));
@@ -72,14 +82,33 @@ impl UserRow {
         if let Some(ms) = last_active {
             object.insert("last_seen".into(), json!(iso_from_millis(ms)));
         }
+    }
+
+    /// `profilePublic()` in `routes/users.ts` (presence + username history), as somebody
+    /// else sees it.
+    ///
+    /// The reference put the e-mail address and the admin flag in here, so every signed-in
+    /// account could list every other account's address. People find each other by name
+    /// and username; the address somebody signed up with is theirs.
+    pub fn profile(&self, last_active: Option<i64>) -> Value {
+        let mut value = self.shared_fields();
+        self.add_presence(&mut value, last_active);
         value
     }
 
-    /// `profilePublic()` in `routes/friends.ts` — no admin flag, no created_at.
+    /// The caller's own profile: [`Self::profile`] plus the two fields that are theirs alone.
+    /// The Android client stores its identity, e-mail address included, from this.
+    pub fn own_profile(&self, last_active: Option<i64>) -> Value {
+        let mut value = self.user_public();
+        self.add_presence(&mut value, last_active);
+        value
+    }
+
+    /// `profilePublic()` in `routes/friends.ts` — no admin flag, no created_at, and (unlike
+    /// the reference) no e-mail address.
     pub fn brief(&self, last_active: Option<i64>) -> Value {
         let mut value = json!({
             "id": self.id,
-            "email": self.email,
             "full_name": self.full_name,
             "is_online": compute_is_online(last_active),
         });

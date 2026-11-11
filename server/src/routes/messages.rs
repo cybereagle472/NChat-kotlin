@@ -15,7 +15,8 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::{MessageRow, UserRow};
 use crate::presence::get_presence_map;
 use crate::privacy::{are_friends, apply_privacy_to_list, get_privacy_settings};
-use crate::routes::{parse_body, text_field};
+use crate::routes::media::ensure_attachable;
+use crate::routes::{ensure_lengths, limits, parse_body, text_field};
 use crate::util::{clamp_limit, new_id, now_iso, parse_iso_millis};
 use crate::AppState;
 
@@ -227,7 +228,23 @@ pub async fn send(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_send(&user_id)?;
     let body = parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("receiver_id", limits::SHORT),
+            ("content", limits::MESSAGE),
+            ("type", limits::SHORT),
+            ("client_message_id", limits::SHORT),
+            ("media_url", limits::URL),
+            ("thumbnail_url", limits::PREVIEW),
+            ("fileName", limits::SHORT),
+            ("fileSize", limits::SHORT),
+            ("duration", limits::SHORT),
+            ("reply_to", limits::SHORT),
+        ],
+    )?;
 
     let receiver_id = text_field(&body, "receiver_id").unwrap_or_default();
     if receiver_id.is_empty() {
@@ -252,14 +269,24 @@ pub async fn send(
         }
     }
 
+    // Whoever is in a message can open the files it names, so naming a file needs the
+    // right to open it. Forwarding passes: the forwarder can open what they were sent.
+    let media_url = text_field(&body, "media_url");
+    let thumbnail_url = text_field(&body, "thumbnail_url");
+    ensure_attachable(
+        &state,
+        &user_id,
+        &[media_url.as_deref(), thumbnail_url.as_deref()],
+    )?;
+
     let row = MessageRow {
         id: new_id(),
         sender_id: user_id.clone(),
         receiver_id: receiver_id.clone(),
         content,
         kind,
-        media_url: text_field(&body, "media_url"),
-        thumbnail_url: text_field(&body, "thumbnail_url"),
+        media_url,
+        thumbnail_url,
         file_name: text_field(&body, "fileName"),
         file_size: text_field(&body, "fileSize"),
         duration: text_field(&body, "duration"),
@@ -305,6 +332,7 @@ pub async fn edit(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
+    ensure_lengths(&body, &[("content", limits::MESSAGE)])?;
     let content = text_field(&body, "content").unwrap_or_default();
 
     let row = state.db.with(|conn| {
@@ -475,6 +503,7 @@ pub async fn reaction(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
+    ensure_lengths(&body, &[("emoji", limits::EMOJI)])?;
     let emoji = text_field(&body, "emoji").unwrap_or_default();
 
     let row: Option<(String, String, Option<String>)> = state.db.with(|conn| {
@@ -501,6 +530,13 @@ pub async fn reaction(
     if list.contains(&user_id) {
         list.retain(|value| value != &user_id);
     } else {
+        // The whole map is stored with the message and pushed on every change, and each
+        // different reaction is one more entry in it.
+        if !map.contains_key(&emoji) && map.len() >= limits::REACTIONS {
+            return Err(ApiError::bad_request(
+                "This message has too many different reactions",
+            ));
+        }
         list.push(user_id.clone());
     }
     if list.is_empty() {

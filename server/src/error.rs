@@ -39,6 +39,12 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, message)
     }
 
+    pub fn too_many_requests(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, message)
+    }
+
+    /// A failure of the server itself. `message` goes to the log and never to the
+    /// caller; see [`IntoResponse`] below.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
     }
@@ -46,6 +52,17 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        if self.status == StatusCode::INTERNAL_SERVER_ERROR {
+            // What went wrong inside the server is for whoever runs it: the text names
+            // tables, columns and paths. The caller learns that the request failed, which
+            // is all they can act on.
+            tracing::error!(detail = %self.message, "request failed");
+            return (
+                self.status,
+                Json(json!({ "error": "Internal server error" })),
+            )
+                .into_response();
+        }
         (self.status, Json(json!({ "error": self.message }))).into_response()
     }
 }

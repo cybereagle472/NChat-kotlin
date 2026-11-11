@@ -11,7 +11,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::UserRow;
 use crate::presence::get_presence_map;
 use crate::privacy::{apply_privacy, apply_privacy_to_list, get_privacy_settings};
-use crate::routes::{parse_body, text_field};
+use crate::routes::{all_users_exist, ensure_lengths, limits, parse_body, text_field};
 use crate::util::{new_id, now_iso};
 use crate::AppState;
 
@@ -34,11 +34,18 @@ pub async fn send_request(
     body: Bytes,
 ) -> ApiResult<(axum::http::StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_contact(&user_id)?;
     let body = parse_body(&body);
+    ensure_lengths(&body, &[("receiver_id", limits::SHORT)])?;
     let receiver_id = text_field(&body, "receiver_id").unwrap_or_default();
 
     if receiver_id.is_empty() || receiver_id == user_id {
         return Err(ApiError::bad_request("Invalid receiver_id"));
+    }
+    // An id that names nobody is the caller's mistake; the insert below would report
+    // it as the database's.
+    if !all_users_exist(&state, std::slice::from_ref(&receiver_id))? {
+        return Err(ApiError::not_found("User not found"));
     }
     if blocked_either_way(&state, &user_id, &receiver_id)? {
         return Err(ApiError::forbidden("Cannot send a request to this user"));
@@ -341,24 +348,29 @@ pub async fn remove(
     Path(friend_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
-    state.db.with(|conn| {
-        conn.execute(
+    let removed = state.db.with(|conn| {
+        let friendships = conn.execute(
             "DELETE FROM friendships
              WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)",
             params![user_id, friend_id, friend_id, user_id],
         )?;
-        conn.execute(
+        let requests = conn.execute(
             "DELETE FROM friend_requests
              WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
             params![user_id, friend_id, friend_id, user_id],
         )?;
-        Ok(())
+        Ok(friendships + requests)
     })?;
 
-    state.hub.publish_to_user(
-        &friend_id,
-        &json!({ "type": "friend:removed", "userId": user_id }).to_string(),
-    );
+    // Tell the other side only when something between the two of them was
+    // actually removed. Unconditionally, this route let any signed-in user push
+    // a `friend:removed` event to any user id.
+    if removed > 0 {
+        state.hub.publish_to_user(
+            &friend_id,
+            &json!({ "type": "friend:removed", "userId": user_id }).to_string(),
+        );
+    }
     Ok(Json(json!({ "success": true })))
 }
 
@@ -369,9 +381,14 @@ pub async fn block(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
+    ensure_lengths(&body, &[("user_id", limits::SHORT)])?;
     let target = text_field(&body, "user_id").ok_or_else(|| ApiError::bad_request("user_id is required"))?;
     if target.is_empty() || target == user_id {
         return Err(ApiError::bad_request("Invalid user_id"));
+    }
+    // `INSERT OR IGNORE` ignores a block that is already there, not a person who is not.
+    if !all_users_exist(&state, std::slice::from_ref(&target))? {
+        return Err(ApiError::not_found("User not found"));
     }
 
     state.db.with(|conn| {

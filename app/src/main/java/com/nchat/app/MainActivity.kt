@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.nchat.app.core.update.UpdateForeground
 import com.nchat.app.core.util.CrashLog
 import com.nchat.app.data.PendingOpen
 import com.nchat.app.data.ServiceLocator
@@ -127,5 +128,7 @@ class MainActivity : ComponentActivity() {
             ServiceLocator.ensureRealtime()
             ServiceLocator.reportPresence()
         }
+        // The update page looks for a release again, and carries on after "Install unknown apps".
+        UpdateForeground.onResume()
     }
 }

@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 use crate::privacy::{apply_privacy, are_friends, get_privacy_settings};
+use crate::routes::{all_users_exist, ensure_lengths, limits};
 use crate::util::{clamp_limit, new_id, now_iso};
 use crate::AppState;
 
@@ -118,7 +119,10 @@ pub async fn create(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    // Every call rings somebody's phone.
+    state.count_contact(&user_id)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(&body, &[("receiver_id", limits::SHORT)])?;
     let receiver_id = crate::routes::text_field(&body, "receiver_id").unwrap_or_default();
     let call_type = crate::routes::text_field(&body, "call_type").unwrap_or_default();
 
@@ -132,6 +136,11 @@ pub async fn create(
     }
     if receiver_id == user_id {
         return Err(ApiError::bad_request("Cannot call yourself"));
+    }
+    // An id that names nobody is the caller's mistake; the insert below would report
+    // it as the database's.
+    if !all_users_exist(&state, std::slice::from_ref(&receiver_id))? {
+        return Err(ApiError::not_found("User not found"));
     }
 
     let blocked: Option<i64> = state.db.with(|conn| {
@@ -218,6 +227,14 @@ pub async fn create(
     ))
 }
 
+/// `POST /calls/:id/signal` — relay ICE candidates (or any other signalling
+/// data) to the other participant.
+///
+/// The reference spreads the request body over the envelope
+/// (`{ type, callId, from, ...body }`), so a participant could send
+/// `{"type": "message:new", ...}` and have the server deliver a forged event of
+/// any kind to the other side. Here the envelope cannot be overridden, under
+/// any of its spellings (`routes::is_signal_envelope_key`).
 pub async fn signal(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -229,6 +246,11 @@ pub async fn signal(
     if !call.is_participant(&user_id) {
         return Err(ApiError::forbidden("Not authorized"));
     }
+    // A finished call relays nothing. Candidates that are still trickling in when
+    // the other side hangs up are normal, so this is not an error for the client.
+    if call.ended_at.is_some() {
+        return Ok(Json(json!({ "success": true })));
+    }
 
     let payload_body = crate::routes::parse_body(&body);
     let other_id = if call.caller_id == user_id {
@@ -239,6 +261,9 @@ pub async fn signal(
 
     let mut payload = json!({ "type": "call:signal", "callId": id, "from": user_id });
     for (key, value) in payload_body {
+        if crate::routes::is_signal_envelope_key(&key) {
+            continue;
+        }
         payload[key] = value;
     }
     state.hub.publish_to_user(&other_id, &payload.to_string());

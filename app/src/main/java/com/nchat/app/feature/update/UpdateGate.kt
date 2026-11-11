@@ -1,5 +1,6 @@
 package com.nchat.app.feature.update
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nchat.app.BuildConfig
@@ -49,10 +51,27 @@ import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.update.AutoUpdater
 import com.nchat.app.core.update.InstallResult
+import com.nchat.app.core.update.UpdateForeground
 import com.nchat.app.core.update.UpdateInfo
+import com.nchat.app.core.update.updateCheckDue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+/** The line under the notes: a step for the user to take, or something that went wrong. */
+private data class GateNotice(val text: String, val isError: Boolean)
+
+/**
+ * Shown the first time NChat installs an update on a phone. It is an instruction, not a failure,
+ * and it used to be printed in the red of an error: "downloaded, then an error".
+ */
+private const val INSTALL_PERMISSION_STEP =
+    "One more step. Android asks you to allow NChat to install the update. " +
+        "Turn on \"Allow from this source\" on the screen that opened, then come back here. " +
+        "The update continues by itself. If no screen opened, look for " +
+        "\"Install unknown apps\" in your phone's Settings."
 
 /**
  * "There is a new build" — a page that opens by itself on the first start after a release.
@@ -66,6 +85,10 @@ import kotlin.math.roundToInt
  * launch only, so the next start makes the offer again. The system back gesture means "later";
  * while a download is running it is ignored, because there is nothing to go back to and the APK
  * is already being written.
+ *
+ * "This launch" can be days: NChat keeps its process alive to deliver messages. So the page also
+ * looks for a release when the app comes back to the foreground, at most once every six hours
+ * (see `updateCheckDue`), and a look that finds one makes the offer again.
  */
 @Composable
 fun StartupUpdateGate(modifier: Modifier = Modifier) {
@@ -75,22 +98,86 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
     var dismissed by remember { mutableStateOf(false) }
     var installing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<Float?>(null) }
-    var notice by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<GateNotice?>(null) }
+    // Android's "Install unknown apps" screen was opened for this update.
+    var awaitingPermission by remember { mutableStateOf(false) }
 
+    // Once when the page is first composed, then on every return to the foreground that is due.
+    // One collector, so two looks never overlap and a return never cancels a look in flight.
     LaunchedEffect(Unit) {
-        val found = try {
-            AutoUpdater.checkForUpdate()
-        } catch (error: Exception) {
-            if (error is CancellationException) throw error
-            null
-        } ?: return@LaunchedEffect
-        if (found.versionCode > BuildConfig.VERSION_CODE) info = found
+        var lastCheckMs: Long? = null
+        var lastCheckSucceeded = false
+        UpdateForeground.resumes.collect {
+            if (installing || awaitingPermission) return@collect
+            if (!updateCheckDue(SystemClock.elapsedRealtime(), lastCheckMs, lastCheckSucceeded)) return@collect
+            val found = try {
+                AutoUpdater.checkForUpdate()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                // Quiet on purpose: nobody asked for this look. It is repeated on a later return.
+                lastCheckMs = SystemClock.elapsedRealtime()
+                lastCheckSucceeded = false
+                return@collect
+            }
+            lastCheckMs = SystemClock.elapsedRealtime()
+            lastCheckSucceeded = true
+            if (installing || awaitingPermission) return@collect
+            val newer = found?.takeIf { candidate -> candidate.versionCode > BuildConfig.VERSION_CODE }
+            if (newer != info) notice = null
+            info = newer
+            if (newer != null) dismissed = false
+        }
     }
 
     val update = info
     if (update == null || dismissed) return
 
-    BackHandler(enabled = !installing) { dismissed = true }
+    fun dismiss() {
+        dismissed = true
+        awaitingPermission = false
+        notice = null
+    }
+
+    fun startInstall() {
+        if (installing) return
+        installing = true
+        progress = 0f
+        notice = null
+        awaitingPermission = false
+        scope.launch {
+            try {
+                // A file that was already downloaded and checked is reused, not fetched again.
+                val apk = AutoUpdater.downloadUpdate(context, update) { fraction ->
+                    progress = fraction
+                }
+                when (val result = AutoUpdater.installUpdate(context, apk)) {
+                    is InstallResult.Launched -> dismissed = true
+                    is InstallResult.NeedsPermission -> {
+                        awaitingPermission = true
+                        notice = GateNotice(INSTALL_PERMISSION_STEP, isError = false)
+                    }
+                    is InstallResult.Failed -> notice = GateNotice(result.message, isError = true)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                notice = GateNotice(error.message ?: "Could not download the update.", isError = true)
+            } finally {
+                installing = false
+                progress = null
+            }
+        }
+    }
+
+    // Back from "Install unknown apps" with the switch on: carry on without another tap.
+    LaunchedEffect(update) {
+        UpdateForeground.resumes.collect {
+            if (!awaitingPermission || installing) return@collect
+            val allowed = withContext(Dispatchers.IO) { AutoUpdater.canInstallPackages(context) }
+            if (allowed && awaitingPermission && !installing) startInstall()
+        }
+    }
+
+    BackHandler(enabled = !installing) { dismiss() }
 
     Box(
         modifier = modifier
@@ -223,21 +310,27 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
                 }
             }
 
-            notice?.let { message ->
+            notice?.let { current ->
                 Spacer(modifier = Modifier.height(NcSpace.sm))
                 SelectionContainer {
                     Text(
-                        text = message,
-                        color = Color(0xFFDC2626),
-                        fontSize = 11.sp,
+                        text = current.text,
+                        color = if (current.isError) Color(0xFFDC2626) else NcTheme.extra.textPrimary,
+                        fontSize = if (current.isError) 11.sp else 13.sp,
+                        lineHeight = if (current.isError) TextUnit.Unspecified else 19.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                TextButton(enabled = !installing, onClick = {
-                    if (!AutoUpdater.openReleasePage(context)) notice = "Could not open a browser on this device."
-                }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    Text("Open release page in browser")
+                // The browser route is for a failure; a step to take does not need a way round it.
+                if (current.isError) {
+                    TextButton(enabled = !installing, onClick = {
+                        if (!AutoUpdater.openReleasePage(context)) {
+                            notice = GateNotice("Could not open a browser on this device.", isError = true)
+                        }
+                    }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                        Text("Open release page in browser")
+                    }
                 }
             }
 
@@ -250,7 +343,7 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
             ) {
                 TextButton(
                     enabled = !installing,
-                    onClick = { dismissed = true },
+                    onClick = { dismiss() },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
@@ -273,30 +366,7 @@ fun StartupUpdateGate(modifier: Modifier = Modifier) {
                                 Brush.linearGradient(NcTheme.extra.brandGradient)
                             }
                         )
-                        .clickable(enabled = !installing) {
-                            installing = true
-                            progress = 0f
-                            notice = null
-                            scope.launch {
-                                try {
-                                    val apk = AutoUpdater.downloadUpdate(context, update) { fraction ->
-                                        progress = fraction
-                                    }
-                                    when (val result = AutoUpdater.installUpdate(context, apk)) {
-                                        is InstallResult.Launched -> dismissed = true
-                                        is InstallResult.NeedsPermission -> notice =
-                                            "Allow NChat to install apps, then try again."
-                                        is InstallResult.Failed -> notice = result.message
-                                    }
-                                } catch (error: Exception) {
-                                    if (error is CancellationException) throw error
-                                    notice = error.message ?: "Could not download the update."
-                                } finally {
-                                    installing = false
-                                    progress = null
-                                }
-                            }
-                        }
+                        .clickable(enabled = !installing) { startInstall() }
                         .padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center
                 ) {

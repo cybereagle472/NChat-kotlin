@@ -12,6 +12,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
+use crate::routes::media::ensure_attachable;
+use crate::routes::{all_users_exist, ensure_lengths, limits};
 use crate::util::{clamp_limit, new_id, now_iso, parse_iso_millis};
 use crate::AppState;
 
@@ -198,6 +200,11 @@ fn broadcast_to_members(state: &AppState, ids: &[String], payload: &Value) {
 
 /// `groupWithMembers()` — group row plus every member with a privacy-masked
 /// `last_read_at` and their profile.
+///
+/// The reference also put each member's e-mail address into `profile`. Group
+/// payloads go to every member (and to people at the moment they are added), so
+/// that handed a login identifier to anyone who shares a group with you. It is
+/// left out here; both clients only ever used it as a last-resort display name.
 fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Value>> {
     let group = state.db.with(|conn| {
         conn.query_row("SELECT * FROM groups WHERE id = ?", [group_id], GroupRow::from_row)
@@ -212,7 +219,7 @@ fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Valu
             "SELECT gm.group_id, gm.user_id, gm.role, gm.is_muted, gm.joined_at,
                     grs.last_read_at AS last_read_at,
                     COALESCE(ps.read_receipts, 1) AS read_receipts,
-                    u.full_name, u.username, u.avatar_url, u.email
+                    u.full_name, u.username, u.avatar_url
              FROM group_members gm
              JOIN users u ON u.id = gm.user_id
              LEFT JOIN group_read_state grs
@@ -235,7 +242,6 @@ fn group_with_members(state: &AppState, group_id: &str) -> ApiResult<Option<Valu
                     "full_name": row.get::<_, String>("full_name")?,
                     "username": row.get::<_, Option<String>>("username")?,
                     "avatar_url": row.get::<_, Option<String>>("avatar_url")?,
-                    "email": row.get::<_, String>("email")?,
                 },
             }))
         })?;
@@ -277,7 +283,16 @@ pub async fn create(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_contact(&user_id)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("name", limits::NAME),
+            ("description", limits::DESCRIPTION),
+            ("avatar_url", limits::URL),
+        ],
+    )?;
 
     let name = crate::routes::text_field(&body, "name")
         .unwrap_or_default()
@@ -289,19 +304,33 @@ pub async fn create(
     let description = crate::routes::text_field(&body, "description");
     let avatar_url = crate::routes::text_field(&body, "avatar_url");
     let invited = crate::routes::string_list(&body, "memberIds");
+    if invited.len() > limits::MEMBERS {
+        return Err(ApiError::bad_request("Too many members in one request"));
+    }
 
     let group_id = new_id();
     let created_at = now_iso();
 
     let mut members: Vec<String> = vec![user_id.clone()];
     for id in invited {
-        if !members.contains(&id) {
+        if !id.is_empty() && !members.contains(&id) {
             members.push(id);
         }
     }
 
+    // Checked before anything is written. An id that names nobody used to fail the
+    // insert of that member, after the group and the members before it were stored: the
+    // caller got a server error and a group they had not finished making.
+    if !all_users_exist(&state, &members[1..])? {
+        return Err(ApiError::not_found("User not found"));
+    }
+    // Every signed-in account may load a group's picture.
+    ensure_attachable(&state, &user_id, &[avatar_url.as_deref()])?;
+
     state.db.with(|conn| {
-        conn.execute(
+        // All of it or none of it.
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO groups (id, name, description, avatar_url, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?)",
             params![
@@ -314,7 +343,7 @@ pub async fn create(
             ],
         )?;
         for member in &members {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO group_members (id, group_id, user_id, role, joined_at)
                  VALUES (?, ?, ?, ?, ?)",
                 params![
@@ -326,6 +355,7 @@ pub async fn create(
                 ],
             )?;
         }
+        tx.commit()?;
         Ok(())
     })?;
 
@@ -436,17 +466,23 @@ pub async fn one(
     Ok(Json(json!({ "group": group })))
 }
 
-/// `GET /groups/:id/members` — deliberately no membership check, matching the
-/// reference (it is only used by the member picker in the client).
+/// `GET /groups/:id/members` — the member list, for members.
+///
+/// The reference answers any signed-in caller here, which lets a stranger who
+/// learns a group id read who is in the group. Membership is required, exactly
+/// as on `GET /groups/:id`, and e-mail addresses are not part of the answer.
 pub async fn members(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(group_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    state.current_user(&headers)?;
+    let user_id = state.current_user(&headers)?;
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::forbidden("Not a member of this group"));
+    }
     let members = state.db.with(|conn| {
         let mut statement = conn.prepare(
-            "SELECT gm.*, u.full_name, u.username, u.avatar_url, u.email
+            "SELECT gm.*, u.full_name, u.username, u.avatar_url
              FROM group_members gm JOIN users u ON u.id = gm.user_id
              WHERE gm.group_id = ?",
         )?;
@@ -461,7 +497,6 @@ pub async fn members(
                 "full_name": row.get::<_, String>("full_name")?,
                 "username": row.get::<_, Option<String>>("username")?,
                 "avatar_url": row.get::<_, Option<String>>("avatar_url")?,
-                "email": row.get::<_, String>("email")?,
             }))
         })?;
         let mut out = Vec::new();
@@ -480,6 +515,7 @@ pub async fn add_members(
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
+    state.count_contact(&user_id)?;
     let Some((role, _)) = membership(&state, &group_id, &user_id)? else {
         return Err(ApiError::forbidden("Not a member of this group"));
     };
@@ -494,6 +530,13 @@ pub async fn add_members(
         .collect();
     if new_ids.is_empty() {
         return Ok(Json(json!({ "success": true })));
+    }
+    if new_ids.len() > limits::MEMBERS {
+        return Err(ApiError::bad_request("Too many members in one request"));
+    }
+    // `INSERT OR IGNORE` ignores a member who is already there, not one who does not exist.
+    if !all_users_exist(&state, &new_ids)? {
+        return Err(ApiError::not_found("User not found"));
     }
 
     let joined_at = now_iso();
@@ -547,22 +590,25 @@ pub async fn remove_member(
         return Err(ApiError::forbidden("Only admins can remove other members"));
     }
 
-    state.db.with(|conn| {
+    let removed = state.db.with(|conn| {
         conn.execute(
             "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
             params![group_id, target_id],
-        )?;
-        Ok(())
+        )
     })?;
 
-    let ids = member_ids(&state, &group_id)?;
-    let payload = json!({
-        "type": "group-member:left",
-        "group_id": group_id,
-        "user_id": target_id,
-    });
-    broadcast_to_members(&state, &ids, &payload);
-    state.hub.publish_to_user(&target_id, &payload.to_string());
+    // Only a removal that happened is announced. Without this an admin could
+    // push `group-member:left` for their group to any user id at all.
+    if removed > 0 {
+        let ids = member_ids(&state, &group_id)?;
+        let payload = json!({
+            "type": "group-member:left",
+            "group_id": group_id,
+            "user_id": target_id,
+        });
+        broadcast_to_members(&state, &ids, &payload);
+        state.hub.publish_to_user(&target_id, &payload.to_string());
+    }
 
     Ok(Json(json!({ "success": true })))
 }
@@ -586,6 +632,14 @@ pub async fn leave(
         }
         Ok(out)
     })?;
+
+    // Only a member can leave. The reference skips this check, and because the
+    // "last member left" branch below deletes the group and its messages, anyone
+    // who knew the id of a one-member group could delete it. An unknown group
+    // gets the same answer, so the response does not reveal which ids exist.
+    if !members.iter().any(|(id, _)| id == &user_id) {
+        return Err(ApiError::forbidden("Not a member of this group"));
+    }
 
     let admins: Vec<&String> = members
         .iter()
@@ -717,6 +771,14 @@ pub async fn update(
     }
 
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("name", limits::NAME),
+            ("description", limits::DESCRIPTION),
+            ("avatar_url", limits::URL),
+        ],
+    )?;
     let current = state.db.with(|conn| {
         conn.query_row("SELECT * FROM groups WHERE id = ?", [&group_id], GroupRow::from_row)
             .optional()
@@ -739,7 +801,11 @@ pub async fn update(
         }
         None => current.description,
     };
-    let avatar_url = crate::routes::text_field(&body, "avatar_url").or(current.avatar_url);
+    // Only a picture this request brings is checked; the one already stored was checked
+    // when it was set.
+    let new_avatar = crate::routes::text_field(&body, "avatar_url");
+    ensure_attachable(&state, &user_id, &[new_avatar.as_deref()])?;
+    let avatar_url = new_avatar.or(current.avatar_url);
 
     state.db.with(|conn| {
         conn.execute(
@@ -835,10 +901,23 @@ pub async fn send_message(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let user_id = state.current_user(&headers)?;
+    state.count_send(&user_id)?;
     if membership(&state, &group_id, &user_id)?.is_none() {
         return Err(ApiError::forbidden("Not a member of this group"));
     }
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("content", limits::MESSAGE),
+            ("type", limits::SHORT),
+            ("client_message_id", limits::SHORT),
+            ("media_url", limits::URL),
+            ("thumbnail_url", limits::PREVIEW),
+            ("duration", limits::SHORT),
+            ("reply_to", limits::SHORT),
+        ],
+    )?;
     let client_message_id = crate::routes::text_field(&body, "client_message_id");
 
     // Idempotent retry, same as 1:1.
@@ -857,14 +936,24 @@ pub async fn send_message(
         }
     }
 
+    // Every member can open the files a group message names, so naming a file needs the
+    // right to open it. Forwarding passes: the forwarder can open what they were sent.
+    let media_url = crate::routes::text_field(&body, "media_url");
+    let thumbnail_url = crate::routes::text_field(&body, "thumbnail_url");
+    ensure_attachable(
+        &state,
+        &user_id,
+        &[media_url.as_deref(), thumbnail_url.as_deref()],
+    )?;
+
     let row = GroupMessageRow {
         id: new_id(),
         group_id: group_id.clone(),
         sender_id: user_id.clone(),
         content: crate::routes::text_field(&body, "content").unwrap_or_default(),
         kind: crate::routes::text_field(&body, "type").unwrap_or_else(|| "text".to_string()),
-        media_url: crate::routes::text_field(&body, "media_url"),
-        thumbnail_url: crate::routes::text_field(&body, "thumbnail_url"),
+        media_url,
+        thumbnail_url,
         duration: crate::routes::text_field(&body, "duration"),
         client_message_id,
         reply_to: crate::routes::text_field(&body, "reply_to"),
@@ -915,17 +1004,22 @@ pub async fn delete_message_for_me(
     Path(message_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
-    let current: Option<Option<String>> = state.db.with(|conn| {
+    let current: Option<(String, Option<String>)> = state.db.with(|conn| {
         conn.query_row(
-            "SELECT deleted_for FROM group_messages WHERE id = ?",
+            "SELECT group_id, deleted_for FROM group_messages WHERE id = ?",
             [&message_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
     })?;
-    let Some(current) = current else {
+    let Some((group_id, current)) = current else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // This writes to the message row, so it is for current members only. To
+    // anyone else the message does not exist (the 1:1 routes answer the same way).
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
 
     let mut list: Vec<String> = current
         .as_deref()
@@ -963,6 +1057,11 @@ pub async fn delete_message_for_everyone(
     let Some((group_id, sender_id, created_at)) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // Someone who has left or been removed no longer edits the group's history,
+    // not even their own messages in it.
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
     if sender_id != user_id {
         return Err(ApiError::forbidden("You can only delete your own messages"));
     }
@@ -1004,6 +1103,7 @@ pub async fn react_message(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = crate::routes::parse_body(&body);
+    ensure_lengths(&body, &[("emoji", limits::EMOJI)])?;
     let emoji = crate::routes::text_field(&body, "emoji").unwrap_or_default();
     if emoji.is_empty() {
         return Err(ApiError::bad_request("emoji is required"));
@@ -1020,6 +1120,11 @@ pub async fn react_message(
     let Some((group_id, reactions)) = row else {
         return Err(ApiError::not_found("Message not found"));
     };
+    // The reference lets any signed-in caller react to any group message whose
+    // id they know, and then broadcasts the result to the whole group.
+    if membership(&state, &group_id, &user_id)?.is_none() {
+        return Err(ApiError::not_found("Message not found"));
+    }
 
     let mut map: std::collections::BTreeMap<String, Vec<String>> = reactions
         .as_deref()
@@ -1029,6 +1134,13 @@ pub async fn react_message(
     if list.contains(&user_id) {
         list.retain(|value| value != &user_id);
     } else {
+        // The whole map is stored with the message and pushed to every member on every
+        // change, and each different reaction is one more entry in it.
+        if !map.contains_key(&emoji) && map.len() >= limits::REACTIONS {
+            return Err(ApiError::bad_request(
+                "This message has too many different reactions",
+            ));
+        }
         list.push(user_id.clone());
     }
     if list.is_empty() {

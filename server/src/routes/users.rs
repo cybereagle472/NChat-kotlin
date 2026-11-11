@@ -14,7 +14,8 @@ use crate::presence::{get_presence, get_presence_map, heartbeat};
 use crate::privacy::{
     apply_privacy, apply_privacy_to_list, are_friends, get_privacy_settings,
 };
-use crate::routes::{parse_body, text_field};
+use crate::routes::media::ensure_attachable;
+use crate::routes::{ensure_lengths, limits, parse_body, text_field};
 use crate::util::{clamp_limit, now_iso};
 use crate::AppState;
 
@@ -39,7 +40,7 @@ pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<
         Ok((row, presence))
     })?;
     let user = row.ok_or_else(|| ApiError::not_found("Not found"))?;
-    Ok(Json(json!({ "profile": user.profile(last_active) })))
+    Ok(Json(json!({ "profile": user.own_profile(last_active) })))
 }
 
 pub async fn update_me(
@@ -49,6 +50,15 @@ pub async fn update_me(
 ) -> ApiResult<Json<Value>> {
     let user_id = state.current_user(&headers)?;
     let body = parse_body(&body);
+    ensure_lengths(
+        &body,
+        &[
+            ("full_name", limits::NAME),
+            ("bio", limits::BIO),
+            ("avatar_url", limits::URL),
+            ("username", limits::USERNAME),
+        ],
+    )?;
 
     let mut fields: Vec<&str> = Vec::new();
     let mut values: Vec<String> = Vec::new();
@@ -62,6 +72,9 @@ pub async fn update_me(
         values.push(bio.trim().to_string());
     }
     if let Some(avatar) = text_field(&body, "avatar_url") {
+        // Every signed-in account may load a profile picture, so making a file one's
+        // picture publishes it. It has to be a file the caller may open already.
+        ensure_attachable(&state, &user_id, &[Some(avatar.as_str())])?;
         fields.push("avatar_url = ?");
         values.push(avatar);
     }
@@ -102,7 +115,7 @@ pub async fn update_me(
 
     let (row, last_active) = updated;
     let user = row.ok_or_else(|| ApiError::not_found("Not found"))?;
-    Ok(Json(json!({ "profile": user.profile(last_active) })))
+    Ok(Json(json!({ "profile": user.own_profile(last_active) })))
 }
 
 pub async fn username_available(
@@ -147,7 +160,9 @@ pub async fn search(
     let user_id = state.current_user(&headers)?;
     let raw = query.q.unwrap_or_default().trim().to_string();
     let term = raw.strip_prefix('@').unwrap_or(&raw).trim().to_string();
-    if term.is_empty() {
+    // Nobody's name is longer than a name may be, and SQLite refuses a LIKE pattern
+    // beyond 50 000 bytes: a longer search text used to be a server error.
+    if term.is_empty() || term.chars().count() > limits::SEARCH {
         return Ok(Json(json!({ "profiles": [] })));
     }
 
@@ -213,14 +228,15 @@ pub async fn one(
         Ok((row, presence))
     })?;
     let user = row.ok_or_else(|| ApiError::not_found("Not found"))?;
-    let mut profile = user.profile(last_active);
-
-    if id != viewer_id {
-        let (settings, is_friend) = state.db.with(|conn| {
-            Ok((get_privacy_settings(conn, &id)?, are_friends(conn, &viewer_id, &id)?))
-        })?;
-        apply_privacy(&mut profile, &viewer_id, &settings, is_friend);
+    if id == viewer_id {
+        return Ok(Json(json!({ "profile": user.own_profile(last_active) })));
     }
+
+    let mut profile = user.profile(last_active);
+    let (settings, is_friend) = state.db.with(|conn| {
+        Ok((get_privacy_settings(conn, &id)?, are_friends(conn, &viewer_id, &id)?))
+    })?;
+    apply_privacy(&mut profile, &viewer_id, &settings, is_friend);
 
     Ok(Json(json!({ "profile": profile })))
 }
