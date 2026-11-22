@@ -253,17 +253,18 @@ groups.post('/:id/members', limitContact, async (c) => {
   if (newIds.length === 0) return c.json({ success: true });
 
   const joinedAt = nowIso();
-  await c.env.DB.batch(
-    newIds.map((uid) =>
-      c.env.DB.prepare('INSERT OR IGNORE INTO group_members (id, group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)').bind(
-        newId(),
-        groupId,
-        uid,
-        'member',
-        joinedAt
-      )
-    )
-  );
+  // D1 runs the authorization read and the guarded inserts in one batch
+  // transaction, so a concurrent demotion cannot authorize stale additions.
+  const [authorization] = await c.env.DB.batch([
+    c.env.DB.prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? AND role = 'admin'").bind(groupId, userId),
+    ...newIds.map((uid) =>
+      c.env.DB.prepare(`INSERT OR IGNORE INTO group_members (id, group_id, user_id, role, joined_at)
+        SELECT ?1, ?2, ?3, 'member', ?4
+        WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?5 AND role = 'admin')`)
+        .bind(newId(), groupId, uid, joinedAt, userId)
+    ),
+  ]);
+  if (!authorization.results.length) return c.json({ error: 'Only admins can add members' }, 403);
 
   const group = await groupWithMembers(c.env, groupId, userId);
   await broadcastGroupProjection(c.env, groupId, 'group-member:joined');

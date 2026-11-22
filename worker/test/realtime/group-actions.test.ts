@@ -963,6 +963,15 @@ describe('group role change authorization under concurrency', () => {
 });
 
 describe('group member addition authorization under concurrency', () => {
+  it('lets an admin add members and safely repeat an addition', async () => {
+    const { owner, outsider, group } = await fixture();
+    const path = `/groups/${group}/members`;
+    expect((await post(path, owner.token, {memberIds:[outsider.id]})).status).toBe(200);
+    expect((await post(path, owner.token, {memberIds:[outsider.id]})).status).toBe(200);
+    const rows = await env.DB.prepare('SELECT user_id FROM group_members WHERE group_id=? AND user_id=?').bind(group, outsider.id).all();
+    expect(rows.results).toHaveLength(1);
+    expect((await post(path, outsider.token, {memberIds:[owner.id]})).status).toBe(403);
+  });
   it('does not add a member when the administrator is demoted before the write', async () => {
     const { owner, outsider, group } = await fixture();
     const invitee = await mediaAccount();
