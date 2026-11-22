@@ -2043,3 +2043,5 @@ Direct-call state fix 26947fa guards the answer UPDATE on ringing/not-ended/call
 Direct-call state fix `26947fa` passed Worker CI `45001241687` (100 tests and typecheck); branch-only and not deployed. The event ordering and block-race limitations noted above remain.
 
 Contact initiation blocking race tests 3795bd8 fail locally: a newly blocked caller/requester can still persist and send a call or friend-request event if blocked between the check and insert. Deterministic barriers exercise both paths; CI pending; no deployment.
+
+Contact initiation blocking race `3795bd8` failed Worker CI `45001324124` on both paths as expected.
