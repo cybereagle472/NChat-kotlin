@@ -109,3 +109,78 @@ describe('media requires sign-in', () => {
     expect(await range.text()).toBe('234');
   });
 });
+
+async function mediaAccount() {
+  const response = await SELF.fetch('https://example.test/auth/signup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: `${crypto.randomUUID()}@example.test`, password: 'password123' }),
+  });
+  expect(response.status).toBe(201);
+  const result = await response.json() as { user: { id: string }; access_token: string };
+  return { id: result.user.id, token: result.access_token };
+}
+async function mediaUpload(token: string) {
+  const form = new FormData();
+  form.set('file', new File(['private image'], 'private.jpg', { type: 'image/jpeg' }));
+  const response = await SELF.fetch('https://example.test/media/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+  expect(response.status).toBe(201);
+  return response.json() as Promise<{key: string; url: string}>;
+}
+function mediaRead(key: string, token: string) {
+  return SELF.fetch(`https://example.test/media/file/${key}`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+describe('media access follows its audience', () => {
+  it('allows uploader and chat recipient, but not an unrelated signed-in user', async () => {
+    const owner = await mediaAccount(), recipient = await mediaAccount(), stranger = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    expect((await mediaRead(file.key, owner.token)).status).toBe(200);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+    await env.DB.prepare('INSERT INTO messages (id, sender_id, receiver_id, media_url) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), owner.id, recipient.id, file.url).run();
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+  });
+  it('supports forwarding to a group without granting access to outsiders or removed members', async () => {
+    const owner = await mediaAccount(), receiver = await mediaAccount(), member = await mediaAccount(), stranger = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    await env.DB.prepare('INSERT INTO messages (id, sender_id, receiver_id, media_url) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), owner.id, receiver.id, file.url).run();
+    const group = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO groups (id, name, created_by) VALUES (?, ?, ?)').bind(group, 'Test', receiver.id).run();
+    for (const user of [receiver, member]) {
+      await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), group, user.id, user.id === receiver.id ? 'admin' : 'member').run();
+    }
+    expect((await post(`/groups/${group}/messages`, receiver.token, { type: 'image', media_url: file.url })).status).toBe(201);
+    expect((await mediaRead(file.key, member.token)).status).toBe(200);
+    expect((await mediaRead(file.key, receiver.token)).status).toBe(200);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group, member.id).run();
+    expect((await mediaRead(file.key, member.token)).status).toBe(404);
+  });
+  it('does not let a stranger attach someone else’s private file to gain access', async () => {
+    const owner = await mediaAccount(), stranger = await mediaAccount(), other = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    expect((await post('/messages', stranger.token, { receiver_id: other.id, type: 'image', media_url: file.url })).status).toBe(403);
+    expect((await post('/status', stranger.token, { content_type: 'image', content_url: file.url })).status).toBe(403);
+    const profile = await SELF.fetch('https://example.test/users/me', { method: 'PATCH', headers: { Authorization: `Bearer ${stranger.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar_url: file.url }) });
+    expect(profile.status).toBe(403);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+  });
+  it('honors status privacy, expiry and blocks for status media', async () => {
+    const owner = await mediaAccount(), friend = await mediaAccount(), stranger = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    await env.DB.prepare('INSERT INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), owner.id, friend.id).run();
+    const status = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO statuses (id, user_id, content_type, content_url, privacy, expires_at) VALUES (?, ?, 'image', ?, 'contacts', ?)")
+      .bind(status, owner.id, file.url, new Date(Date.now() + 3600000).toISOString()).run();
+    expect((await mediaRead(file.key, friend.token)).status).toBe(200);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+    await env.DB.prepare("UPDATE statuses SET privacy = 'nobody' WHERE id = ?").bind(status).run();
+    expect((await mediaRead(file.key, friend.token)).status).toBe(404);
+    await env.DB.prepare("UPDATE statuses SET privacy = 'contacts' WHERE id = ?").bind(status).run();
+    await env.DB.prepare('INSERT INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), owner.id, friend.id).run();
+    expect((await mediaRead(file.key, friend.token)).status).toBe(404);
+  });
+});
