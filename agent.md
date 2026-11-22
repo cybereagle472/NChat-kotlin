@@ -2029,3 +2029,5 @@ Signalling limiter `96db604` passed Worker CI `44998779007` (95 tests and typech
 Group-call signalling participation tests 7fc673e fail locally: group members who never joined can send signaling, and ringing/declined/left members can receive it. Proposed stricter rule requires both participants joined and still in group; Android code joins server-side before opening the peer session, but real devices and races need testing. This is stricter than the Rust reference's membership-only rule. CI pending; no deployment.
 
 Group-call signalling participation red `7fc673e` failed Worker CI `44998864619` as expected; no deployment.
+
+Group-call signalling participant fix e24b114 checks both users' joined status and current group membership on the active call before forwarding. Local 97 tests and typecheck pass; CI pending. It is stricter than Rust's reference and requires Android device verification; membership/call state may still change after the check and before realtime delivery, and existing P2P connections cannot be terminated server-side. No deployment.
