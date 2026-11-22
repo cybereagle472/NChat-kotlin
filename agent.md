@@ -2137,3 +2137,5 @@ Further avatar audit: `d25badd` adds locally red deterministic tests for a group
 Avatar/metadata fixes `b6c112a` passed Worker CI `45009515003` (169 tests/typecheck); still branch-only and not deployed.
 
 Status count atomicity: red test `b158a28` demonstrated that a failed counter UPDATE left a status_views row and retries never incremented view_count (local trigger injection failed as expected; CI `45009741403` failed). Fix `9f3cff7` batches the guarded view insert and a count increment conditional on that attempt's unique view ID. Trigger-injected count failure rolls back the view; retry succeeds, and five concurrent duplicate views count/announce once. Full local suite passed 171 tests and typecheck; CI pending. It does not repair previously inaccurate counts, and notifications are still separate from the D1 transaction, so event loss/order and subsequent authorization changes can race. Branch-only, no deployment.
+
+Status view/count atomicity fix `9f3cff7` passed Worker CI `45010210161` (171 tests/typecheck). Existing inaccurate counts are not repaired; notifications remain outside the transaction. Branch-only and not deployed.
