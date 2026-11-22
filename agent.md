@@ -1889,3 +1889,5 @@ Group profile-photo red `5df689e` shows a member whose photo visibility is `nobo
 Group removal fix `37946d1` passed Worker CI `44990364049`. Group avatar red `5df689e` failed CI `44990398689`; fix `61bc20f` redacts group member photos per viewer in group list/detail/member responses and group projection events, preserving the owner's own view. Local 52 tests/typecheck passed; CI pending. Per-recipient projection adds D1 work for group events and is not load-tested; membership/privacy races and other projections, especially statuses, remain to review. Nothing deployed.
 
 Status avatar privacy red `5bba695` tests feed, notifications and viewer lists; it fails locally on the first notification leak, CI pending. Nothing deployed.
+
+Group avatar fix `61bc20f` passed Worker CI `44990491787`. Status avatar red `5bba695` failed CI `44990523302`; fix `3ac9d92` filters photos in status feed, status-new/view events and viewer list according to each viewer. Local 53 tests/typecheck passed; CI pending. High fan-out costs and privacy races need review. Nothing deployed.
