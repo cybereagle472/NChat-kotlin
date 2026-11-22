@@ -1993,3 +1993,5 @@ Group deletion authorization red `78d0310` failed Worker CI `44997126972` as exp
 Group deletion fix afccff9 uses a single admin-guarded DELETE with D1 foreign-key cascades (Cloudflare documents D1 foreign-key enforcement: https://developers.cloudflare.com/d1/sql-api/foreign-keys/). Local tests verify related messages, members, read state, calls and participants disappear, and ordinary member notification still occurs. Local 87 tests and typecheck pass; CI pending. This assumes production's schema matches migrations 0001–0005 and has not been verified against a real D1 database; the member notification list is a pre-delete snapshot and can race membership changes. No deployment.
 
 Group deletion fix `afccff9` passed Worker CI `44997260204` (87 tests and typecheck). Branch-only; not deployed. The production-schema assumption and notification race documented above remain.
+
+Group metadata/avatar race tests 3603449 fail locally: a demoted admin can change group text or replace group avatar and its trusted media grants after the authorization check. Tests force the interleaving before the write/batch; CI pending. Nothing deployed.
