@@ -96,6 +96,19 @@ export function clearMediaReferences(env: Env, kind: MediaReferenceKind, referen
   return env.DB.prepare('DELETE FROM trusted_media_references WHERE kind = ? AND reference_id = ?').bind(kind, referenceId);
 }
 
+/** Avatar provenance changes follow the group update's admin guard. The caller
+ * must execute these statements in the same D1 batch as that update. */
+export function guardedGroupAvatarReferences(env: Env, groupId: string, actorId: string, address: unknown): D1PreparedStatement[] {
+  const guard = "EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')";
+  const statements = [env.DB.prepare(`DELETE FROM trusted_media_references
+    WHERE kind = 'group_avatar' AND reference_id = ?1 AND ${guard}`).bind(groupId, actorId)];
+  const key = localMediaKey(env, address).key;
+  if (key) statements.push(env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
+    SELECT file_path, 'group_avatar', ?1, ?2 FROM media_attachments WHERE file_path = ?3 AND ${guard}`)
+    .bind(groupId, actorId, key));
+  return statements;
+}
+
 export async function writeWithMediaReferences(env: Env, write: D1PreparedStatement, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): Promise<void> {
   const references = mediaReferenceStatements(env, kind, referenceId, actorId, addresses);
   if (references.length) await env.DB.batch([write, ...references]);

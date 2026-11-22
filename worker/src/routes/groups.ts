@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
-import { mayAttachMedia, clearMediaReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
+import { mayAttachMedia, guardedGroupAvatarReferences, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -394,12 +394,13 @@ groups.patch('/:id', async (c) => {
   const nextAvatar = avatar_url !== undefined ? avatar_url : current.avatar_url;
 
   const write = c.env.DB.prepare(
-    "UPDATE groups SET name = ?, description = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?"
-  ).bind(nextName, nextDescription, nextAvatar, groupId);
-  if (avatar_url !== undefined) {
-    await c.env.DB.batch([write, clearMediaReferences(c.env, 'group_avatar', groupId),
-      ...mediaReferenceStatements(c.env, 'group_avatar', groupId, userId, [avatar_url])]);
-  } else await write.run();
+    `UPDATE groups SET name = ?1, description = ?2, avatar_url = ?3, updated_at = datetime('now') WHERE id = ?4
+     AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?4 AND user_id = ?5 AND role = 'admin')`
+  ).bind(nextName, nextDescription, nextAvatar, groupId, userId);
+  const updated = avatar_url !== undefined
+    ? (await c.env.DB.batch([write, ...guardedGroupAvatarReferences(c.env, groupId, userId, avatar_url)]))[0]
+    : await write.run();
+  if (!updated.meta.changes) return c.json({ error: 'Only admins can update group info' }, 403);
 
   const group = await groupWithMembers(c.env, groupId, userId);
   await broadcastGroupProjection(c.env, groupId, 'group:updated');
