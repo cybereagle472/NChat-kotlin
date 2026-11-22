@@ -262,7 +262,22 @@ groups.delete('/:id/members/:userId', async (c) => {
     return c.json({ error: 'Only admins can remove other members' }, 403);
   }
 
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, targetId).run();
+  // Keep the authorization and last-admin guard in the same atomic DELETE,
+  // so concurrent removals cannot both eliminate the final administrator.
+  const deleted = await c.env.DB.prepare(`DELETE FROM group_members
+    WHERE group_id = ?1 AND user_id = ?2
+      AND EXISTS (SELECT 1 FROM group_members actor WHERE actor.group_id = ?1 AND actor.user_id = ?3
+        AND (actor.role = 'admin' OR ?2 = ?3))
+      AND (role != 'admin'
+        OR NOT EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2)
+        OR EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2 AND other.role = 'admin'))`)
+    .bind(groupId, targetId, userId).run();
+  if (!deleted.meta.changes) {
+    const [actor, target] = await Promise.all([getMembership(c.env, groupId, userId), getMembership(c.env, groupId, targetId)]);
+    if (!actor || (actor.role !== 'admin' && userId !== targetId)) return c.json({ error: 'Not authorized' }, 403);
+    if (!target) return c.json({ error: 'Member not found' }, 404);
+    return c.json({ error: 'Make someone else an admin before removing the last admin' }, 400);
+  }
   await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   await broadcastToUser(c.env, targetId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   return c.json({ success: true });
