@@ -1987,3 +1987,5 @@ Group member-add fix 6b16214 checks admin status in the same D1 transaction as g
 Group member-add fix `6b16214` passed Worker CI `44997047755` (85 tests and typecheck); branch-only, not deployed.
 
 Group deletion authorization race 78d0310 failed locally: after an admin check, a demoted actor can still delete the group and its messages. Deterministic test pauses after member enumeration, then demotes the actor. CI pending; nothing deployed.
+
+Group deletion authorization red `78d0310` failed Worker CI `44997126972` as expected. The implementation is still in progress and not deployed.
