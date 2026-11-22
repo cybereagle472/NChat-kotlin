@@ -2059,3 +2059,5 @@ Friend-response security tests demonstrate locally that acceptance can create a 
 Friend-response fix `07dddad` conditionally inserts the friendship and updates the pending request in one D1 batch only while neither party is blocked; rejection uses an equivalent conditional update. Cancelled/handled/blocked requests produce no friendship mutation or response event. Both block directions, a block inserted after the read, cancellation-before-batch and stale rejection are covered. All 108 local tests and typecheck pass; CI pending. Block or deletion after the batch can still race event delivery; request creation/upsert concurrency needs further review, as does D1 production verification. No deployment.
 
 Friend-request persisted-ID fix `c59c6f0` passed Worker CI `45001749125`; friend-response race regression `c22f597` failed CI `45001795656` as expected. Both remain branch-only. Guarded-response fix `07dddad` CI is pending.
+
+Friend-request creation race tests fail locally: a stale create can reset an accepted request to pending, and simultaneous opposite-direction requests can both become pending. Tests pause the write after checks. CI pending; no deployment.
