@@ -40,8 +40,8 @@ media.post('/upload', requireAuth, async (c) => {
   return c.json({ id, url, key, media_type, file_name: file.name, file_size: file.size }, 201);
 });
 
-// GET /media/file/:key — public read (replaces a public Supabase Storage bucket).
-// If you need private media, add requireAuth + an ownership check here instead.
+// GET /media/file/:key — requires sign-in. Per-file authorization still needs
+// to be implemented before media can be considered private from other users.
 //
 // Serves byte-range requests (HTTP 206 Partial Content), which this used to
 // skip entirely — every request got the whole object back with a plain 200,
@@ -58,7 +58,7 @@ media.post('/upload', requireAuth, async (c) => {
 // downloaded yet. R2 natively understands a `Range` header passed straight
 // through, so this is mostly just relaying it and shaping the response per
 // the HTTP spec (206 + Content-Range on a successful range request).
-media.get('/file/*', async (c) => {
+media.get('/file/*', requireAuth, async (c) => {
   const key = c.req.path.replace(/^\/media\/file\//, '');
   const object = await c.env.MEDIA.get(key, { range: c.req.raw.headers });
   if (!object) return c.json({ error: 'Not found' }, 404);
@@ -66,12 +66,12 @@ media.get('/file/*', async (c) => {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
-  headers.set('cache-control', 'public, max-age=31536000, immutable');
+  headers.set('cache-control', 'private, no-store');
   headers.set('accept-ranges', 'bytes');
 
   const range = object.range;
   let status = 200;
-  if (range && 'offset' in range) {
+  if (c.req.header('Range') && range && 'offset' in range) {
     const offset = range.offset ?? 0;
     const length = range.length ?? object.size - offset;
     headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`);

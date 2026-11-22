@@ -31,19 +31,7 @@ export class RealtimeRoom {
     server.accept();
     this.sockets.add(server);
 
-    server.addEventListener('message', (event) => {
-      // Relay ephemeral, DB-less events (typing indicators, presence pings)
-      // straight through to everyone else in the room.
-      for (const ws of this.sockets) {
-        if (ws !== server && ws.readyState === OPEN) {
-          try {
-            ws.send(event.data as string);
-          } catch {
-            this.sockets.delete(ws);
-          }
-        }
-      }
-    });
+    // Clients receive server-generated events only; never relay client input.
 
     const cleanup = () => this.sockets.delete(server);
     server.addEventListener('close', cleanup);
