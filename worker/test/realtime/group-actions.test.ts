@@ -868,3 +868,66 @@ describe('concurrent group call creation', () => {
     expect(joined.results).toHaveLength(2);
   });
 });
+
+/** Pause a particular SQL write after its preceding authorization reads. */
+function pauseWrite(match: string) {
+  let notify!: () => void, resume!: () => void;
+  const reached = new Promise<void>(resolve => { notify = resolve; });
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  const db = {
+    prepare(sql: string) {
+      const statement = env.DB.prepare(sql);
+      if (!sql.includes(match)) return statement;
+      return { bind(...args: unknown[]) {
+        const bound = statement.bind(...args);
+        return { async run() { notify(); await gate; return bound.run(); } };
+      } };
+    },
+    batch: env.DB.batch.bind(env.DB),
+  };
+  return { reached, resume, bindings: { ...env, DB: db } as unknown as Env };
+}
+function requestWithBindings(path: string, token: string, bindings: Env) {
+  return app.request(`https://example.test${path}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}',
+  }, bindings);
+}
+
+describe('group call join and leave races', () => {
+  it('cannot join after the last participant has ended the call', async () => {
+    const f = await groupCallFixture();
+    await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
+    const paused = pauseWrite('INSERT INTO group_call_participants (call_id, user_id, status, joined_at)');
+    const joining = requestWithBindings(`/group-calls/${f.call}/join`, f.member.token, paused.bindings);
+    await paused.reached;
+    try {
+      expect((await post(`/group-calls/${f.call}/leave`, f.owner.token)).status).toBe(200);
+    } finally { paused.resume(); }
+    expect((await joining).status).toBe(409);
+    const participant = await env.DB.prepare('SELECT status FROM group_call_participants WHERE call_id=? AND user_id=?').bind(f.call, f.member.id).first<{status:string}>();
+    expect(participant?.status).not.toBe('joined');
+  });
+  it('does not end a call when someone joins after the leave check', async () => {
+    const f = await groupCallFixture();
+    await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
+    const paused = pauseWrite("UPDATE group_calls SET status = 'ended'");
+    const leaving = requestWithBindings(`/group-calls/${f.call}/leave`, f.owner.token, paused.bindings);
+    await paused.reached;
+    try {
+      expect((await post(`/group-calls/${f.call}/join`, f.member.token)).status).toBe(200);
+    } finally { paused.resume(); }
+    expect((await leaving).status).toBe(200);
+    const call = await env.DB.prepare('SELECT status FROM group_calls WHERE id=?').bind(f.call).first<{status:string}>();
+    expect(call?.status).toBe('active');
+  });
+  it('cannot join after removal from the group', async () => {
+    const f = await groupCallFixture();
+    const paused = pauseWrite('INSERT INTO group_call_participants (call_id, user_id, status, joined_at)');
+    const joining = requestWithBindings(`/group-calls/${f.call}/join`, f.member.token, paused.bindings);
+    await paused.reached;
+    try {
+      await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(f.group, f.member.id).run();
+    } finally { paused.resume(); }
+    expect((await joining).status).toBe(403);
+  });
+});
