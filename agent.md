@@ -1897,3 +1897,5 @@ Login-timing red `28e35ab` verifies that unknown accounts perform password work 
 Status avatar fix `3ac9d92` passed Worker CI `44990598593`. Login timing red `28e35ab` failed CI `44990629978`; fix `c6b4a1b` runs a fixed 100,000-round decoy hash for unknown accounts behind the credential limits. Local 54 tests/typecheck passed; CI pending. Different legacy hash work factors can still create timing differences; this is not a timing proof, and signup enumeration remains. Nothing deployed.
 
 Input-bound red `79e8276` tests limits for message text/edit/reaction, status text, group name and profile bio. Local first assertion failed; CI pending. Wider input/streaming-size review remains. Nothing deployed.
+
+Login timing fix `c6b4a1b` passed Worker CI `44990688131`. Input red `79e8276` failed CI `44990735973`; fix `8f2a54c` bounds common text/profile/group/status/message fields and member list lengths by UTF-8 bytes, with invalid DM text/reactions rejected. Local 55 tests/typecheck passed; CI pending. This does not yet cap request streams, uploads, signalling or all malformed values; review compatibility and remaining endpoints. Nothing deployed.
