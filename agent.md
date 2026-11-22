@@ -2097,3 +2097,5 @@ Privacy-settings race `PATCH /privacy` tests fail locally for both existing and 
 Privacy update fix `6014edd` performs a field-specific SQL UPSERT using an explicit allowlist, so independent updates no longer restore stale/default values; absent rows use migration defaults. Both race tests and full local suite pass (135 tests plus typecheck), with a clean test-runner shutdown on this run; CI pending. Concurrent changes to the same field remain last-writer-wins, and reads/events can still race privacy changes. Branch-only; not deployed.
 
 Status-view guard `bf92f45` passed Worker CI `45004017407` (133 tests/typecheck). Privacy-update regression `5a4b127` failed Worker CI `45004074074` on both expected cases; fix `6014edd` awaits CI. No deployment.
+
+Read-receipt regression tests fail locally: a block or unfriend between the initial check and update still marks and announces a direct message as read. Deterministic write barriers cover both cases; the authorized idempotent path also passes. CI pending; no deployment.
