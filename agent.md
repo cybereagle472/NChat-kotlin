@@ -2037,3 +2037,5 @@ Group-call signalling participant fix `e24b114` passed Worker CI `44999016501` (
 Direct-call state race tests 012e3f2 fail locally: stale answers can revive ended calls, simultaneous ends can overwrite outcomes, and duplicate answers can both be announced. Tests force writes after competing operations. CI pending; nothing deployed.
 
 Direct-call state race red `012e3f2` failed Worker CI `45001069020` on all three expected assertions.
+
+Direct-call state fix 26947fa guards the answer UPDATE on ringing/not-ended/callee, and guards end on still-open participant state; unsuccessful concurrent end does not overwrite or announce. Local 100 tests and typecheck pass; CI pending. Broadcast follows database commit and can still be delivered out of order relative to later transitions; signal delivery and block-status races remain. Nothing deployed.
