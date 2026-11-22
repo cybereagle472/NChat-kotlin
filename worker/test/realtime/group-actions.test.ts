@@ -961,3 +961,30 @@ describe('group role change authorization under concurrency', () => {
     expect(admins.results).toHaveLength(1);
   });
 });
+
+describe('group member addition authorization under concurrency', () => {
+  it('does not add a member when the administrator is demoted before the write', async () => {
+    const { owner, outsider, group } = await fixture();
+    const invitee = await mediaAccount();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, outsider.id, 'admin').run();
+    let reached!: () => void, release!: () => void;
+    const atBatch = new Promise<void>(resolve => { reached = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const db = {
+      prepare: env.DB.prepare.bind(env.DB),
+      async batch(statements: D1PreparedStatement[]) { reached(); await gate; return env.DB.batch(statements); },
+    };
+    const bindings = { ...env, DB: db } as unknown as Env;
+    const request = app.request(`https://example.test/groups/${group}/members`, {
+      method:'POST', headers:{Authorization:`Bearer ${owner.token}`, 'Content-Type':'application/json'},
+      body:JSON.stringify({memberIds:[invitee.id]}),
+    }, bindings);
+    await atBatch;
+    try {
+      await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group, owner.id).run();
+    } finally { release(); }
+    expect((await request).status).toBe(403);
+    expect(await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id=? AND user_id=?').bind(group, invitee.id).first()).toBeNull();
+  });
+});
