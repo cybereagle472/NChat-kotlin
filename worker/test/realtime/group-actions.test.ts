@@ -1176,3 +1176,45 @@ describe('group call signalling participation', () => {
     await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
   });
 });
+
+describe('direct call state concurrency', () => {
+  async function directFixture() {
+    const caller = await mediaAccount(), callee = await mediaAccount(), call = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO calls (id,caller_id,receiver_id,call_type,status) VALUES (?,?,?,'audio','ringing')").bind(call,caller.id,callee.id).run();
+    return {caller,callee,call};
+  }
+  it('cannot answer a call after the caller ended it', async () => {
+    const f = await directFixture(), target = await inbox(f.caller);
+    const paused = pauseWrite("UPDATE calls SET status = 'answered'");
+    const request = requestWithBindings(`/calls/${f.call}/answer`,f.callee.token,paused.bindings);
+    await paused.reached;
+    try { expect((await post(`/calls/${f.call}/end`,f.caller.token,{status:'ended'})).status).toBe(200); }
+    finally {paused.resume();}
+    expect((await request).status).toBe(409);
+    const row = await env.DB.prepare('SELECT status,ended_at FROM calls WHERE id=?').bind(f.call).first<{status:string;ended_at:string|null}>();
+    expect(row?.status).toBe('ended'); expect(row?.ended_at).not.toBeNull();
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+  it('does not overwrite or re-announce a concurrent call end', async () => {
+    const f = await directFixture(), target = await inbox(f.callee);
+    const paused = pauseWrite('UPDATE calls SET status = ?, duration = ?');
+    const request = requestWithBindings(`/calls/${f.call}/end`,f.caller.token,paused.bindings);
+    await paused.reached;
+    try { expect((await post(`/calls/${f.call}/end`,f.callee.token,{status:'declined',duration:0})).status).toBe(200); }
+    finally {paused.resume();}
+    expect((await request).status).toBe(200);
+    const row = await env.DB.prepare('SELECT status,duration FROM calls WHERE id=?').bind(f.call).first<{status:string;duration:number|null}>();
+    expect(row).toMatchObject({status:'declined',duration:0});
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+  it('only accepts and announces one concurrent answer', async () => {
+    const f = await directFixture(), target = await inbox(f.caller);
+    const paused = pauseWrite("UPDATE calls SET status = 'answered'");
+    const request = requestWithBindings(`/calls/${f.call}/answer`,f.callee.token,paused.bindings);
+    await paused.reached;
+    try { expect((await post(`/calls/${f.call}/answer`,f.callee.token,{answer_sdp:{type:'answer',sdp:'v=0'}})).status).toBe(200); }
+    finally {paused.resume();}
+    expect((await request).status).toBe(409);
+    await target.flush(); expect(target.events).toHaveLength(1); target.socket.close(1000,'finished');
+  });
+});
