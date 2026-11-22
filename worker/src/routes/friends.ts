@@ -52,12 +52,21 @@ friends.post('/request', limitContact, async (c) => {
     `INSERT INTO friend_requests (id, sender_id, receiver_id, status)
      SELECT ?1, ?2, ?3, 'pending'
      WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))
+       AND NOT EXISTS (SELECT 1 FROM friend_requests WHERE status IN ('pending', 'accepted')
+         AND ((sender_id = ?2 AND receiver_id = ?3) OR (sender_id = ?3 AND receiver_id = ?2)))
+       AND NOT EXISTS (SELECT 1 FROM friendships WHERE (user1_id = ?2 AND user2_id = ?3) OR (user1_id = ?3 AND user2_id = ?2))
      ON CONFLICT(sender_id, receiver_id) DO UPDATE SET status = 'pending', updated_at = datetime('now')
+     WHERE friend_requests.status = 'rejected'
      RETURNING id`
   )
     .bind(candidateId, userId, receiver_id)
     .first<{ id: string }>();
-  if (!inserted) return c.json({ error: 'Cannot send a request to this user' }, 403);
+  if (!inserted) {
+    const blockedNow = await c.env.DB.prepare(
+      'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
+    ).bind(userId, receiver_id, receiver_id, userId).first();
+    return blockedNow ? c.json({ error: 'Cannot send a request to this user' }, 403) : c.json({ error: 'Request already pending or already friends' }, 409);
+  }
   const { id } = inserted;
 
   const sender = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();

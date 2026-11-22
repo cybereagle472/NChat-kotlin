@@ -1336,6 +1336,20 @@ describe('friend request response authorization under concurrency', () => {
 });
 
 describe('friend request creation concurrency', () => {
+  it('does not duplicate or re-announce concurrent same-direction requests', async () => {
+    const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
+    const paused = pauseWrite('INSERT INTO friend_requests (id, sender_id');
+    const stale = app.request('https://example.test/friends/request',{
+      method:'POST',headers:{Authorization:`Bearer ${sender.token}`,'Content-Type':'application/json'},body:JSON.stringify({receiver_id:receiver.id}),
+    }, paused.bindings);
+    await paused.reached;
+    try { expect((await post('/friends/request',sender.token,{receiver_id:receiver.id})).status).toBe(201); }
+    finally {paused.resume();}
+    expect((await stale).status).toBe(409);
+    const rows = await env.DB.prepare('SELECT id FROM friend_requests WHERE sender_id=? AND receiver_id=?').bind(sender.id,receiver.id).all();
+    expect(rows.results).toHaveLength(1);
+    await target.flush(); expect(target.events.filter(e=>JSON.parse(e).type === 'friend:request')).toHaveLength(1); target.socket.close(1000,'finished');
+  });
   it('does not reopen a request that was accepted after the initial check', async () => {
     const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
     const paused = pauseWrite('INSERT INTO friend_requests (id, sender_id');
