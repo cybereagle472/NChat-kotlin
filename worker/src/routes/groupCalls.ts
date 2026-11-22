@@ -268,7 +268,15 @@ groupCalls.post('/:id/signal', limitSignal, async (c) => {
   if (!membership) return c.json({ error: 'Not authorized' }, 403);
 
   if (call.status !== 'active') return c.json({ success: true });
-  if (!(await getMembership(c.env, call.group_id, to))) return c.json({ error: 'Not authorized' }, 403);
+  // Both peers must have joined the active call and still belong to the
+  // group; a ringing or historical participant cannot exchange signaling.
+  const authorized = await c.env.DB.prepare(`SELECT 1 FROM group_calls gc
+    JOIN group_call_participants sender ON sender.call_id = gc.id AND sender.user_id = ?2 AND sender.status = 'joined'
+    JOIN group_call_participants recipient ON recipient.call_id = gc.id AND recipient.user_id = ?3 AND recipient.status = 'joined'
+    JOIN group_members sm ON sm.group_id = gc.group_id AND sm.user_id = sender.user_id
+    JOIN group_members rm ON rm.group_id = gc.group_id AND rm.user_id = recipient.user_id
+    WHERE gc.id = ?1 AND gc.status = 'active'`).bind(id, userId, to).first();
+  if (!authorized) return c.json({ error: 'Not authorized' }, 403);
   await broadcastToUser(c.env, to, { ...signalPayload(body), type: 'group-call:signal', call_id: id, from: userId });
   return c.json({ success: true });
 });
