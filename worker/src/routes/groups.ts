@@ -351,7 +351,13 @@ groups.patch('/:id/members/:userId', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can change member roles' }, 403);
 
-  await c.env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(role, groupId, targetId).run();
+  const changed = await c.env.DB.prepare(`UPDATE group_members SET role = ?1 WHERE group_id = ?2 AND user_id = ?3
+    AND EXISTS (SELECT 1 FROM group_members actor WHERE actor.group_id = ?2 AND actor.user_id = ?4 AND actor.role = 'admin')`)
+    .bind(role, groupId, targetId, userId).run();
+  if (!changed.meta.changes) {
+    if ((await getMembership(c.env, groupId, userId))?.role !== 'admin') return c.json({ error: 'Only admins can change member roles' }, 403);
+    return c.json({ error: 'Member not found' }, 404);
+  }
   await broadcastGroupProjection(c.env, groupId, 'group-member:updated');
   return c.json({ success: true });
 });
