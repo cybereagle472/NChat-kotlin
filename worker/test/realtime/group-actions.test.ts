@@ -446,3 +446,26 @@ describe('media references are precise and respect avatar audiences', () => {
     expect((await mediaRead(groupAvatar.key, peer.token)).status).toBe(404);
   });
 });
+
+describe('credential abuse limits', () => {
+  const authRequest = (path: string, body: object, ip: string, forwarded = '1.1.1.1') => SELF.fetch(`https://example.test${path}`, {
+    method: 'POST', headers: {'Content-Type':'application/json', 'CF-Connecting-IP':ip, 'X-Forwarded-For':forwarded}, body:JSON.stringify(body),
+  });
+  it('limits guesses per account across client addresses and spoofed forwarding headers', async () => {
+    const email = `${crypto.randomUUID()}@example.test`;
+    const replies = await Promise.all(Array.from({length: 15}, (_, i) => authRequest('/auth/login', {email, password:'wrongpass'}, `2001:db8::${i+1}`, `198.51.100.${i+1}`)));
+    expect(replies.filter(r => r.status === 429).length).toBeGreaterThanOrEqual(5);
+    expect(replies.every(r => r.status === 401 || r.status === 429)).toBe(true);
+  });
+  it('limits signups per connecting address even when emails and forwarded headers vary', async () => {
+    const ip = `2001:db8:${Math.floor(Math.random() * 65535).toString(16)}::1`;
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) statuses.push((await authRequest('/auth/signup', {email:`${crypto.randomUUID()}@example.test`,password:'password123'}, ip, `203.0.113.${i+1}`)).status);
+    expect(statuses.slice(0, 10).every(s => s === 201)).toBe(true);
+    expect(statuses.slice(10)).toEqual([429, 429]);
+  });
+  it('fails closed if the Cloudflare client address is absent', async () => {
+    const result = await SELF.fetch('https://example.test/auth/login', {method:'POST', headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'nobody@example.test',password:'bad'})});
+    expect(result.status).toBe(503);
+  });
+});
