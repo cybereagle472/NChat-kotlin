@@ -703,3 +703,21 @@ describe('trusted media reference lifecycle', () => {
     expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
   });
 });
+
+describe('request body limits', () => {
+  it('rejects oversized JSON even when the oversized field is ignored', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(); await friend(owner.id, peer.id);
+    const attempts: Array<[string, object]> = [
+      ['/messages', {receiver_id:peer.id, content:'hello', ignored:'x'.repeat(262145)}],
+      ['/status', {content_type:'text', text_content:'hello', ignored:'x'.repeat(262145)}],
+      ['/friends/request', {receiver_id:peer.id, ignored:'x'.repeat(262145)}],
+    ];
+    for (const [path, body] of attempts) expect((await post(path, owner.token, body)).status, path).toBe(413);
+  });
+  it('rejects an upload whose declared body exceeds the Android-compatible limit', async () => {
+    const owner = await mediaAccount();
+    const form = new FormData(); form.set('file', new File(['small'], 'a.txt'));
+    const response = await SELF.fetch('https://example.test/media/upload', {method:'POST',headers:{Authorization:`Bearer ${owner.token}`, 'Content-Length':String(52 * 1024 * 1024)},body:form});
+    expect(response.status).toBe(413);
+  });
+});
