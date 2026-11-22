@@ -201,7 +201,11 @@ messages.post('/', limitSend, async (c) => {
 
   const write = c.env.DB.prepare(
       `INSERT INTO messages (id, sender_id, receiver_id, content, type, media_url, thumbnail_url, file_name, file_size, duration, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+       WHERE EXISTS (SELECT 1 FROM friendships f WHERE
+         (f.user1_id = ?2 AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = ?2))
+       AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+         (b.user_id = ?2 AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = ?2))`
     )
       .bind(
         id,
@@ -218,7 +222,8 @@ messages.post('/', limitSend, async (c) => {
         body.reply_to ?? null,
         created_at
       );
-  await writeWithMediaReferences(c.env, write, 'message', id, userId, [body.media_url, body.thumbnail_url]);
+  const inserted = await writeWithMediaReferences(c.env, write, 'message', id, userId, [body.media_url, body.thumbnail_url]);
+  if (!inserted.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   // Fan out only after the row is durable.
   await broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg });
 
