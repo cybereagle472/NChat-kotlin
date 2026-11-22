@@ -1129,7 +1129,7 @@ describe('group message send authorization under concurrency', () => {
 
 describe('group message actions under concurrent removal', () => {
   const actions = [
-    {path:'delete-for-me', sql:'UPDATE group_messages SET deleted_for = ?', body:{}},
+    {path:'delete-for-me', sql:'UPDATE group_messages SET deleted_for = CASE', body:{}},
     {path:'delete-for-everyone', sql:'UPDATE group_messages SET is_deleted = 1', body:{}},
     {path:'reaction', sql:'UPDATE group_messages SET reactions = ?', body:{emoji:'👍'}},
   ];
@@ -2050,6 +2050,73 @@ describe('concurrent message JSON actions', () => {
       const row = await env.DB.prepare(`SELECT ${column} AS value FROM ${table} WHERE id=?`).bind(id).first<{value:string}>();
       const result = JSON.parse(row!.value);
       expect((action === 'reaction' ? result['👍'] : result).sort()).toEqual([a.id,b.id].sort());
+    },30000);
+  }
+});
+
+describe('message JSON action semantics', () => {
+  for (const kind of ['direct','group'] as const) {
+    it(`keeps ${kind} toggles literal and hiding idempotent`, async () => {
+      const a = await mediaAccount(), b = await mediaAccount(); let id:string, base:string, table:string;
+      if (kind === 'direct') {
+        await friend(a.id,b.id);
+        const sent = await post('/messages',a.token,{receiver_id:b.id,content:'hello'});
+        expect(sent.status).toBe(201); id = (await sent.json() as {message:{id:string}}).message.id;
+        base = `/messages/${id}`; table = 'messages';
+      } else {
+        const group = crypto.randomUUID(); id = crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(group,'group',a.id).run();
+        await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,a.id,'admin').run();
+        await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,content) VALUES (?,?,?,?)').bind(id,group,a.id,'hello').run();
+        base = `/groups/messages/${id}`; table = 'group_messages';
+      }
+      for (const emoji of ['__proto__','constructor','"\\👍']) {
+        const added = await post(`${base}/reaction`,a.token,{emoji});
+        expect(added.status).toBe(200);
+        expect((await added.json() as {reactions:Record<string,string[]>}).reactions[emoji]).toEqual([a.id]);
+        const removed = await post(`${base}/reaction`,a.token,{emoji});
+        expect(removed.status).toBe(200);
+        expect(Object.hasOwn((await removed.json() as {reactions:Record<string,string[]>}).reactions,emoji)).toBe(false);
+      }
+      expect((await post(`${base}/delete-for-me`,a.token)).status).toBe(200);
+      expect((await post(`${base}/delete-for-me`,a.token)).status).toBe(200);
+      const row = await env.DB.prepare(`SELECT deleted_for,reactions FROM ${table} WHERE id=?`).bind(id).first<{deleted_for:string;reactions:string}>();
+      expect(JSON.parse(row!.deleted_for)).toEqual([a.id]);
+      expect(JSON.parse(row!.reactions)).toEqual({});
+    },30000);
+  }
+});
+
+describe('reaction contention limits', () => {
+  for (const kind of ['direct','group'] as const) {
+    it(`returns a retryable conflict rather than overwriting after repeated ${kind} changes`, async () => {
+      const a = await mediaAccount(), b = await mediaAccount(); let id:string, path:string, table:string;
+      if (kind === 'direct') {
+        await friend(a.id,b.id);
+        const sent = await post('/messages',a.token,{receiver_id:b.id,content:'hello'});
+        id = (await sent.json() as {message:{id:string}}).message.id;
+        path = `/messages/${id}/reaction`; table = 'messages';
+      } else {
+        const group = crypto.randomUUID(); id = crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(group,'group',a.id).run();
+        await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,a.id,'admin').run();
+        await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,content) VALUES (?,?,?,?)').bind(id,group,a.id,'hello').run();
+        path = `/groups/messages/${id}/reaction`; table = 'group_messages';
+      }
+      let attempts = 0;
+      const db = {prepare(sql:string) {
+        const stmt = env.DB.prepare(sql);
+        if (!sql.includes(`UPDATE ${table} SET reactions =`)) return stmt;
+        return {bind(...args:unknown[]) {const bound = stmt.bind(...args); return {async run() {
+          attempts++;
+          await env.DB.prepare(`UPDATE ${table} SET reactions=? WHERE id=?`).bind(JSON.stringify({other:[String(attempts)]}),id).run();
+          return bound.run();
+        }};}};
+      },batch:env.DB.batch.bind(env.DB)};
+      const response = await app.request(`https://example.test${path}`,{method:'POST',headers:{Authorization:`Bearer ${a.token}`,'Content-Type':'application/json'},body:JSON.stringify({emoji:'👍'})},{...env,DB:db} as unknown as Env);
+      expect(response.status).toBe(409); expect(attempts).toBe(8);
+      const row = await env.DB.prepare(`SELECT reactions FROM ${table} WHERE id=?`).bind(id).first<{reactions:string}>();
+      expect(JSON.parse(row!.reactions)).toEqual({other:['8']});
     },30000);
   }
 });

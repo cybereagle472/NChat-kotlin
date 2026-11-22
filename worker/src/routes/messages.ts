@@ -294,17 +294,13 @@ messages.delete('/:id', async (c) => {
 messages.post('/:id/delete-for-me', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare(
-    'SELECT deleted_for FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)'
-  )
-    .bind(id, userId, userId)
-    .first<{ deleted_for: string | null }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
-
-  const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
-  if (!deletedFor.includes(userId)) deletedFor.push(userId);
-
-  await c.env.DB.prepare('UPDATE messages SET deleted_for = ? WHERE id = ?').bind(JSON.stringify(deletedFor), id).run();
+  // Mutate the current array in the same write, not a stale pre-read. Local
+  // hiding remains permitted after blocking, but only to a message participant.
+  const updated = await c.env.DB.prepare(`UPDATE messages SET deleted_for = CASE
+    WHEN EXISTS (SELECT 1 FROM json_each(coalesce(deleted_for, '[]')) WHERE value = ?1) THEN deleted_for
+    ELSE json_insert(coalesce(deleted_for, '[]'), '$[#]', ?1) END
+    WHERE id = ?2 AND (sender_id = ?1 OR receiver_id = ?1)`).bind(userId, id).run();
+  if (!updated.meta.changes) return c.json({ error: 'Message not found' }, 404);
   return c.json({ success: true });
 });
 
@@ -313,28 +309,36 @@ messages.post('/:id/reaction', async (c) => {
   const id = c.req.param('id');
   const { emoji } = await c.req.json().catch(() => ({}));
   if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
-  const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)').bind(id, userId, userId).first<{
-    reactions: string | null;
-    sender_id: string;
-    receiver_id: string;
-  }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
+  // Compare-and-swap the entire JSON object. Recompute a toggle after a
+  // conflicting write rather than overwriting another participant's reaction.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const row = await c.env.DB.prepare('SELECT reactions, sender_id, receiver_id FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)').bind(id, userId, userId).first<{
+      reactions: string | null;
+      sender_id: string;
+      receiver_id: string;
+    }>();
+    if (!row) return c.json({ error: 'Message not found' }, 404);
 
-  const reactions: Record<string, string[]> = row.reactions ? JSON.parse(row.reactions) : {};
-  const list = reactions[emoji] ?? [];
-  reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
-  if (reactions[emoji].length === 0) delete reactions[emoji];
+    // Emoji is user input; a null prototype makes keys such as "constructor"
+    // and "__proto__" ordinary reaction keys rather than object properties.
+    const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    const list = reactions[emoji] ?? [];
+    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  const updated = await c.env.DB.prepare(`UPDATE messages SET reactions = ? WHERE id = ? AND (sender_id = ? OR receiver_id = ?) AND ${messageContactGuard}`).bind(JSON.stringify(reactions), id, userId, userId).run();
-  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
-  await broadcastToParticipants(c.env, row.sender_id, row.receiver_id, {
-    type: 'message:reaction',
-    messageId: id,
-    reactions,
-    sender_id: row.sender_id,
-    receiver_id: row.receiver_id,
-  });
-  return c.json({ reactions });
+    const updated = await c.env.DB.prepare(`UPDATE messages SET reactions = ?1 WHERE id = ?2 AND (sender_id = ?3 OR receiver_id = ?3)
+      AND reactions IS ?4 AND ${messageContactGuard}`).bind(JSON.stringify(reactions), id, userId, row.reactions).run();
+    if (updated.meta.changes) {
+      await broadcastToParticipants(c.env, row.sender_id, row.receiver_id, {
+        type: 'message:reaction', messageId: id, reactions,
+        sender_id: row.sender_id, receiver_id: row.receiver_id,
+      });
+      return c.json({ reactions });
+    }
+    const otherId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+    if (!(await mayMessage(c.env, userId, otherId))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  }
+  return c.json({ error: 'Reaction changed concurrently; retry' }, 409);
 });
 
 messages.post('/mark-read', async (c) => {

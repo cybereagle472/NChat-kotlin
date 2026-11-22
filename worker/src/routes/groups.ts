@@ -596,12 +596,13 @@ groups.post('/messages/:messageId/delete-for-me', async (c) => {
   if (!row) return c.json({ error: 'Message not found' }, 404);
   if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
-  if (!deletedFor.includes(userId)) deletedFor.push(userId);
-
-  const updated = await c.env.DB.prepare(`UPDATE group_messages SET deleted_for = ?1 WHERE id = ?2
-    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
-    .bind(JSON.stringify(deletedFor), messageId, userId).run();
+  // Apply the idempotent hide to the current array at write time, so two
+  // members hiding a message concurrently cannot overwrite one another.
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET deleted_for = CASE
+    WHEN EXISTS (SELECT 1 FROM json_each(coalesce(deleted_for, '[]')) WHERE value = ?1) THEN deleted_for
+    ELSE json_insert(coalesce(deleted_for, '[]'), '$[#]', ?1) END WHERE id = ?2
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?1)`)
+    .bind(userId, messageId).run();
   if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
   return c.json({ success: true });
 });
@@ -641,24 +642,32 @@ groups.post('/messages/:messageId/reaction', async (c) => {
   if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   if (!emoji) return c.json({ error: 'emoji is required' }, 400);
 
-  const row = await c.env.DB.prepare('SELECT group_id, reactions FROM group_messages WHERE id = ?').bind(messageId).first<{
-    group_id: string;
-    reactions: string | null;
-  }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
-  if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+  // Compare-and-swap preserves the toggle semantics without losing changes
+  // made after the read. Bound retries under sustained contention.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const row = await c.env.DB.prepare('SELECT group_id, reactions FROM group_messages WHERE id = ?').bind(messageId).first<{
+      group_id: string;
+      reactions: string | null;
+    }>();
+    if (!row) return c.json({ error: 'Message not found' }, 404);
+    if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const reactions: Record<string, string[]> = row.reactions ? JSON.parse(row.reactions) : {};
-  const list = reactions[emoji] ?? [];
-  reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
-  if (reactions[emoji].length === 0) delete reactions[emoji];
+    // Treat all reaction keys literally, including JavaScript prototype names.
+    const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    const list = reactions[emoji] ?? [];
+    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2
-    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
-    .bind(JSON.stringify(reactions), messageId, userId).run();
-  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
-  await broadcastToGroup(c.env, row.group_id, { type: 'group-message:reaction', group_id: row.group_id, message_id: messageId, reactions });
-  return c.json({ reactions });
+    const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2 AND reactions IS ?4
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
+      .bind(JSON.stringify(reactions), messageId, userId, row.reactions).run();
+    if (updated.meta.changes) {
+      await broadcastToGroup(c.env, row.group_id, { type: 'group-message:reaction', group_id: row.group_id, message_id: messageId, reactions });
+      return c.json({ reactions });
+    }
+    if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+  }
+  return c.json({ error: 'Reaction changed concurrently; retry' }, 409);
 });
 
 // POST /groups/:id/typing — ephemeral group typing indicator, no DB write.
