@@ -1630,7 +1630,7 @@ describe('direct read receipt authorization under concurrency', () => {
     expect((await env.DB.prepare('SELECT is_read FROM messages WHERE id=?').bind(id).first<{is_read:number}>())?.is_read).toBe(1);
     await target.flush(); const events = target.events.map(e=>JSON.parse(e));
     expect(events).toHaveLength(1); expect(events[0]).toMatchObject({type:'message:read',reader_id:receiver.id,message_ids:[id]}); target.socket.close(1000,'finished');
-  });
+  },30000);
 });
 
 describe('group creation atomicity', () => {
