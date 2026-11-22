@@ -1157,3 +1157,22 @@ describe('call signalling abuse limits', () => {
     target.socket.close(1000,'finished');
   }, 30000);
 });
+
+describe('group call signalling participation', () => {
+  it('does not deliver signals from group members who never joined the call', async () => {
+    const f = await groupCallFixture();
+    await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),f.group,f.outsider.id,'member').run();
+    const target = await inbox(f.owner);
+    expect((await post(`/group-calls/${f.call}/signal`,f.outsider.token,{to:f.owner.id,candidate:{candidate:'forged'}})).status).toBe(403);
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+  it('does not deliver signals to participants who are ringing, declined or left', async () => {
+    const f = await groupCallFixture();
+    const target = await inbox(f.member);
+    for (const status of ['ringing','declined','left']) {
+      await env.DB.prepare('UPDATE group_call_participants SET status=? WHERE call_id=? AND user_id=?').bind(status,f.call,f.member.id).run();
+      expect((await post(`/group-calls/${f.call}/signal`,f.owner.token,{to:f.member.id,candidate:{candidate:'late'}})).status, status).toBe(403);
+    }
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+});
