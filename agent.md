@@ -1967,3 +1967,5 @@ Group-call join/leave deterministic race tests e48ee1b failed locally: joining a
 Group-call join/leave red `e48ee1b` failed Worker CI `44996334507` on all three expected race assertions.
 
 Group-call join/end fix 461b1b1 guards join with active call and current membership in its SQL write, and ends a call only if no current group member is joined at the time of the UPDATE; only the successful transition emits call-ended. Local 82 tests and typecheck pass; CI pending. Broadcast-versus-membership races, stale notifications and non-atomic event delivery still remain, as do other authorization races. Nothing deployed.
+
+Group-call join/end fix `461b1b1` passed Worker CI `44996462340` (82 tests and typecheck). It is branch-only and not deployed; the preceding entry's limitations remain.
