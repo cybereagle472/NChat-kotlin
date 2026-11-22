@@ -2035,3 +2035,5 @@ Group-call signalling participant fix e24b114 checks both users' joined status a
 Group-call signalling participant fix `e24b114` passed Worker CI `44999016501` (97 tests and typecheck). Branch-only, not deployed. Device compatibility and delivery races remain as noted above. Phase 1 is incomplete; migration 0006 and a verified owner backup remain deployment prerequisites.
 
 Direct-call state race tests 012e3f2 fail locally: stale answers can revive ended calls, simultaneous ends can overwrite outcomes, and duplicate answers can both be announced. Tests force writes after competing operations. CI pending; nothing deployed.
+
+Direct-call state race red `012e3f2` failed Worker CI `45001069020` on all three expected assertions.
