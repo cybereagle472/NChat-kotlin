@@ -573,7 +573,10 @@ groups.post('/messages/:messageId/delete-for-me', async (c) => {
   const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
   if (!deletedFor.includes(userId)) deletedFor.push(userId);
 
-  await c.env.DB.prepare('UPDATE group_messages SET deleted_for = ? WHERE id = ?').bind(JSON.stringify(deletedFor), messageId).run();
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET deleted_for = ?1 WHERE id = ?2
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
+    .bind(JSON.stringify(deletedFor), messageId, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
   return c.json({ success: true });
 });
 
@@ -595,9 +598,11 @@ groups.post('/messages/:messageId/delete-for-everyone', async (c) => {
     return c.json({ error: 'Cannot delete messages older than 1 hour' }, 400);
   }
 
-  await c.env.DB.prepare("UPDATE group_messages SET is_deleted = 1, content = 'This message was deleted' WHERE id = ?")
-    .bind(messageId)
-    .run();
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET is_deleted = 1, content = 'This message was deleted'
+    WHERE id = ?1 AND sender_id = ?2
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?2)`)
+    .bind(messageId, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
 
   await broadcastToGroup(c.env, row.group_id, { type: 'group-message:delete', group_id: row.group_id, message_id: messageId });
   return c.json({ success: true });
@@ -622,7 +627,10 @@ groups.post('/messages/:messageId/reaction', async (c) => {
   reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
   if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  await c.env.DB.prepare('UPDATE group_messages SET reactions = ? WHERE id = ?').bind(JSON.stringify(reactions), messageId).run();
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
+    .bind(JSON.stringify(reactions), messageId, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
   await broadcastToGroup(c.env, row.group_id, { type: 'group-message:reaction', group_id: row.group_id, message_id: messageId, reactions });
   return c.json({ reactions });
 });
