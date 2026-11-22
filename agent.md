@@ -2023,3 +2023,5 @@ Call-signalling limiter regression 8843190 failed locally: direct and group sign
 Signal limiter red `8843190` failed Worker CI `44998624985` on the missing 429 as expected; no deployment.
 
 Signal limiter fix 96db604 applies a shared 600 requests/account/minute fixed window across direct and group signal endpoints, separate from other budgets. Local typecheck and 95 tests pass; Worker CI pending. Chosen threshold is provisional: large mesh calls or multiple devices might hit it; no Android/device/load test, no per-call or global aggregate abuse protection, and the 256 KiB global JSON cap remains. No deployment.
+
+Signalling limiter `96db604` passed Worker CI `44998779007` (95 tests and typecheck). Fixed-window thresholds and Android/load compatibility remain unverified. Branch-only; no deployment.
