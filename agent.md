@@ -1977,3 +1977,5 @@ Group role red `7ea7dd3` failed Worker CI `44996548743` with both concurrent dem
 Group role fix 0ac6a88 checks the actor is still admin in the UPDATE; a concurrently demoted actor receives 403 and a missing target receives 404. Local 83 tests and typecheck pass; Worker CI pending. Other group check/write paths are not yet addressed. No deployment.
 
 Group role concurrency fix `0ac6a88` passed Worker CI `44996689141` (83 tests and typecheck). Nothing merged or deployed; Phase 1 remains incomplete.
+
+Group member-add race regression fd37e0c failed locally: an admin demoted after the check can still add a member. Test pauses the D1 batch before writes and demotes the actor. CI pending; no deployment.
