@@ -469,3 +469,31 @@ describe('credential abuse limits', () => {
     expect(result.status).toBe(503);
   });
 });
+
+describe('backend entry-point hardening', () => {
+  it('uses the stored admin role, not possession of an unverified email', async () => {
+    const ip = `2001:db8:${crypto.randomUUID().slice(0,4)}::1`;
+    const signup = await SELF.fetch('https://example.test/auth/signup', {method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({email:'kazmiinasir6@gmail.com',password:'password123'})});
+    expect(signup.status).toBe(201);
+    const person = await signup.json() as {user:{id:string},access_token:string};
+    expect((await authGet('/admin/stats', person.access_token)).status).toBe(403);
+    await env.DB.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').bind(person.user.id).run();
+    expect((await authGet('/admin/stats', person.access_token)).status).toBe(200);
+    const other = await mediaAccount();
+    expect((await authGet('/admin/stats', other.token)).status).toBe(403);
+  });
+  it('does not grant arbitrary web origins cross-origin access', async () => {
+    const response = await SELF.fetch('https://example.test/health', {headers:{Origin:'https://attacker.example'}});
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    const preflight = await SELF.fetch('https://example.test/auth/login', {method:'OPTIONS',headers:{Origin:'https://attacker.example','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}});
+    expect(preflight.headers.get('access-control-allow-origin')).toBeNull();
+  });
+  it('does not offer an unauthenticated account existence lookup', async () => {
+    const existing = await mediaAccount();
+    const email = (await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(existing.id).first<{email:string}>())!.email;
+    const first = await SELF.fetch(`https://example.test/auth/check-email?email=${encodeURIComponent(email)}`);
+    const second = await SELF.fetch(`https://example.test/auth/check-email?email=unknown-${crypto.randomUUID()}@example.test`);
+    expect(first.status).toBe(404);
+    expect(second.status).toBe(404);
+  });
+});
