@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, Variables } from './types';
-import { verifyJWT } from './lib/jwt';
+import { verifyAccessJWT } from './lib/jwt';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -52,7 +52,7 @@ app.get('/realtime/connect', async (c) => {
   const token = c.req.query('token');
   if (!room || !token) return c.json({ error: 'room and token query params are required' }, 400);
 
-  const payload = await verifyJWT<{ sub: string }>(token, c.env.JWT_SECRET);
+  const payload = await verifyAccessJWT(token, c.env.JWT_SECRET);
   if (!payload?.sub) return c.json({ error: 'Invalid or expired token' }, 401);
 
   // Clients may listen only to their own personal event stream. Other
