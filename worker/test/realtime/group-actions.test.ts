@@ -1685,3 +1685,47 @@ describe('group member invitation budgets', () => {
     expect((await post('/groups',owner.token,{name:'empty',memberIds:[]})).status).toBe(201);
   },30000);
 });
+
+describe('direct media forwarding authorization at write time', () => {
+  for (const source of ['group','message','status'] as const) {
+    it(`does not persist or grant a forward after ${source} access is revoked`, async () => {
+      const owner = await mediaAccount(), actor = await mediaAccount(), receiver = await mediaAccount();
+      await friend(actor.id,receiver.id);
+      const file = await mediaUpload(owner.token);
+      let sourceId = '';
+      if (source === 'group') {
+        sourceId = crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(sourceId,'source',owner.id).run();
+        for (const user of [owner,actor]) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),sourceId,user.id,user.id===owner.id?'admin':'member').run();
+        await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),sourceId,owner.id,file.url).run();
+      } else if (source === 'message') {
+        await friend(owner.id,actor.id);
+        const sent = await post('/messages',owner.token,{receiver_id:actor.id,media_url:file.url,type:'image'});
+        expect(sent.status).toBe(201); sourceId = (await sent.json() as {message:{id:string}}).message.id;
+      } else {
+        await friend(owner.id,actor.id);
+        const created = await post('/status',owner.token,{content_type:'image',content_url:file.url,privacy:'contacts'});
+        expect(created.status).toBe(201); sourceId = (await created.json() as {status:{id:string}}).status.id;
+      }
+      expect((await mediaRead(file.key,actor.token)).status).toBe(200);
+      const target = await inbox(receiver);
+      let reached!:()=>void, resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {prepare:env.DB.prepare.bind(env.DB), async batch(statements:D1PreparedStatement[]) {reached(); await gate; return env.DB.batch(statements);}};
+      const request = app.request('https://example.test/messages',{
+        method:'POST',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify({receiver_id:receiver.id,type:'image',media_url:file.url}),
+      },{...env,DB:db} as unknown as Env);
+      await ready;
+      try {
+        if (source === 'group') await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(sourceId,actor.id).run();
+        if (source === 'message') await env.DB.prepare('UPDATE messages SET is_deleted=1 WHERE id=?').bind(sourceId).run();
+        if (source === 'status') await env.DB.prepare("UPDATE privacy_settings SET status_visibility='nobody' WHERE user_id=?").bind(owner.id).run();
+      } finally {resume();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM messages WHERE sender_id=? AND receiver_id=?').bind(actor.id,receiver.id).first()).toBeNull();
+      expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='message' AND file_path=? AND actor_id=?").bind(file.key,actor.id).first()).toBeNull();
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+      expect((await mediaRead(file.key,receiver.token)).status).toBe(404);
+    });
+  }
+});
