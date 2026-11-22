@@ -1883,3 +1883,5 @@ Message ordering red `40106df` failed CI `44990171554`; green candidate `367f3b7
 Group removal red `09441b1` exposes the last admin bypassing leave rules via DELETE and false removal events to nonmembers. Both failed locally; CI pending. Nothing deployed.
 
 Message ordering fix `367f3b7` passed Worker CI `44990242977`. Group removal red `09441b1` failed CI `44990292977`; fix `37946d1` checks actor and last-admin constraints atomically in DELETE and only announces a successful removal. Local 51 tests/typecheck passed; CI pending. `/leave` has a separate check/write race and DELETE of the last member can still leave an empty group: review both. Nothing deployed.
+
+Group profile-photo red `5df689e` shows a member whose photo visibility is `nobody` has their avatar URL exposed in group payloads; local test fails, CI pending. Status payloads also need an independent privacy audit. Nothing deployed.
