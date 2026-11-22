@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { applyPrivacyToList, getPrivacySettings } from '../lib/privacy';
@@ -127,6 +128,7 @@ function groupMessageJson(row: any) {
 groups.post('/', async (c) => {
   const userId = c.get('userId');
   const { name, description, avatar_url, memberIds = [] } = await c.req.json().catch(() => ({}));
+  if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048}) || !Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid group fields' }, 400);
   if (!name || !String(name).trim()) return c.json({ error: 'name is required' }, 400);
   if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
@@ -245,6 +247,7 @@ groups.post('/:id/members', async (c) => {
   if (membership.role !== 'admin') return c.json({ error: 'Only admins can add members' }, 403);
 
   const { memberIds = [] } = await c.req.json().catch(() => ({}));
+  if (!Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid member list' }, 400);
   const newIds = (memberIds as string[]).filter((uid) => uid);
   if (newIds.length === 0) return c.json({ success: true });
 
@@ -370,6 +373,7 @@ groups.patch('/:id', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can update group info' }, 403);
 
   const { name, description, avatar_url } = await c.req.json().catch(() => ({}));
+  if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048})) return c.json({ error: 'Group field too long' }, 400);
   if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
   const current = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
   if (!current) return c.json({ error: 'Group not found' }, 404);
@@ -438,6 +442,7 @@ groups.post('/:id/messages', async (c) => {
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
   const body = await c.req.json().catch(() => ({}));
+  if ((body.content != null && typeof body.content !== 'string') || exceedsTextLimits(body, {content:65536, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
   if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id, same pattern as 1:1
@@ -579,6 +584,7 @@ groups.post('/messages/:messageId/reaction', async (c) => {
   const userId = c.get('userId');
   const messageId = c.req.param('messageId');
   const { emoji } = await c.req.json().catch(() => ({}));
+  if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   if (!emoji) return c.json({ error: 'emoji is required' }, 400);
 
   const row = await c.env.DB.prepare('SELECT group_id, reactions FROM group_messages WHERE id = ?').bind(messageId).first<{

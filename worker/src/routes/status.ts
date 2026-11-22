@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
 import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -23,6 +24,7 @@ async function friendIdsOf(env: Env, userId: string): Promise<string[]> {
 status.post('/', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
+  if (exceedsTextLimits(body, {text_content:4096, caption:4096, content_url:2048, thumbnail_url:65536, content_type:512, background_color:512, font_style:512, privacy:512})) return c.json({ error: 'Status field too long' }, 400);
   if (!(await mayAttachMedia(c.env, userId, [body.content_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
   const id = newId();
   const created_at = nowIso();

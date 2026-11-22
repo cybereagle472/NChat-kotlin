@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -153,6 +154,7 @@ messages.post('/', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
+  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
   if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
@@ -229,6 +231,7 @@ messages.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
   const { content } = await c.req.json().catch(() => ({}));
+  if (typeof content !== 'string' || exceedsTextLimits({ content }, { content: 65536 })) return c.json({ error: 'Invalid or oversized content' }, 400);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').bind(id, userId).first<any>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
@@ -292,6 +295,7 @@ messages.post('/:id/reaction', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
   const { emoji } = await c.req.json().catch(() => ({}));
+  if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)').bind(id, userId, userId).first<{
     reactions: string | null;
     sender_id: string;
