@@ -1334,3 +1334,37 @@ describe('friend request response authorization under concurrency', () => {
     await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['friend:accepted']); target.socket.close(1000,'finished');
   });
 });
+
+describe('friend request creation concurrency', () => {
+  it('does not reopen a request that was accepted after the initial check', async () => {
+    const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
+    const paused = pauseWrite('INSERT INTO friend_requests (id, sender_id');
+    const stale = app.request('https://example.test/friends/request',{
+      method:'POST',headers:{Authorization:`Bearer ${sender.token}`,'Content-Type':'application/json'},body:JSON.stringify({receiver_id:receiver.id}),
+    }, paused.bindings);
+    await paused.reached;
+    try {
+      const first = await post('/friends/request',sender.token,{receiver_id:receiver.id});
+      expect(first.status).toBe(201);
+      const {id} = await first.json() as {id:string};
+      expect((await post(`/friends/${id}/respond`,receiver.token,{accept:true})).status).toBe(200);
+    } finally {paused.resume();}
+    expect((await stale).status).toBe(409);
+    expect((await env.DB.prepare('SELECT status FROM friend_requests WHERE sender_id=? AND receiver_id=?').bind(sender.id,receiver.id).first<{status:string}>())?.status).toBe('accepted');
+    await target.flush(); expect(target.events.filter(e=>JSON.parse(e).type === 'friend:request')).toHaveLength(1); target.socket.close(1000,'finished');
+  });
+  it('does not create opposite pending requests when both parties initiate concurrently', async () => {
+    const a = await mediaAccount(), b = await mediaAccount(), target = await inbox(b);
+    const paused = pauseWrite('INSERT INTO friend_requests (id, sender_id');
+    const stale = app.request('https://example.test/friends/request',{
+      method:'POST',headers:{Authorization:`Bearer ${a.token}`,'Content-Type':'application/json'},body:JSON.stringify({receiver_id:b.id}),
+    }, paused.bindings);
+    await paused.reached;
+    try { expect((await post('/friends/request',b.token,{receiver_id:a.id})).status).toBe(201); }
+    finally {paused.resume();}
+    expect((await stale).status).toBe(409);
+    const rows = await env.DB.prepare("SELECT sender_id,receiver_id FROM friend_requests WHERE status='pending' AND ((sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?))").bind(a.id,b.id,b.id,a.id).all();
+    expect(rows.results).toEqual([{sender_id:b.id,receiver_id:a.id}]);
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+});
