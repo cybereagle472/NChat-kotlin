@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
-import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
+import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -168,7 +168,8 @@ messages.post('/', limitSend, async (c) => {
   if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
-  if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const mediaProofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
+  if (!mediaProofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id.
   if (client_message_id) {
@@ -214,7 +215,8 @@ messages.post('/', limitSend, async (c) => {
        WHERE EXISTS (SELECT 1 FROM friendships f WHERE
          (f.user1_id = ?2 AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = ?2))
        AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
-         (b.user_id = ?2 AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = ?2))`
+         (b.user_id = ?2 AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = ?2))
+       AND ${attachmentProofGuard('?2', '?14')}`
     )
       .bind(
         id,
@@ -229,7 +231,8 @@ messages.post('/', limitSend, async (c) => {
         body.duration ?? null,
         client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
+        created_at,
+        JSON.stringify(mediaProofs)
       );
   const inserted = await writeWithMediaReferences(c.env, write, 'message', id, userId, [body.media_url, body.thumbnail_url]);
   if (!inserted.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);

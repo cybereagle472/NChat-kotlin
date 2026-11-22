@@ -1729,3 +1729,68 @@ describe('direct media forwarding authorization at write time', () => {
     });
   }
 });
+
+describe('direct media forwarding proof coverage', () => {
+  it('accepts a different exact encoded URL spelling when the source is still authorized', async () => {
+    const owner = await mediaAccount(), actor = await mediaAccount(), receiver = await mediaAccount();
+    await friend(actor.id,receiver.id);
+    const file = await mediaUpload(owner.token);
+    const encoded = `https://example.test/media/file/${encodeURIComponent(file.key)}`;
+    await env.DB.prepare('INSERT INTO messages (id,sender_id,receiver_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),owner.id,actor.id,encoded).run();
+    const sent = await post('/messages',actor.token,{receiver_id:receiver.id,type:'image',media_url:file.url});
+    expect(sent.status).toBe(201);
+    expect((await mediaRead(file.key,receiver.token)).status).toBe(200);
+  });
+  for (const source of ['group-message','status','user-avatar','group-avatar'] as const) {
+    it(`allows an authorized trusted ${source} to be forwarded`, async () => {
+      const uploader = await mediaAccount(), owner = await mediaAccount(), actor = await mediaAccount(), receiver = await mediaAccount();
+      await friend(actor.id,receiver.id);
+      const file = await mediaUpload(uploader.token), reference = crypto.randomUUID();
+      if (source === 'group-message' || source === 'group-avatar') {
+        const group = source === 'group-avatar' ? reference : crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO groups (id,name,created_by,avatar_url) VALUES (?,?,?,?)').bind(group,'source',owner.id,source === 'group-avatar' ? file.url : null).run();
+        await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,actor.id,'member').run();
+        if (source === 'group-message') await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,media_url) VALUES (?,?,?,?)').bind(reference,group,owner.id,file.url).run();
+      } else if (source === 'status') {
+        await friend(owner.id,actor.id);
+        await env.DB.prepare("INSERT INTO statuses (id,user_id,content_type,content_url,privacy,expires_at) VALUES (?,?,'image',?,'contacts',?)").bind(reference,owner.id,file.url,new Date(Date.now()+3600000).toISOString()).run();
+      } else {
+        await env.DB.prepare('UPDATE users SET avatar_url=? WHERE id=?').bind(file.url,owner.id).run();
+      }
+      const kind = source === 'group-message' ? 'group_message' : source === 'group-avatar' ? 'group_avatar' : source === 'user-avatar' ? 'user_avatar' : 'status';
+      await env.DB.prepare('INSERT INTO trusted_media_references (file_path,kind,reference_id,actor_id) VALUES (?,?,?,?)').bind(file.key,kind,source === 'user-avatar' ? owner.id : reference,owner.id).run();
+      expect((await post('/messages',actor.token,{receiver_id:receiver.id,media_url:file.url})).status).toBe(201);
+      expect((await mediaRead(file.key,receiver.token)).status).toBe(200);
+    });
+  }
+  for (const source of ['user-avatar','group-avatar'] as const) {
+    it(`does not grant a forward when ${source} access is revoked`, async () => {
+      const owner = await mediaAccount(), actor = await mediaAccount(), receiver = await mediaAccount();
+      await friend(actor.id,receiver.id); const file = await mediaUpload(owner.token);
+      let group = '';
+      if (source === 'user-avatar') {
+        const res = await SELF.fetch('https://example.test/users/me',{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+        expect(res.status).toBe(200);
+      } else {
+        const res = await post('/groups',owner.token,{name:'source',avatar_url:file.url,memberIds:[actor.id]});
+        expect(res.status).toBe(201); group = (await res.json() as {group:{id:string}}).group.id;
+      }
+      expect((await mediaRead(file.key,actor.token)).status).toBe(200);
+      const target = await inbox(receiver);
+      let reached!:()=>void,resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {prepare:env.DB.prepare.bind(env.DB),async batch(statements:D1PreparedStatement[]){reached(); await gate; return env.DB.batch(statements);}};
+      const request = app.request('https://example.test/messages',{method:'POST',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify({receiver_id:receiver.id,media_url:file.url})},{...env,DB:db} as unknown as Env);
+      await ready;
+      try {
+        if (source === 'user-avatar') await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility='nobody' WHERE user_id=?").bind(owner.id).run();
+        else await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(group,actor.id).run();
+      } finally {resume();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM messages WHERE sender_id=? AND receiver_id=?').bind(actor.id,receiver.id).first()).toBeNull();
+      expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='message' AND file_path=? AND actor_id=?").bind(file.key,actor.id).first()).toBeNull();
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+      expect((await mediaRead(file.key,receiver.token)).status).toBe(404);
+    });
+  }
+});
