@@ -1891,3 +1891,5 @@ Group removal fix `37946d1` passed Worker CI `44990364049`. Group avatar red `5d
 Status avatar privacy red `5bba695` tests feed, notifications and viewer lists; it fails locally on the first notification leak, CI pending. Nothing deployed.
 
 Group avatar fix `61bc20f` passed Worker CI `44990491787`. Status avatar red `5bba695` failed CI `44990523302`; fix `3ac9d92` filters photos in status feed, status-new/view events and viewer list according to each viewer. Local 53 tests/typecheck passed; CI pending. High fan-out costs and privacy races need review. Nothing deployed.
+
+Login-timing red `28e35ab` verifies that unknown accounts perform password work after rate limiting, using an isolated mock to avoid timing-based flaky tests; it failed locally, CI pending. Signup still discloses existing addresses. Nothing deployed.
