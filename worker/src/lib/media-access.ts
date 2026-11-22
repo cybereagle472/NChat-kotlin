@@ -156,24 +156,37 @@ export function mediaReferenceStatements(env: Env, kind: MediaReferenceKind, ref
   const keys = new Set(addresses.map(a => localMediaKey(env, a)).filter(a => a.local && a.key).map(a => a.key!));
   return [...keys].map(key => env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
     SELECT file_path, ?2, ?3, ?4 FROM media_attachments WHERE file_path = ?1
-    ${kind === 'group_message' ? 'AND EXISTS (SELECT 1 FROM group_messages WHERE id = ?3 AND sender_id = ?4)' : kind === 'message' ? 'AND EXISTS (SELECT 1 FROM messages WHERE id = ?3 AND sender_id = ?4)' : ''} LIMIT 1`)
+    ${kind === 'group_message' ? 'AND EXISTS (SELECT 1 FROM group_messages WHERE id = ?3 AND sender_id = ?4)' : kind === 'message' ? 'AND EXISTS (SELECT 1 FROM messages WHERE id = ?3 AND sender_id = ?4)' : kind === 'status' ? 'AND EXISTS (SELECT 1 FROM statuses WHERE id = ?3 AND user_id = ?4)' : kind === 'group_avatar' ? 'AND EXISTS (SELECT 1 FROM groups WHERE id = ?3 AND created_by = ?4)' : ''} LIMIT 1`)
     .bind(key, kind, referenceId, actorId));
 }
 
-export function clearMediaReferences(env: Env, kind: MediaReferenceKind, referenceId: string): D1PreparedStatement {
-  return env.DB.prepare('DELETE FROM trusted_media_references WHERE kind = ? AND reference_id = ?').bind(kind, referenceId);
+/** Recheck the same source proof for every avatar provenance mutation in the
+ * batch, so a skipped avatar write cannot clear or create a grant. */
+export function guardedUserAvatarReferences(env: Env, userId: string, address: unknown, proofs: string): D1PreparedStatement[] {
+  const guard = attachmentProofGuard('?1', '?2');
+  const key = localMediaKey(env, address).key;
+  const statements: D1PreparedStatement[] = [];
+  // Add the new grant before deleting older ones: the current avatar may be
+  // the only remaining proof that this same file is readable.
+  if (key) statements.push(env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
+    SELECT file_path, 'user_avatar', ?1, ?1 FROM media_attachments WHERE file_path = ?3 AND ${guard}`)
+    .bind(userId, proofs, key));
+  statements.push(env.DB.prepare(`DELETE FROM trusted_media_references
+    WHERE kind = 'user_avatar' AND reference_id = ?1 AND (?3 IS NULL OR file_path != ?3) AND ${guard}`).bind(userId, proofs, key));
+  return statements;
 }
 
-/** Avatar provenance changes follow the group update's admin guard. The caller
- * must execute these statements in the same D1 batch as that update. */
-export function guardedGroupAvatarReferences(env: Env, groupId: string, actorId: string, address: unknown): D1PreparedStatement[] {
-  const guard = "EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')";
-  const statements = [env.DB.prepare(`DELETE FROM trusted_media_references
-    WHERE kind = 'group_avatar' AND reference_id = ?1 AND ${guard}`).bind(groupId, actorId)];
+/** Avatar provenance changes follow the group update's admin and attachment
+ * guards. Execute these statements in the same D1 batch as the update. */
+export function guardedGroupAvatarReferences(env: Env, groupId: string, actorId: string, address: unknown, proofs: string): D1PreparedStatement[] {
+  const guard = `EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin') AND ${attachmentProofGuard('?2', '?3')}`;
   const key = localMediaKey(env, address).key;
+  const statements: D1PreparedStatement[] = [];
   if (key) statements.push(env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
-    SELECT file_path, 'group_avatar', ?1, ?2 FROM media_attachments WHERE file_path = ?3 AND ${guard}`)
-    .bind(groupId, actorId, key));
+    SELECT file_path, 'group_avatar', ?1, ?2 FROM media_attachments WHERE file_path = ?4 AND ${guard}`)
+    .bind(groupId, actorId, proofs, key));
+  statements.push(env.DB.prepare(`DELETE FROM trusted_media_references
+    WHERE kind = 'group_avatar' AND reference_id = ?1 AND (?4 IS NULL OR file_path != ?4) AND ${guard}`).bind(groupId, actorId, proofs, key));
   return statements;
 }
 

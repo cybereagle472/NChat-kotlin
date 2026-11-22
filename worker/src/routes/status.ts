@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
-import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
+import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
@@ -26,14 +26,16 @@ status.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   if (exceedsTextLimits(body, {text_content:4096, caption:4096, content_url:2048, thumbnail_url:65536, content_type:512, background_color:512, font_style:512, privacy:512})) return c.json({ error: 'Status field too long' }, 400);
-  if (!(await mayAttachMedia(c.env, userId, [body.content_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const proofs = await attachmentProofs(c.env, userId, [body.content_url, body.thumbnail_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
   const id = newId();
   const created_at = nowIso();
   const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
   const write = c.env.DB.prepare(
     `INSERT INTO statuses (id, user_id, content_type, content_url, text_content, background_color, font_style, thumbnail_url, duration, caption, privacy, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+     WHERE ${attachmentProofGuard('?2', '?14')}`
   )
     .bind(
       id,
@@ -48,9 +50,11 @@ status.post('/', limitSend, async (c) => {
       body.caption ?? null,
       body.privacy ?? 'contacts',
       created_at,
-      expires_at
+      expires_at,
+      JSON.stringify(proofs)
     );
-  await writeWithMediaReferences(c.env, write, 'status', id, userId, [body.content_url, body.thumbnail_url]);
+  const inserted = await writeWithMediaReferences(c.env, write, 'status', id, userId, [body.content_url, body.thumbnail_url]);
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const row = await c.env.DB.prepare('SELECT * FROM statuses WHERE id = ?').bind(id).first();
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
-import { mayAttachMedia, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
+import { attachmentProofs, attachmentProofGuard, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { consumeLimit } from '../lib/rate-limit';
 import { newId, nowIso } from '../lib/id';
@@ -132,7 +132,8 @@ groups.post('/', limitContact, async (c) => {
   const { name, description, avatar_url, memberIds = [] } = await c.req.json().catch(() => ({}));
   if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048}) || !Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid group fields' }, 400);
   if (!name || !String(name).trim()) return c.json({ error: 'name is required' }, 400);
-  if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const proofs = await attachmentProofs(c.env, userId, [avatar_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
   // Validate in bounded chunks before doing any writes. Foreign keys still
@@ -151,19 +152,22 @@ groups.post('/', limitContact, async (c) => {
 
   const groupId = newId();
   const created_at = nowIso();
-  const write = c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at);
+  const write = c.env.DB.prepare(`INSERT INTO groups (id, name, description, avatar_url, created_by, created_at)
+    SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE ${attachmentProofGuard('?5', '?7')}`)
+    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at, JSON.stringify(proofs));
   // Create the group, provenance and every initial membership together. A
   // failed membership insert must not leave an inaccessible orphan group.
-  await c.env.DB.batch([
+  const [inserted] = await c.env.DB.batch([
     write,
     ...mediaReferenceStatements(c.env, 'group_avatar', groupId, userId, [avatar_url]),
     ...allMembers.map((uid) =>
-      c.env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)').bind(
-        newId(), groupId, uid, uid === userId ? 'admin' : 'member', created_at
+      c.env.DB.prepare(`INSERT INTO group_members (id, group_id, user_id, role, joined_at)
+        SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND created_by = ?6)`).bind(
+        newId(), groupId, uid, uid === userId ? 'admin' : 'member', created_at, userId
       )
     ),
   ]);
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const group = await groupWithMembers(c.env, groupId, userId);
   // Let every invited member's device pick up the new group immediately
@@ -400,7 +404,8 @@ groups.patch('/:id', async (c) => {
 
   const { name, description, avatar_url } = await c.req.json().catch(() => ({}));
   if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048})) return c.json({ error: 'Group field too long' }, 400);
-  if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const proofs = await attachmentProofs(c.env, userId, [avatar_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
   const current = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
   if (!current) return c.json({ error: 'Group not found' }, 404);
 
@@ -410,10 +415,11 @@ groups.patch('/:id', async (c) => {
 
   const write = c.env.DB.prepare(
     `UPDATE groups SET name = ?1, description = ?2, avatar_url = ?3, updated_at = datetime('now') WHERE id = ?4
-     AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?4 AND user_id = ?5 AND role = 'admin')`
-  ).bind(nextName, nextDescription, nextAvatar, groupId, userId);
+     AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?4 AND user_id = ?5 AND role = 'admin')
+     AND ${attachmentProofGuard('?5', '?6')}`
+  ).bind(nextName, nextDescription, nextAvatar, groupId, userId, JSON.stringify(proofs));
   const updated = avatar_url !== undefined
-    ? (await c.env.DB.batch([write, ...guardedGroupAvatarReferences(c.env, groupId, userId, avatar_url)]))[0]
+    ? (await c.env.DB.batch([write, ...guardedGroupAvatarReferences(c.env, groupId, userId, avatar_url, JSON.stringify(proofs))]))[0]
     : await write.run();
   if (!updated.meta.changes) return c.json({ error: 'Only admins can update group info' }, 403);
 
@@ -471,7 +477,8 @@ groups.post('/:id/messages', limitSend, async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   if ((body.content != null && typeof body.content !== 'string') || exceedsTextLimits(body, {content:65536, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
-  if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const proofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id, same pattern as 1:1
   // messages — a retried send (e.g. after a flaky connection) must not
@@ -523,8 +530,9 @@ groups.post('/:id/messages', limitSend, async (c) => {
   try {
     const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, duration, client_message_id, reply_to, created_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+       AND ${attachmentProofGuard('?3', '?12')}`
     )
       .bind(
         id,
@@ -538,8 +546,7 @@ groups.post('/:id/messages', limitSend, async (c) => {
         body.client_message_id ?? null,
         body.reply_to ?? null,
         created_at,
-        groupId,
-        userId
+        JSON.stringify(proofs)
       );
     inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   } catch (err) {
@@ -547,8 +554,9 @@ groups.post('/:id/messages', limitSend, async (c) => {
     console.error('[groups] insert with duration column failed, retrying without it (migration 0003 likely not applied yet):', err);
     const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, client_message_id, reply_to, created_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+       AND ${attachmentProofGuard('?3', '?11')}`
     )
       .bind(
         id,
@@ -561,8 +569,7 @@ groups.post('/:id/messages', limitSend, async (c) => {
         body.client_message_id ?? null,
         body.reply_to ?? null,
         created_at,
-        groupId,
-        userId
+        JSON.stringify(proofs)
       );
     inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   }

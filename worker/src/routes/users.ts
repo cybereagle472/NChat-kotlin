@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { mayAttachMedia, clearMediaReferences, mediaReferenceStatements } from '../lib/media-access';
+import { attachmentProofs, attachmentProofGuard, guardedUserAvatarReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { computeIsOnline, getPresence, getPresenceMap } from '../lib/presence';
 import { applyPrivacy, applyPrivacyToList, areFriends, getPrivacySettings } from '../lib/privacy';
@@ -36,7 +36,8 @@ users.patch('/me', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const userId = c.get('userId');
   if (exceedsTextLimits(body, {full_name:100, username:50, bio:500, avatar_url:2048})) return c.json({ error: 'Profile field too long' }, 400);
-  if (!(await mayAttachMedia(c.env, userId, [body.avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
+  const proofs = await attachmentProofs(c.env, userId, [body.avatar_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -65,11 +66,13 @@ users.patch('/me', async (c) => {
   if (fields.length === 0) return c.json({ error: 'No fields to update' }, 400);
 
   values.push(userId);
-  const write = c.env.DB.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).bind(...values);
-  if (typeof body.avatar_url === 'string') {
-    await c.env.DB.batch([write, clearMediaReferences(c.env, 'user_avatar', userId),
-      ...mediaReferenceStatements(c.env, 'user_avatar', userId, userId, [body.avatar_url])]);
-  } else await write.run();
+  const actorParameter = `?${values.length}`, proofParameter = `?${values.length + 1}`;
+  values.push(JSON.stringify(proofs));
+  const write = c.env.DB.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ${actorParameter} AND ${attachmentProofGuard(actorParameter, proofParameter)}`).bind(...values);
+  const updated = typeof body.avatar_url === 'string'
+    ? (await c.env.DB.batch([write, ...guardedUserAvatarReferences(c.env, userId, body.avatar_url, JSON.stringify(proofs))]))[0]
+    : await write.run();
+  if (!updated.meta.changes) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
   return c.json({ profile: profilePublic(row, undefined, true) });

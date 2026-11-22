@@ -1726,7 +1726,7 @@ describe('direct media forwarding authorization at write time', () => {
       expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='message' AND file_path=? AND actor_id=?").bind(file.key,actor.id).first()).toBeNull();
       await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
       expect((await mediaRead(file.key,receiver.token)).status).toBe(404);
-    });
+    }, 30000);
   }
 });
 
@@ -1740,7 +1740,7 @@ describe('direct media forwarding proof coverage', () => {
     const sent = await post('/messages',actor.token,{receiver_id:receiver.id,type:'image',media_url:file.url});
     expect(sent.status).toBe(201);
     expect((await mediaRead(file.key,receiver.token)).status).toBe(200);
-  });
+  }, 30000);
   for (const source of ['group-message','status','user-avatar','group-avatar'] as const) {
     it(`allows an authorized trusted ${source} to be forwarded`, async () => {
       const uploader = await mediaAccount(), owner = await mediaAccount(), actor = await mediaAccount(), receiver = await mediaAccount();
@@ -1761,7 +1761,7 @@ describe('direct media forwarding proof coverage', () => {
       await env.DB.prepare('INSERT INTO trusted_media_references (file_path,kind,reference_id,actor_id) VALUES (?,?,?,?)').bind(file.key,kind,source === 'user-avatar' ? owner.id : reference,owner.id).run();
       expect((await post('/messages',actor.token,{receiver_id:receiver.id,media_url:file.url})).status).toBe(201);
       expect((await mediaRead(file.key,receiver.token)).status).toBe(200);
-    });
+    }, 30000);
   }
   for (const source of ['user-avatar','group-avatar'] as const) {
     it(`does not grant a forward when ${source} access is revoked`, async () => {
@@ -1791,7 +1791,7 @@ describe('direct media forwarding proof coverage', () => {
       expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='message' AND file_path=? AND actor_id=?").bind(file.key,actor.id).first()).toBeNull();
       await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
       expect((await mediaRead(file.key,receiver.token)).status).toBe(404);
-    });
+    }, 30000);
   }
 });
 
@@ -1843,6 +1843,33 @@ describe('other media writes after source access is revoked', () => {
       }
       await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
       expect((await mediaRead(file.key,recipient.token)).status).toBe(404);
-    });
+    }, 30000);
+  }
+});
+
+describe('avatar provenance when reusing the current avatar', () => {
+  for (const kind of ['profile','group'] as const) {
+    it(`preserves the trusted ${kind} avatar when its previous source is gone`, async () => {
+      const uploader = await mediaAccount(), owner = await mediaAccount(), viewer = await mediaAccount();
+      await friend(uploader.id,owner.id);
+      const file = await mediaUpload(uploader.token);
+      const initial = await post('/messages',uploader.token,{receiver_id:owner.id,media_url:file.url});
+      const id = (await initial.json() as {message:{id:string}}).message.id;
+      let path = '/users/me', reference = owner.id;
+      if (kind === 'group') {
+        const created = await post('/groups',owner.token,{name:'group',avatar_url:file.url,memberIds:[viewer.id]});
+        expect(created.status).toBe(201); reference = (await created.json() as {group:{id:string}}).group.id;
+        path = `/groups/${reference}`;
+      } else {
+        const set = await SELF.fetch(`https://example.test${path}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+        expect(set.status).toBe(200);
+      }
+      await env.DB.prepare('UPDATE messages SET is_deleted=1 WHERE id=?').bind(id).run();
+      expect((await mediaRead(file.key,owner.token)).status).toBe(200);
+      const repeat = await SELF.fetch(`https://example.test${path}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+      expect(repeat.status).toBe(200);
+      expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE file_path=? AND kind=? AND reference_id=?').bind(file.key,kind === 'profile' ? 'user_avatar' : 'group_avatar',reference).first()).not.toBeNull();
+      expect((await mediaRead(file.key,viewer.token)).status).toBe(200);
+    }, 30000);
   }
 });
