@@ -1963,3 +1963,5 @@ Group-call creation fix 60e88e3 conditionally inserts the active call and partic
 Concurrent group-call creation fix `60e88e3` passed Worker CI `44996145287` (79 tests and typecheck). Remaining limitations from the preceding entry still apply; Phase 1 is incomplete, branch-only and not deployed.
 
 Group-call join/leave deterministic race tests e48ee1b failed locally: joining after call end, ending after a new join, and joining after group removal all succeed incorrectly. The tests pause a specific D1 write after its checks, then issue a real competing request/write. Worker CI pending; no deployment.
+
+Group-call join/leave red `e48ee1b` failed Worker CI `44996334507` on all three expected race assertions.
