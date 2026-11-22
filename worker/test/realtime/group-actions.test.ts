@@ -1,10 +1,10 @@
 import { applyD1Migrations, env, SELF } from 'cloudflare:test';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { consumeLimit } from '../../src/lib/rate-limit';
 import app from '../../src/index';
 import type { Env } from '../../src/types';
 
-beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
+beforeEach(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 async function fixture() {
   const unique = crypto.randomUUID();
   const signup = async (name: string) => {
