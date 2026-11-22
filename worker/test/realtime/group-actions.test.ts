@@ -612,3 +612,44 @@ describe('group call membership and privacy', () => {
     listener.socket.close(1000, 'finished');
   });
 });
+
+describe('trusted media provenance', () => {
+  it('does not turn historical forged direct-message references into file access', async () => {
+    const owner = await mediaAccount(), attacker = await mediaAccount(), peer = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    await friend(attacker.id, peer.id);
+    await env.DB.prepare('INSERT INTO messages (id, sender_id, receiver_id, media_url) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), attacker.id, peer.id, file.url).run();
+    expect((await mediaRead(file.key, attacker.token)).status).toBe(404);
+    expect((await mediaRead(file.key, peer.token)).status).toBe(404);
+    expect((await post('/messages', attacker.token, {receiver_id:peer.id, media_url:file.url})).status).toBe(403);
+  });
+  it('does not trust historical forged group, status, or avatar references', async () => {
+    const owner = await mediaAccount(), attacker = await mediaAccount(), viewer = await mediaAccount();
+    await friend(attacker.id, viewer.id);
+    const group = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO groups (id, name, created_by) VALUES (?, ?, ?)').bind(group, 'Test', attacker.id).run();
+    for (const user of [attacker, viewer]) await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, user.id, 'member').run();
+    const groupFile = await mediaUpload(owner.token);
+    await env.DB.prepare('INSERT INTO group_messages (id, group_id, sender_id, media_url) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, attacker.id, groupFile.url).run();
+    expect((await mediaRead(groupFile.key, viewer.token)).status).toBe(404);
+    const statusFile = await mediaUpload(owner.token);
+    await env.DB.prepare("INSERT INTO statuses (id,user_id,content_type,content_url,privacy,expires_at) VALUES (?,?,'image',?,'contacts',?)").bind(crypto.randomUUID(), attacker.id, statusFile.url, new Date(Date.now() + 3600000).toISOString()).run();
+    expect((await mediaRead(statusFile.key, viewer.token)).status).toBe(404);
+    const avatarFile = await mediaUpload(owner.token);
+    await env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatarFile.url, attacker.id).run();
+    expect((await mediaRead(avatarFile.key, viewer.token)).status).toBe(404);
+    const groupAvatarFile = await mediaUpload(owner.token);
+    await env.DB.prepare('UPDATE groups SET avatar_url = ? WHERE id = ?').bind(groupAvatarFile.url, group).run();
+    expect((await mediaRead(groupAvatarFile.key, viewer.token)).status).toBe(404);
+  });
+  it('continues to allow uploader-authored legacy shares and authorized new forwarding', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(), recipient = await mediaAccount();
+    await friend(peer.id, recipient.id);
+    const file = await mediaUpload(owner.token);
+    await env.DB.prepare('INSERT INTO messages (id, sender_id, receiver_id, media_url) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), owner.id, peer.id, file.url).run();
+    expect((await mediaRead(file.key, peer.token)).status).toBe(200);
+    expect((await post('/messages', peer.token, {receiver_id:recipient.id, type:'image', media_url:file.url})).status).toBe(201);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+  });
+});
