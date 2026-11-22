@@ -26,3 +26,19 @@ describe('account smoke test', () => {
     expect(await me.json()).toMatchObject({ profile: { id: created.user.id, email: credentials.email } });
   });
 });
+
+it('does not accept refresh tokens as API access tokens', async () => {
+  const signup = await SELF.fetch('https://example.test/auth/signup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'bob@example.test', password: 'password123' }),
+  });
+  expect(signup.status).toBe(201);
+  const tokens = await signup.json() as { access_token: string; refresh_token: string };
+  const read = (token: string) => SELF.fetch('https://example.test/users/me', { headers: { Authorization: `Bearer ${token}` } });
+  expect((await read(tokens.access_token)).status).toBe(200);
+  expect((await read(tokens.refresh_token)).status).toBe(401);
+  const refresh = await SELF.fetch('https://example.test/auth/refresh', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+  });
+  expect(refresh.status).toBe(200);
+});

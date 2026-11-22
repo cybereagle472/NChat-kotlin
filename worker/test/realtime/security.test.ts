@@ -26,6 +26,14 @@ describe('realtime security', () => {
     allowed.webSocket!.close(1000, 'finished');
   });
 
+  it('refuses a refresh token at the socket entry point', async () => {
+    const id = crypto.randomUUID();
+    const token = await signJWT({ sub: id, sid: crypto.randomUUID() }, secret, 30 * 86400);
+    const response = await connect(`user:${id}`, token);
+    if (response.webSocket) { response.webSocket.accept(); response.webSocket.close(1000, 'finished'); }
+    expect(response.status).toBe(401);
+  });
+
   it('does not relay client messages but still delivers server broadcasts', async () => {
     const id = crypto.randomUUID();
     const token = await signJWT({ sub: id }, secret, 900);
