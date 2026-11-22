@@ -202,3 +202,87 @@ describe('media access follows its audience', () => {
     expect((await mediaRead(file.key, friend.token)).status).toBe(404);
   });
 });
+
+function authGet(path: string, token: string) {
+  return SELF.fetch(`https://example.test${path}`, { headers: { Authorization: `Bearer ${token}` } });
+}
+async function seedStatus(owner: string, privacy = 'contacts', expiry = new Date(Date.now() + 3600000).toISOString()) {
+  const id = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO statuses (id, user_id, content_type, privacy, expires_at) VALUES (?, ?, 'text', ?, ?)").bind(id, owner, privacy, expiry).run();
+  return id;
+}
+async function friend(a: string, b: string) {
+  await env.DB.prepare('INSERT INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), a, b).run();
+}
+async function statusFeed(token: string) {
+  const res = await authGet('/status/feed', token);
+  expect(res.status).toBe(200);
+  return (await res.json() as { statuses: {id: string}[] }).statuses.map((v) => v.id);
+}
+
+describe('status privacy', () => {
+  it('shows a friend only visible, unexpired statuses and respects account visibility', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount();
+    await friend(owner.id, viewer.id);
+    const visible = await seedStatus(owner.id);
+    const hidden = await seedStatus(owner.id, 'nobody');
+    const unknown = await seedStatus(owner.id, 'contacts_except');
+    const expired = await seedStatus(owner.id, 'contacts', new Date(Date.now() - 3600000).toISOString());
+    let feed = await statusFeed(viewer.token);
+    expect(feed).toContain(visible);
+    expect(feed).not.toContain(hidden);
+    expect(feed).not.toContain(unknown);
+    expect(feed).not.toContain(expired);
+    await env.DB.prepare("UPDATE privacy_settings SET status_visibility = 'nobody' WHERE user_id = ?").bind(owner.id).run();
+    feed = await statusFeed(viewer.token);
+    expect(feed).not.toContain(visible);
+  });
+  it('blocks status viewing in both directions and for strangers or expired statuses', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount(), stranger = await mediaAccount();
+    await friend(owner.id, viewer.id);
+    const id = await seedStatus(owner.id);
+    expect((await post(`/status/${id}/view`, stranger.token)).status).toBe(404);
+    expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(200);
+    expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM status_views WHERE status_id = ?').bind(id).first<{n:number}>())?.n).toBe(1);
+    for (const [a, b] of [[owner.id, viewer.id], [viewer.id, owner.id]]) {
+      await env.DB.prepare('INSERT INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), a, b).run();
+      expect(await statusFeed(viewer.token)).not.toContain(id);
+      expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(404);
+      await env.DB.prepare('DELETE FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?').bind(a, b).run();
+    }
+    await env.DB.prepare('UPDATE statuses SET expires_at = ? WHERE id = ?').bind(new Date(Date.now() - 3600000).toISOString(), id).run();
+    expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(404);
+  });
+  it('does not push private or blocked statuses over realtime', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount();
+    await friend(owner.id, viewer.id);
+    const response = await SELF.fetch(`https://example.test/realtime/connect?${new URLSearchParams({room: `user:${viewer.id}`, token: viewer.token})}`, { headers: { Upgrade: 'websocket' } });
+    expect(response.status).toBe(101);
+    const socket = response.webSocket!;
+    socket.accept();
+    const received: string[] = [];
+    let finish!: () => void;
+    const marker = crypto.randomUUID();
+    const done = new Promise<void>((resolve) => { finish = resolve; });
+    socket.addEventListener('message', (event) => { received.push(String(event.data)); if (String(event.data) === marker) finish(); });
+    expect((await post('/status', owner.token, { privacy: 'nobody', text_content: 'private' })).status).toBe(201);
+    await env.DB.prepare('INSERT INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), owner.id, viewer.id).run();
+    expect((await post('/status', owner.token, { privacy: 'contacts', text_content: 'blocked' })).status).toBe(201);
+    const stub = env.REALTIME.get(env.REALTIME.idFromName(`user:${viewer.id}`));
+    await stub.fetch('https://internal/broadcast', { method: 'POST', body: marker });
+    await done;
+    expect(received).toEqual([marker]);
+    socket.close(1000, 'finished');
+  });
+  it('only gives the author the viewer list', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount();
+    await friend(owner.id, viewer.id);
+    const id = await seedStatus(owner.id);
+    expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(200);
+    expect((await authGet(`/status/${id}/views`, viewer.token)).status).toBe(404);
+    const views = await authGet(`/status/${id}/views`, owner.token);
+    expect(views.status).toBe(200);
+    expect((await views.json() as {views: {viewer_id:string}[]}).views.map((v) => v.viewer_id)).toContain(viewer.id);
+  });
+});
