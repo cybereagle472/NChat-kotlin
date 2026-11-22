@@ -2027,3 +2027,5 @@ Signal limiter fix 96db604 applies a shared 600 requests/account/minute fixed wi
 Signalling limiter `96db604` passed Worker CI `44998779007` (95 tests and typecheck). Fixed-window thresholds and Android/load compatibility remain unverified. Branch-only; no deployment.
 
 Group-call signalling participation tests 7fc673e fail locally: group members who never joined can send signaling, and ringing/declined/left members can receive it. Proposed stricter rule requires both participants joined and still in group; Android code joins server-side before opening the peer session, but real devices and races need testing. This is stricter than the Rust reference's membership-only rule. CI pending; no deployment.
+
+Group-call signalling participation red `7fc673e` failed Worker CI `44998864619` as expected; no deployment.
