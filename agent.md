@@ -2105,3 +2105,5 @@ Read-receipt fix `db4bda8` guards the read UPDATE with current friendship/no-blo
 Privacy update fix `6014edd` passed Worker CI `45004209775` (135 tests/typecheck). Read-receipt regression `5461536` failed Worker CI `45004255748` on both cases as expected; its fix `db4bda8` awaits CI. Branch-only; not deployed.
 
 Group creation tests fail locally: an invalid initial member causes a 500 and leaves a group without members; a member disappearing between validation and member insertion also leaves an orphan group. The deterministic race test pauses the D1 member batch. CI pending; no deployment.
+
+Group creation fix `17fb380` validates initial member IDs in chunks of 90 and inserts the group, avatar provenance and initial memberships in one D1 batch, so invalid/deleted members cannot leave an orphan group. Local 140 tests/typecheck passed; a member deleted after validation still triggers a foreign-key 500 but the group rolls back. Local realtime shutdown again emitted an intermittent ENOTEMPTY temp-DO cleanup error and close timeout despite a successful exit; real D1 transaction/schema and large-batch behavior remain unverified. CI pending; no deployment.
