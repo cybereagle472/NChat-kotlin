@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
-import { getPrivacySettings } from '../lib/privacy';
+import { applyPrivacyToList, getPrivacySettings } from '../lib/privacy';
 
 const groups = new Hono<{ Bindings: Env; Variables: Variables }>();
 groups.use('*', requireAuth);
@@ -34,7 +34,7 @@ async function broadcastToGroup(env: Env, groupId: string, payload: unknown, mem
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function groupWithMembers(env: Env, groupId: string): Promise<any | null> {
+async function groupWithMembers(env: Env, groupId: string, viewerId: string): Promise<any | null> {
   const group = await env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
   if (!group) return null;
   // last_read_at/read_receipts are LEFT JOINed so a member who has never
@@ -53,9 +53,12 @@ async function groupWithMembers(env: Env, groupId: string): Promise<any | null> 
   )
     .bind(groupId)
     .all<any>();
+  const profiles = await applyPrivacyToList(env, viewerId, (memberRows ?? []).map((m: any) => ({
+    id: m.user_id, full_name: m.full_name, username: m.username, avatar_url: m.avatar_url,
+  })));
   return {
     ...group,
-    members: (memberRows ?? []).map((m: any) => ({
+    members: (memberRows ?? []).map((m: any, index: number) => ({
       group_id: m.group_id,
       user_id: m.user_id,
       role: m.role,
@@ -65,9 +68,23 @@ async function groupWithMembers(env: Env, groupId: string): Promise<any | null> 
       // status to anyone else — same opt-out rule 1:1 chat already
       // enforces for its own read receipts (see POST /messages/mark-read).
       last_read_at: m.read_receipts ? (m.last_read_at ?? undefined) : undefined,
-      profile: { id: m.user_id, full_name: m.full_name, username: m.username, avatar_url: m.avatar_url },
+      profile: profiles[index],
     })),
   };
+}
+
+/** Group payloads contain member profiles and must be shaped per recipient. */
+async function broadcastGroupProjection(env: Env, groupId: string, type: string, memberIds?: string[]): Promise<void> {
+  const current = await memberIdsOf(env, groupId);
+  const recipients = memberIds ? current.filter(id => memberIds.includes(id)) : current;
+  await Promise.all(recipients.map(async viewerId => {
+    const group = await groupWithMembers(env, groupId, viewerId);
+    if (!group || !(await getMembership(env, groupId, viewerId))) return;
+    const payload = type === 'group:created' || type === 'group:updated'
+      ? { type, group }
+      : { type, group_id: groupId, members: group.members };
+    await broadcastToUser(env, viewerId, payload);
+  }));
 }
 
 /**
@@ -133,10 +150,10 @@ groups.post('/', async (c) => {
     )
   );
 
-  const group = await groupWithMembers(c.env, groupId);
+  const group = await groupWithMembers(c.env, groupId, userId);
   // Let every invited member's device pick up the new group immediately
   // (their Groups tab) without waiting for a manual refresh.
-  await broadcastToGroup(c.env, groupId, { type: 'group:created', group }, allMembers);
+  await broadcastGroupProjection(c.env, groupId, 'group:created', allMembers);
   return c.json({ group }, 201);
 });
 
@@ -151,7 +168,7 @@ groups.get('/', async (c) => {
   const groupsWithMembers = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const g of (groupRows ?? []) as any[]) {
-    const full = await groupWithMembers(c.env, g.id);
+    const full = await groupWithMembers(c.env, g.id, userId);
     const lastMessageRow = await c.env.DB.prepare(
       'SELECT * FROM group_messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1'
     )
@@ -200,7 +217,7 @@ groups.get('/:id', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const group = await groupWithMembers(c.env, groupId);
+  const group = await groupWithMembers(c.env, groupId, userId);
   if (!group) return c.json({ error: 'Group not found' }, 404);
   return c.json({ group });
 });
@@ -214,8 +231,10 @@ groups.get('/:id/members', async (c) => {
      JOIN users u ON u.id = gm.user_id WHERE gm.group_id = ?`
   )
     .bind(groupId)
-    .all();
-  return c.json({ members: results ?? [] });
+    .all<{ user_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, c.get('userId'), rows.map(row => ({ id: row.user_id, avatar_url: row.avatar_url })));
+  return c.json({ members: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
 groups.post('/:id/members', async (c) => {
@@ -242,12 +261,12 @@ groups.post('/:id/members', async (c) => {
     )
   );
 
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group-member:joined', group_id: groupId, members: group?.members ?? [] });
+  const group = await groupWithMembers(c.env, groupId, userId);
+  await broadcastGroupProjection(c.env, groupId, 'group-member:joined');
   // Make sure the newly-added members themselves hear about it even if
   // broadcastToGroup's membership lookup (post-insert) already includes
   // them — kept explicit so this still works if that lookup ever changes.
-  await broadcastToGroup(c.env, groupId, { type: 'group:created', group }, newIds);
+  await broadcastGroupProjection(c.env, groupId, 'group:created', newIds);
   return c.json({ success: true, members: group?.members ?? [] });
 });
 
@@ -326,8 +345,7 @@ groups.patch('/:id/members/:userId', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can change member roles' }, 403);
 
   await c.env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(role, groupId, targetId).run();
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group-member:updated', group_id: groupId, members: group?.members ?? [] });
+  await broadcastGroupProjection(c.env, groupId, 'group-member:updated');
   return c.json({ success: true });
 });
 
@@ -366,8 +384,8 @@ groups.patch('/:id', async (c) => {
     .bind(nextName, nextDescription, nextAvatar, groupId)
     .run();
 
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group:updated', group });
+  const group = await groupWithMembers(c.env, groupId, userId);
+  await broadcastGroupProjection(c.env, groupId, 'group:updated');
   return c.json({ success: true, group });
 });
 
