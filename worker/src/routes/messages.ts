@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { mayAttachMedia } from '../lib/media-access';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -143,6 +144,7 @@ messages.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
   if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id.
   if (client_message_id) {

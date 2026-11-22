@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { mayAttachMedia } from '../lib/media-access';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPrivacySettings } from '../lib/privacy';
@@ -110,6 +111,7 @@ groups.post('/', async (c) => {
   const userId = c.get('userId');
   const { name, description, avatar_url, memberIds = [] } = await c.req.json().catch(() => ({}));
   if (!name || !String(name).trim()) return c.json({ error: 'name is required' }, 400);
+  if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const groupId = newId();
   const created_at = nowIso();
@@ -335,6 +337,7 @@ groups.patch('/:id', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can update group info' }, 403);
 
   const { name, description, avatar_url } = await c.req.json().catch(() => ({}));
+  if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
   const current = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
   if (!current) return c.json({ error: 'Group not found' }, 404);
 
@@ -402,6 +405,7 @@ groups.post('/:id/messages', async (c) => {
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
   const body = await c.req.json().catch(() => ({}));
+  if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id, same pattern as 1:1
   // messages — a retried send (e.g. after a flaky connection) must not
