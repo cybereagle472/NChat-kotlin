@@ -1927,3 +1927,5 @@ IPv6 rate-limit red `1ac1308` exposes a new per-address signup budget for each I
 Request-size fix `bc34b16` passed Worker CI `44993015822`. IPv6 red `1ac1308` failed CI `44993063861`; fix `5f2ddfa` buckets IPv6 by /64, normalizes IPv4-mapped IPv6 and rejects malformed addresses. Local 71 tests/typecheck passed; CI pending. Users sharing a /64 also share an address budget; per-account budgets remain separate. The edge-header trust assumption remains. Nothing deployed.
 
 Authenticated-action rate-limit red `bd81aba` tests shared per-user contact and send budgets; locally both tests failed. The send test seeds the same Durable Object counter concurrently rather than issuing 300 slow writes. CI pending. Nothing deployed.
+
+Worker CI `44993161527` passed for IPv6 credential fix `5f2ddfa`. Authenticated-limit red `bd81aba` failed Worker CI `44993276332` on both expected 429 assertions, as intended. Implementation is in progress and not deployed; initial local runtime suite passed 73 tests, but typecheck exposed path parameter inference errors being corrected.
