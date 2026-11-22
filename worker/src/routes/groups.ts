@@ -274,6 +274,9 @@ groups.post('/:id/leave', async (c) => {
     .bind(groupId)
     .all<{ user_id: string; role: string }>();
   const allMembers = members ?? [];
+  if (!allMembers.some((member) => member.user_id === userId)) {
+    return c.json({ error: 'Not a member of this group' }, 403);
+  }
   const admins = allMembers.filter((m) => m.role === 'admin');
   const isOnlyAdmin = admins.length === 1 && admins[0].user_id === userId;
 
@@ -498,8 +501,9 @@ groups.post('/:id/messages', async (c) => {
 groups.post('/messages/:messageId/delete-for-me', async (c) => {
   const userId = c.get('userId');
   const messageId = c.req.param('messageId');
-  const row = await c.env.DB.prepare('SELECT deleted_for FROM group_messages WHERE id = ?').bind(messageId).first<{ deleted_for: string | null }>();
+  const row = await c.env.DB.prepare('SELECT group_id, deleted_for FROM group_messages WHERE id = ?').bind(messageId).first<{ group_id: string; deleted_for: string | null }>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
+  if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
   const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
   if (!deletedFor.includes(userId)) deletedFor.push(userId);
@@ -518,6 +522,7 @@ groups.post('/messages/:messageId/delete-for-everyone', async (c) => {
     created_at: string;
   }>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
+  if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
   if (row.sender_id !== userId) return c.json({ error: 'You can only delete your own messages' }, 403);
 
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
@@ -544,6 +549,7 @@ groups.post('/messages/:messageId/reaction', async (c) => {
     reactions: string | null;
   }>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
+  if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
   const reactions: Record<string, string[]> = row.reactions ? JSON.parse(row.reactions) : {};
   const list = reactions[emoji] ?? [];
