@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { newId, nowIso } from '../lib/id';
+import { signalPayload } from '../lib/signalling';
 import { broadcastToRoom, userRoomId } from '../lib/realtime';
 import { applyPrivacy, getPrivacySettings, areFriends } from '../lib/privacy';
 
@@ -129,8 +130,9 @@ calls.post('/:id/signal', async (c) => {
   if (!call) return c.json({ error: 'Call not found' }, 404);
   if (!isParticipant(call, userId)) return c.json({ error: 'Not authorized' }, 403);
 
+  if (call.ended_at || ['ended', 'declined', 'missed'].includes(call.status)) return c.json({ success: true });
   const otherId = call.caller_id === userId ? call.receiver_id : call.caller_id;
-  await broadcastToRoom(c.env, userRoomId(otherId), { type: 'call:signal', callId: id, from: userId, ...body });
+  await broadcastToRoom(c.env, userRoomId(otherId), { ...signalPayload(body), type: 'call:signal', callId: id, from: userId });
   return c.json({ success: true });
 });
 

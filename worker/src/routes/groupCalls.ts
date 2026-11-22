@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { newId, nowIso } from '../lib/id';
+import { signalPayload } from '../lib/signalling';
 import { broadcastToUser } from '../lib/realtime';
 import { getMembership, memberIdsOf } from './groups';
 
@@ -41,6 +42,13 @@ interface GroupCallRow {
 
 async function getCallOr404(env: Env, id: string) {
   return env.DB.prepare('SELECT * FROM group_calls WHERE id = ?').bind(id).first<GroupCallRow>();
+}
+
+// Removed members retain a participant row so they can still hang up.
+async function belongsToCall(env: Env, call: GroupCallRow, userId: string): Promise<boolean> {
+  if (await getMembership(env, call.group_id, userId)) return true;
+  return !!(await env.DB.prepare('SELECT 1 FROM group_call_participants WHERE call_id = ? AND user_id = ?')
+    .bind(call.id, userId).first());
 }
 
 interface ParticipantBrief {
@@ -224,8 +232,9 @@ groupCalls.post('/:id/signal', async (c) => {
   const membership = await getMembership(c.env, call.group_id, userId);
   if (!membership) return c.json({ error: 'Not authorized' }, 403);
 
-  const { to: _to, ...signal } = body;
-  await broadcastToUser(c.env, to, { type: 'group-call:signal', call_id: id, from: userId, ...signal });
+  if (call.status !== 'active') return c.json({ success: true });
+  if (!(await getMembership(c.env, call.group_id, to))) return c.json({ error: 'Not authorized' }, 403);
+  await broadcastToUser(c.env, to, { ...signalPayload(body), type: 'group-call:signal', call_id: id, from: userId });
   return c.json({ success: true });
 });
 
@@ -234,6 +243,7 @@ groupCalls.post('/:id/decline', async (c) => {
   const id = c.req.param('id');
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
+  if (!(await belongsToCall(c.env, call, userId))) return c.json({ error: 'Not authorized' }, 403);
 
   await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'declined' WHERE call_id = ? AND user_id = ?`)
     .bind(id, userId)
@@ -256,6 +266,7 @@ groupCalls.post('/:id/leave', async (c) => {
   const id = c.req.param('id');
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
+  if (!(await belongsToCall(c.env, call, userId))) return c.json({ error: 'Not authorized' }, 403);
 
   const now = nowIso();
   await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'left', left_at = ? WHERE call_id = ? AND user_id = ?`)

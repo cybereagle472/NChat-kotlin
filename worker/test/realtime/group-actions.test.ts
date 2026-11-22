@@ -348,7 +348,7 @@ describe('call signalling integrity', () => {
     for (const action of ['decline', 'leave']) expect((await post(`/group-calls/${f.call}/${action}`, f.outsider.token)).status).toBe(403);
     expect((await env.DB.prepare('SELECT status FROM group_calls WHERE id = ?').bind(f.call).first<{status:string}>())?.status).toBe('active');
   });
-  it('requires both parties to be current group members and joined call participants for group signals', async () => {
+  it('requires both parties to be current group members for group signals', async () => {
     const f = await groupCallFixture();
     expect((await post(`/group-calls/${f.call}/signal`, f.owner.token, {to:f.outsider.id, candidate:'x'})).status).toBe(403);
     await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(f.group, f.member.id).run();
