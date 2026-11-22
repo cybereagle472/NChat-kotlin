@@ -2045,3 +2045,5 @@ Direct-call state fix `26947fa` passed Worker CI `45001241687` (100 tests and ty
 Contact initiation blocking race tests 3795bd8 fail locally: a newly blocked caller/requester can still persist and send a call or friend-request event if blocked between the check and insert. Deterministic barriers exercise both paths; CI pending; no deployment.
 
 Contact initiation blocking race `3795bd8` failed Worker CI `45001324124` on both paths as expected.
+
+Contact initiation block guard `dfd95a1` checks for blocks in the call and friend-request INSERT itself and avoids broadcasting when the write is skipped. Both deterministic races, ordinary call/request, and same-direction rejected-request upsert pass locally; the full suite passed 103 tests before the added upsert case, and all four targeted tests plus typecheck pass after it. CI pending. The block can still occur after the write and before event delivery. Review also found that an upsert preserves the existing request ID while the route returns/broadcasts a newly generated ID, and concurrent request/respond paths have further state races; these are not fixed by this change. Branch-only; not deployed.
