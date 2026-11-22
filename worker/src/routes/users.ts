@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { mayAttachMedia } from '../lib/media-access';
 import { computeIsOnline, getPresence, getPresenceMap } from '../lib/presence';
 import { applyPrivacy, applyPrivacyToList, areFriends, getPrivacySettings } from '../lib/privacy';
 
@@ -33,6 +34,7 @@ users.get('/me', async (c) => {
 users.patch('/me', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const userId = c.get('userId');
+  if (!(await mayAttachMedia(c.env, userId, [body.avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
   const fields: string[] = [];
   const values: unknown[] = [];
 

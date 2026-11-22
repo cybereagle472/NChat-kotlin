@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { mayAttachMedia } from '../lib/media-access';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 
@@ -21,6 +22,7 @@ async function friendIdsOf(env: Env, userId: string): Promise<string[]> {
 status.post('/', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
+  if (!(await mayAttachMedia(c.env, userId, [body.content_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
   const id = newId();
   const created_at = nowIso();
   const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();

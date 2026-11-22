@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { newId } from '../lib/id';
+import { canReadMedia } from '../lib/media-access';
 
 const media = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -40,8 +41,7 @@ media.post('/upload', requireAuth, async (c) => {
   return c.json({ id, url, key, media_type, file_name: file.name, file_size: file.size }, 201);
 });
 
-// GET /media/file/:key — requires sign-in. Per-file authorization still needs
-// to be implemented before media can be considered private from other users.
+// GET /media/file/:key — signed-in users must be in the file's audience.
 //
 // Serves byte-range requests (HTTP 206 Partial Content), which this used to
 // skip entirely — every request got the whole object back with a plain 200,
@@ -60,6 +60,7 @@ media.post('/upload', requireAuth, async (c) => {
 // the HTTP spec (206 + Content-Range on a successful range request).
 media.get('/file/*', requireAuth, async (c) => {
   const key = c.req.path.replace(/^\/media\/file\//, '');
+  if (!(await canReadMedia(c.env, c.get('userId'), key))) return c.json({ error: 'Not found' }, 404);
   const object = await c.env.MEDIA.get(key, { range: c.req.raw.headers });
   if (!object) return c.json({ error: 'Not found' }, 404);
 
