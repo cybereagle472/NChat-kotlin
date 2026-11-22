@@ -1939,3 +1939,5 @@ Group-departure tests ef078c9 failed locally: concurrent administrators both lea
 Group departure red `ef078c9` failed Worker CI `44993575581` on both expected regressions, matching local results.
 
 Group departure fix `924aaa9` uses a single guarded DELETE for leave, preserving a remaining administrator under concurrent departures, and transactionally cleans up group/messages only while no members exist, after successful leave or removal. Local 75 tests and typecheck passed; CI pending. Other group operations still have separate authorization/check-write races, including role changes, additions and explicit group deletion; this fix is not a general concurrency proof. Not deployed.
+
+Group-departure fix `924aaa9` passed Worker CI `44993681704` (typecheck and 75 tests). It remains undeployed. Further review: group-call decline/leave use historical participant membership and can still broadcast to a removed caller; call start/join/end checks and writes are not atomic, and generic signaling is bounded only by the global 256 KiB body limit. These need tests and remediation; no claim that Phase 1 is complete.
