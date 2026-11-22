@@ -146,9 +146,10 @@ calls.post('/:id/answer', async (c) => {
   if (call.receiver_id !== userId) return c.json({ error: 'Only the callee can answer' }, 403);
   if (call.status !== 'ringing') return c.json({ error: 'Call is no longer ringing' }, 409);
 
-  await c.env.DB.prepare("UPDATE calls SET status = 'answered', answer_sdp = ? WHERE id = ?")
-    .bind(JSON.stringify(answer_sdp ?? null), id)
+  const answered = await c.env.DB.prepare("UPDATE calls SET status = 'answered', answer_sdp = ? WHERE id = ? AND receiver_id = ? AND status = 'ringing' AND ended_at IS NULL")
+    .bind(JSON.stringify(answer_sdp ?? null), id, userId)
     .run();
+  if (!answered.meta.changes) return c.json({ error: 'Call is no longer ringing' }, 409);
   await broadcastToRoom(c.env, userRoomId(call.caller_id), { type: 'call:answered', callId: id, answer_sdp });
   return c.json({ success: true });
 });
@@ -163,9 +164,10 @@ calls.post('/:id/end', async (c) => {
   // Don't let a stale/duplicate "end" request overwrite an already-finished call's outcome.
   if (call.ended_at) return c.json({ success: true });
 
-  await c.env.DB.prepare("UPDATE calls SET status = ?, duration = ?, ended_at = datetime('now') WHERE id = ?")
-    .bind(status, duration ?? null, id)
+  const ended = await c.env.DB.prepare("UPDATE calls SET status = ?, duration = ?, ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL AND (caller_id = ? OR receiver_id = ?)")
+    .bind(status, duration ?? null, id, userId, userId)
     .run();
+  if (!ended.meta.changes) return c.json({ success: true });
 
   const otherId = call.caller_id === userId ? call.receiver_id : call.caller_id;
   await broadcastToRoom(c.env, userRoomId(otherId), { type: 'call:ended', callId: id, status });
