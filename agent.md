@@ -2005,3 +2005,5 @@ Group update authorization fix `92d8263` passed Worker CI `44997797582` (89 test
 Group-message send race 8256585 failed locally for text and media: a member removed after the membership check can still persist and broadcast a message. Tests also require no orphaned trusted media reference. CI pending; no deployment.
 
 Group-message send race `8256585` failed Worker CI `44997884082` on both text and media assertions as expected.
+
+Group-message send fix b95de4c checks current membership in the INSERT, returns 403 without broadcast when the insert was skipped, and creates group-message media provenance only if the message row exists. Local 91 tests and typecheck pass; CI pending. Membership may still change before event delivery or on idempotent retry; attachment access can change after its pre-check; action routes need equivalent concurrency review. Not deployed.
