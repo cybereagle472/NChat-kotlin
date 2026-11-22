@@ -2063,3 +2063,5 @@ Friend-request persisted-ID fix `c59c6f0` passed Worker CI `45001749125`; friend
 Friend-request creation race tests fail locally: a stale create can reset an accepted request to pending, and simultaneous opposite-direction requests can both become pending. Tests pause the write after checks. CI pending; no deployment.
 
 Friend-request creation fix `8e2b3ee` guards the INSERT/UPSERT against current blocks, existing friendships, and pending/accepted requests in either direction, and only reopens rejected same-direction rows. Same-direction duplicates, opposite-direction concurrent creates, and a create racing acceptance are covered; ordinary rejected-request reopening remains tested. Local full suite passes 111 tests and typecheck; CI pending. Status/error classification and event delivery remain separate from the write and may race subsequent changes. Existing inconsistent historical rows are not repaired. Branch-only, not deployed.
+
+Friend-response fix `07dddad` passed Worker CI `45001916066` (108 tests/typecheck). Friend-creation race red `11234eb` failed CI `45001967281` on both expected assertions. Its fix `8e2b3ee` awaits CI. No deployment.
