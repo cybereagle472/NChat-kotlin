@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { limitContact } from '../middleware/rate-limit';
+import { limitContact, limitSignal } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { signalPayload } from '../lib/signalling';
 import { broadcastToUser } from '../lib/realtime';
@@ -254,9 +254,9 @@ groupCalls.post('/:id/join', async (c) => {
 // infer "the other participant" because there are only ever two), a
 // group call can have many participants, so the sender names exactly who
 // a given offer/answer/ICE candidate is for.
-groupCalls.post('/:id/signal', async (c) => {
+groupCalls.post('/:id/signal', limitSignal, async (c) => {
   const userId = c.get('userId');
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json().catch(() => ({}));
   const to = body?.to as string | undefined;
   if (!to) return c.json({ error: 'to is required' }, 400);

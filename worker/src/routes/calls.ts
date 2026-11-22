@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { limitContact } from '../middleware/rate-limit';
+import { limitContact, limitSignal } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { signalPayload } from '../lib/signalling';
 import { broadcastToRoom, userRoomId } from '../lib/realtime';
@@ -123,9 +123,9 @@ calls.post('/', limitContact, async (c) => {
 // Generic signaling passthrough (ICE candidates, renegotiation, etc.) — the
 // Worker doesn't need to understand the payload shape, just forward it to
 // whichever of the two participants didn't send it.
-calls.post('/:id/signal', async (c) => {
+calls.post('/:id/signal', limitSignal, async (c) => {
   const userId = c.get('userId');
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json().catch(() => ({}));
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
