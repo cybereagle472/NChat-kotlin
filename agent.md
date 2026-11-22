@@ -1957,3 +1957,5 @@ Concurrent-start red `0d342cc` passed Worker CI `44995961667` despite failing lo
 Deterministic replacement 1d70738 gates both call-start reads after they observe no existing call, forcing the race independently of scheduling. It fails locally as intended; CI pending. This test wraps D1 only for the first active-call query and executes the other SQL against local D1.
 
 Deterministic concurrent-call-start red `1d70738` failed Worker CI `44996037307` with two 201 responses, as intended.
+
+Group-call creation fix 60e88e3 conditionally inserts the active call and participants in one D1 batch; simultaneous losers join the winner or get 409 if it has already ended. Actor membership is rechecked by the write. Local typecheck and all 79 tests pass; Worker CI pending. This does not repair pre-existing duplicate active calls or solve join/end and realtime-notification races; production D1 and Android still untested. No new migration and nothing deployed.
