@@ -504,10 +504,12 @@ groups.post('/:id/messages', limitSend, async (c) => {
   // migration. Try the full insert first (so duration is saved once the
   // migration has run), and silently fall back to the pre-migration
   // column list if it hasn't, so sending never breaks either way.
+  let inserted: D1Result;
   try {
     const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, duration, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)`
     )
       .bind(
         id,
@@ -520,15 +522,18 @@ groups.post('/:id/messages', limitSend, async (c) => {
         body.duration ?? null,
         body.client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
+        created_at,
+        groupId,
+        userId
       );
-    await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
+    inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   } catch (err) {
     if (!String(err).includes('no such column: duration') && !String(err).includes('no column named duration')) throw err;
     console.error('[groups] insert with duration column failed, retrying without it (migration 0003 likely not applied yet):', err);
     const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)`
     )
       .bind(
         id,
@@ -540,10 +545,14 @@ groups.post('/:id/messages', limitSend, async (c) => {
         body.thumbnail_url ?? null,
         body.client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
+        created_at,
+        groupId,
+        userId
       );
-    await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
+    inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   }
+
+  if (!inserted.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
 
   await broadcastToGroup(c.env, groupId, { type: 'group-message:new', message: msg });
 

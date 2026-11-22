@@ -88,7 +88,8 @@ export type MediaReferenceKind = 'message' | 'group_message' | 'status' | 'user_
 export function mediaReferenceStatements(env: Env, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): D1PreparedStatement[] {
   const keys = new Set(addresses.map(a => localMediaKey(env, a)).filter(a => a.local && a.key).map(a => a.key!));
   return [...keys].map(key => env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
-    SELECT file_path, ?2, ?3, ?4 FROM media_attachments WHERE file_path = ?1 LIMIT 1`)
+    SELECT file_path, ?2, ?3, ?4 FROM media_attachments WHERE file_path = ?1
+    ${kind === 'group_message' ? 'AND EXISTS (SELECT 1 FROM group_messages WHERE id = ?3 AND sender_id = ?4)' : ''} LIMIT 1`)
     .bind(key, kind, referenceId, actorId));
 }
 
@@ -109,8 +110,8 @@ export function guardedGroupAvatarReferences(env: Env, groupId: string, actorId:
   return statements;
 }
 
-export async function writeWithMediaReferences(env: Env, write: D1PreparedStatement, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): Promise<void> {
+export async function writeWithMediaReferences(env: Env, write: D1PreparedStatement, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): Promise<D1Result> {
   const references = mediaReferenceStatements(env, kind, referenceId, actorId, addresses);
-  if (references.length) await env.DB.batch([write, ...references]);
-  else await write.run();
+  if (references.length) return (await env.DB.batch([write, ...references]))[0];
+  return write.run();
 }
