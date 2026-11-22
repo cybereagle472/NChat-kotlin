@@ -1139,3 +1139,21 @@ describe('group message actions under concurrent removal', () => {
     });
   }
 });
+
+describe('call signalling abuse limits', () => {
+  it('shares a per-account signal budget across direct and group calls without limiting other accounts', async () => {
+    const f = await groupCallFixture();
+    const direct = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO calls (id,caller_id,receiver_id,call_type,status) VALUES (?,?,?,'audio','ringing')").bind(direct,f.owner.id,f.member.id).run();
+    const target = await inbox(f.member);
+    const seeds = await Promise.all(Array.from({length:599}, () => consumeLimit(env, 'signal', f.owner.id, 600, 60000)));
+    expect(seeds.every(Boolean)).toBe(true);
+    const payload = {to:f.member.id,candidate:{candidate:'candidate:1 1 udp 1 192.0.2.1 1234 typ host',sdpMid:'0',sdpMLineIndex:0}};
+    expect((await post(`/group-calls/${f.call}/signal`,f.owner.token,payload)).status).toBe(200);
+    expect((await post(`/calls/${direct}/signal`,f.owner.token,{candidate:payload.candidate})).status).toBe(429);
+    await target.flush();
+    expect(target.events).toHaveLength(1);
+    expect((await post(`/calls/${direct}/signal`,f.member.token,{candidate:payload.candidate})).status).toBe(200);
+    target.socket.close(1000,'finished');
+  }, 30000);
+});
