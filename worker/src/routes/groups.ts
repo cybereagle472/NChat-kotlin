@@ -406,18 +406,22 @@ groups.patch('/:id', async (c) => {
   if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048})) return c.json({ error: 'Group field too long' }, 400);
   const proofs = await attachmentProofs(c.env, userId, [avatar_url]);
   if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
-  const current = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
+  const current = await c.env.DB.prepare('SELECT 1 FROM groups WHERE id = ?').bind(groupId).first();
   if (!current) return c.json({ error: 'Group not found' }, 404);
 
-  const nextName = name !== undefined ? String(name).trim() : current.name;
-  const nextDescription = description !== undefined ? (String(description).trim() || null) : current.description;
-  const nextAvatar = avatar_url !== undefined ? avatar_url : current.avatar_url;
-
+  // Preserve omitted fields from the row at write time, not from the earlier
+  // read: another admin may have replaced the avatar (and its grants) since.
   const write = c.env.DB.prepare(
-    `UPDATE groups SET name = ?1, description = ?2, avatar_url = ?3, updated_at = datetime('now') WHERE id = ?4
+    `UPDATE groups SET name = CASE WHEN ?7 THEN ?1 ELSE name END,
+     description = CASE WHEN ?8 THEN ?2 ELSE description END,
+     avatar_url = CASE WHEN ?9 THEN ?3 ELSE avatar_url END,
+     updated_at = datetime('now') WHERE id = ?4
      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?4 AND user_id = ?5 AND role = 'admin')
      AND ${attachmentProofGuard('?5', '?6')}`
-  ).bind(nextName, nextDescription, nextAvatar, groupId, userId, JSON.stringify(proofs));
+  ).bind(name !== undefined ? String(name).trim() : null,
+    description !== undefined ? (String(description).trim() || null) : null,
+    avatar_url !== undefined ? avatar_url : null, groupId, userId, JSON.stringify(proofs),
+    name !== undefined ? 1 : 0, description !== undefined ? 1 : 0, avatar_url !== undefined ? 1 : 0);
   const updated = avatar_url !== undefined
     ? (await c.env.DB.batch([write, ...guardedGroupAvatarReferences(c.env, groupId, userId, avatar_url, JSON.stringify(proofs))]))[0]
     : await write.run();

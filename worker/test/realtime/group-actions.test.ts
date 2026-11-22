@@ -1054,7 +1054,7 @@ describe('group update authorization under concurrency', () => {
   it('does not change group text when the admin is demoted before the write', async () => {
     const {owner, outsider, group} = await fixture();
     await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'admin').run();
-    const paused = pauseWrite('UPDATE groups SET name = ?');
+    const paused = pauseWrite('UPDATE groups SET name = CASE');
     const request = app.request(`https://example.test/groups/${group}`, {method:'PATCH', headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'Not authorized'})}, paused.bindings);
     await paused.reached;
     try { await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group,owner.id).run(); }
@@ -1848,8 +1848,8 @@ describe('other media writes after source access is revoked', () => {
 });
 
 describe('avatar provenance when reusing the current avatar', () => {
-  for (const kind of ['profile','group'] as const) {
-    it(`preserves the trusted ${kind} avatar when its previous source is gone`, async () => {
+  for (const kind of ['profile','group'] as const) for (const encoded of [false,true]) {
+    it(`preserves the trusted ${kind} avatar when its previous source is gone (encoded: ${encoded})`, async () => {
       const uploader = await mediaAccount(), owner = await mediaAccount(), viewer = await mediaAccount();
       await friend(uploader.id,owner.id);
       const file = await mediaUpload(uploader.token);
@@ -1866,8 +1866,11 @@ describe('avatar provenance when reusing the current avatar', () => {
       }
       await env.DB.prepare('UPDATE messages SET is_deleted=1 WHERE id=?').bind(id).run();
       expect((await mediaRead(file.key,owner.token)).status).toBe(200);
-      const repeat = await SELF.fetch(`https://example.test${path}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+      const nextUrl = encoded ? `https://example.test/media/file/${encodeURIComponent(file.key)}` : file.url;
+      const repeat = await SELF.fetch(`https://example.test${path}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:nextUrl})});
       expect(repeat.status).toBe(200);
+      const updated = kind === 'profile' ? await env.DB.prepare('SELECT avatar_url FROM users WHERE id=?').bind(reference).first<{avatar_url:string}>() : await env.DB.prepare('SELECT avatar_url FROM groups WHERE id=?').bind(reference).first<{avatar_url:string}>();
+      expect(updated?.avatar_url).toBe(nextUrl);
       expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE file_path=? AND kind=? AND reference_id=?').bind(file.key,kind === 'profile' ? 'user_avatar' : 'group_avatar',reference).first()).not.toBeNull();
       expect((await mediaRead(file.key,viewer.token)).status).toBe(200);
     }, 30000);
@@ -1881,7 +1884,7 @@ describe('concurrent group metadata and avatar writes', () => {
     const old = await mediaUpload(owner.token), replacement = await mediaUpload(owner.token);
     const patch = (body: object) => SELF.fetch(`https://example.test/groups/${group}`, {method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
     expect((await patch({avatar_url:old.url})).status).toBe(200);
-    const paused = pauseWrite('UPDATE groups SET name = ?');
+    const paused = pauseWrite('UPDATE groups SET name = CASE');
     const request = app.request(`https://example.test/groups/${group}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'Renamed'})},paused.bindings);
     await paused.reached;
     try { expect((await patch({avatar_url:replacement.url})).status).toBe(200); }
@@ -1910,4 +1913,65 @@ describe('private profile avatar owner access', () => {
     expect((await mediaRead(file.key,owner.token)).status).toBe(200);
     expect((await patch()).status).toBe(200);
   },30000);
+});
+
+describe('multi-attachment proof guards', () => {
+  for (const route of ['message','group-message','status'] as const) {
+    it(`rejects ${route} when one of two different sources is revoked`, async () => {
+      const uploader = await mediaAccount(), actor = await mediaAccount(), recipient = await mediaAccount();
+      await friend(actor.id,recipient.id);
+      const first = await mediaUpload(actor.token), second = await mediaUpload(uploader.token);
+      const source = crypto.randomUUID(), destination = crypto.randomUUID();
+      await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(source,'source',uploader.id).run();
+      await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),source,actor.id,'member').run();
+      await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),source,uploader.id,second.url).run();
+      await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(destination,'destination',actor.id).run();
+      for (const u of [actor,recipient]) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),destination,u.id,'member').run();
+      let reached!:()=>void,resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {prepare:env.DB.prepare.bind(env.DB),async batch(statements:D1PreparedStatement[]){reached(); await gate; return env.DB.batch(statements);}};
+      const path = route === 'message' ? '/messages' : route === 'status' ? '/status' : `/groups/${destination}/messages`;
+      const body = route === 'message' ? {receiver_id:recipient.id,media_url:first.url,thumbnail_url:second.url} : route === 'status' ? {content_type:'image',content_url:first.url,thumbnail_url:second.url,privacy:'contacts'} : {media_url:first.url,thumbnail_url:second.url};
+      const request = app.request(`https://example.test${path}`,{method:'POST',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify(body)},{...env,DB:db} as unknown as Env);
+      await ready;
+      try {await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(source,actor.id).run();} finally {resume();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE actor_id=? AND file_path IN (?,?)').bind(actor.id,first.key,second.key).first()).toBeNull();
+      expect((await mediaRead(first.key,recipient.token)).status).toBe(404);
+      expect((await mediaRead(second.key,recipient.token)).status).toBe(404);
+    },30000);
+  }
+});
+
+describe('group message pre-duration fallback', () => {
+  for (const revoke of [false,true]) {
+    it(`rechecks media proof on fallback (source revoked: ${revoke})`, async () => {
+      const uploader = await mediaAccount(), actor = await mediaAccount(), viewer = await mediaAccount();
+      const file = await mediaUpload(uploader.token), source = crypto.randomUUID(), destination = crypto.randomUUID();
+      for (const [id,owner] of [[source,uploader],[destination,actor]] as const) await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(id,'group',owner.id).run();
+      for (const [id,user] of [[source,actor],[destination,actor],[destination,viewer]] as const) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),id,user.id,'member').run();
+      await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),source,uploader.id,file.url).run();
+      let attempts = 0;
+      const db = {prepare:env.DB.prepare.bind(env.DB),async batch(statements:D1PreparedStatement[]) {
+        if (++attempts === 1) {
+          if (revoke) await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(source,actor.id).run();
+          throw new Error('no column named duration');
+        }
+        return env.DB.batch(statements);
+      }};
+      const response = await app.request(`https://example.test/groups/${destination}/messages`,{method:'POST',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify({media_url:file.url})},{...env,DB:db} as unknown as Env);
+      expect(attempts).toBe(2);
+      expect(response.status).toBe(revoke ? 403 : 201);
+      const row = await env.DB.prepare('SELECT id FROM group_messages WHERE group_id=? AND sender_id=?').bind(destination,actor.id).first<{id:string}>();
+      if (revoke) {
+        expect(row).toBeNull();
+        expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE actor_id=? AND file_path=?').bind(actor.id,file.key).first()).toBeNull();
+        expect((await mediaRead(file.key,viewer.token)).status).toBe(404);
+      } else {
+        expect(row).not.toBeNull();
+        expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='group_message' AND reference_id=? AND file_path=?").bind(row!.id,file.key).first()).not.toBeNull();
+        expect((await mediaRead(file.key,viewer.token)).status).toBe(200);
+      }
+    },30000);
+  }
 });

@@ -71,7 +71,7 @@ async function readableMediaProof(env: Env, userId: string, key: string): Promis
     const source = matchingAddress(env, key, avatar.avatar_url);
     if (!(avatar.id === attachment.uploader_id || avatar.trusted) || !source) continue;
     const settings = await getPrivacySettings(env, avatar.id);
-    if (settings.profile_photo_visibility === 'everyone' ||
+    if (avatar.id === userId || settings.profile_photo_visibility === 'everyone' ||
         (settings.profile_photo_visibility === 'contacts' && await areFriends(env, avatar.id, userId))) return { key, source };
   }
   for (const status of statuses.results) {
@@ -134,8 +134,8 @@ export function attachmentProofGuard(actor: string, proofs: string): string {
         WHERE g.avatar_url = ${source} AND ${trusted('group_avatar', 'g.id')})
       OR EXISTS (SELECT 1 FROM users u LEFT JOIN privacy_settings ps ON ps.user_id = u.id
         WHERE u.avatar_url = ${source} AND (u.id = a.uploader_id OR ${trusted('user_avatar', 'u.id')})
-        AND (coalesce(ps.profile_photo_visibility, 'everyone') = 'everyone' OR
-          (coalesce(ps.profile_photo_visibility, 'everyone') = 'contacts' AND (u.id = ${actor} OR ${friend('u.id')}))))
+        AND (u.id = ${actor} OR coalesce(ps.profile_photo_visibility, 'everyone') = 'everyone' OR
+          (coalesce(ps.profile_photo_visibility, 'everyone') = 'contacts' AND ${friend('u.id')})))
       OR EXISTS (SELECT 1 FROM statuses s LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
         WHERE datetime(s.expires_at) > datetime('now') AND (s.content_url = ${source} OR s.thumbnail_url = ${source})
         AND (s.user_id = a.uploader_id OR ${trusted('status', 's.id')})
