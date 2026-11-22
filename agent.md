@@ -2053,3 +2053,5 @@ Reopened friend-request ID regression test requires response and realtime event 
 Friend-request ID fix `c59c6f0` uses the INSERT/UPSERT `RETURNING id` so both response and event carry the persisted row ID, including rejected-request reopen; a skipped blocked insert still returns 403. The regression and block-race tests pass, and the complete local suite passes 104 tests and typecheck. CI pending. Other concurrent friend-request/respond state races and post-commit event races remain; this fix is branch-only, not deployed.
 
 Contact-block guard `dfd95a1` passed Worker CI `45001613606`. Reopened-request ID regression `c607a52` failed Worker CI `45001641701` as expected; its fix `c59c6f0` is awaiting CI. None is deployed.
+
+Friend-response security tests demonstrate locally that acceptance can create a friendship despite a block, can recreate one after the request was cancelled, and a stale rejection can overwrite an accepted request. The latter two tests force deterministic write interleavings; CI pending. No fix or deployment yet.
