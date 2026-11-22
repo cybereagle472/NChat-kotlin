@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
-import { mayAttachMedia, guardedGroupAvatarReferences, writeWithMediaReferences } from '../lib/media-access';
+import { mayAttachMedia, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -133,25 +133,31 @@ groups.post('/', limitContact, async (c) => {
   if (!name || !String(name).trim()) return c.json({ error: 'name is required' }, 400);
   if (!(await mayAttachMedia(c.env, userId, [avatar_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
+  const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
+  // Validate in bounded chunks before doing any writes. Foreign keys still
+  // protect against deletion after this check, within the atomic batch below.
+  for (let i = 0; i < allMembers.length; i += 90) {
+    const chunk = allMembers.slice(i, i + 90);
+    const { results } = await c.env.DB.prepare(`SELECT id FROM users WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .bind(...chunk).all<{ id: string }>();
+    if (results.length !== chunk.length) return c.json({ error: 'User not found' }, 404);
+  }
+
   const groupId = newId();
   const created_at = nowIso();
   const write = c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at);
-  await writeWithMediaReferences(c.env, write, 'group_avatar', groupId, userId, [avatar_url]);
-
-  const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
-  const joinedAt = created_at;
-  await c.env.DB.batch(
-    allMembers.map((uid) =>
+  // Create the group, provenance and every initial membership together. A
+  // failed membership insert must not leave an inaccessible orphan group.
+  await c.env.DB.batch([
+    write,
+    ...mediaReferenceStatements(c.env, 'group_avatar', groupId, userId, [avatar_url]),
+    ...allMembers.map((uid) =>
       c.env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)').bind(
-        newId(),
-        groupId,
-        uid,
-        uid === userId ? 'admin' : 'member',
-        joinedAt
+        newId(), groupId, uid, uid === userId ? 'admin' : 'member', created_at
       )
-    )
-  );
+    ),
+  ]);
 
   const group = await groupWithMembers(c.env, groupId, userId);
   // Let every invited member's device pick up the new group immediately
