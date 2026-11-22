@@ -1382,3 +1382,37 @@ describe('friend request creation concurrency', () => {
     await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
   });
 });
+
+describe('direct message authorization under concurrency', () => {
+  for (const withMedia of [false, true]) for (const action of ['block','unfriend'] as const) {
+    it(`does not write or broadcast a ${withMedia ? 'media' : 'text'} message after ${action}`, async () => {
+      const sender = await mediaAccount(), receiver = await mediaAccount();
+      await friend(sender.id,receiver.id);
+      const file = withMedia ? await mediaUpload(sender.token) : undefined;
+      const target = await inbox(receiver);
+      let reached!:()=>void, resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {
+        prepare(sql:string) {
+          const statement = env.DB.prepare(sql);
+          if (withMedia || !sql.includes('INSERT INTO messages (id, sender_id')) return statement;
+          return {bind(...args:unknown[]) {const bound = statement.bind(...args); return {async run(){reached(); await gate; return bound.run();}};}};
+        },
+        async batch(statements:D1PreparedStatement[]) { if (withMedia) {reached(); await gate;} return env.DB.batch(statements); },
+      };
+      const request = app.request('https://example.test/messages',{
+        method:'POST',headers:{Authorization:`Bearer ${sender.token}`,'Content-Type':'application/json'},
+        body:JSON.stringify({receiver_id:receiver.id,content:'late message',...(file ? {media_url:file.url} : {})}),
+      },{...env,DB:db} as unknown as Env);
+      await ready;
+      try {
+        if (action === 'block') expect((await post('/friends/block',receiver.token,{user_id:sender.id})).status).toBe(200);
+        else expect((await app.request(`https://example.test/friends/${sender.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${receiver.token}`}},env)).status).toBe(200);
+      } finally {resume();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM messages WHERE sender_id=? AND receiver_id=?').bind(sender.id,receiver.id).first()).toBeNull();
+      if (file) expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='message' AND file_path=?").bind(file.key).first()).toBeNull();
+      await target.flush(); expect(target.events.filter(e=>JSON.parse(e).type === 'message:new')).toHaveLength(0); target.socket.close(1000,'finished');
+    });
+  }
+});
