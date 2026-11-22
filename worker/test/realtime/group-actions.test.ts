@@ -1416,3 +1416,52 @@ describe('direct message authorization under concurrency', () => {
     });
   }
 });
+
+describe('direct message actions after blocking or unfriend', () => {
+  const actions = [
+    {name:'edit',method:'PATCH',suffix:'',body:{content:'changed'},sql:'UPDATE messages SET content ='},
+    {name:'delete-for-everyone',method:'DELETE',suffix:'',body:{},sql:'UPDATE messages SET is_deleted ='},
+    {name:'reaction',method:'POST',suffix:'/reaction',body:{emoji:'👍'},sql:'UPDATE messages SET reactions ='},
+  ];
+  for (const action of actions) for (const race of [false,true]) {
+    it(`refuses ${action.name} ${race ? 'when unfriended before the write' : 'after a block'}`, async () => {
+      const sender = await mediaAccount(), receiver = await mediaAccount();
+      await friend(sender.id,receiver.id);
+      const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'original'});
+      expect(sent.status).toBe(201);
+      const id = (await sent.json() as {message:{id:string}}).message.id;
+      const actor = action.name === 'reaction' ? receiver : sender;
+      const other = action.name === 'reaction' ? sender : receiver;
+      const target = await inbox(other);
+      const makeRequest = (bindings:Env) => app.request(`https://example.test/messages/${id}${action.suffix}`,{
+        method:action.method,headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify(action.body),
+      },bindings);
+      let response:Response;
+      if (race) {
+        const paused = pauseWrite(action.sql), request = makeRequest(paused.bindings);
+        await paused.reached;
+        try { expect((await app.request(`https://example.test/friends/${actor.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${other.token}`}},env)).status).toBe(200); }
+        finally {paused.resume();}
+        response = await request;
+      } else {
+        expect((await post('/friends/block',other.token,{user_id:actor.id})).status).toBe(200);
+        response = await makeRequest(env);
+      }
+      expect(response.status).toBe(403);
+      const row = await env.DB.prepare('SELECT content,is_deleted,reactions FROM messages WHERE id=?').bind(id).first<{content:string;is_deleted:number;reactions:string|null}>();
+      expect(row).toEqual({content:'original',is_deleted:0,reactions:null});
+      await target.flush();
+      expect(target.events.filter(e=>['message:edit','message:delete','message:reaction'].includes(JSON.parse(e).type))).toHaveLength(0);
+      target.socket.close(1000,'finished');
+    });
+  }
+  it('still allows a participant to hide a message locally after a block', async () => {
+    const sender = await mediaAccount(), receiver = await mediaAccount(); await friend(sender.id,receiver.id);
+    const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'original'});
+    const id = (await sent.json() as {message:{id:string}}).message.id;
+    await post('/friends/block',sender.token,{user_id:receiver.id});
+    expect((await post(`/messages/${id}/delete-for-me`,receiver.token)).status).toBe(200);
+    const row = await env.DB.prepare('SELECT deleted_for FROM messages WHERE id=?').bind(id).first<{deleted_for:string}>();
+    expect(JSON.parse(row!.deleted_for)).toContain(receiver.id);
+  });
+});
