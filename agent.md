@@ -1953,3 +1953,5 @@ Group-call decline fix `af9d09e` passed Worker CI `44993878826` (typecheck and a
 Resumed Cloudflare backend Phase 1 on 2026-11-22. Concurrent group-call start regression 0d342cc failed locally: two simultaneous starts each create a different active call. Worker CI pending. All work remains branch-only and no Cloudflare operation was performed.
 
 Concurrent-start red `0d342cc` passed Worker CI `44995961667` despite failing locally: the simultaneous-request test is timing-dependent. It is not reliable evidence of a fix. Making the interleaving deterministic before implementation; no deployment.
+
+Deterministic replacement 1d70738 gates both call-start reads after they observe no existing call, forcing the race independently of scheduling. It fails locally as intended; CI pending. This test wraps D1 only for the first active-call query and executes the other SQL against local D1.
