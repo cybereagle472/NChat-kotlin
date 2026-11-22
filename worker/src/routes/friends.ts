@@ -92,17 +92,38 @@ friends.post('/:id/respond', async (c) => {
   if (!req) return c.json({ error: 'Request not found' }, 404);
   if (req.status !== 'pending') return c.json({ error: 'Request already handled' }, 409);
 
+  // Guard both mutations inside the same D1 transaction. A request may have
+  // been cancelled, handled, or blocked after the preliminary read.
+  const eligible = `id = ?1 AND receiver_id = ?2 AND status = 'pending'
+    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+      (b.user_id = friend_requests.sender_id AND b.blocked_user_id = friend_requests.receiver_id) OR
+      (b.user_id = friend_requests.receiver_id AND b.blocked_user_id = friend_requests.sender_id))`;
+  let changed: number;
   if (accept) {
-    const friendshipId = newId();
-    await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE friend_requests SET status = 'accepted', updated_at = datetime('now') WHERE id = ?").bind(
-        requestId
-      ),
+    const results = await c.env.DB.batch([
       c.env.DB.prepare(
-        'INSERT OR IGNORE INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)'
-      ).bind(friendshipId, req.sender_id, req.receiver_id),
+        `INSERT OR IGNORE INTO friendships (id, user1_id, user2_id)
+         SELECT ?3, sender_id, receiver_id FROM friend_requests WHERE ${eligible}`
+      ).bind(requestId, userId, newId()),
+      c.env.DB.prepare(
+        `UPDATE friend_requests SET status = 'accepted', updated_at = datetime('now') WHERE ${eligible}`
+      ).bind(requestId, userId),
     ]);
+    changed = results[1].meta.changes;
+  } else {
+    const result = await c.env.DB.prepare(
+      `UPDATE friend_requests SET status = 'rejected', updated_at = datetime('now') WHERE ${eligible}`
+    ).bind(requestId, userId).run();
+    changed = result.meta.changes;
+  }
+  if (!changed) {
+    const blocked = await c.env.DB.prepare(
+      'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
+    ).bind(userId, req.sender_id, req.sender_id, userId).first();
+    return blocked ? c.json({ error: 'Cannot respond to this user' }, 403) : c.json({ error: 'Request no longer pending' }, 409);
+  }
 
+  if (accept) {
     const accepter = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
     const accepterLastActiveAt = await getPresence(c.env, userId);
     const accepterSettings = await getPrivacySettings(c.env, userId);
@@ -115,9 +136,6 @@ friends.post('/:id/respond', async (c) => {
         : { id: userId },
     });
   } else {
-    await c.env.DB.prepare("UPDATE friend_requests SET status = 'rejected', updated_at = datetime('now') WHERE id = ?")
-      .bind(requestId)
-      .run();
     await broadcastToUser(c.env, req.sender_id, { type: 'friend:declined', userId });
   }
   return c.json({ success: true });
