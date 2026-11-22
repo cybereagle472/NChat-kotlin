@@ -2015,3 +2015,5 @@ Group message action race tests 9a6760b failed locally: removed members can stil
 Group message actions race `9a6760b` failed Worker CI `44998135873` on all three expected assertions.
 
 Group-message action fix 0d0092a checks current membership in each update and suppresses events when it fails; author identity is rechecked for delete-for-everyone. Local 94 tests and typecheck pass; CI pending. Concurrent reaction/delete-for-me read-modify-write can still lose updates, and membership can change between write and event delivery. Not deployed.
+
+Group-message action fix `0d0092a` passed Worker CI `44998282540` (94 tests and typecheck). It remains on the branch and is not deployed. Phase 1 remains incomplete: media-authorization/write races, other membership/event races, signaling abuse, account-enumeration and live D1/password/Android/load verification are among the outstanding work; owner must verify backup and apply migration 0006 before any deployment.
