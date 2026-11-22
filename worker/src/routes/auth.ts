@@ -89,19 +89,29 @@ auth.post('/signup', async (c) => {
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   if (existing) return c.json({ error: 'Email is already registered' }, 409);
 
-  const id = newId();
+  const id = newId(), sid = newId();
   const password_hash = await hashPassword(password);
-  await c.env.DB.prepare('INSERT INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?)')
-    .bind(id, email, password_hash, full_name)
-    .run();
-  await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO privacy_settings (user_id) VALUES (?)').bind(id),
-    c.env.DB.prepare('INSERT INTO notification_settings (user_id) VALUES (?)').bind(id),
+  const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 86400 * 1000).toISOString();
+  // Prepare the tokens before committing so signing errors cannot leave a
+  // newly registered account without a usable signup response.
+  const tokens = {
+    access_token: await signJWT({ sub: id }, c.env.JWT_SECRET, ACCESS_TTL_SECONDS),
+    refresh_token: await signJWT({ sub: id, sid }, c.env.JWT_SECRET, REFRESH_TTL_DAYS * 86400),
+    expires_in: ACCESS_TTL_SECONDS,
+  };
+  // The email may have been taken after the lookup. The dependent rows must
+  // only be inserted for this newly generated user id, in the same D1 batch.
+  // An error in settings or session creation rolls the account back as well.
+  const [created] = await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO users (id, email, password_hash, full_name) VALUES (?1, ?2, ?3, ?4)
+      ON CONFLICT(email) DO NOTHING RETURNING *`).bind(id, email, password_hash, full_name),
+    c.env.DB.prepare('INSERT INTO privacy_settings (user_id) SELECT id FROM users WHERE id = ?').bind(id),
+    c.env.DB.prepare('INSERT INTO notification_settings (user_id) SELECT id FROM users WHERE id = ?').bind(id),
+    c.env.DB.prepare('INSERT INTO sessions (id, user_id, expires_at) SELECT ?1, id, ?3 FROM users WHERE id = ?2').bind(sid, id, expiresAt),
   ]);
-
-  const tokens = await issueTokens(c.env, id);
-  const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
-  return c.json({ user: userPublic(row), ...tokens }, 201);
+  if (!created.meta.changes) return c.json({ error: 'Email is already registered' }, 409);
+  await sweepExpiredSessions(c.env);
+  return c.json({ user: userPublic(created.results[0]), ...tokens }, 201);
 });
 
 auth.post('/login', async (c) => {
