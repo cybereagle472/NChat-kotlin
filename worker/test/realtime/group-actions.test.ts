@@ -1623,3 +1623,26 @@ describe('direct read receipt authorization under concurrency', () => {
     expect(events).toHaveLength(1); expect(events[0]).toMatchObject({type:'message:read',reader_id:receiver.id,message_ids:[id]}); target.socket.close(1000,'finished');
   });
 });
+
+describe('group creation atomicity', () => {
+  it('does not leave an orphan group when a member does not exist', async () => {
+    const owner = await mediaAccount(); const missing = crypto.randomUUID();
+    const result = await post('/groups',owner.token,{name:'invalid membership',memberIds:[missing]});
+    expect(result.status).toBe(404);
+    expect(await env.DB.prepare('SELECT 1 FROM groups WHERE created_by=?').bind(owner.id).first()).toBeNull();
+  });
+  it('rolls back the group if a member disappears before the batch', async () => {
+    const owner = await mediaAccount(), member = await mediaAccount();
+    let reached!:()=>void, resume!:()=>void;
+    const paused = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+    const db = {prepare:env.DB.prepare.bind(env.DB), async batch(statements:D1PreparedStatement[]) {reached(); await gate; return env.DB.batch(statements);}};
+    const request = app.request('https://example.test/groups',{
+      method:'POST',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'disappearing member',memberIds:[member.id]}),
+    },{...env,DB:db} as unknown as Env);
+    await paused;
+    try { await env.DB.prepare('DELETE FROM users WHERE id=?').bind(member.id).run(); }
+    finally {resume();}
+    expect((await request).status).toBeGreaterThanOrEqual(400);
+    expect(await env.DB.prepare('SELECT 1 FROM groups WHERE created_by=?').bind(owner.id).first()).toBeNull();
+  });
+});
