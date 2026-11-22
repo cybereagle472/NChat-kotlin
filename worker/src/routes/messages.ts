@@ -98,7 +98,7 @@ messages.get('/chats', async (c) => {
     userId,
     rows.map((u) =>
       withPresence(
-        { id: u.id, full_name: u.full_name, username: u.username, avatar_url: u.avatar_url, email: u.email },
+        { id: u.id, full_name: u.full_name, username: u.username, avatar_url: u.avatar_url },
         presenceMap.get(u.id)
       )
     )

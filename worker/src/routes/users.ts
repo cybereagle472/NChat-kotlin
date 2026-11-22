@@ -8,16 +8,15 @@ const users = new Hono<{ Bindings: Env; Variables: Variables }>();
 users.use('*', requireAuth);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function profilePublic(row: any, lastActiveAt?: number | null) {
+function profilePublic(row: any, lastActiveAt?: number | null, self = false) {
   return {
     id: row.id,
-    email: row.email,
+    ...(self ? { email: row.email, is_admin: !!row.is_admin } : {}),
     full_name: row.full_name,
     username: row.username ?? undefined,
     username_last_changed: row.username_last_changed ?? undefined,
     avatar_url: row.avatar_url ?? undefined,
     bio: row.bio ?? undefined,
-    is_admin: !!row.is_admin,
     created_at: row.created_at,
     is_online: computeIsOnline(lastActiveAt),
     last_seen: lastActiveAt ? new Date(lastActiveAt).toISOString() : undefined,
@@ -28,7 +27,7 @@ users.get('/me', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(c.get('userId')).first();
   if (!row) return c.json({ error: 'Not found' }, 404);
   const lastActiveAt = await getPresence(c.env, c.get('userId'));
-  return c.json({ profile: profilePublic(row, lastActiveAt) });
+  return c.json({ profile: profilePublic(row, lastActiveAt, true) });
 });
 
 users.patch('/me', async (c) => {
@@ -67,7 +66,7 @@ users.patch('/me', async (c) => {
     .run();
 
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
-  return c.json({ profile: profilePublic(row) });
+  return c.json({ profile: profilePublic(row, undefined, true) });
 });
 
 users.get('/username-available', async (c) => {
@@ -145,7 +144,7 @@ users.get('/:id', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
   if (!row) return c.json({ error: 'Not found' }, 404);
   const lastActiveAt = await getPresence(c.env, id);
-  let profile = profilePublic(row, lastActiveAt);
+  let profile = profilePublic(row, lastActiveAt, id === viewerId);
   if (id !== viewerId) {
     const [settings, isFriend] = await Promise.all([
       getPrivacySettings(c.env, id),

@@ -14,7 +14,6 @@ function profilePublic(row: any, lastActiveAt?: number | null) {
   return withPresence(
     {
       id: row.id,
-      email: row.email,
       full_name: row.full_name,
       username: row.username ?? undefined,
       avatar_url: row.avatar_url ?? undefined,
@@ -128,7 +127,7 @@ friends.delete('/request/:id', async (c) => {
 friends.get('/requests', async (c) => {
   const userId = c.get('userId');
   const { results } = await c.env.DB.prepare(
-    `SELECT fr.*, u.id as u_id, u.full_name, u.username, u.avatar_url, u.email, u.bio
+    `SELECT fr.*, u.id as u_id, u.full_name, u.username, u.avatar_url, u.bio
      FROM friend_requests fr JOIN users u ON u.id = fr.sender_id
      WHERE fr.receiver_id = ? AND fr.status = 'pending'
      ORDER BY fr.created_at DESC`
@@ -144,7 +143,7 @@ friends.get('/requests', async (c) => {
     userId,
     rows.map((r) =>
       profilePublic(
-        { id: r.u_id, full_name: r.full_name, username: r.username, avatar_url: r.avatar_url, email: r.email, bio: r.bio },
+        { id: r.u_id, full_name: r.full_name, username: r.username, avatar_url: r.avatar_url, bio: r.bio },
         presenceMap.get(r.u_id)
       )
     )
