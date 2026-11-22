@@ -10,6 +10,8 @@ const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const ACCESS_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TTL_DAYS = 30;
+// Fixed decoy: perform the normal PBKDF2 work even when no account exists.
+const DECOY_HASH = '100000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function userPublic(row: any) {
@@ -115,7 +117,8 @@ auth.post('/login', async (c) => {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<any>();
-  if (!row || !(await verifyPassword(password, row.password_hash))) {
+  const valid = await verifyPassword(password, row?.password_hash ?? DECOY_HASH);
+  if (!row || !valid) {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
