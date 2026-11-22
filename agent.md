@@ -1961,3 +1961,5 @@ Deterministic concurrent-call-start red `1d70738` failed Worker CI `44996037307`
 Group-call creation fix 60e88e3 conditionally inserts the active call and participants in one D1 batch; simultaneous losers join the winner or get 409 if it has already ended. Actor membership is rechecked by the write. Local typecheck and all 79 tests pass; Worker CI pending. This does not repair pre-existing duplicate active calls or solve join/end and realtime-notification races; production D1 and Android still untested. No new migration and nothing deployed.
 
 Concurrent group-call creation fix `60e88e3` passed Worker CI `44996145287` (79 tests and typecheck). Remaining limitations from the preceding entry still apply; Phase 1 is incomplete, branch-only and not deployed.
+
+Group-call join/leave deterministic race tests e48ee1b failed locally: joining after call end, ending after a new join, and joining after group removal all succeed incorrectly. The tests pause a specific D1 write after its checks, then issue a real competing request/write. Worker CI pending; no deployment.
