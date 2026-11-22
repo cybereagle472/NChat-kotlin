@@ -793,3 +793,23 @@ describe('group departure concurrency', () => {
     expect(await env.DB.prepare('SELECT id FROM group_messages WHERE id = ?').bind(message).first()).toBeNull();
   });
 });
+
+describe('group call decline integrity', () => {
+  it('does not send decline events to a caller removed from the group', async () => {
+    const f = await groupCallFixture();
+    await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
+    const caller = await inbox(f.owner);
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(f.group, f.owner.id).run();
+    expect((await post(`/group-calls/${f.call}/decline`, f.member.token)).status).toBe(200);
+    await caller.flush(); expect(caller.events).toHaveLength(0); caller.socket.close(1000, 'finished');
+  });
+  it('does not let removed or non-ringing members forge decline events', async () => {
+    const f = await groupCallFixture();
+    const caller = await inbox(f.owner);
+    expect((await post(`/group-calls/${f.call}/decline`, f.member.token)).status).toBe(409);
+    await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(f.group, f.member.id).run();
+    expect((await post(`/group-calls/${f.call}/decline`, f.member.token)).status).toBe(403);
+    await caller.flush(); expect(caller.events).toHaveLength(0); caller.socket.close(1000, 'finished');
+  });
+});
