@@ -145,7 +145,8 @@ status.post('/:id/view', async (c) => {
   // must independently permit the viewer.
   const friendship = `EXISTS (SELECT 1 FROM friendships f WHERE
     (f.user1_id = s.user_id AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = s.user_id))`;
-  const inserted = await c.env.DB.prepare(`INSERT OR IGNORE INTO status_views (id, status_id, viewer_id)
+  const viewId = newId();
+  const viewWrite = c.env.DB.prepare(`INSERT OR IGNORE INTO status_views (id, status_id, viewer_id)
     SELECT ?1, s.id, ?3 FROM statuses s LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
     WHERE s.id = ?2 AND datetime(s.expires_at) > datetime('now')
       AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
@@ -153,8 +154,14 @@ status.post('/:id/view', async (c) => {
       AND (s.privacy = 'everyone' OR (s.privacy = 'contacts' AND ${friendship}))
       AND (coalesce(ps.status_visibility, 'contacts') = 'everyone' OR
         (coalesce(ps.status_visibility, 'contacts') = 'contacts' AND ${friendship}))`)
-    .bind(newId(), id, userId)
-    .run();
+    .bind(viewId, id, userId);
+  // Increment only for the row inserted by this attempt. Keeping both writes
+  // in one D1 transaction prevents a failed counter update from consuming the
+  // unique view and making all subsequent retries silently skip the count.
+  const countWrite = c.env.DB.prepare(`UPDATE statuses SET view_count = view_count + 1 WHERE id = ?1
+    AND EXISTS (SELECT 1 FROM status_views WHERE id = ?2 AND status_id = ?1 AND viewer_id = ?3)`)
+    .bind(id, viewId, userId);
+  const [inserted] = await c.env.DB.batch([viewWrite, countWrite]);
 
   if (!inserted.meta.changes) {
     // A duplicate is successful only while the current status is still visible.
@@ -165,8 +172,6 @@ status.post('/:id/view', async (c) => {
   }
 
   if (inserted.meta.changes > 0) {
-    await c.env.DB.prepare('UPDATE statuses SET view_count = view_count + 1 WHERE id = ?').bind(id).run();
-
     // Tell the status owner so their viewer list / view count updates live
     // while they're looking at it.
     const viewer = await c.env.DB.prepare('SELECT full_name, username, avatar_url FROM users WHERE id = ?')

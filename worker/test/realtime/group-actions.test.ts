@@ -891,6 +891,15 @@ function pauseWrite(match: string) {
   };
   return { reached, resume, bindings: { ...env, DB: db } as unknown as Env };
 }
+function pauseBatch() {
+  let notify!: () => void, resume!: () => void;
+  const reached = new Promise<void>(resolve => { notify = resolve; });
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  const db = { prepare: env.DB.prepare.bind(env.DB), async batch(statements: D1PreparedStatement[]) {
+    notify(); await gate; return env.DB.batch(statements);
+  }};
+  return { reached, resume, bindings: { ...env, DB: db } as unknown as Env };
+}
 function requestWithBindings(path: string, token: string, bindings: Env) {
   return app.request(`https://example.test${path}`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}',
@@ -1530,7 +1539,7 @@ describe('status view authorization under concurrency', () => {
       const created = await post('/status',owner.token,{content_type:'text',text_content:'private update',privacy:'contacts'});
       expect(created.status).toBe(201);
       const id = (await created.json() as {status:{id:string}}).status.id;
-      const target = await inbox(owner), paused = pauseWrite('INSERT OR IGNORE INTO status_views');
+      const target = await inbox(owner), paused = pauseBatch();
       const request = requestWithBindings(`/status/${id}/view`,viewer.token,paused.bindings);
       await paused.reached;
       try {
@@ -1992,6 +2001,21 @@ describe('status view persistence atomicity', () => {
     await target.flush(); expect(target.events).toHaveLength(0);
     expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
     expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT view_count FROM statuses WHERE id=?').bind(id).first<{view_count:number}>())?.view_count).toBe(1);
+    await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
+  },30000);
+});
+
+describe('concurrent status view persistence', () => {
+  it('counts and announces simultaneous views by the same viewer once', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
+    const created = await post('/status',owner.token,{content_type:'text',text_content:'hello',privacy:'contacts'});
+    expect(created.status).toBe(201);
+    const id = (await created.json() as {status:{id:string}}).status.id;
+    const target = await inbox(owner);
+    const results = await Promise.all(Array.from({length:5},()=>post(`/status/${id}/view`,viewer.token)));
+    expect(results.map(r=>r.status)).toEqual([200,200,200,200,200]);
+    expect((await env.DB.prepare('SELECT count(*) AS count FROM status_views WHERE status_id=?').bind(id).first<{count:number}>())?.count).toBe(1);
     expect((await env.DB.prepare('SELECT view_count FROM statuses WHERE id=?').bind(id).first<{view_count:number}>())?.view_count).toBe(1);
     await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
   },30000);
