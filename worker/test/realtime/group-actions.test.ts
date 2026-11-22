@@ -1455,6 +1455,19 @@ describe('direct message actions after blocking or unfriend', () => {
       target.socket.close(1000,'finished');
     });
   }
+  it('allows friends to edit, react and delete their own message', async () => {
+    const sender = await mediaAccount(), receiver = await mediaAccount(); await friend(sender.id,receiver.id);
+    const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'original'});
+    const id = (await sent.json() as {message:{id:string}}).message.id;
+    const target = await inbox(receiver);
+    const edited = await app.request(`https://example.test/messages/${id}`, {method:'PATCH',headers:{Authorization:`Bearer ${sender.token}`,'Content-Type':'application/json'},body:JSON.stringify({content:'edited'})},env);
+    expect(edited.status).toBe(200);
+    expect((await post(`/messages/${id}/reaction`,receiver.token,{emoji:'👍'})).status).toBe(200);
+    const deleted = await app.request(`https://example.test/messages/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${sender.token}`}},env);
+    expect(deleted.status).toBe(200);
+    await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['message:edit','message:reaction','message:delete']);
+    target.socket.close(1000,'finished');
+  });
   it('still allows a participant to hide a message locally after a block', async () => {
     const sender = await mediaAccount(), receiver = await mediaAccount(); await friend(sender.id,receiver.id);
     const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'original'});

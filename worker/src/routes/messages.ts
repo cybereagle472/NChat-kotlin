@@ -55,6 +55,15 @@ async function mayMessage(env: Env, userId: string, otherId: string): Promise<bo
   return !!row;
 }
 
+// Use within a messages UPDATE so contact authorization is checked at the
+// write, not only before it. Local-only delete-for-me remains available.
+const messageContactGuard = `EXISTS (SELECT 1 FROM friendships f WHERE
+  (f.user1_id = messages.sender_id AND f.user2_id = messages.receiver_id) OR
+  (f.user1_id = messages.receiver_id AND f.user2_id = messages.sender_id))
+  AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+    (b.user_id = messages.sender_id AND b.blocked_user_id = messages.receiver_id) OR
+    (b.user_id = messages.receiver_id AND b.blocked_user_id = messages.sender_id))`;
+
 // GET /messages/with/:otherId — conversation history with another user.
 // Supports ?limit= (default/max 200) and ?before= (ISO timestamp) for
 // infinite-scroll pagination; always returns oldest-first.
@@ -251,8 +260,9 @@ messages.patch('/:id', async (c) => {
   const edited_at = nowIso();
   const updatedMsg = messageJson({ ...row, content, is_edited: 1, edited_at });
 
-  await c.env.DB.prepare("UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ?")
-    .bind(content, edited_at, id).run();
+  const updated = await c.env.DB.prepare(`UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ? AND sender_id = ? AND ${messageContactGuard}`)
+    .bind(content, edited_at, id, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   await broadcastToParticipants(c.env, userId, row.receiver_id, { type: 'message:edit', message: updatedMsg });
   return c.json({ message: updatedMsg });
 });
@@ -266,7 +276,8 @@ messages.delete('/:id', async (c) => {
   }>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
 
-  await c.env.DB.prepare("UPDATE messages SET is_deleted = 1, content = '' WHERE id = ?").bind(id).run();
+  const updated = await c.env.DB.prepare(`UPDATE messages SET is_deleted = 1, content = '' WHERE id = ? AND sender_id = ? AND ${messageContactGuard}`).bind(id, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   await broadcastToParticipants(c.env, userId, row.receiver_id, {
     type: 'message:delete',
     messageId: id,
@@ -311,7 +322,8 @@ messages.post('/:id/reaction', async (c) => {
   reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
   if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  await c.env.DB.prepare('UPDATE messages SET reactions = ? WHERE id = ?').bind(JSON.stringify(reactions), id).run();
+  const updated = await c.env.DB.prepare(`UPDATE messages SET reactions = ? WHERE id = ? AND (sender_id = ? OR receiver_id = ?) AND ${messageContactGuard}`).bind(JSON.stringify(reactions), id, userId, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   await broadcastToParticipants(c.env, row.sender_id, row.receiver_id, {
     type: 'message:reaction',
     messageId: id,
