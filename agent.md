@@ -2003,3 +2003,5 @@ Group update authorization fix 92d8263 guards the metadata UPDATE and avatar-gra
 Group update authorization fix `92d8263` passed Worker CI `44997797582` (89 tests and typecheck); branch-only and not deployed. The preceding entry's caveats remain.
 
 Group-message send race 8256585 failed locally for text and media: a member removed after the membership check can still persist and broadcast a message. Tests also require no orphaned trusted media reference. CI pending; no deployment.
+
+Group-message send race `8256585` failed Worker CI `44997884082` on both text and media assertions as expected.
