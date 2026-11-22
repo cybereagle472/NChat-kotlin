@@ -1271,3 +1271,51 @@ describe('blocking during contact initiation', () => {
     });
   }
 });
+
+describe('friend request response authorization under concurrency', () => {
+  async function requestFixture() {
+    const sender = await mediaAccount(), receiver = await mediaAccount();
+    const response = await post('/friends/request',sender.token,{receiver_id:receiver.id});
+    expect(response.status).toBe(201);
+    const {id} = await response.json() as {id:string};
+    return {sender,receiver,id};
+  }
+  it('cannot accept a request after either party blocks the other', async () => {
+    for (const blockingParty of ['sender','receiver'] as const) {
+      const f = await requestFixture(), target = await inbox(f.sender);
+      const blocker = f[blockingParty], blocked = blockingParty === 'sender' ? f.receiver : f.sender;
+      expect((await post('/friends/block',blocker.token,{user_id:blocked.id})).status).toBe(200);
+      expect((await post(`/friends/${f.id}/respond`,f.receiver.token,{accept:true})).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM friendships WHERE (user1_id=? AND user2_id=?) OR (user1_id=? AND user2_id=?)').bind(f.sender.id,f.receiver.id,f.receiver.id,f.sender.id).first()).toBeNull();
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+    }
+  });
+  it('cannot create a friendship from a cancelled request', async () => {
+    const f = await requestFixture(), target = await inbox(f.sender);
+    let reached!:()=>void, resume!:()=>void;
+    const paused = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+    const db = {prepare:env.DB.prepare.bind(env.DB), async batch(statements:D1PreparedStatement[]) {reached(); await gate; return env.DB.batch(statements);}};
+    const request = app.request(`https://example.test/friends/${f.id}/respond`,{
+      method:'POST',headers:{Authorization:`Bearer ${f.receiver.token}`,'Content-Type':'application/json'},body:JSON.stringify({accept:true}),
+    }, {...env,DB:db} as unknown as Env);
+    await paused;
+    try {
+      const cancelled = await app.request(`https://example.test/friends/request/${f.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${f.sender.token}`}},env);
+      expect(cancelled.status).toBe(200);
+    } finally {resume();}
+    expect((await request).status).toBe(409);
+    expect(await env.DB.prepare('SELECT 1 FROM friendships WHERE user1_id=? AND user2_id=?').bind(f.sender.id,f.receiver.id).first()).toBeNull();
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+  });
+  it('does not let a stale rejection overwrite a concurrent acceptance', async () => {
+    const f = await requestFixture(), target = await inbox(f.sender);
+    const paused = pauseWrite("UPDATE friend_requests SET status = 'rejected'");
+    const request = requestWithBindings(`/friends/${f.id}/respond`,f.receiver.token,paused.bindings);
+    await paused.reached;
+    try { expect((await post(`/friends/${f.id}/respond`,f.receiver.token,{accept:true})).status).toBe(200); }
+    finally {paused.resume();}
+    expect((await request).status).toBe(409);
+    expect((await env.DB.prepare('SELECT status FROM friend_requests WHERE id=?').bind(f.id).first<{status:string}>())?.status).toBe('accepted');
+    await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['friend:accepted']); target.socket.close(1000,'finished');
+  });
+});
