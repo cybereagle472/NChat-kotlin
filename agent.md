@@ -2103,3 +2103,5 @@ Read-receipt regression tests fail locally: a block or unfriend between the init
 Read-receipt fix `db4bda8` guards the read UPDATE with current friendship/no-block checks and uses `RETURNING id` so notifications name exactly the rows changed; an unauthorized skipped write returns 403, and authorized repeats stay idempotent. Local full suite passes 138 tests and typecheck; CI pending. Realtime delivery and the read-receipt privacy setting can still change after the write/check, and very large unread sets are not load-tested. No deployment.
 
 Privacy update fix `6014edd` passed Worker CI `45004209775` (135 tests/typecheck). Read-receipt regression `5461536` failed Worker CI `45004255748` on both cases as expected; its fix `db4bda8` awaits CI. Branch-only; not deployed.
+
+Group creation tests fail locally: an invalid initial member causes a 500 and leaves a group without members; a member disappearing between validation and member insertion also leaves an orphan group. The deterministic race test pauses the D1 member batch. CI pending; no deployment.
