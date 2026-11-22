@@ -68,7 +68,7 @@ calls.get('/turn-credentials', async (c) => {
 calls.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id, call_type, offer_sdp } = await c.req.json().catch(() => ({}));
-  if (!receiver_id || !call_type) return c.json({ error: 'receiver_id and call_type are required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id || typeof call_type !== 'string' || !call_type) return c.json({ error: 'receiver_id and call_type are required' }, 400);
   if (call_type !== 'audio' && call_type !== 'video') return c.json({ error: 'call_type must be audio or video' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot call yourself' }, 400);
 
@@ -84,11 +84,17 @@ calls.post('/', limitContact, async (c) => {
   const inserted = await c.env.DB.prepare(
     `INSERT INTO calls (id, caller_id, receiver_id, call_type, status, offer_sdp, created_at)
      SELECT ?1, ?2, ?3, ?4, 'ringing', ?5, ?6
-     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))`
+     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))
+       AND EXISTS (SELECT 1 FROM users WHERE id = ?3)`
   )
     .bind(id, userId, receiver_id, call_type, offer_sdp ? JSON.stringify(offer_sdp) : null, created_at)
     .run();
-  if (!inserted.meta.changes) return c.json({ error: 'Cannot call this user' }, 403);
+  if (!inserted.meta.changes) {
+    const receiver = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(receiver_id).first();
+    return receiver
+      ? c.json({ error: 'Cannot call this user' }, 403)
+      : c.json({ error: 'User not found' }, 404);
+  }
 
   // The caller's privacy settings govern what the callee's incoming-call
   // screen shows for them (same "contacts"/"nobody" rules as everywhere

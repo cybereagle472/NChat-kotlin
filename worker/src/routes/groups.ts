@@ -264,9 +264,16 @@ groups.post('/:id/members', limitContact, async (c) => {
   if (membership.role !== 'admin') return c.json({ error: 'Only admins can add members' }, 403);
 
   const { memberIds = [] } = await c.req.json().catch(() => ({}));
-  if (!Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid member list' }, 400);
-  const newIds = [...new Set(memberIds as string[])].filter(uid => uid && uid !== userId);
+  if (!Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length === 0 || id.length > 512)) return c.json({ error: 'Invalid member list' }, 400);
+  const newIds = [...new Set(memberIds as string[])].filter(uid => uid !== userId);
   if (newIds.length === 0) return c.json({ success: true });
+  // Reject nonexistent targets before charging the invite budget or attempting
+  // a foreign-key write. The insert batch remains atomic if a target is deleted
+  // after this validation query.
+  const { results: existingUsers } = await c.env.DB.prepare(
+    `SELECT id FROM users WHERE id IN (${newIds.map(() => '?').join(',')})`
+  ).bind(...newIds).all<{id:string}>();
+  if (existingUsers.length !== newIds.length) return c.json({ error: 'User not found' }, 404);
   if (!(await consumeLimit(c.env, 'group-members', userId, 256, 300_000, newIds.length))) {
     return c.json({ error: 'Too many group member invitations' }, 429);
   }

@@ -28,7 +28,7 @@ function profilePublic(row: any, lastActiveAt?: number | null) {
 friends.post('/request', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id } = await c.req.json().catch(() => ({}));
-  if (!receiver_id || receiver_id === userId) return c.json({ error: 'Invalid receiver_id' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id || receiver_id === userId) return c.json({ error: 'Invalid receiver_id' }, 400);
 
   const blocked = await c.env.DB.prepare(
     'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
@@ -55,6 +55,7 @@ friends.post('/request', limitContact, async (c) => {
        AND NOT EXISTS (SELECT 1 FROM friend_requests WHERE status IN ('pending', 'accepted')
          AND ((sender_id = ?2 AND receiver_id = ?3) OR (sender_id = ?3 AND receiver_id = ?2)))
        AND NOT EXISTS (SELECT 1 FROM friendships WHERE (user1_id = ?2 AND user2_id = ?3) OR (user1_id = ?3 AND user2_id = ?2))
+       AND EXISTS (SELECT 1 FROM users WHERE id = ?3)
      ON CONFLICT(sender_id, receiver_id) DO UPDATE SET status = 'pending', updated_at = datetime('now')
      WHERE friend_requests.status = 'rejected'
      RETURNING id`
@@ -65,7 +66,11 @@ friends.post('/request', limitContact, async (c) => {
     const blockedNow = await c.env.DB.prepare(
       'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
     ).bind(userId, receiver_id, receiver_id, userId).first();
-    return blockedNow ? c.json({ error: 'Cannot send a request to this user' }, 403) : c.json({ error: 'Request already pending or already friends' }, 409);
+    if (blockedNow) return c.json({ error: 'Cannot send a request to this user' }, 403);
+    const receiverExists = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(receiver_id).first();
+    return receiverExists
+      ? c.json({ error: 'Request already pending or already friends' }, 409)
+      : c.json({ error: 'User not found' }, 404);
   }
   const { id } = inserted;
 
@@ -251,14 +256,12 @@ friends.delete('/:friendId', async (c) => {
 friends.post('/block', async (c) => {
   const userId = c.get('userId');
   const { user_id } = await c.req.json().catch(() => ({}));
-  if (!user_id) return c.json({ error: 'user_id is required' }, 400);
+  if (typeof user_id !== 'string' || !user_id) return c.json({ error: 'user_id is required' }, 400);
   const id = newId();
-  await c.env.DB.batch([
-    c.env.DB.prepare('INSERT OR IGNORE INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(
-      id,
-      userId,
-      user_id
-    ),
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT OR IGNORE INTO blocked_users (id, user_id, blocked_user_id)
+      SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)`)
+      .bind(id, userId, user_id, user_id),
     c.env.DB.prepare('DELETE FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)').bind(
       userId,
       user_id,
@@ -266,6 +269,10 @@ friends.post('/block', async (c) => {
       userId
     ),
   ]);
+  if (!results[0].meta.changes) {
+    const userExists = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(user_id).first();
+    if (!userExists) return c.json({ error: 'User not found' }, 404);
+  }
   return c.json({ success: true });
 });
 
