@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
-import { hashPassword, verifyPassword } from '../lib/password';
+import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/password';
 import { signJWT, verifyJWT } from '../lib/jwt';
 import { newId } from '../lib/id';
 import { requireAuth } from '../middleware/auth';
@@ -122,6 +122,12 @@ auth.post('/login', async (c) => {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
+  if (passwordNeedsUpgrade(row.password_hash)) {
+    const upgraded = await hashPassword(password);
+    // Do not overwrite a concurrent password change.
+    await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?')
+      .bind(upgraded, row.id, row.password_hash).run();
+  }
   const tokens = await issueTokens(c.env, row.id);
   return c.json({ user: userPublic(row), ...tokens });
 });

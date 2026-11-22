@@ -53,7 +53,7 @@ export async function verifyJWT<T = Record<string, unknown>>(token: string, secr
     );
     if (!valid) return null;
     const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(bodyB64)));
-    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || Math.floor(Date.now() / 1000) >= payload.exp) return null;
     return payload as T;
   } catch {
     return null;
