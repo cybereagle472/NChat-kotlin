@@ -1646,3 +1646,30 @@ describe('group creation atomicity', () => {
     expect(await env.DB.prepare('SELECT 1 FROM groups WHERE created_by=?').bind(owner.id).first()).toBeNull();
   });
 });
+
+describe('group member invitation budgets', () => {
+  async function nearlyExhausted(ownerId:string) {
+    const reservations = await Promise.all(Array.from({length:255},()=>consumeLimit(env,'group-members',ownerId,256,300000)));
+    expect(reservations.every(Boolean)).toBe(true);
+  }
+  it('charges distinct invited accounts on group creation without partially charging a rejected batch', async () => {
+    const owner = await mediaAccount(), a = await mediaAccount(), b = await mediaAccount();
+    await nearlyExhausted(owner.id);
+    expect((await post('/groups',owner.token,{name:'too many',memberIds:[a.id,b.id]})).status).toBe(429);
+    expect(await env.DB.prepare('SELECT 1 FROM groups WHERE created_by=?').bind(owner.id).first()).toBeNull();
+    const allowed = await post('/groups',owner.token,{name:'last invite',memberIds:[a.id,a.id,owner.id]});
+    expect(allowed.status).toBe(201);
+    const {group} = await allowed.json() as {group:{id:string}};
+    expect((await post(`/groups/${group.id}/members`,owner.token,{memberIds:[b.id]})).status).toBe(429);
+    expect(await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id=? AND user_id=?').bind(group.id,b.id).first()).toBeNull();
+  },30000);
+  it('shares the member budget across additions and creation', async () => {
+    const {owner,group} = await fixture(); const a = await mediaAccount(), b = await mediaAccount();
+    await nearlyExhausted(owner.id);
+    expect((await post(`/groups/${group}/members`,owner.token,{memberIds:[a.id,b.id]})).status).toBe(429);
+    expect(await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id=? AND user_id=?').bind(group,a.id).first()).toBeNull();
+    expect((await post(`/groups/${group}/members`,owner.token,{memberIds:[a.id]})).status).toBe(200);
+    expect((await post('/groups',owner.token,{name:'exhausted',memberIds:[b.id]})).status).toBe(429);
+    expect((await post('/groups',owner.token,{name:'empty',memberIds:[]})).status).toBe(201);
+  },30000);
+});
