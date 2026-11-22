@@ -1234,9 +1234,18 @@ describe('blocking during contact initiation', () => {
     expect(first.status).toBe(201);
     const {id} = await first.json() as {id:string};
     expect((await post(`/friends/${id}/respond`, recipient.token, {accept:false})).status).toBe(200);
-    expect((await post('/friends/request', actor.token, {receiver_id:recipient.id})).status).toBe(201);
+    const target = await inbox(recipient);
+    const retry = await post('/friends/request', actor.token, {receiver_id:recipient.id});
+    expect(retry.status).toBe(201);
+    const retryBody = await retry.json() as {id:string};
     const row = await env.DB.prepare('SELECT id, status FROM friend_requests WHERE sender_id = ? AND receiver_id = ?').bind(actor.id,recipient.id).first<{id:string;status:string}>();
     expect(row).toEqual({id,status:'pending'});
+    await target.flush();
+    const event = target.events.map(e=>JSON.parse(e)).find(e=>e.type === 'friend:request');
+    target.socket.close(1000,'finished');
+    expect(retryBody.id).toBe(id);
+    expect(event?.request.id).toBe(id);
+    expect((await post(`/friends/${retryBody.id}/respond`, recipient.token, {accept:true})).status).toBe(200);
   });
   const routes = [
     {path:'/calls',sql:'INSERT INTO calls (id, caller_id',table:'calls',body:(id:string)=>({receiver_id:id,call_type:'audio'})},
