@@ -5,6 +5,7 @@ import { newId, nowIso } from '../lib/id';
 import { signalPayload } from '../lib/signalling';
 import { broadcastToUser } from '../lib/realtime';
 import { getMembership, memberIdsOf } from './groups';
+import { applyPrivacyToList } from '../lib/privacy';
 
 /**
  * Group voice/video calling.
@@ -62,11 +63,15 @@ async function joinedParticipantsOf(env: Env, callId: string, excludingUserId?: 
     `SELECT gcp.user_id, u.full_name, u.avatar_url
      FROM group_call_participants gcp
      JOIN users u ON u.id = gcp.user_id
+     JOIN group_calls gc ON gc.id = gcp.call_id
+     JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = gcp.user_id
      WHERE gcp.call_id = ? AND gcp.status = 'joined' AND gcp.user_id != ?`
   )
     .bind(callId, excludingUserId ?? '')
     .all<{ user_id: string; full_name: string; avatar_url: string | null }>();
-  return (results ?? []).map((r) => ({ user_id: r.user_id, full_name: r.full_name, avatar_url: r.avatar_url ?? undefined }));
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(env, excludingUserId ?? '', rows.map(r => ({id:r.user_id, avatar_url:r.avatar_url})));
+  return rows.map((r, i) => ({ user_id: r.user_id, full_name: r.full_name, avatar_url: profiles[i].avatar_url ?? undefined }));
 }
 
 function callToWire(call: GroupCallRow) {
@@ -156,16 +161,11 @@ groupCalls.post('/', async (c) => {
       ),
   ]);
 
-  // Group membership already means your name/avatar are visible to the
-  // rest of the group (see groupWithMembers in routes/groups.ts, which
-  // doesn't mask member profiles either) — a group call's ringing screen
-  // follows the same rule rather than re-applying 1:1's stranger-facing
-  // privacy masking.
+  // Caller photos are shaped separately for each recipient's privacy view.
   const caller = await c.env.DB.prepare('SELECT full_name, avatar_url FROM users WHERE id = ?').bind(userId).first<{
     full_name: string;
     avatar_url: string | null;
   }>();
-  const callerProfile = caller ? { id: userId, full_name: caller.full_name, avatar_url: caller.avatar_url ?? undefined } : undefined;
 
   const group = await c.env.DB.prepare('SELECT name, avatar_url FROM groups WHERE id = ?').bind(group_id).first<{
     name: string;
@@ -175,8 +175,10 @@ groupCalls.post('/', async (c) => {
   await Promise.all(
     memberIds
       .filter((m) => m !== userId)
-      .map((m) =>
-        broadcastToUser(c.env, m, {
+      .map(async (m) => {
+        if (!(await getMembership(c.env, group_id, m))) return;
+        const [callerProfile] = await applyPrivacyToList(c.env, m, [{ id: userId, full_name: caller?.full_name, avatar_url: caller?.avatar_url }]);
+        return broadcastToUser(c.env, m, {
           type: 'group-call:incoming',
           call: {
             id,
@@ -185,11 +187,11 @@ groupCalls.post('/', async (c) => {
             group_avatar_url: group?.avatar_url ?? undefined,
             call_type,
             caller_id: userId,
-            caller_profile: callerProfile,
+            caller_profile: caller ? callerProfile : undefined,
             created_at,
           },
-        })
-      )
+        });
+      })
   );
 
   return c.json({ call: { id, group_id, caller_id: userId, call_type, status: 'active', created_at }, participants: [] }, 201);
@@ -290,7 +292,7 @@ groupCalls.post('/:id/leave', async (c) => {
     await c.env.DB.prepare(`UPDATE group_calls SET status = 'ended', ended_at = ? WHERE id = ?`).bind(now, id).run();
 
     const { results: stillRinging } = await c.env.DB.prepare(
-      `SELECT user_id FROM group_call_participants WHERE call_id = ? AND status = 'ringing'`
+      `SELECT gcp.user_id FROM group_call_participants gcp JOIN group_calls gc ON gc.id = gcp.call_id JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = gcp.user_id WHERE gcp.call_id = ? AND gcp.status = 'ringing'`
     )
       .bind(id)
       .all<{ user_id: string }>();
