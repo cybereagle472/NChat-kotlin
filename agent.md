@@ -1947,3 +1947,5 @@ Group call decline tests f543dfd fail locally: decline notifies a removed caller
 Group call decline regression `f543dfd` failed Worker CI `44993770525` on both assertions as expected.
 
 Group-call decline fix af9d09e atomically transitions only active ringing participants who remain group members, and checks the caller's current membership before notifying. Normal declines still send one event; duplicate/non-ringing declines return 409. Full local typecheck and 77 tests passed, plus targeted valid/duplicate test; CI pending. Membership can still change between the recipient check and realtime broadcast; other call concurrency issues and already-established P2P connections remain. Not deployed.
+
+Group-call decline fix `af9d09e` passed Worker CI `44993878826` (typecheck and all 78 tests). Branch is not merged or deployed. Remaining work includes group-call start/join/end concurrency, broader authorization/media check-write races, signaling abuse limits, account enumeration, real D1/PBKDF2 and Android/load verification, and a remediation report; migration 0006 requires owner backup/application before deployment.
