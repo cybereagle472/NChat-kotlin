@@ -2041,3 +2041,5 @@ Direct-call state race red `012e3f2` failed Worker CI `45001069020` on all three
 Direct-call state fix 26947fa guards the answer UPDATE on ringing/not-ended/callee, and guards end on still-open participant state; unsuccessful concurrent end does not overwrite or announce. Local 100 tests and typecheck pass; CI pending. Broadcast follows database commit and can still be delivered out of order relative to later transitions; signal delivery and block-status races remain. Nothing deployed.
 
 Direct-call state fix `26947fa` passed Worker CI `45001241687` (100 tests and typecheck); branch-only and not deployed. The event ordering and block-race limitations noted above remain.
+
+Contact initiation blocking race tests 3795bd8 fail locally: a newly blocked caller/requester can still persist and send a call or friend-request event if blocked between the check and insert. Deterministic barriers exercise both paths; CI pending; no deployment.
