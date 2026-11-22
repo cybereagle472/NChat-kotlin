@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { mayAttachMedia } from '../lib/media-access';
+import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
@@ -30,7 +30,7 @@ status.post('/', async (c) => {
   const created_at = nowIso();
   const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
-  await c.env.DB.prepare(
+  const write = c.env.DB.prepare(
     `INSERT INTO statuses (id, user_id, content_type, content_url, text_content, background_color, font_style, thumbnail_url, duration, caption, privacy, created_at, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
@@ -48,8 +48,8 @@ status.post('/', async (c) => {
       body.privacy ?? 'contacts',
       created_at,
       expires_at
-    )
-    .run();
+    );
+  await writeWithMediaReferences(c.env, write, 'status', id, userId, [body.content_url, body.thumbnail_url]);
 
   const row = await c.env.DB.prepare('SELECT * FROM statuses WHERE id = ?').bind(id).first();
 

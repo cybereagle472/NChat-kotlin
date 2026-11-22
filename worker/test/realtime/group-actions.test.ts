@@ -437,9 +437,11 @@ describe('media references are precise and respect avatar audiences', () => {
     await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'nobody' WHERE user_id = ?").bind(owner.id).run();
     expect((await mediaRead(avatar.key, peer.token)).status).toBe(404);
     const groupAvatar = await mediaUpload(owner.token);
-    const group = crypto.randomUUID();
-    await env.DB.prepare('INSERT INTO groups (id, name, created_by, avatar_url) VALUES (?, ?, ?, ?)').bind(group, 'Test', owner.id, groupAvatar.url).run();
-    for (const user of [owner, peer]) await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, user.id, 'member').run();
+    // A newly authorized avatar write carries provenance. Old group avatars
+    // have no reliable author and therefore fail closed.
+    const created = await post('/groups', owner.token, {name:'Test', avatar_url:groupAvatar.url, memberIds:[peer.id]});
+    expect(created.status).toBe(201);
+    const group = (await created.json() as {group:{id:string}}).group.id;
     expect((await mediaRead(groupAvatar.key, peer.token)).status).toBe(200);
     expect((await mediaRead(groupAvatar.key, stranger.token)).status).toBe(404);
     await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group, peer.id).run();
@@ -651,5 +653,53 @@ describe('trusted media provenance', () => {
     expect((await mediaRead(file.key, peer.token)).status).toBe(200);
     expect((await post('/messages', peer.token, {receiver_id:recipient.id, type:'image', media_url:file.url})).status).toBe(201);
     expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+  });
+});
+
+describe('trusted media reference lifecycle', () => {
+  it('records authorized forwarding across messages, avatars and statuses and removes stale grants', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(), recipient = await mediaAccount();
+    await friend(owner.id, peer.id); await friend(peer.id, recipient.id);
+    const file = await mediaUpload(owner.token);
+    expect((await post('/messages', owner.token, {receiver_id:peer.id, media_url:file.url})).status).toBe(201);
+    const sent = await post('/messages', peer.token, {receiver_id:recipient.id, media_url:file.url});
+    expect(sent.status).toBe(201);
+    const msg = (await sent.json() as {message:{id:string}}).message.id;
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+    expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE file_path = ? AND kind = 'message' AND reference_id = ?").bind(file.key, msg).first()).not.toBeNull();
+    await env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(msg).run();
+    expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE file_path = ? AND kind = 'message' AND reference_id = ?").bind(file.key, msg).first()).toBeNull();
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
+    const profile = await SELF.fetch('https://example.test/users/me', {method:'PATCH',headers:{Authorization:`Bearer ${peer.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+    expect(profile.status).toBe(200);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+    const reset = await SELF.fetch('https://example.test/users/me', {method:'PATCH',headers:{Authorization:`Bearer ${peer.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:''})});
+    expect(reset.status).toBe(200);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
+    const status = await post('/status', peer.token, {content_type:'image',content_url:file.url,privacy:'contacts'});
+    expect(status.status).toBe(201);
+    const statusId = (await status.json() as {status:{id:string}}).status.id;
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+    expect((await SELF.fetch(`https://example.test/status/${statusId}`, {method:'DELETE',headers:{Authorization:`Bearer ${peer.token}`}})).status).toBe(200);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
+    const groupRes = await post('/groups', peer.token, {name:'Shared',memberIds:[recipient.id],avatar_url:file.url});
+    expect(groupRes.status).toBe(201);
+    const groupId = (await groupRes.json() as {group:{id:string}}).group.id;
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(200);
+    const update = await SELF.fetch(`https://example.test/groups/${groupId}`, {method:'PATCH',headers:{Authorization:`Bearer ${peer.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:''})});
+    expect(update.status).toBe(200);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
+  });
+  it('fails closed for unverifiable old forwards and old group avatars', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(), recipient = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    await env.DB.prepare('INSERT INTO messages (id,sender_id,receiver_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),owner.id,peer.id,file.url).run();
+    await env.DB.prepare('INSERT INTO messages (id,sender_id,receiver_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),peer.id,recipient.id,file.url).run();
+    expect((await mediaRead(file.key, peer.token)).status).toBe(200);
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
+    const group = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO groups (id,name,created_by,avatar_url) VALUES (?,?,?,?)').bind(group,'Old group',owner.id,file.url).run();
+    await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,recipient.id,'member').run();
+    expect((await mediaRead(file.key, recipient.token)).status).toBe(404);
   });
 });

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { mayAttachMedia } from '../lib/media-access';
+import { mayAttachMedia, clearMediaReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -134,9 +134,9 @@ groups.post('/', async (c) => {
 
   const groupId = newId();
   const created_at = nowIso();
-  await c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at)
-    .run();
+  const write = c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at);
+  await writeWithMediaReferences(c.env, write, 'group_avatar', groupId, userId, [avatar_url]);
 
   const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
   const joinedAt = created_at;
@@ -382,11 +382,13 @@ groups.patch('/:id', async (c) => {
   const nextDescription = description !== undefined ? (String(description).trim() || null) : current.description;
   const nextAvatar = avatar_url !== undefined ? avatar_url : current.avatar_url;
 
-  await c.env.DB.prepare(
+  const write = c.env.DB.prepare(
     "UPDATE groups SET name = ?, description = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?"
-  )
-    .bind(nextName, nextDescription, nextAvatar, groupId)
-    .run();
+  ).bind(nextName, nextDescription, nextAvatar, groupId);
+  if (avatar_url !== undefined) {
+    await c.env.DB.batch([write, clearMediaReferences(c.env, 'group_avatar', groupId),
+      ...mediaReferenceStatements(c.env, 'group_avatar', groupId, userId, [avatar_url])]);
+  } else await write.run();
 
   const group = await groupWithMembers(c.env, groupId, userId);
   await broadcastGroupProjection(c.env, groupId, 'group:updated');
@@ -492,7 +494,7 @@ groups.post('/:id/messages', async (c) => {
   // migration has run), and silently fall back to the pre-migration
   // column list if it hasn't, so sending never breaks either way.
   try {
-    await c.env.DB.prepare(
+    const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, duration, client_message_id, reply_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -508,11 +510,12 @@ groups.post('/:id/messages', async (c) => {
         body.client_message_id ?? null,
         body.reply_to ?? null,
         created_at
-      )
-      .run();
+      );
+    await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   } catch (err) {
+    if (!String(err).includes('no such column: duration') && !String(err).includes('no column named duration')) throw err;
     console.error('[groups] insert with duration column failed, retrying without it (migration 0003 likely not applied yet):', err);
-    await c.env.DB.prepare(
+    const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, client_message_id, reply_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -527,8 +530,8 @@ groups.post('/:id/messages', async (c) => {
         body.client_message_id ?? null,
         body.reply_to ?? null,
         created_at
-      )
-      .run();
+      );
+    await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   }
 
   await broadcastToGroup(c.env, groupId, { type: 'group-message:new', message: msg });

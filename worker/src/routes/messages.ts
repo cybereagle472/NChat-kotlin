@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { mayAttachMedia } from '../lib/media-access';
+import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -175,10 +175,7 @@ messages.post('/', async (c) => {
   // there's no DB-generated column (defaults are all 0/null for a brand
   // new message) — so build the response/broadcast payload straight from
   // those values instead of writing the row and then reading it back out
-  // of D1 a second time. Combined with running the insert and the
-  // Durable Object broadcast concurrently (rather than one after the
-  // other) this turns what used to be three sequential D1/DO round trips
-  // into effectively one, which is what made sending a message feel slow.
+  // of D1 a second time. Publish only after the database write succeeds.
   const msg = messageJson({
     id,
     sender_id: userId,
@@ -201,7 +198,7 @@ messages.post('/', async (c) => {
     created_at,
   });
 
-  await c.env.DB.prepare(
+  const write = c.env.DB.prepare(
       `INSERT INTO messages (id, sender_id, receiver_id, content, type, media_url, thumbnail_url, file_name, file_size, duration, client_message_id, reply_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -219,8 +216,8 @@ messages.post('/', async (c) => {
         client_message_id ?? null,
         body.reply_to ?? null,
         created_at
-      )
-      .run();
+      );
+  await writeWithMediaReferences(c.env, write, 'message', id, userId, [body.media_url, body.thumbnail_url]);
   // Fan out only after the row is durable.
   await broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg });
 

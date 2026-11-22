@@ -26,7 +26,7 @@ function mentions(env: Env, key: string, ...addresses: unknown[]): boolean {
   return addresses.some(address => localMediaKey(env, address).key === key);
 }
 
-type Pair = { media_url: string | null; thumbnail_url: string | null };
+type Pair = { media_url: string | null; thumbnail_url: string | null; sender_id: string; trusted: number };
 
 /** A file must be registered under its exact key. Access follows its shares. */
 export async function canReadMedia(env: Env, userId: string, key: string): Promise<boolean> {
@@ -38,35 +38,35 @@ export async function canReadMedia(env: Env, userId: string, key: string): Promi
   // instr is only a coarse candidate filter; it is NOT an authorization check.
   // Also find encoded historical URLs, then compare their decoded paths exactly.
   const [chat, group, avatars, groupAvatars, statuses] = await Promise.all([
-    env.DB.prepare(`SELECT media_url, thumbnail_url FROM messages WHERE (sender_id = ?2 OR receiver_id = ?2)
+    env.DB.prepare(`SELECT m.media_url, m.thumbnail_url, m.sender_id, EXISTS(SELECT 1 FROM trusted_media_references r WHERE r.file_path = ?1 AND r.kind = 'message' AND r.reference_id = m.id) AS trusted FROM messages m WHERE (m.sender_id = ?2 OR m.receiver_id = ?2) AND m.is_deleted = 0
       AND (instr(coalesce(media_url, ''), ?1) > 0 OR instr(coalesce(thumbnail_url, ''), ?1) > 0
         OR instr(coalesce(media_url, ''), '%') > 0 OR instr(coalesce(thumbnail_url, ''), '%') > 0)`)
       .bind(key, userId).all<Pair>(),
-    env.DB.prepare(`SELECT m.media_url, m.thumbnail_url FROM group_messages m JOIN group_members g ON g.group_id = m.group_id AND g.user_id = ?2
-      WHERE instr(coalesce(m.media_url, ''), ?1) > 0 OR instr(coalesce(m.thumbnail_url, ''), ?1) > 0
-        OR instr(coalesce(m.media_url, ''), '%') > 0 OR instr(coalesce(m.thumbnail_url, ''), '%') > 0`)
+    env.DB.prepare(`SELECT m.media_url, m.thumbnail_url, m.sender_id, EXISTS(SELECT 1 FROM trusted_media_references r WHERE r.file_path = ?1 AND r.kind = 'group_message' AND r.reference_id = m.id) AS trusted FROM group_messages m JOIN group_members g ON g.group_id = m.group_id AND g.user_id = ?2
+      WHERE m.is_deleted = 0 AND (instr(coalesce(m.media_url, ''), ?1) > 0 OR instr(coalesce(m.thumbnail_url, ''), ?1) > 0
+        OR instr(coalesce(m.media_url, ''), '%') > 0 OR instr(coalesce(m.thumbnail_url, ''), '%') > 0)`)
       .bind(key, userId).all<Pair>(),
-    env.DB.prepare(`SELECT id, avatar_url FROM users WHERE instr(coalesce(avatar_url, ''), ?1) > 0 OR instr(coalesce(avatar_url, ''), '%') > 0`)
-      .bind(key).all<{ id: string; avatar_url: string }>(),
-    env.DB.prepare(`SELECT groups.avatar_url FROM groups JOIN group_members gm ON gm.group_id = groups.id AND gm.user_id = ?2
+    env.DB.prepare(`SELECT id, avatar_url, EXISTS(SELECT 1 FROM trusted_media_references r WHERE r.file_path = ?1 AND r.kind = 'user_avatar' AND r.reference_id = users.id) AS trusted FROM users WHERE instr(coalesce(avatar_url, ''), ?1) > 0 OR instr(coalesce(avatar_url, ''), '%') > 0`)
+      .bind(key).all<{ id: string; avatar_url: string; trusted: number }>(),
+    env.DB.prepare(`SELECT groups.avatar_url, EXISTS(SELECT 1 FROM trusted_media_references r WHERE r.file_path = ?1 AND r.kind = 'group_avatar' AND r.reference_id = groups.id) AS trusted FROM groups JOIN group_members gm ON gm.group_id = groups.id AND gm.user_id = ?2
       WHERE instr(coalesce(groups.avatar_url, ''), ?1) > 0 OR instr(coalesce(groups.avatar_url, ''), '%') > 0`)
-      .bind(key, userId).all<{ avatar_url: string }>(),
-    env.DB.prepare(`SELECT user_id, privacy, content_url, thumbnail_url FROM statuses WHERE datetime(expires_at) > datetime('now')
+      .bind(key, userId).all<{ avatar_url: string; trusted: number }>(),
+    env.DB.prepare(`SELECT user_id, privacy, content_url, thumbnail_url, EXISTS(SELECT 1 FROM trusted_media_references r WHERE r.file_path = ?1 AND r.kind = 'status' AND r.reference_id = statuses.id) AS trusted FROM statuses WHERE datetime(expires_at) > datetime('now')
       AND (instr(coalesce(content_url, ''), ?1) > 0 OR instr(coalesce(thumbnail_url, ''), ?1) > 0
         OR instr(coalesce(content_url, ''), '%') > 0 OR instr(coalesce(thumbnail_url, ''), '%') > 0)`)
-      .bind(key).all<{ user_id: string; privacy: string; content_url: string | null; thumbnail_url: string | null }>(),
+      .bind(key).all<{ user_id: string; privacy: string; content_url: string | null; thumbnail_url: string | null; trusted: number }>(),
   ]);
-  if (chat.results.some(row => mentions(env, key, row.media_url, row.thumbnail_url)) ||
-      group.results.some(row => mentions(env, key, row.media_url, row.thumbnail_url)) ||
-      groupAvatars.results.some(row => mentions(env, key, row.avatar_url))) return true;
+  if (chat.results.some(row => (row.sender_id === attachment.uploader_id || row.trusted) && mentions(env, key, row.media_url, row.thumbnail_url)) ||
+      group.results.some(row => (row.sender_id === attachment.uploader_id || row.trusted) && mentions(env, key, row.media_url, row.thumbnail_url)) ||
+      groupAvatars.results.some(row => row.trusted && mentions(env, key, row.avatar_url))) return true;
   for (const avatar of avatars.results) {
-    if (!mentions(env, key, avatar.avatar_url)) continue;
+    if (!(avatar.id === attachment.uploader_id || avatar.trusted) || !mentions(env, key, avatar.avatar_url)) continue;
     const settings = await getPrivacySettings(env, avatar.id);
     if (settings.profile_photo_visibility === 'everyone' ||
         (settings.profile_photo_visibility === 'contacts' && await areFriends(env, avatar.id, userId))) return true;
   }
   for (const status of statuses.results) {
-    if (mentions(env, key, status.content_url, status.thumbnail_url) &&
+    if ((status.user_id === attachment.uploader_id || status.trusted) && mentions(env, key, status.content_url, status.thumbnail_url) &&
         await statusVisibleTo(env, status.user_id, userId, status.privacy)) return true;
   }
   return false;
@@ -79,4 +79,25 @@ export async function mayAttachMedia(env: Env, userId: string, addresses: unknow
     if (parsed.local && (!parsed.key || !(await canReadMedia(env, userId, parsed.key)))) return false;
   }
   return true;
+}
+
+export type MediaReferenceKind = 'message' | 'group_message' | 'status' | 'user_avatar' | 'group_avatar';
+
+/** Prepare evidence for a just-authorized write; execute in the same D1 batch
+ * as the referencing row. Never backfill untrusted historical references. */
+export function mediaReferenceStatements(env: Env, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): D1PreparedStatement[] {
+  const keys = new Set(addresses.map(a => localMediaKey(env, a)).filter(a => a.local && a.key).map(a => a.key!));
+  return [...keys].map(key => env.DB.prepare(`INSERT OR REPLACE INTO trusted_media_references (file_path, kind, reference_id, actor_id)
+    SELECT file_path, ?2, ?3, ?4 FROM media_attachments WHERE file_path = ?1 LIMIT 1`)
+    .bind(key, kind, referenceId, actorId));
+}
+
+export function clearMediaReferences(env: Env, kind: MediaReferenceKind, referenceId: string): D1PreparedStatement {
+  return env.DB.prepare('DELETE FROM trusted_media_references WHERE kind = ? AND reference_id = ?').bind(kind, referenceId);
+}
+
+export async function writeWithMediaReferences(env: Env, write: D1PreparedStatement, kind: MediaReferenceKind, referenceId: string, actorId: string, addresses: unknown[]): Promise<void> {
+  const references = mediaReferenceStatements(env, kind, referenceId, actorId, addresses);
+  if (references.length) await env.DB.batch([write, ...references]);
+  else await write.run();
 }

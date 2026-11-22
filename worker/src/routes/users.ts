@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { mayAttachMedia } from '../lib/media-access';
+import { mayAttachMedia, clearMediaReferences, mediaReferenceStatements } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { computeIsOnline, getPresence, getPresenceMap } from '../lib/presence';
 import { applyPrivacy, applyPrivacyToList, areFriends, getPrivacySettings } from '../lib/privacy';
@@ -65,9 +65,11 @@ users.patch('/me', async (c) => {
   if (fields.length === 0) return c.json({ error: 'No fields to update' }, 400);
 
   values.push(userId);
-  await c.env.DB.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  const write = c.env.DB.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).bind(...values);
+  if (typeof body.avatar_url === 'string') {
+    await c.env.DB.batch([write, clearMediaReferences(c.env, 'user_avatar', userId),
+      ...mediaReferenceStatements(c.env, 'user_avatar', userId, userId, [body.avatar_url])]);
+  } else await write.run();
 
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
   return c.json({ profile: profilePublic(row, undefined, true) });
