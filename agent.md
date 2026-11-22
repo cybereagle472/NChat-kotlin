@@ -1979,3 +1979,5 @@ Group role fix 0ac6a88 checks the actor is still admin in the UPDATE; a concurre
 Group role concurrency fix `0ac6a88` passed Worker CI `44996689141` (83 tests and typecheck). Nothing merged or deployed; Phase 1 remains incomplete.
 
 Group member-add race regression fd37e0c failed locally: an admin demoted after the check can still add a member. Test pauses the D1 batch before writes and demotes the actor. CI pending; no deployment.
+
+Group member-add race red `fd37e0c` failed Worker CI `44996909854` as expected.
