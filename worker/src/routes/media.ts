@@ -14,6 +14,15 @@ function mediaTypeFromMime(mime: string): 'image' | 'video' | 'audio' | 'documen
   return 'document';
 }
 
+// Do not serve executable user-provided documents under the API origin.
+// Preserve ordinary image/audio/video types for Android playback and seeking.
+function safeResponseType(stored: string | null): { type: string; inline: boolean } {
+  const type = (stored ?? '').split(';', 1)[0].trim().toLowerCase();
+  const safeImage = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'image/heic', 'image/heif']);
+  const safeAudioVideo = /^(audio|video)\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/.test(type);
+  return safeImage.has(type) || safeAudioVideo ? { type, inline: true } : { type: 'application/octet-stream', inline: false };
+}
+
 // POST /media/upload — multipart/form-data with a "file" field.
 // Replaces supabase.storage.from('chat-media').upload(...)
 media.post('/upload', requireAuth, limitSend, async (c) => {
@@ -23,7 +32,8 @@ media.post('/upload', requireAuth, limitSend, async (c) => {
   if (!(file instanceof File)) return c.json({ error: 'file is required (multipart/form-data)' }, 400);
   if (file.size > 49 * 1024 * 1024) return c.json({ error: 'File too large' }, 413);
 
-  const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
+  const suffix = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
+  const ext = /^[a-zA-Z0-9]{1,16}$/.test(suffix) ? suffix : '';
   const key = `${userId}/${newId()}${ext ? `.${ext}` : ''}`;
 
   await c.env.MEDIA.put(key, file, {
@@ -68,6 +78,12 @@ media.get('/file/*', requireAuth, async (c) => {
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
+  const served = safeResponseType(headers.get('content-type'));
+  headers.set('content-type', served.type);
+  if (served.inline) headers.delete('content-disposition');
+  else headers.set('content-disposition', 'attachment');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('content-security-policy', "sandbox; default-src 'none'");
   headers.set('etag', object.httpEtag);
   headers.set('cache-control', 'private, no-store');
   headers.set('accept-ranges', 'bytes');
