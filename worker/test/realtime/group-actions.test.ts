@@ -366,3 +366,37 @@ describe('call signalling integrity', () => {
     target.socket.close(1000, 'finished');
   });
 });
+
+describe('direct messages and friendship authorization', () => {
+  it('refuses strangers and blocked accounts on messaging, typing, recording and read receipts', async () => {
+    const owner = await mediaAccount(), visitor = await mediaAccount();
+    const target = await inbox(owner);
+    const attempts: [string, object][] = [
+      ['/messages', {receiver_id:owner.id, content:'hello'}],
+      ['/messages/typing', {receiver_id:owner.id, is_typing:true}],
+      ['/messages/recording', {receiver_id:owner.id, is_recording:true}],
+      ['/messages/mark-read', {sender_id:owner.id}],
+    ];
+    for (const [path, body] of attempts) expect((await post(path, visitor.token, body)).status, path).toBe(403);
+    await friend(owner.id, visitor.id);
+    await env.DB.prepare('INSERT INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(crypto.randomUUID(), owner.id, visitor.id).run();
+    for (const [path, body] of attempts) expect((await post(path, visitor.token, body)).status, path).toBe(403);
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000, 'finished');
+  });
+  it('allows friends to message while preventing outsiders from reacting', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(), outsider = await mediaAccount();
+    await friend(owner.id, peer.id);
+    const sent = await post('/messages', owner.token, {receiver_id:peer.id, content:'hello'});
+    expect(sent.status).toBe(201);
+    const id = (await sent.json() as {message:{id:string}}).message.id;
+    expect((await post(`/messages/${id}/reaction`, outsider.token, {emoji:'👍'})).status).toBe(404);
+    expect((await env.DB.prepare('SELECT reactions FROM messages WHERE id = ?').bind(id).first<{reactions:string|null}>())?.reactions).toBeNull();
+    expect((await post(`/messages/${id}/reaction`, peer.token, {emoji:'👍'})).status).toBe(200);
+  });
+  it('does not send unfriend events to strangers', async () => {
+    const owner = await mediaAccount(), stranger = await mediaAccount(), target = await inbox(owner);
+    const result = await SELF.fetch(`https://example.test/friends/${owner.id}`, {method:'DELETE', headers:{Authorization:`Bearer ${stranger.token}`}});
+    expect(result.status).toBe(200);
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000, 'finished');
+  });
+});
