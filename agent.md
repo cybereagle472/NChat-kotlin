@@ -1971,3 +1971,5 @@ Group-call join/end fix 461b1b1 guards join with active call and current members
 Group-call join/end fix `461b1b1` passed Worker CI `44996462340` (82 tests and typecheck). It is branch-only and not deployed; the preceding entry's limitations remain.
 
 Group-role deterministic concurrency test 7ea7dd3 failed locally: two admins can simultaneously demote each other, leaving no admin. CI pending. Uses a write barrier after both authorization checks; no deployment.
+
+Group role red `7ea7dd3` failed Worker CI `44996548743` with both concurrent demotions accepted, as expected.
