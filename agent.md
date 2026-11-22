@@ -2073,3 +2073,5 @@ Direct-message write fix `7f16059` requires a current friendship and no block in
 Friend-creation guard `8e2b3ee` passed Worker CI `45002084547` (111 tests/typecheck). Direct-message race red `d7a5b10` failed Worker CI `45002138230` as expected on all four cases; fix `7f16059` awaits CI. Nothing deployed.
 
 Direct-message write guard `7f16059` passed Worker CI `45002256466` (115 tests and typecheck). CI reports GitHub Actions Node 20 action-runtime deprecation warnings for checkout/setup-node v4. The change is branch-only, not deployed; Phase 1 remains incomplete and migration 0006 plus verified backup remain prerequisites for a later deployment.
+
+Direct-message action tests show locally that a blocked/unfriended participant can edit, delete for everyone or react and notify the other party; six red cases include deterministic unfriend-before-write races. A separate positive case preserves delete-for-me after blocking (local-only cleanup). Intended policy is to prevent peer-visible actions without current friendship or with a block, which changes post-unfriend/delete-for-everyone behavior and needs Android verification. CI pending; no deployment.
