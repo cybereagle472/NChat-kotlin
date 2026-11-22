@@ -1999,3 +1999,5 @@ Group metadata/avatar race tests 3603449 fail locally: a demoted admin can chang
 Group update race red `3603449` failed Worker CI `44997650033` on both expected assertions; no deployment.
 
 Group update authorization fix 92d8263 guards the metadata UPDATE and avatar-grant changes with current admin status in the same D1 batch. Both deterministic race tests pass; local 89 tests and typecheck pass; CI pending. Media readability can still change between its separate pre-check and write; concurrent metadata updates can overwrite each other's fields; realtime projections have separate races. Not deployed.
+
+Group update authorization fix `92d8263` passed Worker CI `44997797582` (89 tests and typecheck); branch-only and not deployed. The preceding entry's caveats remain.
