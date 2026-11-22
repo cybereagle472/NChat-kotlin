@@ -71,3 +71,49 @@ it('rejects a token at its expiration time', async () => {
   const response = await SELF.fetch('https://example.test/users/me', {headers:{Authorization:`Bearer ${token}`}});
   expect(response.status).toBe(401);
 });
+
+describe('signup persistence and concurrency', () => {
+  for (const table of ['privacy_settings','notification_settings','sessions'] as const) {
+    it(`rolls back the entire signup if ${table} insertion fails`, async () => {
+      const email = `${crypto.randomUUID()}@example.test`, trigger = `fail_${crypto.randomUUID().replaceAll('-','')}`;
+      const signup = () => SELF.fetch('https://example.test/auth/signup', {
+        method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':`2001:db8:${crypto.randomUUID().slice(0,4)}::1`},
+        body:JSON.stringify({email,password:'password123'}),
+      });
+      await env.DB.prepare(`CREATE TRIGGER ${trigger} BEFORE INSERT ON ${table} WHEN EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND email='${email}') BEGIN SELECT RAISE(ABORT,'injected signup failure'); END`).run();
+      try { expect((await signup()).status).toBe(500); }
+      finally { await env.DB.prepare(`DROP TRIGGER ${trigger}`).run(); }
+      expect(await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first()).toBeNull();
+      const retried = await signup(); expect(retried.status).toBe(201);
+      const user = (await retried.json() as {user:{id:string}}).user;
+      for (const name of ['privacy_settings','notification_settings','sessions'])
+        expect(await env.DB.prepare(`SELECT 1 FROM ${name} WHERE user_id=?`).bind(user.id).first(),name).not.toBeNull();
+    },30000);
+  }
+
+  it('returns a clean conflict when two signups race for the same email', async () => {
+    const {default:app} = await import('../src/index');
+    const email = `${crypto.randomUUID()}@example.test`, body = JSON.stringify({email,password:'password123'});
+    let reached!:()=>void, resume!:()=>void;
+    const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+    const db = {prepare(sql:string) {
+      const stmt = env.DB.prepare(sql);
+      if (sql !== 'SELECT id FROM users WHERE email = ?') return stmt;
+      return {bind(...args:unknown[]) {const bound=stmt.bind(...args);return {async first() {const result=await bound.first(); reached(); await gate; return result;}};}};
+    },batch:env.DB.batch.bind(env.DB)};
+    const request = app.request('https://example.test/auth/signup',{method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':'198.51.100.11'},body},{...env,DB:db});
+    await ready;
+    try {
+      const other = await SELF.fetch('https://example.test/auth/signup',{method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':'198.51.100.12'},body});
+      expect(other.status).toBe(201);
+    } finally { resume(); }
+    expect((await request).status).toBe(409);
+    const rows = await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).all<{id:string}>();
+    expect(rows.results).toHaveLength(1);
+    const id = rows.results[0].id;
+    for (const name of ['privacy_settings','notification_settings','sessions']) {
+      const rows = await env.DB.prepare(`SELECT user_id FROM ${name} WHERE user_id=?`).bind(id).all();
+      expect(rows.results,name).toHaveLength(1);
+    }
+  },30000);
+});
