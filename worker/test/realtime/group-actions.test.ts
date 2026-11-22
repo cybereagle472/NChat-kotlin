@@ -1975,3 +1975,24 @@ describe('group message pre-duration fallback', () => {
     },30000);
   }
 });
+
+describe('status view persistence atomicity', () => {
+  it('rolls back the view when its counter update fails, so a retry can count it', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
+    const created = await post('/status',owner.token,{content_type:'text',text_content:'hello',privacy:'contacts'});
+    expect(created.status).toBe(201);
+    const id = (await created.json() as {status:{id:string}}).status.id;
+    const trigger = `fail_count_${crypto.randomUUID().replaceAll('-','')}`;
+    const target = await inbox(owner);
+    await env.DB.prepare(`CREATE TRIGGER ${trigger} BEFORE UPDATE OF view_count ON statuses WHEN OLD.id = '${id}' BEGIN SELECT RAISE(ABORT,'injected count failure'); END`).run();
+    try { expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(500); }
+    finally { await env.DB.prepare(`DROP TRIGGER ${trigger}`).run(); }
+    expect(await env.DB.prepare('SELECT 1 FROM status_views WHERE status_id=? AND viewer_id=?').bind(id,viewer.id).first()).toBeNull();
+    expect((await env.DB.prepare('SELECT view_count FROM statuses WHERE id=?').bind(id).first<{view_count:number}>())?.view_count).toBe(0);
+    await target.flush(); expect(target.events).toHaveLength(0);
+    expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
+    expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT view_count FROM statuses WHERE id=?').bind(id).first<{view_count:number}>())?.view_count).toBe(1);
+    await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
+  },30000);
+});
