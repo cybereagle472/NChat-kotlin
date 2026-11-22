@@ -1220,6 +1220,24 @@ describe('direct call state concurrency', () => {
 });
 
 describe('blocking during contact initiation', () => {
+  it('allows a valid direct call and a valid friend request', async () => {
+    const actor = await mediaAccount(), recipient = await mediaAccount(), target = await inbox(recipient);
+    expect((await post('/calls',actor.token,{receiver_id:recipient.id,call_type:'audio',offer_sdp:{type:'offer',sdp:'v=0'}})).status).toBe(201);
+    expect((await post('/friends/request',actor.token,{receiver_id:recipient.id})).status).toBe(201);
+    await target.flush();
+    expect(target.events.map(e=>JSON.parse(e).type).sort()).toEqual(['call:incoming','friend:request']);
+    target.socket.close(1000,'finished');
+  });
+  it('reopens a rejected request from the same sender', async () => {
+    const actor = await mediaAccount(), recipient = await mediaAccount();
+    const first = await post('/friends/request', actor.token, {receiver_id:recipient.id});
+    expect(first.status).toBe(201);
+    const {id} = await first.json() as {id:string};
+    expect((await post(`/friends/${id}/respond`, recipient.token, {accept:false})).status).toBe(200);
+    expect((await post('/friends/request', actor.token, {receiver_id:recipient.id})).status).toBe(201);
+    const row = await env.DB.prepare('SELECT id, status FROM friend_requests WHERE sender_id = ? AND receiver_id = ?').bind(actor.id,recipient.id).first<{id:string;status:string}>();
+    expect(row).toEqual({id,status:'pending'});
+  });
   const routes = [
     {path:'/calls',sql:'INSERT INTO calls (id, caller_id',table:'calls',body:(id:string)=>({receiver_id:id,call_type:'audio'})},
     {path:'/friends/request',sql:'INSERT INTO friend_requests (id, sender_id',table:'friend_requests',body:(id:string)=>({receiver_id:id})},

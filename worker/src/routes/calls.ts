@@ -81,12 +81,14 @@ calls.post('/', limitContact, async (c) => {
 
   const id = newId();
   const created_at = nowIso();
-  await c.env.DB.prepare(
+  const inserted = await c.env.DB.prepare(
     `INSERT INTO calls (id, caller_id, receiver_id, call_type, status, offer_sdp, created_at)
-     VALUES (?, ?, ?, ?, 'ringing', ?, ?)`
+     SELECT ?1, ?2, ?3, ?4, 'ringing', ?5, ?6
+     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))`
   )
     .bind(id, userId, receiver_id, call_type, offer_sdp ? JSON.stringify(offer_sdp) : null, created_at)
     .run();
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot call this user' }, 403);
 
   // The caller's privacy settings govern what the callee's incoming-call
   // screen shows for them (same "contacts"/"nobody" rules as everywhere

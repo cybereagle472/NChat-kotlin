@@ -48,12 +48,15 @@ friends.post('/request', limitContact, async (c) => {
   }
 
   const id = newId();
-  await c.env.DB.prepare(
-    `INSERT INTO friend_requests (id, sender_id, receiver_id, status) VALUES (?, ?, ?, 'pending')
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO friend_requests (id, sender_id, receiver_id, status)
+     SELECT ?1, ?2, ?3, 'pending'
+     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))
      ON CONFLICT(sender_id, receiver_id) DO UPDATE SET status = 'pending', updated_at = datetime('now')`
   )
     .bind(id, userId, receiver_id)
     .run();
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot send a request to this user' }, 403);
 
   const sender = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
   const senderLastActiveAt = await getPresence(c.env, userId);
