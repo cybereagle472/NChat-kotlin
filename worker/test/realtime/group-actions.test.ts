@@ -401,3 +401,48 @@ describe('direct messages and friendship authorization', () => {
     await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000, 'finished');
   });
 });
+
+describe('media references are precise and respect avatar audiences', () => {
+  it('does not grant access through lookalike historical references', async () => {
+    const owner = await mediaAccount(), stranger = await mediaAccount(), partner = await mediaAccount();
+    const file = await mediaUpload(owner.token);
+    for (const address of [
+      `${file.url}-other`,
+      `https://evil.example/media/file/${file.key}`,
+      `https://example.test/not-media/${file.key}`,
+      `https://example.test/media/file/other?next=${encodeURIComponent(file.url)}`,
+    ]) {
+      await env.DB.prepare('INSERT INTO messages (id, sender_id, receiver_id, media_url) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), stranger.id, partner.id, address).run();
+      expect((await mediaRead(file.key, stranger.token)).status, address).toBe(404);
+    }
+  });
+  it('prevents encoded local URLs from bypassing attachment authorization', async () => {
+    const owner = await mediaAccount(), stranger = await mediaAccount(), partner = await mediaAccount();
+    await friend(stranger.id, partner.id);
+    const file = await mediaUpload(owner.token);
+    const encoded = `https://example.test/media/file/${file.key.replace(/./g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'))}`;
+    expect((await post('/messages', stranger.token, {receiver_id:partner.id, media_url:encoded})).status).toBe(403);
+    expect((await post('/status', stranger.token, {content_type:'image', content_url:encoded})).status).toBe(403);
+    expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
+  });
+  it('checks profile photo settings and group membership for avatar files', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(), stranger = await mediaAccount();
+    await friend(owner.id, peer.id);
+    const avatar = await mediaUpload(owner.token);
+    await env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatar.url, owner.id).run();
+    await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'contacts' WHERE user_id = ?").bind(owner.id).run();
+    expect((await mediaRead(avatar.key, peer.token)).status).toBe(200);
+    expect((await mediaRead(avatar.key, stranger.token)).status).toBe(404);
+    await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'nobody' WHERE user_id = ?").bind(owner.id).run();
+    expect((await mediaRead(avatar.key, peer.token)).status).toBe(404);
+    const groupAvatar = await mediaUpload(owner.token);
+    const group = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO groups (id, name, created_by, avatar_url) VALUES (?, ?, ?, ?)').bind(group, 'Test', owner.id, groupAvatar.url).run();
+    for (const user of [owner, peer]) await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, user.id, 'member').run();
+    expect((await mediaRead(groupAvatar.key, peer.token)).status).toBe(200);
+    expect((await mediaRead(groupAvatar.key, stranger.token)).status).toBe(404);
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group, peer.id).run();
+    expect((await mediaRead(groupAvatar.key, peer.token)).status).toBe(404);
+  });
+});
