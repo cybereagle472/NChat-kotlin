@@ -195,7 +195,7 @@ friends.get('/', async (c) => {
 friends.delete('/:friendId', async (c) => {
   const userId = c.get('userId');
   const friendId = c.req.param('friendId');
-  await c.env.DB.batch([
+  const results = await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)').bind(
       userId,
       friendId,
@@ -211,7 +211,7 @@ friends.delete('/:friendId', async (c) => {
   ]);
   // Let the other side know live too, so their Friends/Chats tabs drop this
   // person immediately instead of waiting for their next manual refresh.
-  await broadcastToUser(c.env, friendId, { type: 'friend:removed', userId });
+  if (results[0].meta.changes) await broadcastToUser(c.env, friendId, { type: 'friend:removed', userId });
   return c.json({ success: true });
 });
 

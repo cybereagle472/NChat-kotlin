@@ -43,6 +43,16 @@ async function broadcastToParticipants(env: Env, userA: string, userB: string, p
   await Promise.all([broadcastToUser(env, userA, payload), broadcastToUser(env, userB, payload)]);
 }
 
+/** Direct contact is allowed only for accepted friends without a block. */
+async function mayMessage(env: Env, userId: string, otherId: string): Promise<boolean> {
+  if (userId === otherId) return false;
+  const row = await env.DB.prepare(`SELECT 1 FROM friendships f
+    WHERE ((f.user1_id = ?1 AND f.user2_id = ?2) OR (f.user1_id = ?2 AND f.user2_id = ?1))
+    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = ?1 AND b.blocked_user_id = ?2)
+      OR (b.user_id = ?2 AND b.blocked_user_id = ?1)) LIMIT 1`).bind(userId, otherId).first();
+  return !!row;
+}
+
 // GET /messages/with/:otherId — conversation history with another user.
 // Supports ?limit= (default/max 200) and ?before= (ISO timestamp) for
 // infinite-scroll pagination; always returns oldest-first.
@@ -143,7 +153,9 @@ messages.post('/', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   if (!(await mayAttachMedia(c.env, userId, [body.media_url, body.thumbnail_url]))) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id.
@@ -286,7 +298,7 @@ messages.post('/:id/reaction', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
   const { emoji } = await c.req.json().catch(() => ({}));
-  const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ?').bind(id).first<{
+  const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)').bind(id, userId, userId).first<{
     reactions: string | null;
     sender_id: string;
     receiver_id: string;
@@ -312,7 +324,9 @@ messages.post('/:id/reaction', async (c) => {
 messages.post('/mark-read', async (c) => {
   const userId = c.get('userId');
   const { sender_id } = await c.req.json().catch(() => ({}));
-  if (!sender_id) return c.json({ error: 'sender_id is required' }, 400);
+  if (typeof sender_id !== 'string' || !sender_id) return c.json({ error: 'sender_id is required' }, 400);
+  if (sender_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, sender_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
   const { results } = await c.env.DB.prepare(
     'SELECT id FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0'
@@ -344,7 +358,9 @@ messages.post('/mark-read', async (c) => {
 messages.post('/typing', async (c) => {
   const userId = c.get('userId');
   const { receiver_id, is_typing } = await c.req.json().catch(() => ({}));
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
   await broadcastToUser(c.env, receiver_id, {
     type: 'typing',
@@ -362,7 +378,9 @@ messages.post('/typing', async (c) => {
 messages.post('/recording', async (c) => {
   const userId = c.get('userId');
   const { receiver_id, is_recording } = await c.req.json().catch(() => ({}));
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
   await broadcastToUser(c.env, receiver_id, {
     type: 'recording',

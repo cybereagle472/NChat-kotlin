@@ -162,6 +162,7 @@ describe('media access follows its audience', () => {
   it('does not let a stranger attach someone else’s private file to gain access', async () => {
     const owner = await mediaAccount(), stranger = await mediaAccount(), other = await mediaAccount();
     const file = await mediaUpload(owner.token);
+    await friend(stranger.id, other.id);
     expect((await post('/messages', stranger.token, { receiver_id: other.id, type: 'image', media_url: file.url })).status).toBe(403);
     expect((await post('/messages', stranger.token, { receiver_id: other.id, thumbnail_url: file.url })).status).toBe(403);
     expect((await post('/status', stranger.token, { content_type: 'image', content_url: file.url })).status).toBe(403);
