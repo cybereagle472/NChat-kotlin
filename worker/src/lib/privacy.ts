@@ -166,3 +166,16 @@ export async function applyPrivacyToList<
     return applyPrivacy(p, viewerId, settings, friendSet.has(p.id));
   });
 }
+
+/** Status audiences fail closed for unknown options and respect blocks in both directions. */
+export async function statusVisibleTo(env: Env, ownerId: string, viewerId: string, privacy: string): Promise<boolean> {
+  if (ownerId === viewerId) return true;
+  const [blocked, friends, settings] = await Promise.all([
+    env.DB.prepare('SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?) LIMIT 1')
+      .bind(ownerId, viewerId, viewerId, ownerId).first(),
+    areFriends(env, ownerId, viewerId),
+    getPrivacySettings(env, ownerId),
+  ]);
+  const permits = (setting: string) => setting === 'everyone' || (setting === 'contacts' && friends);
+  return !blocked && permits(privacy) && permits(settings.status_visibility);
+}

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
+import { statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 
@@ -58,8 +59,9 @@ status.post('/', async (c) => {
     .first<{ full_name: string; username: string | null; avatar_url: string | null }>();
 
   const friendIds = await friendIdsOf(c.env, userId);
+  const visibility = await Promise.all(friendIds.map((friendId) => statusVisibleTo(c.env, userId, friendId, body.privacy ?? 'contacts')));
   await Promise.all(
-    friendIds.map((friendId) =>
+    friendIds.filter((_, index) => visibility[index]).map((friendId) =>
       broadcastToUser(c.env, friendId, {
         type: 'status:new',
         status: { ...row, full_name: poster?.full_name, username: poster?.username, avatar_url: poster?.avatar_url }
@@ -77,7 +79,7 @@ status.get('/mine', async (c) => {
             s.font_style, s.thumbnail_url, s.duration, s.caption, s.privacy, s.created_at, s.expires_at,
             (SELECT COUNT(*) FROM status_views sv WHERE sv.status_id = s.id AND sv.viewer_id != s.user_id) as view_count
      FROM statuses s
-     WHERE s.user_id = ? AND s.expires_at > datetime('now')
+     WHERE s.user_id = ? AND datetime(s.expires_at) > datetime('now')
      ORDER BY s.created_at ASC`
   )
     .bind(userId)
@@ -99,11 +101,16 @@ status.get('/feed', async (c) => {
      FROM statuses s
      JOIN users u ON u.id = s.user_id
      JOIN friendships f ON (f.user1_id = ? AND f.user2_id = s.user_id) OR (f.user2_id = ? AND f.user1_id = s.user_id)
-     WHERE s.expires_at > datetime('now')
+     LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
+     WHERE datetime(s.expires_at) > datetime('now')
+       AND s.privacy IN ('everyone', 'contacts')
+       AND coalesce(ps.status_visibility, 'contacts') IN ('everyone', 'contacts')
+       AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = s.user_id AND b.blocked_user_id = ?)
+         OR (b.user_id = ? AND b.blocked_user_id = s.user_id))
        AND s.user_id NOT IN (SELECT muted_user_id FROM muted_statuses WHERE user_id = ?)
      ORDER BY s.created_at ASC`
   )
-    .bind(userId, userId, userId, userId)
+    .bind(userId, userId, userId, userId, userId, userId)
     .all();
   return c.json({ statuses: results ?? [] });
 });
@@ -112,10 +119,10 @@ status.post('/:id/view', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
 
-  const statusRow = await c.env.DB.prepare('SELECT user_id FROM statuses WHERE id = ?')
+  const statusRow = await c.env.DB.prepare("SELECT user_id, privacy FROM statuses WHERE id = ? AND datetime(expires_at) > datetime('now')")
     .bind(id)
-    .first<{ user_id: string }>();
-  if (!statusRow) return c.json({ error: 'Status not found' }, 404);
+    .first<{ user_id: string; privacy: string }>();
+  if (!statusRow || !(await statusVisibleTo(c.env, statusRow.user_id, userId, statusRow.privacy))) return c.json({ error: 'Status not found' }, 404);
 
   // Viewing your own status is not a "view" — don't record it, don't count
   // it, and don't notify yourself.
@@ -148,6 +155,8 @@ status.post('/:id/view', async (c) => {
 
 status.get('/:id/views', async (c) => {
   const id = c.req.param('id');
+  const owned = await c.env.DB.prepare('SELECT 1 FROM statuses WHERE id = ? AND user_id = ?').bind(id, c.get('userId')).first();
+  if (!owned) return c.json({ error: 'Status not found' }, 404);
   const { results } = await c.env.DB.prepare(
     `SELECT sv.*, u.full_name, u.username, u.avatar_url FROM status_views sv
      JOIN users u ON u.id = sv.viewer_id

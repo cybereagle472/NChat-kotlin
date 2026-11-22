@@ -1,5 +1,5 @@
 import type { Env } from '../types';
-import { areFriends, getPrivacySettings } from './privacy';
+import { statusVisibleTo } from './privacy';
 
 /** A file must be registered under its exact key. Access follows every place
  * it is shared, so forwarding into a group does not revoke the original chat.
@@ -26,15 +26,7 @@ export async function canReadMedia(env: Env, userId: string, key: string): Promi
   ]);
   if (chat || group || avatar) return true;
   for (const status of statuses.results ?? []) {
-    if (status.user_id === userId) return true;
-    const [blocked, friends, settings] = await Promise.all([
-      env.DB.prepare('SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?) LIMIT 1')
-        .bind(status.user_id, userId, userId, status.user_id).first(),
-      areFriends(env, status.user_id, userId),
-      getPrivacySettings(env, status.user_id),
-    ]);
-    const permits = (value: string) => value === 'everyone' || (value === 'contacts' && friends);
-    if (!blocked && permits(status.privacy) && permits(settings.status_visibility)) return true;
+    if (await statusVisibleTo(env, status.user_id, userId, status.privacy)) return true;
   }
   return false;
 }
