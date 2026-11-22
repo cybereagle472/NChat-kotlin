@@ -2,6 +2,7 @@ import { defineWorkersConfig, readD1Migrations } from '@cloudflare/vitest-pool-w
 
 export default defineWorkersConfig(async () => ({
   test: {
+    exclude: ['test/realtime/**', 'node_modules/**'],
     poolOptions: {
       workers: {
         main: './src/index.ts',

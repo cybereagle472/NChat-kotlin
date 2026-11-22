@@ -12,7 +12,7 @@
     "db:migrate:local:0002": "wrangler d1 execute nchat-db --local --file=./migrations/0002_privacy_extra.sql",
     "db:migrate:remote:0002": "wrangler d1 execute nchat-db --remote --file=./migrations/0002_privacy_extra.sql",
     "tail": "wrangler tail",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.realtime.config.ts"
   },
   "dependencies": {
     "hono": "^4.6.14"
