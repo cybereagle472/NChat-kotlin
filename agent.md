@@ -1850,3 +1850,16 @@ Legal/security/compliance-relevant content from `SECURITY.md`, `UPDATE_SETUP.md`
 - WeChat friend discovery, Moments, group calls: [1](https://cs.help.wechat.com/hc/en-us/articles/11901073289999-Welcome-to-WeChat).
 
 > End of `agent.md`. Future agents: append, do not erase. Correct stale entries with an explanation. Keep evidence honest.
+
+### 19.7 Worker Phase 1 follow-up in progress (2026-11-22)
+
+Branch `arena/50b35dbd-nchat-kotlin`, based on PR #92 merge `0ea52f9`; **none of the following has been merged or deployed**. PR #92's partial changes were deployed (Cloudflare check succeeded 2026-11-22 05:10:56 UTC). This is not completion of Phase 1. Tell the owner immediately before any future Worker-changing merge.
+
+- Media audience/attachment checks: red `2a37b9c`, CI `44988858879`; green `9c786df`, `fe80df5`. Important limitations: substring-based references and old malicious references may leak files, avatar privacy is incomplete, and membership/write races need review. Live production still lets any signed-in user with a key read a file and can launder references.
+- Reject refresh tokens as API/realtime access: red `09c9ed2`, CI `44988915943`; green `90bdedf`, CI `44988952832`. Existing access token format remains accepted.
+- Status audience, blocks, expiry, viewing, viewer list and realtime notifications: red `bf956fd`, CI `44989023702`; green `a7657d3`, CI `44989097586`. Revisit races and performance.
+- Call signal envelope, group member access, outsider leave/decline and late signals: red `f2c4126`, CI `44989156777`; green `f5cb63c`, CI `44989227882`. Group signalling permits current members (not just joined participants) for ringing; removal cannot cut peer-to-peer media already flowing. More edge tests and race review remain.
+- Direct messaging requires friendship and no block for send, typing, recording and mark-read; outsider reactions and false stranger-unfriend events are refused: red `ac323ea`, CI `44989274419`; green `840e11c`, CI `44989347803`. Review concurrent membership/block changes and other direct and group operations.
+- Password hash bounds and upgrade on successful login, and JWT expiry boundary: red `12563d0`, CI `44989382733`; green `d4c8a6b` locally (38 tests and typecheck). The maximum accepted PBKDF2 count is currently 100,000, same as newly issued hashes; higher historical counts would be rejected. Verify Worker runtime limits and real hash formats before deployment, and plan stronger password hashing. No real database was inspected.
+
+**Next:** complete tests-first authorization and signal edge cases; fix media access and historic references; implement shared sign-in/account/address and abuse limits (including sign-up), resolve account enumeration, CORS, admin role and input bounds; review privacy, races and durable write-before-broadcast behavior; verify CI, APK and compatibility. No Android device test or direct remote database/secret access has been performed. After all remaining work is ready, warn immediately before merging and verify Cloudflare deployment. An `agent.md` edit must be pushed immediately; this session can push only its working branch, not directly to `main`, so it reaches main via a PR.
