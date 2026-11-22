@@ -61,31 +61,22 @@ export async function upsertPrivacySettings(
   userId: string,
   updates: Partial<Omit<PrivacySettingsRow, 'user_id'>>
 ): Promise<PrivacySettingsRow> {
-  const current = await getPrivacySettings(env, userId);
-  const next = { ...current, ...updates };
+  // Only named, validated fields are updated on conflict. Reading all fields
+  // first and writing the snapshot back can undo another device's privacy change.
+  const allowed: (keyof Omit<PrivacySettingsRow, 'user_id'>)[] = [
+    'last_seen_visibility', 'profile_photo_visibility', 'about_visibility',
+    'status_visibility', 'read_receipts', 'online_status_enabled',
+  ];
+  const keys = allowed.filter(key => updates[key] !== undefined);
+  if (keys.length === 0) return getPrivacySettings(env, userId);
+  const columns = keys.join(', ');
+  const placeholders = keys.map(() => '?').join(', ');
+  const assignments = keys.map(key => `${key} = excluded.${key}`).join(', ');
   await env.DB.prepare(
-    `INSERT INTO privacy_settings
-       (user_id, last_seen_visibility, profile_photo_visibility, about_visibility, status_visibility, read_receipts, online_status_enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET
-       last_seen_visibility = excluded.last_seen_visibility,
-       profile_photo_visibility = excluded.profile_photo_visibility,
-       about_visibility = excluded.about_visibility,
-       status_visibility = excluded.status_visibility,
-       read_receipts = excluded.read_receipts,
-       online_status_enabled = excluded.online_status_enabled`
-  )
-    .bind(
-      userId,
-      next.last_seen_visibility,
-      next.profile_photo_visibility,
-      next.about_visibility,
-      next.status_visibility,
-      next.read_receipts,
-      next.online_status_enabled
-    )
-    .run();
-  return next;
+    `INSERT INTO privacy_settings (user_id, ${columns}) VALUES (?, ${placeholders})
+     ON CONFLICT(user_id) DO UPDATE SET ${assignments}`
+  ).bind(userId, ...keys.map(key => updates[key])).run();
+  return getPrivacySettings(env, userId);
 }
 
 /** Are these two users friends? (self always counts as "yes" so self-checks never get redacted.) */
