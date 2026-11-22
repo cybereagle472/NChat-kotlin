@@ -7,7 +7,7 @@ type Account = { id: string; token: string; email: string };
 async function account(name: string): Promise<Account> {
   const email = `${name}@example.test`;
   const response = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: JSON.stringify({ email, password: 'password123', full_name: name }),
   });
   expect(response.status).toBe(201);
@@ -16,7 +16,7 @@ async function account(name: string): Promise<Account> {
 }
 async function request(account: Account, path: string, method = 'GET', body?: object) {
   return SELF.fetch(`https://example.test${path}`, {
-    method, headers: { Authorization: `Bearer ${account.token}`, 'Content-Type': 'application/json' },
+    method, headers: { Authorization: `Bearer ${account.token}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }

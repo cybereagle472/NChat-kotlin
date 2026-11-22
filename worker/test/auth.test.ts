@@ -9,7 +9,7 @@ describe('account smoke test', () => {
   it('signs up, logs in, and reads the current profile', async () => {
     const credentials = { email: 'alice@example.test', password: 'password123' };
     const post = (path: string) => SELF.fetch(`https://example.test${path}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
       body: JSON.stringify(credentials),
     });
     const signup = await post('/auth/signup');
@@ -29,7 +29,7 @@ describe('account smoke test', () => {
 
 it('does not accept refresh tokens as API access tokens', async () => {
   const signup = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: JSON.stringify({ email: 'bob@example.test', password: 'password123' }),
   });
   expect(signup.status).toBe(201);
@@ -38,7 +38,7 @@ it('does not accept refresh tokens as API access tokens', async () => {
   expect((await read(tokens.access_token)).status).toBe(200);
   expect((await read(tokens.refresh_token)).status).toBe(401);
   const refresh = await SELF.fetch('https://example.test/auth/refresh', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({ refresh_token: tokens.refresh_token }),
   });
   expect(refresh.status).toBe(200);
 });
@@ -46,12 +46,12 @@ it('does not accept refresh tokens as API access tokens', async () => {
 it('upgrades weak password hashes after a successful login', async () => {
   const email = 'legacy@example.test';
   const signup = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({email, password:'secret1'}),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({email, password:'secret1'}),
   });
   expect(signup.status).toBe(201);
   const weak = '1000:000102030405060708090a0b0c0d0e0f:6f8926ce4ca5c25a52786dd2e12bc46e17bd289c4e073a8f6d047e7efc748c88';
   await env.DB.prepare('UPDATE users SET password_hash = ? WHERE email = ?').bind(weak, email).run();
-  const login = (password:string) => SELF.fetch('https://example.test/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  const login = (password:string) => SELF.fetch('https://example.test/auth/login', {method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1`},body:JSON.stringify({email,password})});
   expect((await login('wrong')).status).toBe(401);
   expect((await env.DB.prepare('SELECT password_hash FROM users WHERE email = ?').bind(email).first<{password_hash:string}>())?.password_hash).toBe(weak);
   expect((await login('secret1')).status).toBe(200);

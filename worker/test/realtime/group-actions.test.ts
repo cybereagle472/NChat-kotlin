@@ -6,7 +6,7 @@ async function fixture() {
   const unique = crypto.randomUUID();
   const signup = async (name: string) => {
     const response = await SELF.fetch('https://example.test/auth/signup', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
       body: JSON.stringify({ email: `${name}-${unique}@example.test`, password: 'password123' }),
     });
     expect(response.status).toBe(201);
@@ -24,7 +24,7 @@ async function fixture() {
 }
 function post(path: string, token: string, body: object = {}) {
   return SELF.fetch(`https://example.test${path}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify(body),
   });
 }
 
@@ -71,7 +71,7 @@ describe('group actions require current membership', () => {
 
 async function upload() {
   const signup = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: JSON.stringify({ email: `uploader-${crypto.randomUUID()}@example.test`, password: 'password123' }),
   });
   expect(signup.status).toBe(201);
@@ -112,7 +112,7 @@ describe('media requires sign-in', () => {
 
 async function mediaAccount() {
   const response = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: JSON.stringify({ email: `${crypto.randomUUID()}@example.test`, password: 'password123' }),
   });
   expect(response.status).toBe(201);
@@ -173,9 +173,9 @@ describe('media access follows its audience', () => {
     expect((await post(`/groups/${group}/messages`, stranger.token, { media_url: file.url })).status).toBe(403);
     expect((await post(`/groups/${group}/messages`, stranger.token, { thumbnail_url: file.url })).status).toBe(403);
     expect((await post('/groups', stranger.token, { name: 'Test', avatar_url: file.url })).status).toBe(403);
-    const update = await SELF.fetch(`https://example.test/groups/${group}`, { method: 'PATCH', headers: { Authorization: `Bearer ${stranger.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar_url: file.url }) });
+    const update = await SELF.fetch(`https://example.test/groups/${group}`, { method: 'PATCH', headers: { Authorization: `Bearer ${stranger.token}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({ avatar_url: file.url }) });
     expect(update.status).toBe(403);
-    const profile = await SELF.fetch('https://example.test/users/me', { method: 'PATCH', headers: { Authorization: `Bearer ${stranger.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar_url: file.url }) });
+    const profile = await SELF.fetch('https://example.test/users/me', { method: 'PATCH', headers: { Authorization: `Bearer ${stranger.token}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({ avatar_url: file.url }) });
     expect(profile.status).toBe(403);
     expect((await mediaRead(file.key, stranger.token)).status).toBe(404);
   });

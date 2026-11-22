@@ -5,7 +5,7 @@ beforeEach(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); }
 
 async function signup(name: string) {
   const response = await SELF.fetch('https://example.test/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
     body: JSON.stringify({ email: `${name}@example.test`, password: 'password123', full_name: name }),
   });
   expect(response.status).toBe(201);

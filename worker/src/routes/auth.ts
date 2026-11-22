@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/passw
 import { signJWT, verifyJWT } from '../lib/jwt';
 import { newId } from '../lib/id';
 import { requireAuth } from '../middleware/auth';
+import { consumeLimit } from '../lib/rate-limit';
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -77,14 +78,14 @@ auth.get('/check-email', async (c) => {
 
 auth.post('/signup', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const email = (body.email || '').trim().toLowerCase();
-  const password = body.password || '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
   // full_name/username/avatar are collected later by the Profile Setup screen —
   // signup itself only needs an email + password, matching the existing UI.
-  const full_name = (body.full_name || '').trim();
+  const full_name = typeof body.full_name === 'string' ? body.full_name.trim() : '';
 
-  if (!email || !password) {
-    return c.json({ error: 'email and password are required' }, 400);
+  if (!email || !password || email.length > 254 || password.length > 1024 || full_name.length > 200) {
+    return c.json({ error: 'Invalid email, password, or name' }, 400);
   }
   if (!EMAIL_RE.test(email)) {
     return c.json({ error: 'Please enter a valid email address' }, 400);
@@ -92,6 +93,10 @@ auth.post('/signup', async (c) => {
   if (password.length < 6) {
     return c.json({ error: 'Password must be at least 6 characters' }, 400);
   }
+
+  const ip = c.req.header('CF-Connecting-IP');
+  if (!ip || ip.length > 45 || !/^[a-f0-9:.]+$/i.test(ip)) return c.json({ error: 'Client address unavailable' }, 503);
+  if (!(await consumeLimit(c.env, 'signup-ip', ip.toLowerCase(), 10, 60 * 60 * 1000))) return c.json({ error: 'Too many attempts' }, 429);
 
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   if (existing) return c.json({ error: 'Email is already registered' }, 409);
@@ -113,8 +118,14 @@ auth.post('/signup', async (c) => {
 
 auth.post('/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const email = (body.email || '').trim().toLowerCase();
-  const password = body.password || '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
+  if (!email || email.length > 254 || !password || password.length > 1024) return c.json({ error: 'Invalid email or password' }, 400);
+  const ip = c.req.header('CF-Connecting-IP');
+  if (!ip || ip.length > 45 || !/^[a-f0-9:.]+$/i.test(ip)) return c.json({ error: 'Client address unavailable' }, 503);
+  if (!(await consumeLimit(c.env, 'login-ip', ip.toLowerCase(), 60, 15 * 60 * 1000)) ||
+      !(await consumeLimit(c.env, 'login-account', email, 10, 15 * 60 * 1000))) return c.json({ error: 'Too many attempts' }, 429);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<any>();
