@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import type { Env, Variables } from './types';
 import { verifyAccessJWT } from './lib/jwt';
 
@@ -19,14 +18,8 @@ export { RealtimeRoom } from './durable-objects/RealtimeRoom';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-app.use(
-  '*',
-  cors({
-    origin: '*', // tighten to your real frontend origin(s) before going live
-    allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  })
-);
+// The supported Android client is not subject to browser CORS. Do not grant
+// cross-origin browser access by default; same-origin HTTP remains available.
 
 app.get('/', (c) => c.json({ ok: true, service: 'nchat-api' }));
 app.get('/health', (c) => c.json({ ok: true }));

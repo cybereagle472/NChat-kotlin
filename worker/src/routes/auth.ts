@@ -62,20 +62,6 @@ async function issueTokens(env: Env, userId: string) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Real-time "is this email already registered" check used by the Sign Up
-// form so a user finds out before filling out the whole form (and before
-// hitting the 409 on actual submit). Public/no-auth — it only ever reveals
-// whether an email is taken, which signup's own error response already
-// discloses anyway.
-auth.get('/check-email', async (c) => {
-  const email = (c.req.query('email') || '').trim().toLowerCase();
-  if (!email || !EMAIL_RE.test(email)) {
-    return c.json({ valid: false, exists: false });
-  }
-  const row = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-  return c.json({ valid: true, exists: !!row });
-});
-
 auth.post('/signup', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
