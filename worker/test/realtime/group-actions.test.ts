@@ -824,3 +824,22 @@ describe('group call decline integrity', () => {
     await caller.flush(); expect(caller.events).toHaveLength(0); caller.socket.close(1000, 'finished');
   });
 });
+
+describe('concurrent group call creation', () => {
+  it('converges simultaneous starts on a single active call', async () => {
+    const { owner, outsider, group } = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, outsider.id, 'member').run();
+    const responses = await Promise.all([
+      post('/group-calls', owner.token, { group_id: group, call_type: 'audio' }),
+      post('/group-calls', outsider.token, { group_id: group, call_type: 'audio' }),
+    ]);
+    expect(responses.map(r => r.status).sort()).toEqual([200, 201]);
+    const bodies = await Promise.all(responses.map(r => r.json() as Promise<{call:{id:string}}>));
+    expect(bodies[0].call.id).toBe(bodies[1].call.id);
+    const calls = await env.DB.prepare("SELECT id FROM group_calls WHERE group_id = ? AND status = 'active'").bind(group).all();
+    expect(calls.results).toHaveLength(1);
+    const joined = await env.DB.prepare("SELECT user_id FROM group_call_participants WHERE call_id = ? AND status = 'joined'").bind(bodies[0].call.id).all();
+    expect(joined.results).toHaveLength(2);
+  });
+});
