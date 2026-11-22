@@ -1975,3 +1975,5 @@ Group-role deterministic concurrency test 7ea7dd3 failed locally: two admins can
 Group role red `7ea7dd3` failed Worker CI `44996548743` with both concurrent demotions accepted, as expected.
 
 Group role fix 0ac6a88 checks the actor is still admin in the UPDATE; a concurrently demoted actor receives 403 and a missing target receives 404. Local 83 tests and typecheck pass; Worker CI pending. Other group check/write paths are not yet addressed. No deployment.
+
+Group role concurrency fix `0ac6a88` passed Worker CI `44996689141` (83 tests and typecheck). Nothing merged or deployed; Phase 1 remains incomplete.
