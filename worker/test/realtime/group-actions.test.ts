@@ -497,3 +497,21 @@ describe('backend entry-point hardening', () => {
     expect(second.status).toBe(404);
   });
 });
+
+describe('group removal safeguards', () => {
+  it('does not allow the last admin to bypass leave rules by removing themselves', async () => {
+    const { owner, outsider, group } = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, outsider.id, 'member').run();
+    const response = await SELF.fetch(`https://example.test/groups/${group}/members/${owner.id}`, {method:'DELETE',headers:{Authorization:`Bearer ${owner.token}`}});
+    expect(response.status).toBe(400);
+    expect(await env.DB.prepare('SELECT id FROM group_members WHERE group_id = ? AND user_id = ?').bind(group, owner.id).first()).not.toBeNull();
+  });
+  it('does not announce removal to someone who was not a member', async () => {
+    const { owner, outsider, group } = await fixture();
+    const listener = await inbox(outsider);
+    const response = await SELF.fetch(`https://example.test/groups/${group}/members/${outsider.id}`, {method:'DELETE',headers:{Authorization:`Bearer ${owner.token}`}});
+    expect(response.status).toBe(404);
+    await listener.flush(); expect(listener.events).toHaveLength(0);
+    listener.socket.close(1000, 'finished');
+  });
+});
