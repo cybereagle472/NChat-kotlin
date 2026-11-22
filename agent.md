@@ -1901,3 +1901,5 @@ Input-bound red `79e8276` tests limits for message text/edit/reaction, status te
 Login timing fix `c6b4a1b` passed Worker CI `44990688131`. Input red `79e8276` failed CI `44990735973`; fix `8f2a54c` bounds common text/profile/group/status/message fields and member list lengths by UTF-8 bytes, with invalid DM text/reactions rejected. Local 55 tests/typecheck passed; CI pending. This does not yet cap request streams, uploads, signalling or all malformed values; review compatibility and remaining endpoints. Nothing deployed.
 
 Privacy red `09d36f1` models D1's 100-parameter limit and invalid visibility values; local tests expose oversized batched queries and unknown visibility falling back to contacts. CI pending. Nothing deployed.
+
+Input bounds `8f2a54c` passed Worker CI `44990833838`. Privacy red `09d36f1` failed CI `44990878586`; fix `a5d689c` chunks privacy and friendship lookups below 100 SQL bindings and treats unknown visibility values as hidden. Local 57 tests/typecheck passed; CI pending. The 100-binding constraint is modeled in a test double, not verified against live D1; many-recipient fan-out still needs load testing. Nothing deployed.
