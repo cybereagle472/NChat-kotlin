@@ -413,13 +413,12 @@ groups.delete('/:id', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can delete the group' }, 403);
 
   const memberIds = await memberIdsOf(c.env, groupId);
-  // Explicit cascade: D1/SQLite only enforces ON DELETE CASCADE for
-  // connections that ran `PRAGMA foreign_keys = ON`, which isn't
-  // guaranteed to carry over to every request's connection, so these are
-  // deleted directly rather than relying on it.
-  await c.env.DB.prepare('DELETE FROM group_messages WHERE group_id = ?').bind(groupId).run();
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId).run();
-  await c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(groupId).run();
+  // D1 enforces foreign keys; the schema's cascades remove group messages,
+  // members, read state and calls atomically with this guarded deletion.
+  const deleted = await c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
+    .bind(groupId, userId).run();
+  if (!deleted.meta.changes) return c.json({ error: 'Only admins can delete the group' }, 403);
 
   await broadcastToGroup(c.env, groupId, { type: 'group:deleted', group_id: groupId }, memberIds);
   return c.json({ success: true });

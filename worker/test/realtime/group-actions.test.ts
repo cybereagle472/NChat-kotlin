@@ -999,6 +999,22 @@ describe('group member addition authorization under concurrency', () => {
 });
 
 describe('group deletion authorization under concurrency', () => {
+  it('deletes related group records and notifies members when an admin deletes the group', async () => {
+    const f = await groupCallFixture();
+    const listener = await inbox(f.member);
+    await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,content) VALUES (?,?,?,?)').bind(crypto.randomUUID(), f.group, f.owner.id, 'hello').run();
+    await env.DB.prepare('INSERT INTO group_read_state (group_id,user_id,last_read_at) VALUES (?,?,?)').bind(f.group, f.member.id, new Date().toISOString()).run();
+    const response = await SELF.fetch(`https://example.test/groups/${f.group}`, {method:'DELETE',headers:{Authorization:`Bearer ${f.owner.token}`}});
+    expect(response.status).toBe(200);
+    for (const table of ['groups', 'group_members', 'group_messages', 'group_read_state', 'group_calls']) {
+      const col = table === 'groups' ? 'id' : 'group_id';
+      expect(await env.DB.prepare(`SELECT 1 FROM ${table} WHERE ${col}=?`).bind(f.group).first(), table).toBeNull();
+    }
+    expect(await env.DB.prepare('SELECT 1 FROM group_call_participants WHERE call_id=?').bind(f.call).first()).toBeNull();
+    await listener.flush();
+    expect(listener.events.map(event => JSON.parse(event))).toContainEqual({type:'group:deleted',group_id:f.group});
+    listener.socket.close(1000, 'finished');
+  });
   it('does not delete a group after the actor is demoted', async () => {
     const { owner, outsider, group, message } = await fixture();
     await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
