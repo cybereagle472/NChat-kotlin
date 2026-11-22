@@ -2009,3 +2009,5 @@ Group-message send race `8256585` failed Worker CI `44997884082` on both text an
 Group-message send fix b95de4c checks current membership in the INSERT, returns 403 without broadcast when the insert was skipped, and creates group-message media provenance only if the message row exists. Local 91 tests and typecheck pass; CI pending. Membership may still change before event delivery or on idempotent retry; attachment access can change after its pre-check; action routes need equivalent concurrency review. Not deployed.
 
 Group-message send fix `b95de4c` passed Worker CI `44998044606` (91 tests and typecheck). Branch-only, not deployed; preceding caveats remain.
+
+Group message action race tests 9a6760b failed locally: removed members can still delete-for-me, delete-for-everyone or react when removal occurs between check and write. Deterministic tests also expect no mutation or event. CI pending; no deployment.
