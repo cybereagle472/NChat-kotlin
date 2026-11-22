@@ -6,6 +6,8 @@ import { defineWorkersConfig, readD1Migrations } from '@cloudflare/vitest-pool-w
 export default defineWorkersConfig(async () => ({
   test: {
     include: ['test/realtime/**/*.test.ts'],
+    // Test files share local D1. Only group-actions.test.ts applies migrations;
+    // keep D1-using cases there to avoid concurrent migration races.
     poolOptions: {
       workers: {
         main: './src/index.ts',
