@@ -2107,3 +2107,5 @@ Privacy update fix `6014edd` passed Worker CI `45004209775` (135 tests/typecheck
 Group creation tests fail locally: an invalid initial member causes a 500 and leaves a group without members; a member disappearing between validation and member insertion also leaves an orphan group. The deterministic race test pauses the D1 member batch. CI pending; no deployment.
 
 Group creation fix `17fb380` validates initial member IDs in chunks of 90 and inserts the group, avatar provenance and initial memberships in one D1 batch, so invalid/deleted members cannot leave an orphan group. Local 140 tests/typecheck passed; a member deleted after validation still triggers a foreign-key 500 but the group rolls back. Local realtime shutdown again emitted an intermittent ENOTEMPTY temp-DO cleanup error and close timeout despite a successful exit; real D1 transaction/schema and large-batch behavior remain unverified. CI pending; no deployment.
+
+Read-receipt guard `db4bda8` passed Worker CI `45004411760` (138 tests/typecheck). Group-creation red `d039a03` failed Worker CI `45004470019` on both expected cases; fix `17fb380` awaits CI. No deployment.
