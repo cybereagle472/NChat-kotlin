@@ -585,3 +585,30 @@ describe('input bounds', () => {
     expect((await env.DB.prepare('SELECT content FROM messages WHERE id = ?').bind(id).first<{content:string}>())?.content).toBe('hello');
   });
 });
+
+describe('group call membership and privacy', () => {
+  it('does not let a removed participant keep a call alive or receive call events', async () => {
+    const f = await groupCallFixture();
+    const removed = await inbox(f.member);
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(f.group, f.member.id).run();
+    expect((await post(`/group-calls/${f.call}/leave`, f.owner.token)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT status FROM group_calls WHERE id = ?').bind(f.call).first<{status:string}>())?.status).toBe('ended');
+    await removed.flush(); expect(removed.events).toHaveLength(0);
+    removed.socket.close(1000, 'finished');
+  });
+  it('hides a private caller photo from other group members during ringing and joining', async () => {
+    const f = await fixture();
+    const avatar = `https://images.example/caller-${crypto.randomUUID()}`;
+    await env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatar, f.owner.id).run();
+    await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'nobody' WHERE user_id = ?").bind(f.owner.id).run();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), f.group, f.outsider.id, 'member').run();
+    const listener = await inbox(f.outsider);
+    const started = await post('/group-calls', f.owner.token, {group_id:f.group,call_type:'audio'});
+    expect(started.status).toBe(201);
+    const id = (await started.json() as {call:{id:string}}).call.id;
+    await listener.flush(); expect(JSON.stringify(listener.events)).not.toContain(avatar);
+    const joined = await post(`/group-calls/${id}/join`, f.outsider.token);
+    expect(joined.status).toBe(200); expect(await joined.text()).not.toContain(avatar);
+    listener.socket.close(1000, 'finished');
+  });
+});
