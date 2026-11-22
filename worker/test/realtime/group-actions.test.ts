@@ -1794,3 +1794,55 @@ describe('direct media forwarding proof coverage', () => {
     });
   }
 });
+
+describe('other media writes after source access is revoked', () => {
+  for (const route of ['group-message','status','profile-avatar','group-avatar','group-create'] as const) {
+    it(`rejects ${route} without changing rows, grants or events`, async () => {
+      const owner = await mediaAccount(), actor = await mediaAccount(), recipient = await mediaAccount();
+      await friend(actor.id,recipient.id);
+      const source = crypto.randomUUID(), destination = crypto.randomUUID();
+      const file = await mediaUpload(owner.token);
+      await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(source,'source',owner.id).run();
+      await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),source,actor.id,'member').run();
+      await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,media_url) VALUES (?,?,?,?)').bind(crypto.randomUUID(),source,owner.id,file.url).run();
+      await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(destination,'destination',actor.id).run();
+      for (const user of [actor,recipient]) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),destination,user.id,user.id === actor.id ? 'admin' : 'member').run();
+      if (route === 'profile-avatar' || route === 'group-avatar') {
+        const old = await mediaUpload(actor.token);
+        const url = route === 'profile-avatar' ? '/users/me' : `/groups/${destination}`;
+        const response = await SELF.fetch(`https://example.test${url}`,{method:'PATCH',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:old.url})});
+        expect(response.status).toBe(200);
+        (actor as typeof actor & {oldKey:string;oldUrl:string}).oldKey = old.key;
+        (actor as typeof actor & {oldKey:string;oldUrl:string}).oldUrl = old.url;
+      }
+      expect((await mediaRead(file.key,actor.token)).status).toBe(200);
+      const target = await inbox(recipient);
+      let reached!:()=>void,resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {prepare:env.DB.prepare.bind(env.DB),async batch(statements:D1PreparedStatement[]){reached(); await gate; return env.DB.batch(statements);}};
+      const config = route === 'group-message' ? {path:`/groups/${destination}/messages`,method:'POST',body:{media_url:file.url}} :
+        route === 'status' ? {path:'/status',method:'POST',body:{content_type:'image',content_url:file.url,privacy:'contacts'}} :
+        route === 'profile-avatar' ? {path:'/users/me',method:'PATCH',body:{avatar_url:file.url}} :
+        route === 'group-avatar' ? {path:`/groups/${destination}`,method:'PATCH',body:{avatar_url:file.url}} :
+        {path:'/groups',method:'POST',body:{name:'blocked creation',avatar_url:file.url,memberIds:[recipient.id]}};
+      const request = app.request(`https://example.test${config.path}`,{method:config.method,headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify(config.body)},{...env,DB:db} as unknown as Env);
+      await ready;
+      try { await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(source,actor.id).run(); }
+      finally {resume();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT 1 FROM group_messages WHERE group_id=? AND sender_id=?').bind(destination,actor.id).first()).toBeNull();
+      expect(await env.DB.prepare('SELECT 1 FROM statuses WHERE user_id=?').bind(actor.id).first()).toBeNull();
+      expect(await env.DB.prepare("SELECT 1 FROM groups WHERE created_by=? AND name='blocked creation'").bind(actor.id).first()).toBeNull();
+      expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE file_path=? AND actor_id=?').bind(file.key,actor.id).first()).toBeNull();
+      if (route === 'profile-avatar' || route === 'group-avatar') {
+        const old = actor as typeof actor & {oldKey:string;oldUrl:string};
+        const row = route === 'profile-avatar' ? await env.DB.prepare('SELECT avatar_url FROM users WHERE id=?').bind(actor.id).first<{avatar_url:string}>() : await env.DB.prepare('SELECT avatar_url FROM groups WHERE id=?').bind(destination).first<{avatar_url:string}>();
+        expect(row?.avatar_url).toBe(old.oldUrl);
+        const kind = route === 'profile-avatar' ? 'user_avatar' : 'group_avatar';
+        expect(await env.DB.prepare('SELECT 1 FROM trusted_media_references WHERE file_path=? AND kind=? AND reference_id=?').bind(old.oldKey,kind,route === 'profile-avatar' ? actor.id : destination).first()).not.toBeNull();
+      }
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+      expect((await mediaRead(file.key,recipient.token)).status).toBe(404);
+    });
+  }
+});
