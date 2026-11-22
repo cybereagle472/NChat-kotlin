@@ -12,3 +12,29 @@ export async function consumeLimit(env: Env, scope: string, identity: string, li
   if (!response.ok) throw new Error('Rate limiter unavailable');
   return true;
 }
+
+/** Trust only Cloudflare's edge-provided address. Normalize IPv6 to /64 so
+ * changing individual addresses inside one allocation does not reset limits. */
+export function clientAddressBucket(address: string | undefined): string | null {
+  if (!address || address.length > 45 || !/^[0-9a-f:.]+$/i.test(address)) return null;
+  if (!address.includes(':')) {
+    const parts = address.split('.');
+    if (parts.length !== 4 || parts.some(p => !/^\d{1,3}$/.test(p) || (p.length > 1 && p[0] === '0') || Number(p) > 255)) return null;
+    return parts.join('.');
+  }
+  try {
+    const host = new URL(`http://[${address}]/`).hostname.slice(1, -1);
+    const [left, right] = host.split('::');
+    const before = left ? left.split(':') : [];
+    const after = right ? right.split(':') : [];
+    const zeros = right === undefined ? 0 : 8 - before.length - after.length;
+    const groups = [...before, ...Array(zeros).fill('0'), ...after].map(group => parseInt(group, 16));
+    if (groups.length !== 8 || groups.some(group => !Number.isInteger(group) || group < 0 || group > 65535)) return null;
+    if (groups.slice(0, 5).every(group => group === 0) && groups[5] === 0xffff) {
+      return [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join('.');
+    }
+    return groups.slice(0, 4).map(group => group.toString(16)).join(':') + '::/64';
+  } catch {
+    return null;
+  }
+}
