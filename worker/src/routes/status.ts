@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { mayAttachMedia } from '../lib/media-access';
-import { statusVisibleTo } from '../lib/privacy';
+import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 
@@ -61,12 +61,13 @@ status.post('/', async (c) => {
   const friendIds = await friendIdsOf(c.env, userId);
   const visibility = await Promise.all(friendIds.map((friendId) => statusVisibleTo(c.env, userId, friendId, body.privacy ?? 'contacts')));
   await Promise.all(
-    friendIds.filter((_, index) => visibility[index]).map((friendId) =>
-      broadcastToUser(c.env, friendId, {
+    friendIds.filter((_, index) => visibility[index]).map(async (friendId) => {
+      const [profile] = await applyPrivacyToList(c.env, friendId, [{ id: userId, avatar_url: poster?.avatar_url }]);
+      return broadcastToUser(c.env, friendId, {
         type: 'status:new',
-        status: { ...row, full_name: poster?.full_name, username: poster?.username, avatar_url: poster?.avatar_url }
-      })
-    )
+        status: { ...row, full_name: poster?.full_name, username: poster?.username, avatar_url: profile.avatar_url }
+      });
+    })
   );
 
   return c.json({ status: row }, 201);
@@ -111,8 +112,10 @@ status.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`
   )
     .bind(userId, userId, userId, userId, userId, userId)
-    .all();
-  return c.json({ statuses: results ?? [] });
+    .all<{ user_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, userId, rows.map(row => ({ id: row.user_id, avatar_url: row.avatar_url })));
+  return c.json({ statuses: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
 status.post('/:id/view', async (c) => {
@@ -142,11 +145,12 @@ status.post('/:id/view', async (c) => {
     const viewer = await c.env.DB.prepare('SELECT full_name, username, avatar_url FROM users WHERE id = ?')
       .bind(userId)
       .first<{ full_name: string; username: string | null; avatar_url: string | null }>();
+    const [profile] = await applyPrivacyToList(c.env, statusRow.user_id, [{ id: userId, ...viewer }]);
     await broadcastToUser(c.env, statusRow.user_id, {
       type: 'status:view',
       status_id: id,
       viewer_id: userId,
-      viewer_profile: viewer ? { id: userId, ...viewer } : undefined
+      viewer_profile: viewer ? profile : undefined
     });
   }
 
@@ -165,8 +169,10 @@ status.get('/:id/views', async (c) => {
      ORDER BY sv.viewed_at DESC`
   )
     .bind(id)
-    .all();
-  return c.json({ views: results ?? [] });
+    .all<{ viewer_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, c.get('userId'), rows.map(row => ({ id: row.viewer_id, avatar_url: row.avatar_url })));
+  return c.json({ views: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
 status.delete('/:id', async (c) => {
