@@ -2011,3 +2011,5 @@ Group-message send fix b95de4c checks current membership in the INSERT, returns 
 Group-message send fix `b95de4c` passed Worker CI `44998044606` (91 tests and typecheck). Branch-only, not deployed; preceding caveats remain.
 
 Group message action race tests 9a6760b failed locally: removed members can still delete-for-me, delete-for-everyone or react when removal occurs between check and write. Deterministic tests also expect no mutation or event. CI pending; no deployment.
+
+Group message actions race `9a6760b` failed Worker CI `44998135873` on all three expected assertions.
