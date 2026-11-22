@@ -1,6 +1,8 @@
 import { applyD1Migrations, env, SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { consumeLimit } from '../../src/lib/rate-limit';
+import app from '../../src/index';
+import type { Env } from '../../src/types';
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 async function fixture() {
@@ -830,10 +832,33 @@ describe('concurrent group call creation', () => {
     const { owner, outsider, group } = await fixture();
     await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
       .bind(crypto.randomUUID(), group, outsider.id, 'member').run();
-    const responses = await Promise.all([
-      post('/group-calls', owner.token, { group_id: group, call_type: 'audio' }),
-      post('/group-calls', outsider.token, { group_id: group, call_type: 'audio' }),
-    ]);
+    // Force both handlers to see the same pre-creation snapshot, regardless
+    // of runtime scheduling; production D1 still executes all other SQL.
+    let readers = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const db = {
+      prepare(sql: string) {
+        const statement = env.DB.prepare(sql);
+        if (!sql.includes('SELECT * FROM group_calls WHERE group_id = ?')) return statement;
+        return { bind(...args: unknown[]) {
+          const bound = statement.bind(...args);
+          return { async first() {
+            const result = await bound.first();
+            if (++readers === 2) release();
+            await gate;
+            return result;
+          } };
+        } };
+      },
+      batch: env.DB.batch.bind(env.DB),
+    };
+    const bindings = { ...env, DB: db } as unknown as Env;
+    const start = (token: string) => app.request('https://example.test/group-calls', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_id: group, call_type: 'audio' }),
+    }, bindings);
+    const responses = await Promise.all([start(owner.token), start(outsider.token)]);
     expect(responses.map(r => r.status).sort()).toEqual([200, 201]);
     const bodies = await Promise.all(responses.map(r => r.json() as Promise<{call:{id:string}}>));
     expect(bodies[0].call.id).toBe(bodies[1].call.id);
