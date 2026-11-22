@@ -2051,3 +2051,5 @@ Contact initiation block guard `dfd95a1` checks for blocks in the call and frien
 Reopened friend-request ID regression test requires response and realtime event IDs to match the existing D1 row and be usable to accept it. It fails locally because the upsert preserves the old ID while the route returns a freshly generated ID; CI pending. This is branch-only and not deployed.
 
 Friend-request ID fix `c59c6f0` uses the INSERT/UPSERT `RETURNING id` so both response and event carry the persisted row ID, including rejected-request reopen; a skipped blocked insert still returns 403. The regression and block-race tests pass, and the complete local suite passes 104 tests and typecheck. CI pending. Other concurrent friend-request/respond state races and post-commit event races remain; this fix is branch-only, not deployed.
+
+Contact-block guard `dfd95a1` passed Worker CI `45001613606`. Reopened-request ID regression `c607a52` failed Worker CI `45001641701` as expected; its fix `c59c6f0` is awaiting CI. None is deployed.
