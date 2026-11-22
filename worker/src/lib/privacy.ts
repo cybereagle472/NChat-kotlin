@@ -39,18 +39,18 @@ export async function getPrivacySettingsMap(env: Env, userIds: string[]): Promis
   const ids = [...new Set(userIds)].filter(Boolean);
   if (ids.length === 0) return map;
 
-  const placeholders = ids.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM privacy_settings WHERE user_id IN (${placeholders})`
-  )
-    .bind(...ids)
-    .all<PrivacySettingsRow>();
-
   const found = new Set<string>();
-  (results ?? []).forEach((r) => {
-    map.set(r.user_id, withDefaults(r.user_id, r));
-    found.add(r.user_id);
-  });
+  // D1 limits bound parameters; keep each query comfortably below that limit.
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const placeholders = chunk.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`SELECT * FROM privacy_settings WHERE user_id IN (${placeholders})`)
+      .bind(...chunk).all<PrivacySettingsRow>();
+    (results ?? []).forEach((r) => {
+      map.set(r.user_id, withDefaults(r.user_id, r));
+      found.add(r.user_id);
+    });
+  }
   // Anyone without a row yet (e.g. created before privacy_settings existed) still gets defaults.
   ids.filter((id) => !found.has(id)).forEach((id) => map.set(id, withDefaults(id)));
   return map;
@@ -104,15 +104,18 @@ export async function getFriendIdSet(env: Env, userId: string, otherIds: string[
   const ids = [...new Set(otherIds)].filter((id) => id && id !== userId);
   const set = new Set<string>();
   if (ids.length === 0) return set;
-  const placeholders = ids.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT user1_id, user2_id FROM friendships
-     WHERE (user1_id = ? AND user2_id IN (${placeholders}))
-        OR (user2_id = ? AND user1_id IN (${placeholders}))`
-  )
-    .bind(userId, ...ids, userId, ...ids)
-    .all<{ user1_id: string; user2_id: string }>();
-  (results ?? []).forEach((r) => set.add(r.user1_id === userId ? r.user2_id : r.user1_id));
+  for (let i = 0; i < ids.length; i += 49) {
+    const chunk = ids.slice(i, i + 49);
+    const placeholders = chunk.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT user1_id, user2_id FROM friendships
+       WHERE (user1_id = ? AND user2_id IN (${placeholders}))
+          OR (user2_id = ? AND user1_id IN (${placeholders}))`
+    )
+      .bind(userId, ...chunk, userId, ...chunk)
+      .all<{ user1_id: string; user2_id: string }>();
+    (results ?? []).forEach((r) => set.add(r.user1_id === userId ? r.user2_id : r.user1_id));
+  }
   return set;
 }
 
@@ -120,7 +123,7 @@ export function isVisible(setting: PrivacyOption, isSelf: boolean, isFriend: boo
   if (isSelf) return true;
   if (setting === 'everyone') return true;
   if (setting === 'nobody') return false;
-  return isFriend;
+  return setting === 'contacts' && isFriend;
 }
 
 /**
