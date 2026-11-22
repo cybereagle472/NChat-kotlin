@@ -1921,3 +1921,5 @@ Media provenance fix `142a494` passed Worker CI `44992809054` (64 tests and type
 Request-body red `a333dc6` shows ignored oversized JSON and an oversized declared upload body are accepted. Local tests failed; CI pending. Android permits status media up to 48 MiB and chat attachments 24 MiB; any upload limit must preserve those paths. Nothing deployed.
 
 Request-size red `a333dc6` failed Worker CI `44992900727`; fix `bc34b16` uses Hono body limits (256 KiB for normal requests, 50 MiB multipart upload), rejects files over 49 MiB and passes the File to R2 without making an extra array-buffer copy. Tests include an oversized chunked JSON stream and small R2 uploads. Local 67 tests/typecheck passed; CI pending. Android's 48 MiB status and 24 MiB chat bounds fit, but large real-device uploads and memory usage have not been tested. Hono's middleware trusts an available Content-Length, relying on Cloudflare's HTTP framing; verify proxy assumptions. Nothing deployed.
+
+IPv6 rate-limit red `1ac1308` exposes a new per-address signup budget for each IPv6 address in the same /64. Local test failed; CI pending. Nothing deployed.
