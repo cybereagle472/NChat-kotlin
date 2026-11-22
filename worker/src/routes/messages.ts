@@ -341,17 +341,17 @@ messages.post('/mark-read', async (c) => {
   if (sender_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, sender_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
+  // Identify exactly the rows changed by this authorized write. A separate
+  // pre-read can race both new messages and a block/unfriend.
   const { results } = await c.env.DB.prepare(
-    'SELECT id FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0'
-  )
-    .bind(sender_id, userId)
-    .all<{ id: string }>();
+    `UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0 AND ${messageContactGuard} RETURNING id`
+  ).bind(sender_id, userId).all<{ id: string }>();
   const messageIds = (results ?? []).map((r) => r.id);
+  if (messageIds.length === 0 && !(await mayMessage(c.env, userId, sender_id))) {
+    return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  }
 
   if (messageIds.length > 0) {
-    await c.env.DB.prepare('UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?')
-      .bind(sender_id, userId)
-      .run();
     // The reader's (userId's) own Read Receipts setting controls whether the
     // sender gets told their messages were read — same rule enforced for
     // the regular history fetch in GET /with/:otherId.

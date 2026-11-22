@@ -883,6 +883,7 @@ function pauseWrite(match: string) {
         return {
           async run() { notify(); await gate; return bound.run(); },
           async first() { notify(); await gate; return bound.first(); },
+          async all() { notify(); await gate; return bound.all(); },
         };
       } };
     },
