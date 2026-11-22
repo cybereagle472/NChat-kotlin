@@ -1951,3 +1951,5 @@ Group-call decline fix af9d09e atomically transitions only active ringing partic
 Group-call decline fix `af9d09e` passed Worker CI `44993878826` (typecheck and all 78 tests). Branch is not merged or deployed. Remaining work includes group-call start/join/end concurrency, broader authorization/media check-write races, signaling abuse limits, account enumeration, real D1/PBKDF2 and Android/load verification, and a remediation report; migration 0006 requires owner backup/application before deployment.
 
 Resumed Cloudflare backend Phase 1 on 2026-11-22. Concurrent group-call start regression 0d342cc failed locally: two simultaneous starts each create a different active call. Worker CI pending. All work remains branch-only and no Cloudflare operation was performed.
+
+Concurrent-start red `0d342cc` passed Worker CI `44995961667` despite failing locally: the simultaneous-request test is timing-dependent. It is not reliable evidence of a fix. Making the interleaving deterministic before implementation; no deployment.
