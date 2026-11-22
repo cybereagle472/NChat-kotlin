@@ -1521,3 +1521,38 @@ describe('safe media response types and filenames', () => {
     }
   });
 });
+
+describe('status view authorization under concurrency', () => {
+  for (const change of ['block','unfriend','privacy','expired','deleted'] as const) {
+    it(`does not record or announce a view after the status becomes ${change}`, async () => {
+      const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
+      const created = await post('/status',owner.token,{content_type:'text',text_content:'private update',privacy:'contacts'});
+      expect(created.status).toBe(201);
+      const id = (await created.json() as {status:{id:string}}).status.id;
+      const target = await inbox(owner), paused = pauseWrite('INSERT OR IGNORE INTO status_views');
+      const request = requestWithBindings(`/status/${id}/view`,viewer.token,paused.bindings);
+      await paused.reached;
+      try {
+        if (change === 'block') await env.DB.prepare('INSERT INTO blocked_users (id,user_id,blocked_user_id) VALUES (?,?,?)').bind(crypto.randomUUID(),owner.id,viewer.id).run();
+        if (change === 'unfriend') await env.DB.prepare('DELETE FROM friendships WHERE user1_id=? AND user2_id=?').bind(owner.id,viewer.id).run();
+        if (change === 'privacy') await env.DB.prepare("INSERT INTO privacy_settings (user_id,status_visibility) VALUES (?,'nobody') ON CONFLICT(user_id) DO UPDATE SET status_visibility='nobody'").bind(owner.id).run();
+        if (change === 'expired') await env.DB.prepare("UPDATE statuses SET expires_at='2000-01-01' WHERE id=?").bind(id).run();
+        if (change === 'deleted') await env.DB.prepare('DELETE FROM statuses WHERE id=?').bind(id).run();
+      } finally {paused.resume();}
+      expect((await request).status).toBe(404);
+      expect(await env.DB.prepare('SELECT 1 FROM status_views WHERE status_id=? AND viewer_id=?').bind(id,viewer.id).first()).toBeNull();
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+    });
+  }
+  it('records and announces an authorized view only once', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
+    const created = await post('/status',owner.token,{content_type:'text',text_content:'hello',privacy:'contacts'});
+    const id = (await created.json() as {status:{id:string}}).status.id;
+    const target = await inbox(owner);
+    expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
+    expect((await post(`/status/${id}/view`,viewer.token)).status).toBe(200);
+    const views = await env.DB.prepare('SELECT id FROM status_views WHERE status_id=? AND viewer_id=?').bind(id,viewer.id).all();
+    expect(views.results).toHaveLength(1);
+    await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
+  });
+});
