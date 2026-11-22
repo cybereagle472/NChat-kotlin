@@ -148,19 +148,35 @@ groupCalls.post('/', limitContact, async (c) => {
   const created_at = nowIso();
   const memberIds = await memberIdsOf(c.env, group_id);
 
-  await c.env.DB.batch([
+  // The conditional insert and participant setup are one D1 transaction.
+  // A concurrent starter that lost the insert joins the winner instead.
+  const [created] = await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO group_calls (id, group_id, caller_id, call_type, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)`
+      `INSERT INTO group_calls (id, group_id, caller_id, call_type, status, created_at)
+       SELECT ?1, ?2, ?3, ?4, 'active', ?5
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+         AND NOT EXISTS (SELECT 1 FROM group_calls WHERE group_id = ?2 AND status = 'active')`
     ).bind(id, group_id, userId, call_type, created_at),
     c.env.DB.prepare(
-      `INSERT INTO group_call_participants (call_id, user_id, status, joined_at) VALUES (?, ?, 'joined', ?)`
+      `INSERT INTO group_call_participants (call_id, user_id, status, joined_at)
+       SELECT ?1, ?2, 'joined', ?3 WHERE EXISTS (SELECT 1 FROM group_calls WHERE id = ?1)`
     ).bind(id, userId, created_at),
     ...memberIds
       .filter((m) => m !== userId)
       .map((m) =>
-        c.env.DB.prepare(`INSERT INTO group_call_participants (call_id, user_id, status) VALUES (?, ?, 'ringing')`).bind(id, m)
+        c.env.DB.prepare(`INSERT INTO group_call_participants (call_id, user_id, status)
+          SELECT ?1, ?2, 'ringing' WHERE EXISTS (SELECT 1 FROM group_calls WHERE id = ?1)
+            AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?3 AND user_id = ?2)`).bind(id, m, group_id)
       ),
   ]);
+  if (!created.meta.changes) {
+    if (!(await getMembership(c.env, group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+    const winner = await c.env.DB.prepare(
+      `SELECT * FROM group_calls WHERE group_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
+    ).bind(group_id).first<GroupCallRow>();
+    if (!winner) return c.json({ error: 'Call is no longer active' }, 409);
+    return c.json(await joinCall(c.env, winner, userId));
+  }
 
   // Caller photos are shaped separately for each recipient's privacy view.
   const caller = await c.env.DB.prepare('SELECT full_name, avatar_url FROM users WHERE id = ?').bind(userId).first<{
