@@ -199,8 +199,7 @@ messages.post('/', async (c) => {
     created_at,
   });
 
-  await Promise.all([
-    c.env.DB.prepare(
+  await c.env.DB.prepare(
       `INSERT INTO messages (id, sender_id, receiver_id, content, type, media_url, thumbnail_url, file_name, file_size, duration, client_message_id, reply_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -219,10 +218,9 @@ messages.post('/', async (c) => {
         body.reply_to ?? null,
         created_at
       )
-      .run(),
-    // Fan out to both participants so any open tab/device updates live.
-    broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg }),
-  ]);
+      .run();
+  // Fan out only after the row is durable.
+  await broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg });
 
   return c.json({ message: msg }, 201);
 });
@@ -243,17 +241,13 @@ messages.patch('/:id', async (c) => {
 
   // `row` already has every column (it was a `SELECT *`), so the updated
   // row can be built in memory instead of writing then reading it back a
-  // second time, and the write + broadcast can run concurrently instead
-  // of one after the other — same latency win as sending a new message.
+  // second time. Publish only after the update succeeds.
   const edited_at = nowIso();
   const updatedMsg = messageJson({ ...row, content, is_edited: 1, edited_at });
 
-  await Promise.all([
-    c.env.DB.prepare("UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ?")
-      .bind(content, edited_at, id)
-      .run(),
-    broadcastToParticipants(c.env, userId, row.receiver_id, { type: 'message:edit', message: updatedMsg }),
-  ]);
+  await c.env.DB.prepare("UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ?")
+    .bind(content, edited_at, id).run();
+  await broadcastToParticipants(c.env, userId, row.receiver_id, { type: 'message:edit', message: updatedMsg });
   return c.json({ message: updatedMsg });
 });
 
