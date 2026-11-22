@@ -2120,3 +2120,56 @@ describe('reaction contention limits', () => {
     },30000);
   }
 });
+
+async function setup(kind:'direct'|'group', count:number) {
+  const a = await mediaAccount(), b = await mediaAccount(), id = crypto.randomUUID();
+  const reactions = Object.fromEntries(Array.from({length:count},(_,i)=>[`reaction${i}`,[b.id]]));
+  let table:string, path:string;
+  if (kind === 'direct') {
+    await env.DB.prepare('INSERT INTO friendships (id,user1_id,user2_id) VALUES (?,?,?)').bind(crypto.randomUUID(),a.id,b.id).run();
+    await env.DB.prepare('INSERT INTO messages (id,sender_id,receiver_id,reactions) VALUES (?,?,?,?)').bind(id,a.id,b.id,JSON.stringify(reactions)).run();
+    table='messages'; path=`/messages/${id}/reaction`;
+  } else {
+    const group = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(group,'Group',a.id).run();
+    for (const u of [a,b]) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,u.id,'member').run();
+    await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,reactions) VALUES (?,?,?,?)').bind(id,group,a.id,JSON.stringify(reactions)).run();
+    table='group_messages'; path=`/groups/messages/${id}/reaction`;
+  }
+  return {a,b,id,table,path};
+}
+function react(path:string,token:string,emoji:string) {
+  return SELF.fetch(`https://example.test${path}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({emoji})});
+}
+
+describe('bounded distinct message reactions', () => {
+  for (const kind of ['direct','group'] as const) {
+    it(`limits ${kind} messages to 64 distinct reactions while allowing joins and removal`, async () => {
+      const f = await setup(kind,64);
+      expect((await react(f.path,f.a.token,'new-reaction')).status).toBe(400);
+      expect((await react(f.path,f.a.token,'reaction0')).status).toBe(200);
+      expect((await react(f.path,f.a.token,'reaction0')).status).toBe(200);
+      expect((await react(f.path,f.b.token,'reaction0')).status).toBe(200);
+      expect((await react(f.path,f.a.token,'new-reaction')).status).toBe(200);
+      const row = await env.DB.prepare(`SELECT reactions FROM ${f.table} WHERE id=?`).bind(f.id).first<{reactions:string}>();
+      expect(Object.keys(JSON.parse(row!.reactions))).toHaveLength(64);
+    },30000);
+    it(`rechecks the ${kind} reaction limit after a conflicting write`, async () => {
+      const f = await setup(kind,63);
+      let reached!:()=>void,resume!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+      const db = {prepare(sql:string) {
+        const stmt = env.DB.prepare(sql);
+        if (!sql.includes(`UPDATE ${f.table} SET reactions =`)) return stmt;
+        return {bind(...args:unknown[]) {const bound=stmt.bind(...args);return {async run(){reached();await gate;return bound.run();}};}};
+      },batch:env.DB.batch.bind(env.DB)};
+      const stale = app.request(`https://example.test${f.path}`,{method:'POST',headers:{Authorization:`Bearer ${f.a.token}`,'Content-Type':'application/json'},body:JSON.stringify({emoji:'stale'})},{...env,DB:db} as unknown as Env);
+      await ready;
+      try { expect((await react(f.path,f.b.token,'fresh')).status).toBe(200); } finally {resume();}
+      expect((await stale).status).toBe(400);
+      const row = await env.DB.prepare(`SELECT reactions FROM ${f.table} WHERE id=?`).bind(f.id).first<{reactions:string}>();
+      const reactions = JSON.parse(row!.reactions);
+      expect(Object.keys(reactions)).toHaveLength(64); expect(reactions.fresh).toEqual([f.b.id]); expect(reactions.stale).toBeUndefined();
+    },30000);
+  }
+});
