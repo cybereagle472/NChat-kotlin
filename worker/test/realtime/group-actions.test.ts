@@ -2020,3 +2020,36 @@ describe('concurrent status view persistence', () => {
     await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
   },30000);
 });
+
+describe('concurrent message JSON actions', () => {
+  for (const kind of ['direct','group'] as const) for (const action of ['reaction','delete-for-me'] as const) {
+    it(`preserves both users' ${action} on a ${kind} message`, async () => {
+      const a = await mediaAccount(), b = await mediaAccount();
+      let id: string, path: string;
+      if (kind === 'direct') {
+        await friend(a.id,b.id);
+        const sent = await post('/messages',a.token,{receiver_id:b.id,content:'hello'});
+        expect(sent.status).toBe(201);
+        id = (await sent.json() as {message:{id:string}}).message.id;
+        path = `/messages/${id}/${action}`;
+      } else {
+        const group = crypto.randomUUID(); id = crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO groups (id,name,created_by) VALUES (?,?,?)').bind(group,'group',a.id).run();
+        for (const user of [a,b]) await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,user.id,'member').run();
+        await env.DB.prepare('INSERT INTO group_messages (id,group_id,sender_id,content) VALUES (?,?,?,?)').bind(id,group,a.id,'hello').run();
+        path = `/groups/messages/${id}/${action}`;
+      }
+      const table = kind === 'direct' ? 'messages' : 'group_messages';
+      const column = action === 'reaction' ? 'reactions' : 'deleted_for';
+      const paused = pauseWrite(`UPDATE ${table} SET ${column} = `);
+      const stale = app.request(`https://example.test${path}`,{method:'POST',headers:{Authorization:`Bearer ${a.token}`,'Content-Type':'application/json'},body:JSON.stringify(action === 'reaction' ? {emoji:'👍'} : {})},paused.bindings);
+      await paused.reached;
+      try { expect((await post(path,b.token,action === 'reaction' ? {emoji:'👍'} : {})).status).toBe(200); }
+      finally {paused.resume();}
+      expect((await stale).status).toBe(200);
+      const row = await env.DB.prepare(`SELECT ${column} AS value FROM ${table} WHERE id=?`).bind(id).first<{value:string}>();
+      const result = JSON.parse(row!.value);
+      expect((action === 'reaction' ? result['👍'] : result).sort()).toEqual([a.id,b.id].sort());
+    },30000);
+  }
+});
