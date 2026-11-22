@@ -1893,3 +1893,5 @@ Status avatar privacy red `5bba695` tests feed, notifications and viewer lists; 
 Group avatar fix `61bc20f` passed Worker CI `44990491787`. Status avatar red `5bba695` failed CI `44990523302`; fix `3ac9d92` filters photos in status feed, status-new/view events and viewer list according to each viewer. Local 53 tests/typecheck passed; CI pending. High fan-out costs and privacy races need review. Nothing deployed.
 
 Login-timing red `28e35ab` verifies that unknown accounts perform password work after rate limiting, using an isolated mock to avoid timing-based flaky tests; it failed locally, CI pending. Signup still discloses existing addresses. Nothing deployed.
+
+Status avatar fix `3ac9d92` passed Worker CI `44990598593`. Login timing red `28e35ab` failed CI `44990629978`; fix `c6b4a1b` runs a fixed 100,000-round decoy hash for unknown accounts behind the credential limits. Local 54 tests/typecheck passed; CI pending. Different legacy hash work factors can still create timing differences; this is not a timing proof, and signup enumeration remains. Nothing deployed.
