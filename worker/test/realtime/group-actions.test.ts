@@ -931,3 +931,33 @@ describe('group call join and leave races', () => {
     expect((await joining).status).toBe(403);
   });
 });
+
+describe('group role change authorization under concurrency', () => {
+  it('does not allow two admins to demote each other and leave a group without an admin', async () => {
+    const { owner, outsider, group } = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, outsider.id, 'admin').run();
+    let count = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const db = {
+      prepare(sql: string) {
+        const statement = env.DB.prepare(sql);
+        if (!sql.includes('UPDATE group_members SET role = ?')) return statement;
+        return { bind(...args: unknown[]) {
+          const bound = statement.bind(...args);
+          return { async run() { if (++count === 2) release(); await gate; return bound.run(); } };
+        } };
+      },
+      batch: env.DB.batch.bind(env.DB),
+    };
+    const bindings = { ...env, DB: db } as unknown as Env;
+    const change = (actor: {token:string}, target: string) => app.request(`https://example.test/groups/${group}/members/${target}`, {
+      method: 'PATCH', headers: {Authorization:`Bearer ${actor.token}`, 'Content-Type':'application/json'}, body:JSON.stringify({role:'member'}),
+    }, bindings);
+    const results = await Promise.all([change(owner, outsider.id), change(outsider, owner.id)]);
+    expect(results.map(r => r.status).sort()).toEqual([200, 403]);
+    const admins = await env.DB.prepare("SELECT user_id FROM group_members WHERE group_id = ? AND role = 'admin'").bind(group).all();
+    expect(admins.results).toHaveLength(1);
+  });
+});
