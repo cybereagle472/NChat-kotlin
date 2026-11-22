@@ -1589,3 +1589,36 @@ describe('concurrent privacy settings updates', () => {
     });
   }
 });
+
+describe('direct read receipt authorization under concurrency', () => {
+  for (const change of ['block','unfriend'] as const) {
+    it(`does not record or announce read receipts after ${change}`, async () => {
+      const sender = await mediaAccount(), receiver = await mediaAccount(); await friend(sender.id,receiver.id);
+      const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'unread'});
+      const id = (await sent.json() as {message:{id:string}}).message.id;
+      const target = await inbox(sender), paused = pauseWrite('UPDATE messages SET is_read = 1');
+      const request = app.request('https://example.test/messages/mark-read',{
+        method:'POST',headers:{Authorization:`Bearer ${receiver.token}`,'Content-Type':'application/json'},body:JSON.stringify({sender_id:sender.id}),
+      },paused.bindings);
+      await paused.reached;
+      try {
+        if (change === 'block') await post('/friends/block',sender.token,{user_id:receiver.id});
+        else await app.request(`https://example.test/friends/${receiver.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${sender.token}`}},env);
+      } finally {paused.resume();}
+      expect((await request).status).toBe(403);
+      expect((await env.DB.prepare('SELECT is_read FROM messages WHERE id=?').bind(id).first<{is_read:number}>())?.is_read).toBe(0);
+      await target.flush(); expect(target.events.filter(e=>JSON.parse(e).type === 'message:read')).toHaveLength(0); target.socket.close(1000,'finished');
+    });
+  }
+  it('marks and announces an authorized unread message once', async () => {
+    const sender = await mediaAccount(), receiver = await mediaAccount(); await friend(sender.id,receiver.id);
+    const sent = await post('/messages',sender.token,{receiver_id:receiver.id,content:'hello'});
+    const id = (await sent.json() as {message:{id:string}}).message.id;
+    const target = await inbox(sender);
+    expect((await post('/messages/mark-read',receiver.token,{sender_id:sender.id})).status).toBe(200);
+    expect((await post('/messages/mark-read',receiver.token,{sender_id:sender.id})).status).toBe(200);
+    expect((await env.DB.prepare('SELECT is_read FROM messages WHERE id=?').bind(id).first<{is_read:number}>())?.is_read).toBe(1);
+    await target.flush(); const events = target.events.map(e=>JSON.parse(e));
+    expect(events).toHaveLength(1); expect(events[0]).toMatchObject({type:'message:read',reader_id:receiver.id,message_ids:[id]}); target.socket.close(1000,'finished');
+  });
+});
