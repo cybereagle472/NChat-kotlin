@@ -1633,6 +1633,29 @@ describe('direct read receipt authorization under concurrency', () => {
   },30000);
 });
 
+describe('nonexistent target users are refused cleanly', () => {
+  it('does not create a friend request for an account that does not exist', async () => {
+    const actor = await mediaAccount(), missing = crypto.randomUUID();
+    expect((await post('/friends/request', actor.token, {receiver_id:missing})).status).toBe(404);
+    expect(await env.DB.prepare('SELECT 1 FROM friend_requests WHERE sender_id=? OR receiver_id=?').bind(actor.id, missing).first()).toBeNull();
+  });
+  it('does not create a block for an account that does not exist', async () => {
+    const actor = await mediaAccount(), missing = crypto.randomUUID();
+    expect((await post('/friends/block', actor.token, {user_id:missing})).status).toBe(404);
+    expect(await env.DB.prepare('SELECT 1 FROM blocked_users WHERE user_id=? AND blocked_user_id=?').bind(actor.id, missing).first()).toBeNull();
+  });
+  it('does not create a call for an account that does not exist', async () => {
+    const actor = await mediaAccount(), missing = crypto.randomUUID();
+    expect((await post('/calls', actor.token, {receiver_id:missing,call_type:'audio'})).status).toBe(404);
+    expect(await env.DB.prepare('SELECT 1 FROM calls WHERE caller_id=? AND receiver_id=?').bind(actor.id, missing).first()).toBeNull();
+  });
+  it('does not add a group member whose account does not exist', async () => {
+    const {owner,group} = await fixture(), missing = crypto.randomUUID();
+    expect((await post(`/groups/${group}/members`, owner.token, {memberIds:[missing]})).status).toBe(404);
+    expect(await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id=? AND user_id=?').bind(group, missing).first()).toBeNull();
+  });
+});
+
 describe('group creation atomicity', () => {
   it('does not leave an orphan group when a member does not exist', async () => {
     const owner = await mediaAccount(); const missing = crypto.randomUUID();
