@@ -1945,3 +1945,5 @@ Group-departure fix `924aaa9` passed Worker CI `44993681704` (typecheck and 75 t
 Group call decline tests f543dfd fail locally: decline notifies a removed caller, and joined participants can send decline events. CI pending; fix not yet implemented. A removed-member decline is also checked after the non-ringing assertion; no deployment.
 
 Group call decline regression `f543dfd` failed Worker CI `44993770525` on both assertions as expected.
+
+Group-call decline fix af9d09e atomically transitions only active ringing participants who remain group members, and checks the caller's current membership before notifying. Normal declines still send one event; duplicate/non-ringing declines return 409. Full local typecheck and 77 tests passed, plus targeted valid/duplicate test; CI pending. Membership can still change between the recipient check and realtime broadcast; other call concurrency issues and already-established P2P connections remain. Not deployed.
