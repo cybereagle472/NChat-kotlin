@@ -515,3 +515,26 @@ describe('group removal safeguards', () => {
     listener.socket.close(1000, 'finished');
   });
 });
+
+describe('profile-photo privacy in group payloads', () => {
+  it('redacts a hidden avatar in group responses and member events per viewer', async () => {
+    const { owner, outsider, group } = await fixture();
+    const avatar = `https://images.example/${crypto.randomUUID()}`;
+    await env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatar, owner.id).run();
+    await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'nobody' WHERE user_id = ?").bind(owner.id).run();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), group, outsider.id, 'member').run();
+    for (const path of [`/groups/${group}`, `/groups/${group}/members`, '/groups']) {
+      const viewer = await authGet(path, outsider.token);
+      expect(viewer.status).toBe(200);
+      expect(await viewer.text(), path).not.toContain(avatar);
+    }
+    const own = await authGet(`/groups/${group}`, owner.token);
+    expect(await own.text()).toContain(avatar);
+    const target = await inbox(outsider);
+    const update = await SELF.fetch(`https://example.test/groups/${group}`, {method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'Renamed'})});
+    expect(update.status).toBe(200);
+    await target.flush();
+    expect(JSON.stringify(target.events)).not.toContain(avatar);
+    target.socket.close(1000, 'finished');
+  });
+});
