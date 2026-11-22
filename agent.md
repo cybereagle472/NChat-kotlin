@@ -1995,3 +1995,5 @@ Group deletion fix afccff9 uses a single admin-guarded DELETE with D1 foreign-ke
 Group deletion fix `afccff9` passed Worker CI `44997260204` (87 tests and typecheck). Branch-only; not deployed. The production-schema assumption and notification race documented above remain.
 
 Group metadata/avatar race tests 3603449 fail locally: a demoted admin can change group text or replace group avatar and its trusted media grants after the authorization check. Tests force the interleaving before the write/batch; CI pending. Nothing deployed.
+
+Group update race red `3603449` failed Worker CI `44997650033` on both expected assertions; no deployment.
