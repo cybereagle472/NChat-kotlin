@@ -654,6 +654,9 @@ groups.post('/messages/:messageId/reaction', async (c) => {
 
     // Treat all reaction keys literally, including JavaScript prototype names.
     const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    if (!Object.hasOwn(reactions, emoji) && Object.keys(reactions).length >= 64) {
+      return c.json({ error: 'This message has too many different reactions' }, 400);
+    }
     const list = reactions[emoji] ?? [];
     reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
     if (reactions[emoji].length === 0) delete reactions[emoji];

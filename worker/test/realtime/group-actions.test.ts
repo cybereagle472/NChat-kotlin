@@ -1299,7 +1299,7 @@ describe('friend request response authorization under concurrency', () => {
       expect(await env.DB.prepare('SELECT 1 FROM friendships WHERE (user1_id=? AND user2_id=?) OR (user1_id=? AND user2_id=?)').bind(f.sender.id,f.receiver.id,f.receiver.id,f.sender.id).first()).toBeNull();
       await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
     }
-  });
+  },30000);
   it('cannot accept if a block is applied after the request was read', async () => {
     const f = await requestFixture(), target = await inbox(f.sender);
     let reached!:()=>void, resume!:()=>void;

@@ -322,6 +322,11 @@ messages.post('/:id/reaction', async (c) => {
     // Emoji is user input; a null prototype makes keys such as "constructor"
     // and "__proto__" ordinary reaction keys rather than object properties.
     const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    if (!Object.hasOwn(reactions, emoji) && Object.keys(reactions).length >= 64) {
+      const otherId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+      if (!(await mayMessage(c.env, userId, otherId))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+      return c.json({ error: 'This message has too many different reactions' }, 400);
+    }
     const list = reactions[emoji] ?? [];
     reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
     if (reactions[emoji].length === 0) delete reactions[emoji];
