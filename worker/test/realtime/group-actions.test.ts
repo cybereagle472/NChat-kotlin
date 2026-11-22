@@ -286,3 +286,83 @@ describe('status privacy', () => {
     expect((await views.json() as {views: {viewer_id:string}[]}).views.map((v) => v.viewer_id)).toContain(viewer.id);
   });
 });
+
+async function groupCallFixture() {
+  const owner = await mediaAccount(), member = await mediaAccount(), outsider = await mediaAccount();
+  const group = crypto.randomUUID(), call = crypto.randomUUID();
+  await env.DB.prepare('INSERT INTO groups (id, name, created_by) VALUES (?, ?, ?)').bind(group, 'Test', owner.id).run();
+  for (const user of [owner, member]) {
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, user.id, user.id === owner.id ? 'admin' : 'member').run();
+  }
+  await env.DB.prepare("INSERT INTO group_calls (id, group_id, caller_id, call_type, status, created_at) VALUES (?, ?, ?, 'audio', 'active', ?)")
+    .bind(call, group, owner.id, new Date().toISOString()).run();
+  for (const user of [owner, member]) {
+    await env.DB.prepare("INSERT INTO group_call_participants (call_id, user_id, status) VALUES (?, ?, 'joined')").bind(call, user.id).run();
+  }
+  return { owner, member, outsider, group, call };
+}
+async function inbox(user: {id:string;token:string}) {
+  const response = await SELF.fetch(`https://example.test/realtime/connect?${new URLSearchParams({room: `user:${user.id}`, token: user.token})}`, { headers: { Upgrade: 'websocket' } });
+  expect(response.status).toBe(101);
+  const socket = response.webSocket!; socket.accept();
+  const events: string[] = [];
+  const waiters = new Map<string, () => void>();
+  socket.addEventListener('message', (event) => { const text = String(event.data); events.push(text); waiters.get(text)?.(); });
+  return {
+    events, socket,
+    async flush() {
+      const marker = crypto.randomUUID();
+      const done = new Promise<void>((resolve) => waiters.set(marker, resolve));
+      await env.REALTIME.get(env.REALTIME.idFromName(`user:${user.id}`)).fetch('https://internal/broadcast', { method: 'POST', body: marker });
+      await done; waiters.delete(marker); events.pop();
+    },
+  };
+}
+
+describe('call signalling integrity', () => {
+  it('never lets clients override call event identity', async () => {
+    const owner = await mediaAccount(), receiver = await mediaAccount();
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO calls (id, caller_id, receiver_id, call_type, status) VALUES (?, ?, ?, 'audio', 'ringing')").bind(id, owner.id, receiver.id).run();
+    const target = await inbox(receiver);
+    const answer = await post(`/calls/${id}/signal`, owner.token, { type:'message:new', callId:'fake', call_id:'fake', groupCallId:'fake', group_call_id:'fake', from:receiver.id, from_id:receiver.id, senderId:receiver.id, sender_id:receiver.id, user_id:receiver.id, to:receiver.id, candidate:{candidate:'example'} });
+    expect(answer.status).toBe(200);
+    await target.flush();
+    expect(target.events).toHaveLength(1);
+    const event = JSON.parse(target.events[0]);
+    expect(event).toMatchObject({ type:'call:signal', callId:id, from:owner.id, candidate:{candidate:'example'} });
+    for (const key of ['call_id','groupCallId','group_call_id','from_id','senderId','sender_id','user_id','to']) expect(event).not.toHaveProperty(key);
+    target.socket.close(1000, 'finished');
+  });
+  it('does not relay late signals after a call ends', async () => {
+    const owner = await mediaAccount(), receiver = await mediaAccount();
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO calls (id, caller_id, receiver_id, call_type, status, ended_at) VALUES (?, ?, ?, 'audio', 'ended', datetime('now'))").bind(id, owner.id, receiver.id).run();
+    const target = await inbox(receiver);
+    expect((await post(`/calls/${id}/signal`, owner.token, {candidate:'late'})).status).toBe(200);
+    await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000, 'finished');
+  });
+  it('forbids outsiders from declining or leaving group calls', async () => {
+    const f = await groupCallFixture();
+    for (const action of ['decline', 'leave']) expect((await post(`/group-calls/${f.call}/${action}`, f.outsider.token)).status).toBe(403);
+    expect((await env.DB.prepare('SELECT status FROM group_calls WHERE id = ?').bind(f.call).first<{status:string}>())?.status).toBe('active');
+  });
+  it('requires both parties to be current group members and joined call participants for group signals', async () => {
+    const f = await groupCallFixture();
+    expect((await post(`/group-calls/${f.call}/signal`, f.owner.token, {to:f.outsider.id, candidate:'x'})).status).toBe(403);
+    await env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(f.group, f.member.id).run();
+    expect((await post(`/group-calls/${f.call}/signal`, f.owner.token, {to:f.member.id, candidate:'x'})).status).toBe(403);
+    expect((await post(`/group-calls/${f.call}/signal`, f.member.token, {to:f.owner.id, candidate:'x'})).status).toBe(403);
+    expect((await post(`/group-calls/${f.call}/leave`, f.member.token)).status).toBe(200);
+  });
+  it('does not allow forged group call signal envelopes', async () => {
+    const f = await groupCallFixture(), target = await inbox(f.member);
+    expect((await post(`/group-calls/${f.call}/signal`, f.owner.token, {to:f.member.id, type:'group:deleted', call_id:'fake', callId:'fake', groupCallId:'fake', group_call_id:'fake', from:f.member.id, from_id:f.member.id, senderId:f.member.id, sender_id:f.member.id, user_id:f.member.id, offer_sdp:{type:'offer',sdp:'v=0'} })).status).toBe(200);
+    await target.flush(); expect(target.events).toHaveLength(1);
+    const event = JSON.parse(target.events[0]);
+    expect(event).toMatchObject({type:'group-call:signal', call_id:f.call, from:f.owner.id, offer_sdp:{type:'offer',sdp:'v=0'}});
+    for (const key of ['to','callId','groupCallId','group_call_id','from_id','senderId','sender_id','user_id']) expect(event).not.toHaveProperty(key);
+    target.socket.close(1000, 'finished');
+  });
+});
