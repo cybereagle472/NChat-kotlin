@@ -1113,3 +1113,29 @@ describe('group message send authorization under concurrency', () => {
     });
   }
 });
+
+describe('group message actions under concurrent removal', () => {
+  const actions = [
+    {path:'delete-for-me', sql:'UPDATE group_messages SET deleted_for = ?', body:{}},
+    {path:'delete-for-everyone', sql:'UPDATE group_messages SET is_deleted = 1', body:{}},
+    {path:'reaction', sql:'UPDATE group_messages SET reactions = ?', body:{emoji:'👍'}},
+  ];
+  for (const action of actions) {
+    it(`rejects ${action.path} if the actor is removed before the write`, async () => {
+      const {owner, outsider, group, message} = await fixture();
+      await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'admin').run();
+      const listener = await inbox(outsider);
+      const paused = pauseWrite(action.sql);
+      const request = app.request(`https://example.test/groups/messages/${message}/${action.path}`, {
+        method:'POST',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify(action.body),
+      }, paused.bindings);
+      await paused.reached;
+      try { await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(group,owner.id).run(); }
+      finally {paused.resume();}
+      expect((await request).status).toBe(403);
+      const row = await env.DB.prepare('SELECT is_deleted, deleted_for, reactions FROM group_messages WHERE id=?').bind(message).first<{is_deleted:number;deleted_for:string|null;reactions:string|null}>();
+      expect(row).toMatchObject({is_deleted:0,deleted_for:null,reactions:null});
+      await listener.flush(); expect(listener.events).toHaveLength(0); listener.socket.close(1000,'finished');
+    });
+  }
+});
