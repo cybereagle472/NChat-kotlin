@@ -771,3 +771,25 @@ describe('authenticated abuse limits', () => {
     }
   }, 30000);
 });
+
+describe('group departure concurrency', () => {
+  it('never allows two administrators to leave a remaining member without an administrator', async () => {
+    const { owner, outsider, group } = await fixture();
+    const member = await mediaAccount();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, outsider.id, 'admin').run();
+    await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), group, member.id, 'member').run();
+    const replies = await Promise.all([post(`/groups/${group}/leave`, owner.token), post(`/groups/${group}/leave`, outsider.token)]);
+    expect(replies.map(r => r.status).sort()).toEqual([200, 400]);
+    const admins = await env.DB.prepare("SELECT user_id FROM group_members WHERE group_id = ? AND role = 'admin'").bind(group).all();
+    expect(admins.results).toHaveLength(1);
+  });
+  it('removing oneself as the last member removes the empty group', async () => {
+    const { owner, group, message } = await fixture();
+    const response = await SELF.fetch(`https://example.test/groups/${group}/members/${owner.id}`, {method:'DELETE', headers:{Authorization:`Bearer ${owner.token}`}});
+    expect(response.status).toBe(200);
+    expect(await env.DB.prepare('SELECT id FROM groups WHERE id = ?').bind(group).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM group_messages WHERE id = ?').bind(message).first()).toBeNull();
+  });
+});
