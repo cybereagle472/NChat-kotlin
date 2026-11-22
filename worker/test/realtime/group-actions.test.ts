@@ -1873,3 +1873,41 @@ describe('avatar provenance when reusing the current avatar', () => {
     }, 30000);
   }
 });
+
+describe('concurrent group metadata and avatar writes', () => {
+  it('a name-only update does not revert a concurrently replaced avatar or its grants', async () => {
+    const {owner, outsider, group} = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'member').run();
+    const old = await mediaUpload(owner.token), replacement = await mediaUpload(owner.token);
+    const patch = (body: object) => SELF.fetch(`https://example.test/groups/${group}`, {method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    expect((await patch({avatar_url:old.url})).status).toBe(200);
+    const paused = pauseWrite('UPDATE groups SET name = ?');
+    const request = app.request(`https://example.test/groups/${group}`,{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'Renamed'})},paused.bindings);
+    await paused.reached;
+    try { expect((await patch({avatar_url:replacement.url})).status).toBe(200); }
+    finally { paused.resume(); }
+    expect((await request).status).toBe(200);
+    const row = await env.DB.prepare('SELECT name,avatar_url FROM groups WHERE id=?').bind(group).first<{name:string;avatar_url:string}>();
+    expect(row).toEqual({name:'Renamed',avatar_url:replacement.url});
+    expect((await mediaRead(replacement.key,outsider.token)).status).toBe(200);
+    expect(await env.DB.prepare("SELECT file_path FROM trusted_media_references WHERE kind='group_avatar' AND reference_id=?").bind(group).all<{file_path:string}>()).toMatchObject({results:[{file_path:replacement.key}]});
+  },30000);
+});
+
+describe('private profile avatar owner access', () => {
+  it('allows the owner to read and reuse a trusted avatar even when the profile photo is hidden from everyone else', async () => {
+    const uploader = await mediaAccount(), owner = await mediaAccount(), viewer = await mediaAccount();
+    await friend(uploader.id,owner.id);
+    const file = await mediaUpload(uploader.token);
+    const initial = await post('/messages',uploader.token,{receiver_id:owner.id,media_url:file.url});
+    expect(initial.status).toBe(201);
+    const id = (await initial.json() as {message:{id:string}}).message.id;
+    const patch = () => SELF.fetch('https://example.test/users/me',{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:file.url})});
+    expect((await patch()).status).toBe(200);
+    await env.DB.prepare('UPDATE messages SET is_deleted=1 WHERE id=?').bind(id).run();
+    await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility='nobody' WHERE user_id=?").bind(owner.id).run();
+    expect((await mediaRead(file.key,viewer.token)).status).toBe(404);
+    expect((await mediaRead(file.key,owner.token)).status).toBe(200);
+    expect((await patch()).status).toBe(200);
+  },30000);
+});
