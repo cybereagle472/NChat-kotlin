@@ -1218,3 +1218,26 @@ describe('direct call state concurrency', () => {
     await target.flush(); expect(target.events).toHaveLength(1); target.socket.close(1000,'finished');
   });
 });
+
+describe('blocking during contact initiation', () => {
+  const routes = [
+    {path:'/calls',sql:'INSERT INTO calls (id, caller_id',table:'calls',body:(id:string)=>({receiver_id:id,call_type:'audio'})},
+    {path:'/friends/request',sql:'INSERT INTO friend_requests (id, sender_id',table:'friend_requests',body:(id:string)=>({receiver_id:id})},
+  ];
+  for (const route of routes) {
+    it(`does not persist or announce ${route.path} after the recipient blocks the actor`, async () => {
+      const actor = await mediaAccount(), recipient = await mediaAccount(), target = await inbox(recipient);
+      const paused = pauseWrite(route.sql);
+      const request = app.request(`https://example.test${route.path}`, {
+        method:'POST',headers:{Authorization:`Bearer ${actor.token}`,'Content-Type':'application/json'},body:JSON.stringify(route.body(recipient.id)),
+      }, paused.bindings);
+      await paused.reached;
+      try { await env.DB.prepare('INSERT INTO blocked_users (id,user_id,blocked_user_id) VALUES (?,?,?)').bind(crypto.randomUUID(),recipient.id,actor.id).run(); }
+      finally { paused.resume(); }
+      expect((await request).status).toBe(403);
+      const column = route.table === 'calls' ? 'caller_id' : 'sender_id';
+      expect(await env.DB.prepare(`SELECT 1 FROM ${route.table} WHERE ${column}=? AND receiver_id=?`).bind(actor.id,recipient.id).first()).toBeNull();
+      await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
+    });
+  }
+});
