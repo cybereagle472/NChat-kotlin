@@ -2099,3 +2099,5 @@ Privacy update fix `6014edd` performs a field-specific SQL UPSERT using an expli
 Status-view guard `bf92f45` passed Worker CI `45004017407` (133 tests/typecheck). Privacy-update regression `5a4b127` failed Worker CI `45004074074` on both expected cases; fix `6014edd` awaits CI. No deployment.
 
 Read-receipt regression tests fail locally: a block or unfriend between the initial check and update still marks and announces a direct message as read. Deterministic write barriers cover both cases; the authorized idempotent path also passes. CI pending; no deployment.
+
+Read-receipt fix `db4bda8` guards the read UPDATE with current friendship/no-block checks and uses `RETURNING id` so notifications name exactly the rows changed; an unauthorized skipped write returns 403, and authorized repeats stay idempotent. Local full suite passes 138 tests and typecheck; CI pending. Realtime delivery and the read-receipt privacy setting can still change after the write/check, and very large unread sets are not load-tested. No deployment.
