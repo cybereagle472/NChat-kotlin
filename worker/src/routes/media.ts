@@ -20,11 +20,12 @@ media.post('/upload', requireAuth, async (c) => {
   const form = await c.req.formData();
   const file = form.get('file');
   if (!(file instanceof File)) return c.json({ error: 'file is required (multipart/form-data)' }, 400);
+  if (file.size > 49 * 1024 * 1024) return c.json({ error: 'File too large' }, 413);
 
   const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
   const key = `${userId}/${newId()}${ext ? `.${ext}` : ''}`;
 
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), {
+  await c.env.MEDIA.put(key, file, {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
   });
 

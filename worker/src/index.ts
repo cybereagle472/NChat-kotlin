@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { Env, Variables } from './types';
 import { verifyAccessJWT } from './lib/jwt';
 
@@ -17,6 +18,13 @@ import adminRoutes from './routes/admin';
 export { RealtimeRoom } from './durable-objects/RealtimeRoom';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Bound input before JSON/multipart parsing. The supported Android app limits
+// status media to 48 MiB and chat attachments to 24 MiB; allow multipart
+// overhead while keeping Worker memory use bounded.
+const jsonBodyLimit = bodyLimit({ maxSize: 256 * 1024 });
+const uploadBodyLimit = bodyLimit({ maxSize: 50 * 1024 * 1024 });
+app.use('*', (c, next) => (c.req.path === '/media/upload' ? uploadBodyLimit : jsonBodyLimit)(c, next));
 
 // The supported Android client is not subject to browser CORS. Do not grant
 // cross-origin browser access by default; same-origin HTTP remains available.

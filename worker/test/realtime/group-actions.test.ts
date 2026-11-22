@@ -714,6 +714,13 @@ describe('request body limits', () => {
     ];
     for (const [path, body] of attempts) expect((await post(path, owner.token, body)).status, path).toBe(413);
   });
+  it('rejects streamed JSON without relying on a content length', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount(); await friend(owner.id, peer.id);
+    const data = new TextEncoder().encode(JSON.stringify({receiver_id:peer.id, content:'hello', ignored:'x'.repeat(262145)}));
+    const body = new ReadableStream({start(controller) {controller.enqueue(data); controller.close();}});
+    const response = await SELF.fetch('https://example.test/messages', {method:'POST',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body,duplex:'half'} as RequestInit);
+    expect(response.status).toBe(413);
+  });
   it('rejects an upload whose declared body exceeds the Android-compatible limit', async () => {
     const owner = await mediaAccount();
     const form = new FormData(); form.set('file', new File(['small'], 'a.txt'));
