@@ -246,18 +246,28 @@ groupCalls.post('/:id/decline', async (c) => {
   const id = c.req.param('id');
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
-  if (!(await belongsToCall(c.env, call, userId))) return c.json({ error: 'Not authorized' }, 403);
+  if (!(await getMembership(c.env, call.group_id, userId))) return c.json({ error: 'Not authorized' }, 403);
 
-  await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'declined' WHERE call_id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .run();
+  // Only an outstanding invitation to an active call can be declined.
+  // Check membership and call state in the update, not only in a prior read.
+  const updated = await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'declined'
+    WHERE call_id = ?1 AND user_id = ?2 AND status = 'ringing'
+      AND EXISTS (SELECT 1 FROM group_calls gc JOIN group_members gm ON gm.group_id = gc.group_id
+        WHERE gc.id = ?1 AND gc.status = 'active' AND gm.user_id = ?2)`)
+    .bind(id, userId).run();
+  if (!updated.meta.changes) {
+    if (!(await getMembership(c.env, call.group_id, userId))) return c.json({ error: 'Not authorized' }, 403);
+    return c.json({ error: 'Call is no longer ringing' }, 409);
+  }
 
-  await broadcastToUser(c.env, call.caller_id, {
-    type: 'group-call:participant-declined',
-    call_id: id,
-    group_id: call.group_id,
-    user_id: userId,
-  });
+  if (await getMembership(c.env, call.group_id, call.caller_id)) {
+    await broadcastToUser(c.env, call.caller_id, {
+      type: 'group-call:participant-declined',
+      call_id: id,
+      group_id: call.group_id,
+      user_id: userId,
+    });
+  }
   return c.json({ success: true });
 });
 

@@ -795,6 +795,17 @@ describe('group departure concurrency', () => {
 });
 
 describe('group call decline integrity', () => {
+  it('delivers a valid ringing decline once', async () => {
+    const f = await groupCallFixture();
+    await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
+    const caller = await inbox(f.owner);
+    expect((await post(`/group-calls/${f.call}/decline`, f.member.token)).status).toBe(200);
+    expect((await post(`/group-calls/${f.call}/decline`, f.member.token)).status).toBe(409);
+    await caller.flush();
+    expect(caller.events).toHaveLength(1);
+    expect(JSON.parse(caller.events[0])).toMatchObject({type:'group-call:participant-declined', user_id:f.member.id, call_id:f.call});
+    caller.socket.close(1000, 'finished');
+  });
   it('does not send decline events to a caller removed from the group', async () => {
     const f = await groupCallFixture();
     await env.DB.prepare("UPDATE group_call_participants SET status='ringing' WHERE call_id=? AND user_id=?").bind(f.call, f.member.id).run();
