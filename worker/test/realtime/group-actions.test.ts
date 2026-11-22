@@ -538,3 +538,28 @@ describe('profile-photo privacy in group payloads', () => {
     target.socket.close(1000, 'finished');
   });
 });
+
+describe('profile-photo privacy in status payloads', () => {
+  it('redacts hidden photos in feeds, status events and viewer lists', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount();
+    await friend(owner.id, viewer.id);
+    const ownerAvatar = `https://images.example/owner-${crypto.randomUUID()}`;
+    const viewerAvatar = `https://images.example/viewer-${crypto.randomUUID()}`;
+    for (const [account, avatar] of [[owner, ownerAvatar], [viewer, viewerAvatar]] as const) {
+      await env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatar, account.id).run();
+      await env.DB.prepare("UPDATE privacy_settings SET profile_photo_visibility = 'nobody' WHERE user_id = ?").bind(account.id).run();
+    }
+    const ownerEvents = await inbox(owner), viewerEvents = await inbox(viewer);
+    const created = await post('/status', owner.token, {content_type:'text', text_content:'hello', privacy:'contacts'});
+    expect(created.status).toBe(201);
+    const id = (await created.json() as {status:{id:string}}).status.id;
+    await viewerEvents.flush(); expect(JSON.stringify(viewerEvents.events)).not.toContain(ownerAvatar);
+    const feed = await authGet('/status/feed', viewer.token);
+    expect(feed.status).toBe(200); expect(await feed.text()).not.toContain(ownerAvatar);
+    expect((await post(`/status/${id}/view`, viewer.token)).status).toBe(200);
+    await ownerEvents.flush(); expect(JSON.stringify(ownerEvents.events)).not.toContain(viewerAvatar);
+    const views = await authGet(`/status/${id}/views`, owner.token);
+    expect(views.status).toBe(200); expect(await views.text()).not.toContain(viewerAvatar);
+    ownerEvents.socket.close(1000, 'finished'); viewerEvents.socket.close(1000, 'finished');
+  });
+});
