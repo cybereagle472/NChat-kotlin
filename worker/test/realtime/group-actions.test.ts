@@ -1566,3 +1566,26 @@ describe('status view authorization under concurrency', () => {
     await target.flush(); expect(target.events.map(e=>JSON.parse(e).type)).toEqual(['status:view']); target.socket.close(1000,'finished');
   });
 });
+
+describe('concurrent privacy settings updates', () => {
+  for (const existingRow of [true,false]) {
+    it(`preserves independent privacy changes when a settings row ${existingRow ? 'exists' : 'is absent'}`, async () => {
+      const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
+      if (!existingRow) await env.DB.prepare('DELETE FROM privacy_settings WHERE user_id=?').bind(owner.id).run();
+      const status = await seedStatus(owner.id);
+      const paused = pauseWrite('INSERT INTO privacy_settings');
+      const request = app.request('https://example.test/privacy',{
+        method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({about_visibility:'nobody'}),
+      },paused.bindings);
+      await paused.reached;
+      try {
+        const change = await SELF.fetch('https://example.test/privacy',{method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({status_visibility:'nobody'})});
+        expect(change.status).toBe(200);
+      } finally {paused.resume();}
+      expect((await request).status).toBe(200);
+      const current = await env.DB.prepare('SELECT about_visibility,status_visibility FROM privacy_settings WHERE user_id=?').bind(owner.id).first<{about_visibility:string;status_visibility:string}>();
+      expect(current).toEqual({about_visibility:'nobody',status_visibility:'nobody'});
+      expect(await statusFeed(viewer.token)).not.toContain(status);
+    });
+  }
+});
