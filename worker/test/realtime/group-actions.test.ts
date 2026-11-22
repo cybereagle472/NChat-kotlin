@@ -1045,3 +1045,38 @@ describe('group deletion authorization under concurrency', () => {
     expect(await env.DB.prepare('SELECT id FROM group_messages WHERE id=?').bind(message).first()).not.toBeNull();
   });
 });
+
+describe('group update authorization under concurrency', () => {
+  it('does not change group text when the admin is demoted before the write', async () => {
+    const {owner, outsider, group} = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'admin').run();
+    const paused = pauseWrite('UPDATE groups SET name = ?');
+    const request = app.request(`https://example.test/groups/${group}`, {method:'PATCH', headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({name:'Not authorized'})}, paused.bindings);
+    await paused.reached;
+    try { await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group,owner.id).run(); }
+    finally { paused.resume(); }
+    expect((await request).status).toBe(403);
+    expect((await env.DB.prepare('SELECT name FROM groups WHERE id=?').bind(group).first<{name:string}>())?.name).toBe('Test');
+  });
+  it('does not replace avatar or media grants when the admin is demoted before the batch', async () => {
+    const {owner, outsider, group} = await fixture();
+    await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'admin').run();
+    const oldFile = await mediaUpload(owner.token), newFile = await mediaUpload(owner.token);
+    const initial = await SELF.fetch(`https://example.test/groups/${group}`, {method:'PATCH',headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:oldFile.url})});
+    expect(initial.status).toBe(200);
+    let reached!:()=>void, release!:()=>void;
+    const atBatch = new Promise<void>(resolve=>{reached=resolve;});
+    const gate = new Promise<void>(resolve=>{release=resolve;});
+    const db = {prepare:env.DB.prepare.bind(env.DB), async batch(statements:D1PreparedStatement[]) {reached(); await gate; return env.DB.batch(statements);}};
+    const request = app.request(`https://example.test/groups/${group}`, {method:'PATCH', headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify({avatar_url:newFile.url})}, {...env, DB:db} as unknown as Env);
+    await atBatch;
+    try { await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group,owner.id).run(); }
+    finally {release();}
+    expect((await request).status).toBe(403);
+    expect((await env.DB.prepare('SELECT avatar_url FROM groups WHERE id=?').bind(group).first<{avatar_url:string}>())?.avatar_url).toBe(oldFile.url);
+    const refs = await env.DB.prepare("SELECT file_path FROM trusted_media_references WHERE kind='group_avatar' AND reference_id=?").bind(group).all<{file_path:string}>();
+    expect(refs.results.map(r=>r.file_path)).toEqual([oldFile.key]);
+    expect((await mediaRead(oldFile.key, outsider.token)).status).toBe(200);
+    expect((await mediaRead(newFile.key, outsider.token)).status).toBe(404);
+  });
+});
