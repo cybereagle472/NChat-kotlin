@@ -1943,3 +1943,5 @@ Group departure fix `924aaa9` uses a single guarded DELETE for leave, preserving
 Group-departure fix `924aaa9` passed Worker CI `44993681704` (typecheck and 75 tests). It remains undeployed. Further review: group-call decline/leave use historical participant membership and can still broadcast to a removed caller; call start/join/end checks and writes are not atomic, and generic signaling is bounded only by the global 256 KiB body limit. These need tests and remediation; no claim that Phase 1 is complete.
 
 Group call decline tests f543dfd fail locally: decline notifies a removed caller, and joined participants can send decline events. CI pending; fix not yet implemented. A removed-member decline is also checked after the non-ringing assertion; no deployment.
+
+Group call decline regression `f543dfd` failed Worker CI `44993770525` on both assertions as expected.
