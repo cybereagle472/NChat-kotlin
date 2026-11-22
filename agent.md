@@ -1981,3 +1981,5 @@ Group role concurrency fix `0ac6a88` passed Worker CI `44996689141` (83 tests an
 Group member-add race regression fd37e0c failed locally: an admin demoted after the check can still add a member. Test pauses the D1 batch before writes and demotes the actor. CI pending; no deployment.
 
 Group member-add race red `fd37e0c` failed Worker CI `44996909854` as expected.
+
+Group member-add fix 6b16214 checks admin status in the same D1 transaction as guarded inserts, while preserving repeat additions. Local 85 tests and typecheck pass; CI pending. Group projections/broadcasts are still separate from membership changes, group batches count as one rate-limit action, and other group authorization races remain. Not deployed.
