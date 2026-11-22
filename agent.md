@@ -1879,3 +1879,5 @@ Credential-limit fix `d7bd5d1` passed Worker CI `44989987782`. Entry-point red `
 Entry-point fix `eefbd32` passed Worker CI `44990102675`. Persistence red `40106df` injects a delayed D1 write failure and proves DM send/edit can announce events before the write succeeds; local failure confirmed, CI pending. This addresses only write-before-event ordering, not Phase 3 replay/sequence guarantees.
 
 Message ordering red `40106df` failed CI `44990171554`; green candidate `367f3b7` awaits successful DM insert/edit before broadcasting. Local 49 tests/typecheck passed; CI pending. Other event types still require audit. Nothing deployed.
+
+Group removal red `09441b1` exposes the last admin bypassing leave rules via DELETE and false removal events to nonmembers. Both failed locally; CI pending. Nothing deployed.
