@@ -1,5 +1,6 @@
 import { applyD1Migrations, env, SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { consumeLimit } from '../../src/lib/rate-limit';
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 async function fixture() {
@@ -743,4 +744,25 @@ describe('IPv6 credential limit buckets', () => {
     expect(statuses.slice(0,10).every(status => status === 201)).toBe(true);
     expect(statuses.slice(10)).toEqual([429,429]);
   });
+});
+
+describe('authenticated abuse limits', () => {
+  it('shares a contact-action budget across requests and group creation without affecting other users', async () => {
+    const sender = await mediaAccount(), target = await mediaAccount(), other = await mediaAccount();
+    const statuses:number[] = [];
+    for (let i=0; i<31; i++) statuses.push((await post('/friends/request', sender.token, {receiver_id:target.id})).status);
+    expect(statuses[0]).toBe(201);
+    expect(statuses.slice(1,30).every(status => status === 409)).toBe(true);
+    expect(statuses[30]).toBe(429);
+    expect((await post('/groups', sender.token, {name:'Rate limited'})).status).toBe(429);
+    expect((await post('/friends/request', other.token, {receiver_id:target.id})).status).toBe(201);
+  }, 30000);
+  it('limits repeated message sends per account', async () => {
+    const sender = await mediaAccount(), peer = await mediaAccount(); await friend(sender.id, peer.id);
+    const body = {receiver_id:peer.id, content:'hello', client_message_id:crypto.randomUUID()};
+    const seeded = await Promise.all(Array.from({length:299}, () => consumeLimit(env, 'send', sender.id, 300, 60000)));
+    expect(seeded.every(Boolean)).toBe(true);
+    expect((await post('/messages', sender.token, body)).status).toBe(201);
+    expect((await post('/messages', sender.token, body)).status).toBe(429);
+  }, 30000);
 });
