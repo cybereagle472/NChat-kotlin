@@ -563,3 +563,25 @@ describe('profile-photo privacy in status payloads', () => {
     ownerEvents.socket.close(1000, 'finished'); viewerEvents.socket.close(1000, 'finished');
   });
 });
+
+describe('input bounds', () => {
+  it('rejects oversized content, reactions, status captions, group names and profile text', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount();
+    await friend(owner.id, peer.id);
+    const message = await post('/messages', owner.token, {receiver_id:peer.id, content:'hello'});
+    const id = (await message.json() as {message:{id:string}}).message.id;
+    const cases: Array<[string, string, object]> = [
+      ['POST', '/messages', {receiver_id:peer.id, content:'x'.repeat(65537)}],
+      ['PATCH', `/messages/${id}`, {content:'x'.repeat(65537)}],
+      ['POST', `/messages/${id}/reaction`, {emoji:'x'.repeat(33)}],
+      ['POST', '/status', {content_type:'text', text_content:'x'.repeat(4097)}],
+      ['POST', '/groups', {name:'x'.repeat(101)}],
+      ['PATCH', '/users/me', {bio:'x'.repeat(501)}],
+    ];
+    for (const [method,path,body] of cases) {
+      const res = await SELF.fetch(`https://example.test${path}`, {method,headers:{Authorization:`Bearer ${owner.token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      expect(res.status, path).toBe(400);
+    }
+    expect((await env.DB.prepare('SELECT content FROM messages WHERE id = ?').bind(id).first<{content:string}>())?.content).toBe('hello');
+  });
+});
