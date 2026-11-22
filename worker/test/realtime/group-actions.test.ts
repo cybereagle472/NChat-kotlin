@@ -1080,3 +1080,36 @@ describe('group update authorization under concurrency', () => {
     expect((await mediaRead(newFile.key, outsider.token)).status).toBe(404);
   });
 });
+
+describe('group message send authorization under concurrency', () => {
+  for (const withMedia of [false, true]) {
+    it(`rejects a removed sender before a ${withMedia ? 'media' : 'text'} write`, async () => {
+      const {owner, outsider, group} = await fixture();
+      await env.DB.prepare('INSERT INTO group_members (id,group_id,user_id,role) VALUES (?,?,?,?)').bind(crypto.randomUUID(),group,outsider.id,'member').run();
+      const file = withMedia ? await mediaUpload(outsider.token) : undefined;
+      const listener = await inbox(owner);
+      let reached!:()=>void, release!:()=>void;
+      const ready = new Promise<void>(resolve=>{reached=resolve;});
+      const gate = new Promise<void>(resolve=>{release=resolve;});
+      const db = {
+        prepare(sql:string) {
+          const statement = env.DB.prepare(sql);
+          if (withMedia || !sql.includes('INSERT INTO group_messages')) return statement;
+          return {bind(...args:unknown[]) {const bound = statement.bind(...args); return {async run(){reached(); await gate; return bound.run();}};}};
+        },
+        async batch(statements:D1PreparedStatement[]) { if (withMedia) {reached(); await gate;} return env.DB.batch(statements); },
+      };
+      const request = app.request(`https://example.test/groups/${group}/messages`, {
+        method:'POST',headers:{Authorization:`Bearer ${outsider.token}`,'Content-Type':'application/json'},
+        body:JSON.stringify({content:'sent after removal', ...(file ? {media_url:file.url} : {})}),
+      }, {...env, DB:db} as unknown as Env);
+      await ready;
+      try { await env.DB.prepare('DELETE FROM group_members WHERE group_id=? AND user_id=?').bind(group,outsider.id).run(); }
+      finally {release();}
+      expect((await request).status).toBe(403);
+      expect(await env.DB.prepare('SELECT id FROM group_messages WHERE group_id=? AND sender_id=?').bind(group,outsider.id).first()).toBeNull();
+      if (file) expect(await env.DB.prepare("SELECT 1 FROM trusted_media_references WHERE kind='group_message' AND file_path=?").bind(file.key).first()).toBeNull();
+      await listener.flush(); expect(listener.events).toHaveLength(0); listener.socket.close(1000, 'finished');
+    });
+  }
+});
