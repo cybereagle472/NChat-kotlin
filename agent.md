@@ -1989,3 +1989,5 @@ Group member-add fix `6b16214` passed Worker CI `44997047755` (85 tests and type
 Group deletion authorization race 78d0310 failed locally: after an admin check, a demoted actor can still delete the group and its messages. Deterministic test pauses after member enumeration, then demotes the actor. CI pending; nothing deployed.
 
 Group deletion authorization red `78d0310` failed Worker CI `44997126972` as expected. The implementation is still in progress and not deployed.
+
+Group deletion fix afccff9 uses a single admin-guarded DELETE with D1 foreign-key cascades (Cloudflare documents D1 foreign-key enforcement: https://developers.cloudflare.com/d1/sql-api/foreign-keys/). Local tests verify related messages, members, read state, calls and participants disappear, and ordinary member notification still occurs. Local 87 tests and typecheck pass; CI pending. This assumes production's schema matches migrations 0001–0005 and has not been verified against a real D1 database; the member notification list is a pre-delete snapshot and can race membership changes. No deployment.
