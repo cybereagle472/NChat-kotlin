@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
 import { mayAttachMedia, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
+import { consumeLimit } from '../lib/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { applyPrivacyToList, getPrivacySettings } from '../lib/privacy';
@@ -143,6 +144,11 @@ groups.post('/', limitContact, async (c) => {
     if (results.length !== chunk.length) return c.json({ error: 'User not found' }, 404);
   }
 
+  const invitationCount = allMembers.length - 1;
+  if (invitationCount && !(await consumeLimit(c.env, 'group-members', userId, 256, 300_000, invitationCount))) {
+    return c.json({ error: 'Too many group member invitations' }, 429);
+  }
+
   const groupId = newId();
   const created_at = nowIso();
   const write = c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -255,8 +261,11 @@ groups.post('/:id/members', limitContact, async (c) => {
 
   const { memberIds = [] } = await c.req.json().catch(() => ({}));
   if (!Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid member list' }, 400);
-  const newIds = (memberIds as string[]).filter((uid) => uid);
+  const newIds = [...new Set(memberIds as string[])].filter(uid => uid && uid !== userId);
   if (newIds.length === 0) return c.json({ success: true });
+  if (!(await consumeLimit(c.env, 'group-members', userId, 256, 300_000, newIds.length))) {
+    return c.json({ error: 'Too many group member invitations' }, 429);
+  }
 
   const joinedAt = nowIso();
   // D1 runs the authorization read and the guarded inserts in one batch

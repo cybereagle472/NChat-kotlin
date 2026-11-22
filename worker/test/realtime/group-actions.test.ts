@@ -1663,6 +1663,18 @@ describe('group member invitation budgets', () => {
     expect((await post(`/groups/${group.id}/members`,owner.token,{memberIds:[b.id]})).status).toBe(429);
     expect(await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id=? AND user_id=?').bind(group.id,b.id).first()).toBeNull();
   },30000);
+  it('reserves weighted budgets atomically across concurrent calls', async () => {
+    const account = await mediaAccount();
+    const prior = await Promise.all(Array.from({length:253},()=>consumeLimit(env,'group-members',account.id,256,300000)));
+    expect(prior.every(Boolean)).toBe(true);
+    const competing = await Promise.all([
+      consumeLimit(env,'group-members',account.id,256,300000,2),
+      consumeLimit(env,'group-members',account.id,256,300000,2),
+    ]);
+    expect(competing.filter(Boolean)).toHaveLength(1);
+    expect(await consumeLimit(env,'group-members',account.id,256,300000,1)).toBe(true);
+    expect(await consumeLimit(env,'group-members',account.id,256,300000,1)).toBe(false);
+  },30000);
   it('shares the member budget across additions and creation', async () => {
     const {owner,group} = await fixture(); const a = await mediaAccount(), b = await mediaAccount();
     await nearlyExhausted(owner.id);
