@@ -880,7 +880,10 @@ function pauseWrite(match: string) {
       if (!sql.includes(match)) return statement;
       return { bind(...args: unknown[]) {
         const bound = statement.bind(...args);
-        return { async run() { notify(); await gate; return bound.run(); } };
+        return {
+          async run() { notify(); await gate; return bound.run(); },
+          async first() { notify(); await gate; return bound.first(); },
+        };
       } };
     },
     batch: env.DB.batch.bind(env.DB),
