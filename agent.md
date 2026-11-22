@@ -1973,3 +1973,5 @@ Group-call join/end fix `461b1b1` passed Worker CI `44996462340` (82 tests and t
 Group-role deterministic concurrency test 7ea7dd3 failed locally: two admins can simultaneously demote each other, leaving no admin. CI pending. Uses a write barrier after both authorization checks; no deployment.
 
 Group role red `7ea7dd3` failed Worker CI `44996548743` with both concurrent demotions accepted, as expected.
+
+Group role fix 0ac6a88 checks the actor is still admin in the UPDATE; a concurrently demoted actor receives 403 and a missing target receives 404. Local 83 tests and typecheck pass; Worker CI pending. Other group check/write paths are not yet addressed. No deployment.
