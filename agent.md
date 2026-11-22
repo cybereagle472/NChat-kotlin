@@ -2013,3 +2013,5 @@ Group-message send fix `b95de4c` passed Worker CI `44998044606` (91 tests and ty
 Group message action race tests 9a6760b failed locally: removed members can still delete-for-me, delete-for-everyone or react when removal occurs between check and write. Deterministic tests also expect no mutation or event. CI pending; no deployment.
 
 Group message actions race `9a6760b` failed Worker CI `44998135873` on all three expected assertions.
+
+Group-message action fix 0d0092a checks current membership in each update and suppresses events when it fails; author identity is rechecked for delete-for-everyone. Local 94 tests and typecheck pass; CI pending. Concurrent reaction/delete-for-me read-modify-write can still lose updates, and membership can change between write and event delivery. Not deployed.
