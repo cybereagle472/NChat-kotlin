@@ -274,6 +274,17 @@ groups.post('/:id/members', limitContact, async (c) => {
   return c.json({ success: true, members: group?.members ?? [] });
 });
 
+// D1 batch is transactional: neither messages nor the group are deleted if
+// another member joins before the empty-group check executes.
+async function cleanupEmptyGroup(env: Env, groupId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM group_messages WHERE group_id = ?1
+      AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)`).bind(groupId),
+    env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+      AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)`).bind(groupId),
+  ]);
+}
+
 groups.delete('/:id/members/:userId', async (c) => {
   const userId = c.get('userId');
   const groupId = c.req.param('id');
@@ -301,6 +312,7 @@ groups.delete('/:id/members/:userId', async (c) => {
     if (!target) return c.json({ error: 'Member not found' }, 404);
     return c.json({ error: 'Make someone else an admin before removing the last admin' }, 400);
   }
+  await cleanupEmptyGroup(c.env, groupId);
   await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   await broadcastToUser(c.env, targetId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   return c.json({ success: true });
@@ -310,29 +322,20 @@ groups.post('/:id/leave', async (c) => {
   const userId = c.get('userId');
   const groupId = c.req.param('id');
 
-  const { results: members } = await c.env.DB.prepare('SELECT user_id, role FROM group_members WHERE group_id = ?')
-    .bind(groupId)
-    .all<{ user_id: string; role: string }>();
-  const allMembers = members ?? [];
-  if (!allMembers.some((member) => member.user_id === userId)) {
-    return c.json({ error: 'Not a member of this group' }, 403);
-  }
-  const admins = allMembers.filter((m) => m.role === 'admin');
-  const isOnlyAdmin = admins.length === 1 && admins[0].user_id === userId;
-
-  if (isOnlyAdmin && allMembers.length > 1) {
+  // The last-admin invariant must be checked by the same statement that
+  // removes the member; two administrators can leave concurrently.
+  const deleted = await c.env.DB.prepare(`DELETE FROM group_members
+    WHERE group_id = ?1 AND user_id = ?2
+      AND (role != 'admin'
+        OR NOT EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2)
+        OR EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2 AND other.role = 'admin'))`)
+    .bind(groupId, userId).run();
+  if (!deleted.meta.changes) {
+    if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
     return c.json({ error: 'Make someone else an admin before you leave' }, 400);
   }
-
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, userId).run();
-
-  if (allMembers.length <= 1) {
-    // That was the last member — nothing left to keep the group around for.
-    await c.env.DB.prepare('DELETE FROM group_messages WHERE group_id = ?').bind(groupId).run();
-    await c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(groupId).run();
-  } else {
-    await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: userId });
-  }
+  await cleanupEmptyGroup(c.env, groupId);
+  await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: userId });
   await broadcastToUser(c.env, userId, { type: 'group-member:left', group_id: groupId, user_id: userId });
   return c.json({ success: true });
 });
