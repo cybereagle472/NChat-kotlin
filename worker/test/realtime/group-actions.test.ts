@@ -1478,3 +1478,46 @@ describe('direct message actions after blocking or unfriend', () => {
     expect(JSON.parse(row!.deleted_for)).toContain(receiver.id);
   });
 });
+
+describe('safe media response types and filenames', () => {
+  async function uploadNamed(token:string, name:string, mime:string) {
+    const form = new FormData();
+    form.set('file',new File(['0123456789'],name,{type:mime}));
+    const response = await SELF.fetch('https://example.test/media/upload',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form});
+    expect(response.status).toBe(201);
+    return response.json() as Promise<{key:string;url:string}>;
+  }
+  it('forces active and unknown content to download without browser sniffing', async () => {
+    const owner = await mediaAccount();
+    for (const type of ['text/html','image/svg+xml','application/pdf','application/octet-stream']) {
+      const file = await uploadNamed(owner.token,'file.bin',type);
+      const response = await mediaRead(file.key,owner.token);
+      expect(response.status,type).toBe(200);
+      expect(response.headers.get('content-type'),type).toBe('application/octet-stream');
+      expect(response.headers.get('content-disposition'),type).toBe('attachment');
+      expect(response.headers.get('x-content-type-options'),type).toBe('nosniff');
+      expect(await response.text()).toBe('0123456789');
+    }
+  });
+  it('keeps safe media playable and preserves byte ranges', async () => {
+    const owner = await mediaAccount();
+    for (const type of ['image/jpeg','image/png','audio/mp4','audio/ogg','video/mp4']) {
+      const file = await uploadNamed(owner.token,'file.ext',type);
+      const response = await SELF.fetch(`https://example.test/media/file/${file.key}`,{headers:{Authorization:`Bearer ${owner.token}`,Range:'bytes=2-5'}});
+      expect(response.status,type).toBe(206);
+      expect(response.headers.get('content-type'),type).toBe(type);
+      expect(response.headers.get('content-range'),type).toBe('bytes 2-5/10');
+      expect(response.headers.get('x-content-type-options'),type).toBe('nosniff');
+      expect(await response.text()).toBe('2345');
+    }
+  });
+  it('generates usable keys for URL-special and excessively long extensions', async () => {
+    const owner = await mediaAccount();
+    for (const name of ['photo.j?pg','photo.a#b','photo.bad%xx','photo.abcdefghijklmnopq']) {
+      const file = await uploadNamed(owner.token,name,'image/jpeg');
+      expect(file.key.split('/').at(-1)).toMatch(/^[0-9a-f-]+$/);
+      const response = await SELF.fetch(file.url.replace('https://nchat-friends.usa66486.workers.dev','https://example.test'),{headers:{Authorization:`Bearer ${owner.token}`}});
+      expect(response.status,name).toBe(200);
+    }
+  });
+});
