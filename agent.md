@@ -2025,3 +2025,5 @@ Signal limiter red `8843190` failed Worker CI `44998624985` on the missing 429 a
 Signal limiter fix 96db604 applies a shared 600 requests/account/minute fixed window across direct and group signal endpoints, separate from other budgets. Local typecheck and 95 tests pass; Worker CI pending. Chosen threshold is provisional: large mesh calls or multiple devices might hit it; no Android/device/load test, no per-call or global aggregate abuse protection, and the 256 KiB global JSON cap remains. No deployment.
 
 Signalling limiter `96db604` passed Worker CI `44998779007` (95 tests and typecheck). Fixed-window thresholds and Android/load compatibility remain unverified. Branch-only; no deployment.
+
+Group-call signalling participation tests 7fc673e fail locally: group members who never joined can send signaling, and ringing/declined/left members can receive it. Proposed stricter rule requires both participants joined and still in group; Android code joins server-side before opening the peer session, but real devices and races need testing. This is stricter than the Rust reference's membership-only rule. CI pending; no deployment.
