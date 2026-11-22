@@ -136,9 +136,29 @@ status.post('/:id/view', async (c) => {
     return c.json({ success: true });
   }
 
-  const inserted = await c.env.DB.prepare('INSERT OR IGNORE INTO status_views (id, status_id, viewer_id) VALUES (?, ?, ?)')
+  // Repeat the audience, block and expiry checks in the write, because the
+  // status may have changed since it was read above. Both audience settings
+  // must independently permit the viewer.
+  const friendship = `EXISTS (SELECT 1 FROM friendships f WHERE
+    (f.user1_id = s.user_id AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = s.user_id))`;
+  const inserted = await c.env.DB.prepare(`INSERT OR IGNORE INTO status_views (id, status_id, viewer_id)
+    SELECT ?1, s.id, ?3 FROM statuses s LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
+    WHERE s.id = ?2 AND datetime(s.expires_at) > datetime('now')
+      AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+        (b.user_id = s.user_id AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = s.user_id))
+      AND (s.privacy = 'everyone' OR (s.privacy = 'contacts' AND ${friendship}))
+      AND (coalesce(ps.status_visibility, 'contacts') = 'everyone' OR
+        (coalesce(ps.status_visibility, 'contacts') = 'contacts' AND ${friendship}))`)
     .bind(newId(), id, userId)
     .run();
+
+  if (!inserted.meta.changes) {
+    // A duplicate is successful only while the current status is still visible.
+    const current = await c.env.DB.prepare("SELECT user_id, privacy FROM statuses WHERE id = ? AND datetime(expires_at) > datetime('now')")
+      .bind(id).first<{ user_id: string; privacy: string }>();
+    if (!current || !(await statusVisibleTo(c.env, current.user_id, userId, current.privacy))) return c.json({ error: 'Status not found' }, 404);
+    return c.json({ success: true });
+  }
 
   if (inserted.meta.changes > 0) {
     await c.env.DB.prepare('UPDATE statuses SET view_count = view_count + 1 WHERE id = ?').bind(id).run();

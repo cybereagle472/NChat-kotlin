@@ -1544,6 +1544,16 @@ describe('status view authorization under concurrency', () => {
       await target.flush(); expect(target.events).toHaveLength(0); target.socket.close(1000,'finished');
     });
   }
+  it('permits a nonfriend only when both status audiences are everyone', async () => {
+    const owner = await mediaAccount(), viewer = await mediaAccount();
+    await env.DB.prepare("UPDATE privacy_settings SET status_visibility='everyone' WHERE user_id=?").bind(owner.id).run();
+    const open = await seedStatus(owner.id,'everyone');
+    const contacts = await seedStatus(owner.id,'contacts');
+    expect((await post(`/status/${open}/view`,viewer.token)).status).toBe(200);
+    expect((await post(`/status/${contacts}/view`,viewer.token)).status).toBe(404);
+    await env.DB.prepare("UPDATE privacy_settings SET status_visibility='contacts' WHERE user_id=?").bind(owner.id).run();
+    expect((await post(`/status/${open}/view`,viewer.token)).status).toBe(404);
+  });
   it('records and announces an authorized view only once', async () => {
     const owner = await mediaAccount(), viewer = await mediaAccount(); await friend(owner.id,viewer.id);
     const created = await post('/status',owner.token,{content_type:'text',text_content:'hello',privacy:'contacts'});
