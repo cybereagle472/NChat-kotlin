@@ -728,3 +728,19 @@ describe('request body limits', () => {
     expect(response.status).toBe(413);
   });
 });
+
+describe('IPv6 credential limit buckets', () => {
+  it('does not grant a new signup budget for every address in the same IPv6 /64', async () => {
+    const prefix = `2001:db8:${crypto.randomUUID().slice(0,4)}:42`;
+    const statuses: number[] = [];
+    for (let i=1; i<=12; i++) {
+      const response = await SELF.fetch('https://example.test/auth/signup', {
+        method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':`${prefix}::${i.toString(16)}`},
+        body:JSON.stringify({email:`${crypto.randomUUID()}@example.test`,password:'password123'}),
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses.slice(0,10).every(status => status === 201)).toBe(true);
+    expect(statuses.slice(10)).toEqual([429,429]);
+  });
+});
