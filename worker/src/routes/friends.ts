@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact } from '../middleware/rate-limit';
 import { newId } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresence, getPresenceMap, withPresence } from '../lib/presence';
@@ -24,7 +25,7 @@ function profilePublic(row: any, lastActiveAt?: number | null) {
 }
 
 
-friends.post('/request', async (c) => {
+friends.post('/request', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id } = await c.req.json().catch(() => ({}));
   if (!receiver_id || receiver_id === userId) return c.json({ error: 'Invalid receiver_id' }, 400);

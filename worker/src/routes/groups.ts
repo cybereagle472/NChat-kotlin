@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact, limitSend } from '../middleware/rate-limit';
 import { mayAttachMedia, clearMediaReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
@@ -125,7 +126,7 @@ function groupMessageJson(row: any) {
   };
 }
 
-groups.post('/', async (c) => {
+groups.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { name, description, avatar_url, memberIds = [] } = await c.req.json().catch(() => ({}));
   if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048}) || !Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid group fields' }, 400);
@@ -239,9 +240,9 @@ groups.get('/:id/members', async (c) => {
   return c.json({ members: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
-groups.post('/:id/members', async (c) => {
+groups.post('/:id/members', limitContact, async (c) => {
   const userId = c.get('userId');
-  const groupId = c.req.param('id');
+  const groupId = c.req.param('id')!;
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
   if (membership.role !== 'admin') return c.json({ error: 'Only admins can add members' }, 403);
@@ -437,9 +438,9 @@ groups.get('/:id/messages', async (c) => {
   return c.json({ messages });
 });
 
-groups.post('/:id/messages', async (c) => {
+groups.post('/:id/messages', limitSend, async (c) => {
   const userId = c.get('userId');
-  const groupId = c.req.param('id');
+  const groupId = c.req.param('id')!;
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 

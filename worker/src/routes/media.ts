@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
 import { newId } from '../lib/id';
 import { canReadMedia } from '../lib/media-access';
 
@@ -15,7 +16,7 @@ function mediaTypeFromMime(mime: string): 'image' | 'video' | 'audio' | 'documen
 
 // POST /media/upload — multipart/form-data with a "file" field.
 // Replaces supabase.storage.from('chat-media').upload(...)
-media.post('/upload', requireAuth, async (c) => {
+media.post('/upload', requireAuth, limitSend, async (c) => {
   const userId = c.get('userId');
   const form = await c.req.formData();
   const file = form.get('file');

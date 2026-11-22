@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
 import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
@@ -21,7 +22,7 @@ async function friendIdsOf(env: Env, userId: string): Promise<string[]> {
   return (results ?? []).map((r) => r.friend_id);
 }
 
-status.post('/', async (c) => {
+status.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   if (exceedsTextLimits(body, {text_content:4096, caption:4096, content_url:2048, thumbnail_url:65536, content_type:512, background_color:512, font_style:512, privacy:512})) return c.json({ error: 'Status field too long' }, 400);

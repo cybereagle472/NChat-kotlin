@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { signalPayload } from '../lib/signalling';
 import { broadcastToRoom, userRoomId } from '../lib/realtime';
@@ -64,7 +65,7 @@ calls.get('/turn-credentials', async (c) => {
   }
 });
 
-calls.post('/', async (c) => {
+calls.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id, call_type, offer_sdp } = await c.req.json().catch(() => ({}));
   if (!receiver_id || !call_type) return c.json({ error: 'receiver_id and call_type are required' }, 400);

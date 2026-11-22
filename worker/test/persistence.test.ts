@@ -19,7 +19,10 @@ describe('message events follow durable writes', () => {
         }),
       }),
     };
-    const realtime = { idFromName: (name: string) => name, get: (_id: string) => ({ fetch: async (_url: string, init: RequestInit) => {events.push(String(init.body)); return new Response('ok');} }) };
+    const realtime = { idFromName: (name: string) => name, get: (_id: string) => ({ fetch: async (url: string, init: RequestInit) => {
+      if (url.endsWith('/limit')) return new Response(null, {status:204});
+      events.push(String(init.body)); return new Response('ok');
+    } }) };
     const bindings = { DB: database, REALTIME: realtime, JWT_SECRET: secret, PUBLIC_API_URL: 'https://example.test' } as unknown as Env;
     const path = method === 'POST' ? '/messages' : '/messages/msg';
     const response = await app.request(`https://example.test${path}`, {

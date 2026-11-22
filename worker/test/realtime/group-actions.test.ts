@@ -754,7 +754,9 @@ describe('authenticated abuse limits', () => {
     expect(statuses[0]).toBe(201);
     expect(statuses.slice(1,30).every(status => status === 409)).toBe(true);
     expect(statuses[30]).toBe(429);
-    expect((await post('/groups', sender.token, {name:'Rate limited'})).status).toBe(429);
+    for (const path of ['/groups', '/groups/example/members', '/calls', '/group-calls']) {
+      expect((await post(path, sender.token, {})).status, path).toBe(429);
+    }
     expect((await post('/friends/request', other.token, {receiver_id:target.id})).status).toBe(201);
   }, 30000);
   it('limits repeated message sends per account', async () => {
@@ -764,5 +766,8 @@ describe('authenticated abuse limits', () => {
     expect(seeded.every(Boolean)).toBe(true);
     expect((await post('/messages', sender.token, body)).status).toBe(201);
     expect((await post('/messages', sender.token, body)).status).toBe(429);
+    for (const path of ['/status', '/media/upload', '/groups/example/messages']) {
+      expect((await post(path, sender.token, {})).status, path).toBe(429);
+    }
   }, 30000);
 });

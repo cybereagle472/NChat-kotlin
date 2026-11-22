@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
 import { mayAttachMedia, writeWithMediaReferences } from '../lib/media-access';
 import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
@@ -150,7 +151,7 @@ messages.get('/chats', async (c) => {
   return c.json({ chats });
 });
 
-messages.post('/', async (c) => {
+messages.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;

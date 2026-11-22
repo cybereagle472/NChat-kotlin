@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { signalPayload } from '../lib/signalling';
 import { broadcastToUser } from '../lib/realtime';
@@ -123,7 +124,7 @@ async function joinCall(env: Env, call: GroupCallRow, userId: string) {
 // "Call" button in the group chat never has to know or care whether
 // someone else already started one; it just always gets you into the
 // group's one active call.
-groupCalls.post('/', async (c) => {
+groupCalls.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { group_id, call_type } = await c.req.json().catch(() => ({}));
   if (!group_id || !call_type) return c.json({ error: 'group_id and call_type are required' }, 400);
