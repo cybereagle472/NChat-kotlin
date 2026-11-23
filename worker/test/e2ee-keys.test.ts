@@ -240,3 +240,53 @@ describe('bundle edge cases', () => {
     expect((await sixth.json() as { one_time_prekey: unknown }).one_time_prekey).toBeNull();
   }, 60000);
 });
+
+describe('prekey status and refill ids', () => {
+  it('reports the caller remaining count and returns row ids on refill', async () => {
+    const alice = await signup('alice');
+    const bob = await signup('bob');
+    const keys = await makeKeys();
+    await post('/keys/register', alice.token, {
+      identity_public_key: keys.identityPub,
+      signed_prekey_public: keys.prekeyPub,
+      signed_prekey_signature: keys.signature,
+    });
+
+    const empty = await get('/keys/prekeys', alice.token);
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ remaining: 0 });
+
+    const refill = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub, keys.prekeyPub] });
+    expect(refill.status).toBe(201);
+    const refillBody = await refill.json() as { ok: boolean; stored: number; ids: number[] };
+    expect(refillBody.ok).toBe(true);
+    expect(refillBody.stored).toBe(2);
+    expect(refillBody.ids).toHaveLength(2);
+    expect(refillBody.ids[1]).toBe(refillBody.ids[0] + 1);
+
+    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 2 });
+
+    // The bundle pop consumes exactly the oldest id.
+    const bundle = await get(`/keys/bundle/${alice.id}`, bob.token);
+    const bundleBody = await bundle.json() as { one_time_prekey: { id: number } | null };
+    expect(bundleBody.one_time_prekey!.id).toBe(refillBody.ids[0]);
+    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 1 });
+
+    expect((await get('/keys/prekeys', null as unknown as string)).status).toBe(401);
+  }, 30000);
+
+  it('ids stay aligned with accepted keys when the cap truncates a batch', async () => {
+    const alice = await signup('alice');
+    const keys = await makeKeys();
+    for (let i = 0; i < 99; i++) {
+      await env.DB.prepare('INSERT INTO one_time_prekeys (user_id, public_key) VALUES (?, ?)')
+        .bind(alice.id, keys.identityPub).run();
+    }
+    const refill = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub, keys.prekeyPub] });
+    expect(refill.status).toBe(201);
+    const body = await refill.json() as { stored: number; ids: number[] };
+    expect(body.stored).toBe(1);
+    expect(body.ids).toHaveLength(1);
+    expect(typeof body.ids[0]).toBe('number');
+  }, 30000);
+});
