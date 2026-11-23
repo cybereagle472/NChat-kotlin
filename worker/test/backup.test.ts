@@ -2,15 +2,44 @@ import { applyD1Migrations, env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import app from '../src/index';
 import type { Env } from '../src/types';
-import { buildDumpStatements, keysToDelete, runBackup } from '../src/lib/backup';
+import {
+  BACKUP_PUBLIC_KEY_PEM,
+  assembleDump,
+  buildDumpStatements,
+  decryptBackup,
+  decodePem,
+  encryptBackup,
+  gzip,
+  keysToDelete,
+  runBackup,
+} from '../src/lib/backup';
 
 /**
- * Daily database backup (the owner's 2026-11-23 decision: Cloudflare-only,
- * dashboard-visible, 7 daily + 4 weekly copies, auto-deleted by age).
- * Red first: these tests describe the behaviour before the module exists.
+ * Daily database backup, end-to-end encrypted like the owner asked for on
+ * 2026-11-23 ("fully encrypted like WhatsApp"): the nightly job encrypts with
+ * a committed PUBLIC key only; the private half exists solely with the owner
+ * and is never in this repo or on Cloudflare — the platform stores ciphertext
+ * it mathematically cannot read.
+ *
+ * Container format NCHB1: magic(5) | u16BE wrappedKeyLen | RSA-OAEP(SHA-256)
+ * wrapped per-file AES-256-GCM key | 12-byte IV | GCM ciphertext (gzip bytes).
+ * AAD = the object's own filename, so a backup cannot be swapped into another
+ * day's slot undetected.
  */
 
 beforeEach(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
+
+/** Test-only keypair (2048 for speed) — production uses the committed 4096 key. */
+const testKeyPair = await crypto.subtle.generateKey(
+  { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true, ['wrapKey', 'unwrapKey', 'encrypt', 'decrypt'],
+);
+function pemFrom(buf: ArrayBuffer, label: string): string {
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return `-----BEGIN ${label}-----\n${(b64.match(/.{1,64}/g) ?? []).join('\n')}\n-----END ${label}-----`;
+}
+const testPublicPem = pemFrom(await crypto.subtle.exportKey('spki', testKeyPair.publicKey), 'PUBLIC KEY');
+const testPrivatePem = pemFrom(await crypto.subtle.exportKey('pkcs8', testKeyPair.privateKey), 'PRIVATE KEY');
 
 async function gunzip(bytes: Uint8Array): Promise<string> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
@@ -23,8 +52,14 @@ async function statusJson(): Promise<Record<string, unknown>> {
   return JSON.parse(await object!.text()) as Record<string, unknown>;
 }
 
+async function getBytes(key: string): Promise<Uint8Array> {
+  const object = await env.BACKUPS.get(key);
+  expect(object).not.toBeNull();
+  return new Uint8Array(await new Response(object!.body).arrayBuffer());
+}
+
 describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
-  const dated = (iso: string) => `nchat-${iso}.sql.gz`;
+  const dated = (iso: string) => `nchat-${iso}.sql.gz.enc`;
 
   it('keeps the last 7 days, one file per ISO week up to 4 weeks, deletes the rest', () => {
     const now = Date.parse('2026-06-15T12:00:00Z'); // a Monday
@@ -41,7 +76,7 @@ describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
       dated('2026-05-17'), // age 29 — deleted
       dated('2026-05-11'), // age 35 — deleted
       // Never candidates for deletion.
-      'latest.sql.gz',
+      'latest.sql.gz.enc',
       'status.json',
     ];
     expect(keysToDelete(keys, now).sort()).toEqual([
@@ -66,19 +101,31 @@ describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
   });
 });
 
-describe('database dump round-trip', () => {
-  it('restores every row into a fresh database, nasty text included', async () => {
-    // Wipe + migrate the restore target.
+describe('the committed production public key', () => {
+  it('imports and wraps a fresh AES key at 4096-bit RSA (owner holds the private half)', async () => {
+    const publicKey = await crypto.subtle.importKey(
+      'spki', decodePem(BACKUP_PUBLIC_KEY_PEM, 'PUBLIC KEY'),
+      { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['wrapKey'],
+    );
+    const aes = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['wrapKey']);
+    const wrapped = new Uint8Array(await crypto.subtle.wrapKey('raw', aes, publicKey, { name: 'RSA-OAEP' }));
+    expect(wrapped.byteLength).toBe(512);
+  });
+});
+
+describe('encrypted dump round-trip', () => {
+  it('encrypts, decrypts byte-exactly, and the restored file runs on a fresh database', async () => {
+    // Wipe the restore target — the file alone must recreate everything.
     const tables = await env.DB_RESTORE.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid DESC"
     ).all<{ name: string }>();
     for (const row of tables.results ?? []) {
       await env.DB_RESTORE.prepare(`DROP TABLE IF EXISTS "${row.name.replace(/"/g, '""')}"`).run();
     }
-    // Deliberately NOT migrated: the dump alone must recreate the schema.
+    // Deliberately NOT migrated: no applyD1Migrations — the dump provides schema.
 
-    // Seed the source with rows that stress quoting: apostrophes, semicolons,
-    // double quotes, newlines, unicode, and a NULL.
+    // Seed with rows that stress quoting: apostrophes, semicolons, double
+    // quotes, newlines, unicode, and a NULL.
     const nasty = `it's; a "test"\nline2 — emoji 👍 and <tag> & %`;
     const userId = crypto.randomUUID(), peerId = crypto.randomUUID();
     await env.DB.prepare('INSERT INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?)')
@@ -94,14 +141,41 @@ describe('database dump round-trip', () => {
     const statements = await buildDumpStatements(env.DB);
     expect(statements.length).toBeGreaterThan(before.total);
 
-    for (const statement of statements) await env.DB_RESTORE.prepare(statement).run();
+    // The exact file a backup run produces: assembled, gzipped, encrypted.
+    const name = 'nchat-2026-06-15.sql.gz.enc';
+    const sql = assembleDump(statements, '2026-06-15T03:17:00.000Z');
+    const gz = await gzip(sql);
+    const blob = await encryptBackup(gz, name, testPublicPem);
 
+    // Pipe integrity: decrypt returns the identical gzip, gunzip the exact text.
+    const decryptedGz = await decryptBackup(blob, name, testPrivatePem);
+    expect(decryptedGz).toEqual(gz);
+    expect(await gunzip(decryptedGz)).toBe(sql);
+
+    // The file itself must execute on an empty database (engine-parsed script,
+    // no string splitting anywhere) and reproduce every row.
+    await env.DB_RESTORE.exec(sql);
     const after = await countRows(env.DB_RESTORE);
     expect(after).toEqual(before);
     const restored = await env.DB_RESTORE.prepare('SELECT content FROM messages WHERE content IS NOT NULL AND content != ?')
       .bind('').first<{ content: string }>();
     expect(restored?.content).toBe(nasty);
   }, 60000);
+
+  it('rejects tampered ciphertext and filename swaps (AAD binding)', async () => {
+    const name = 'nchat-2026-01-01.sql.gz.enc';
+    const gz = await gzip('secret dump');
+    const blob = await encryptBackup(gz, name, testPublicPem);
+
+    const tampered = blob.slice();
+    tampered[tampered.length - 1] ^= 0xff;
+    await expect(decryptBackup(tampered, name, testPrivatePem)).rejects.toThrow();
+
+    // Decrypting under a different object name must fail: the filename is bound.
+    await expect(decryptBackup(blob, 'latest.sql.gz.enc', testPrivatePem)).rejects.toThrow();
+
+    expect(await gunzip(await decryptBackup(blob, name, testPrivatePem))).toBe('secret dump');
+  }, 30000);
 });
 
 async function countRows(db: D1Database): Promise<Record<string, number> & { total: number }> {
@@ -118,28 +192,34 @@ async function countRows(db: D1Database): Promise<Record<string, number> & { tot
 }
 
 describe('runBackup', () => {
-  it('uploads a dated dump and latest copy, prunes old files, records status', async () => {
+  it('uploads encrypted dated + latest copies, prunes old files, records status', async () => {
     const now = new Date('2026-06-15T03:17:00.000Z');
     // An expired file that must be pruned by this run.
-    await env.BACKUPS.put('nchat-2026-05-11.sql.gz', new Uint8Array([1, 2, 3]));
+    await env.BACKUPS.put('nchat-2026-05-11.sql.gz.enc', new Uint8Array([1, 2, 3]));
 
-    const result = await runBackup(env as Env, now);
-    expect(result).toEqual({ ok: true, key: 'nchat-2026-06-15.sql.gz', bytes: expect.any(Number) });
+    const result = await runBackup(env as Env, now, testPublicPem);
+    expect(result).toEqual({ ok: true, key: 'nchat-2026-06-15.sql.gz.enc', bytes: expect.any(Number) });
 
-    expect(await env.BACKUPS.head('nchat-2026-06-15.sql.gz')).not.toBeNull();
-    expect(await env.BACKUPS.head('latest.sql.gz')).not.toBeNull();
-    expect(await env.BACKUPS.head('nchat-2026-05-11.sql.gz')).toBeNull();
+    expect(await env.BACKUPS.head('nchat-2026-06-15.sql.gz.enc')).not.toBeNull();
+    expect(await env.BACKUPS.head('latest.sql.gz.enc')).not.toBeNull();
+    expect(await env.BACKUPS.head('nchat-2026-05-11.sql.gz.enc')).toBeNull();
 
     const status = await statusJson();
     expect(status.last_success_utc).toBe('2026-06-15T03:17:00.000Z');
-    expect(status.key).toBe('nchat-2026-06-15.sql.gz');
+    expect(status.key).toBe('nchat-2026-06-15.sql.gz.enc');
+    expect(status.encrypted).toBe(true);
 
-    const dumped = await env.BACKUPS.get('nchat-2026-06-15.sql.gz');
-    const bytes = new Uint8Array(await new Response(dumped!.body).arrayBuffer());
-    const sql = await gunzip(bytes);
-    expect(sql).toContain('-- NChat D1 backup');
-    expect(sql).toContain('CREATE TABLE');
-    expect(sql).toContain('INSERT INTO');
+    // Both stored objects are ciphertext containers that decrypt (with their
+    // own filename as AAD) to the identical dump text.
+    const datedName = 'nchat-2026-06-15.sql.gz.enc';
+    const sqlFromDated = await gunzip(await decryptBackup(await getBytes(datedName), datedName, testPrivatePem));
+    const sqlFromLatest = await gunzip(await decryptBackup(await getBytes('latest.sql.gz.enc'), 'latest.sql.gz.enc', testPrivatePem));
+    expect(sqlFromDated).toBe(sqlFromLatest);
+    expect(sqlFromDated).toContain('-- NChat D1 backup');
+    expect(sqlFromDated).toContain('CREATE TABLE');
+    expect(sqlFromDated).toContain('INSERT INTO;');
+    // Containers start with the format magic.
+    expect(Buffer.from((await getBytes(datedName)).subarray(0, 5)).toString('latin1')).toBe('NCHB1');
   }, 60000);
 
   it('records the failure in status and does not throw', async () => {
@@ -148,13 +228,13 @@ describe('runBackup', () => {
       ...env,
       DB: { prepare: () => { throw new Error('db down'); } },
     } as unknown as Env;
-    const result = await runBackup(broken, now);
+    const result = await runBackup(broken, now, testPublicPem);
     expect(result.ok).toBe(false);
     const status = await statusJson();
     expect(status.last_error_utc).toBe('2026-06-16T03:17:00.000Z');
     expect(String(status.error)).toContain('db down');
     // A failed run must not have touched the dated dump for its day.
-    expect(await env.BACKUPS.head('nchat-2026-06-16.sql.gz')).toBeNull();
+    expect(await env.BACKUPS.head('nchat-2026-06-16.sql.gz.enc')).toBeNull();
   }, 30000);
 });
 
