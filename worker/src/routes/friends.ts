@@ -286,6 +286,14 @@ friends.post('/block', async (c) => {
       user_id,
       userId
     ),
+    // A block must also end the accepted request behind that friendship:
+    // leaving it 'accepted' with no friendships row is the deadlock that made
+    // such a pair unable to message (403) or re-friend (409 "Already friends")
+    // — the production incident of 2026-11-23. Pending requests are kept so
+    // the block's own refusal (403 on respond) still applies to them.
+    c.env.DB.prepare(
+      "DELETE FROM friend_requests WHERE status = 'accepted' AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))"
+    ).bind(userId, user_id, user_id, userId),
   ]);
   if (!results[0].meta.changes) {
     const userExists = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(user_id).first();

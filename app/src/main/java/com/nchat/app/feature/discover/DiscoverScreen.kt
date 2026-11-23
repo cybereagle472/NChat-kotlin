@@ -111,12 +111,6 @@ fun DiscoverScreen(
     /** Search failures are distinct from a successful query with no matches. */
     searchError: String? = null,
     /**
-     * People this account already has a conversation with. The Find tab treats them as
-     * contactable — offering Message instead of Add — even when the server has no friendship
-     * row for them, which is exactly the case when someone is being chatted with daily.
-     */
-    chatIds: Set<String> = emptySet(),
-    /**
      * Why the friend graph could not be read, when it could not — see
      * `FriendRepository.graphError`. Shown instead of "No friends yet", which used to mean both
      * "you have no friends" and "the request failed".
@@ -157,7 +151,12 @@ fun DiscoverScreen(
         when {
             known.relation != FriendRelation.None -> known
             person.id in sentRequestIds -> known.copy(relation = FriendRelation.Outgoing)
-            person.id in chatIds -> known.copy(relation = FriendRelation.Friend)
+            // No chat-based promotion to Friend: the server's friendship is
+            // authoritative. Promoting a chat partner used to hide the Add
+            // button exactly for pairs whose friendship row is gone, so they
+            // could never re-friend from the app — and "Message" led straight
+            // to the 403 of 2026-11-23. With messaging now friendship-gated,
+            // a non-friend chat partner must be offered Add.
             else -> known
         }
     }
@@ -231,7 +230,8 @@ fun DiscoverScreen(
                                     friend = friend,
                                     onOpenProfile = { onViewProfile(friend) },
                                     onMessage = { onMessage(friend) },
-                                onCall = { video -> onCall(friend, video) }
+                                onCall = { video -> onCall(friend, video) },
+                                onUnfriend = { confirming = friend }
                             )
                         }
                     }
@@ -596,7 +596,9 @@ private fun FriendCard(
     friend: Friend,
     onOpenProfile: () -> Unit,
     onMessage: () -> Unit,
-    onCall: (Boolean) -> Unit
+    onCall: (Boolean) -> Unit,
+    /** Opens the confirm dialog; null hides the action (there is no other unfriend path). */
+    onUnfriend: (() -> Unit)? = null
 ) {
     GlassCard(onClick = onOpenProfile) {
         NcAvatar(
@@ -628,6 +630,7 @@ private fun FriendCard(
             RowAction(Icons.Rounded.ChatBubble, "Message", onMessage)
             RowAction(Icons.Rounded.Phone, "Voice call") { onCall(false) }
             RowAction(Icons.Rounded.Videocam, "Video call") { onCall(true) }
+            if (onUnfriend != null) RowAction(Icons.Rounded.PersonRemove, "Unfriend", onUnfriend)
         }
     }
 }
