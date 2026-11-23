@@ -1,5 +1,7 @@
 package com.nchat.app.network
 
+import com.nchat.app.network.E2eeProtocol.Envelope
+import com.nchat.app.network.E2eeProtocol.PeerBundle
 import java.nio.charset.StandardCharsets
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -25,12 +27,16 @@ class E2eeProtocolTest {
      * identical P-256 agreement, real implementation.
      */
     private object JvmEcdh : E2eeProtocol.EcdhEngine {
-        override fun agree(privateKey: java.security.PrivateKey, publicKey: java.security.PublicKey): ByteArray =
-            java.security.KeyAgreement.getInstance("ECDH").run {
-                init(privateKey)
-                doPhase(publicKey, true)
-                generateSecret()
-            }
+        override fun agree(privateKey: java.security.PrivateKey, publicKey: java.security.PublicKey): ByteArray {
+            // java.security.KeyAgreement exists on the JDK at runtime but not
+            // in android.jar, which is what unit tests compile against.
+            val type = Class.forName("java.security.KeyAgreement")
+            val agreement = type.getMethod("getInstance", String::class.java).invoke(null, "ECDH")
+            type.getMethod("init", java.security.Key::class.java).invoke(agreement, privateKey)
+            type.getMethod("doPhase", java.security.Key::class.java, Boolean::class.javaPrimitiveType)
+                .invoke(agreement, publicKey, true)
+            return type.getMethod("generateSecret").invoke(agreement) as ByteArray
+        }
     }
 
     @Before
@@ -180,7 +186,7 @@ class E2eeProtocolTest {
         // RFC 5869 A.1 — SHA-256, basic test case: pins extract+expand exactly.
         val ikm = ByteArray(22) { 0x0b }
         val salt = ByteArray(13) { 0x00 }
-        val info = ByteArray(10) { 0xf0 }
+        val info = ByteArray(10) { 0xf0.toByte() }
         val okm = E2eeProtocol.hkdf(ikm = ikm, salt = salt, info = info, length = 42)
         val expected = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
         assertEquals(expected, okm.joinToString("") { "%02x".format(it) })
