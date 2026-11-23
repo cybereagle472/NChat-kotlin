@@ -445,13 +445,20 @@ groups.delete('/:id', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can delete the group' }, 403);
 
-  const memberIds = await memberIdsOf(c.env, groupId);
   // D1 enforces foreign keys; the schema's cascades remove group messages,
   // members, read state and calls atomically with this guarded deletion.
-  const deleted = await c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
-    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
-    .bind(groupId, userId).run();
+  // The recipient list is read in the SAME batch as the delete: a member
+  // added between a separate read and the DELETE would be cascaded away
+  // without ever being told the group is gone (the "pre-delete snapshot"
+  // notification race of the 2026-11-23 Phase 1 sign-off).
+  const [snapshot, deleted] = await c.env.DB.batch([
+    c.env.DB.prepare('SELECT user_id FROM group_members WHERE group_id = ?').bind(groupId),
+    c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
+      .bind(groupId, userId),
+  ]);
   if (!deleted.meta.changes) return c.json({ error: 'Only admins can delete the group' }, 403);
+  const memberIds = (snapshot.results ?? []).map((row) => (row as { user_id: string }).user_id);
 
   await broadcastToGroup(c.env, groupId, { type: 'group:deleted', group_id: groupId }, memberIds);
   return c.json({ success: true });
@@ -645,9 +652,13 @@ groups.post('/messages/:messageId/delete-for-everyone', async (c) => {
 groups.post('/messages/:messageId/reaction', async (c) => {
   const userId = c.get('userId');
   const messageId = c.req.param('messageId');
-  const { emoji } = await c.req.json().catch(() => ({}));
+  const { emoji, on } = await c.req.json().catch(() => ({}));
   if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   if (!emoji) return c.json({ error: 'emoji is required' }, 400);
+  // `on` states the result the caller wants, so a retry after a lost response
+  // repeats the intent instead of toggling back (Phase 1 residual). Absent,
+  // the shipped toggle contract is unchanged for older app builds.
+  if (on !== undefined && typeof on !== 'boolean') return c.json({ error: 'Invalid reaction' }, 400);
 
   // Compare-and-swap preserves the toggle semantics without losing changes
   // made after the read. Bound retries under sustained contention.
@@ -665,7 +676,12 @@ groups.post('/messages/:messageId/reaction', async (c) => {
       return c.json({ error: 'This message has too many different reactions' }, 400);
     }
     const list = reactions[emoji] ?? [];
-    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    const present = list.includes(userId);
+    // Already in the requested state: a repeated request must succeed as a
+    // no-op instead of toggling. Membership was re-checked above this attempt.
+    if (on !== undefined && present === on) return c.json({ reactions });
+    const remove = on === undefined ? present : !on;
+    reactions[emoji] = remove ? list.filter((u) => u !== userId) : [...list, userId];
     if (reactions[emoji].length === 0) delete reactions[emoji];
 
     const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2 AND reactions IS ?4

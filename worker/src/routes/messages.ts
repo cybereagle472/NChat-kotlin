@@ -307,8 +307,13 @@ messages.post('/:id/delete-for-me', async (c) => {
 messages.post('/:id/reaction', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  const { emoji } = await c.req.json().catch(() => ({}));
+  const { emoji, on } = await c.req.json().catch(() => ({}));
   if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
+  // `on` states the result the caller wants. With it, a retry of a request
+  // whose response was lost repeats the same intent instead of toggling back
+  // (the Phase 1 residual: reaction retries were not idempotent). Without it,
+  // the shipped toggle contract is unchanged for older app builds.
+  if (on !== undefined && typeof on !== 'boolean') return c.json({ error: 'Invalid reaction' }, 400);
   // Compare-and-swap the entire JSON object. Recompute a toggle after a
   // conflicting write rather than overwriting another participant's reaction.
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -328,7 +333,16 @@ messages.post('/:id/reaction', async (c) => {
       return c.json({ error: 'This message has too many different reactions' }, 400);
     }
     const list = reactions[emoji] ?? [];
-    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    const present = list.includes(userId);
+    if (on !== undefined && present === on) {
+      // Already in the requested state: a repeated request must succeed as a
+      // no-op. Authorization still applies — this is a read of the pair's data.
+      const otherId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+      if (!(await mayMessage(c.env, userId, otherId))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+      return c.json({ reactions });
+    }
+    const remove = on === undefined ? present : !on;
+    reactions[emoji] = remove ? list.filter((u) => u !== userId) : [...list, userId];
     if (reactions[emoji].length === 0) delete reactions[emoji];
 
     const updated = await c.env.DB.prepare(`UPDATE messages SET reactions = ?1 WHERE id = ?2 AND (sender_id = ?3 OR receiver_id = ?3)

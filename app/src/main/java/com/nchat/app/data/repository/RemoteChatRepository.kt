@@ -1458,6 +1458,9 @@ class RemoteChatRepository(
     override fun toggleReaction(chatId: String, messageId: String, emoji: String) {
         // Optimistic toggle first — the bubble reacts under the finger, no round trip.
         val before = stream(chatId).value.firstOrNull { it.id == messageId }?.reactions ?: emptyList()
+        // The state this tap is aiming for: the server applies that state
+        // directly, so a retried request can never flip the reaction back.
+        val targetOn = before.none { it.emoji == emoji && it.reactedByMe }
         updateMessages(chatId) { messages ->
             messages.map { message ->
                 if (message.id != messageId) message
@@ -1467,8 +1470,8 @@ class RemoteChatRepository(
         if (isPending(chatId, messageId)) return
         scope.launch {
             val response = runCatching {
-                if (isGroup(chatId)) api.reactToGroupMessage(messageId, emoji)
-                else api.reactToMessage(messageId, emoji)
+                if (isGroup(chatId)) api.reactToGroupMessage(messageId, emoji, targetOn)
+                else api.reactToMessage(messageId, emoji, targetOn)
             }
             val updated = response.getOrNull()
             if (updated == null) {

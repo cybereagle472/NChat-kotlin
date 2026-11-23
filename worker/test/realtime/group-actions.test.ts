@@ -1032,27 +1032,18 @@ describe('group deletion authorization under concurrency', () => {
     const { owner, outsider, group, message } = await fixture();
     await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
       .bind(crypto.randomUUID(), group, outsider.id, 'admin').run();
-    let reached!: () => void, release!: () => void;
-    const ready = new Promise<void>(resolve => { reached = resolve; });
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    const db = {
-      prepare(sql:string) {
-        const statement = env.DB.prepare(sql);
-        if (sql !== 'SELECT user_id FROM group_members WHERE group_id = ?') return statement;
-        return {bind(...args:unknown[]) {
-          const bound = statement.bind(...args);
-          return {async all() { const result = await bound.all(); reached(); await gate; return result; }};
-        }};
-      },
-      batch: env.DB.batch.bind(env.DB),
-    };
+    // The snapshot of recipients and the guarded delete now run in one D1
+    // batch, so the gate sits in front of that batch: the demotion lands
+    // after the route's authorization pre-checks and before the write, the
+    // exact window this test has always pinned.
+    const paused = pauseBatch();
     const request = app.request(`https://example.test/groups/${group}`, {
       method:'DELETE', headers:{Authorization:`Bearer ${owner.token}`},
-    }, {...env, DB:db} as unknown as Env);
-    await ready;
+    }, paused.bindings);
+    await paused.reached;
     try {
       await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group, owner.id).run();
-    } finally { release(); }
+    } finally { paused.resume(); }
     expect((await request).status).toBe(403);
     expect(await env.DB.prepare('SELECT id FROM groups WHERE id=?').bind(group).first()).not.toBeNull();
     expect(await env.DB.prepare('SELECT id FROM group_messages WHERE id=?').bind(message).first()).not.toBeNull();
@@ -1393,6 +1384,60 @@ describe('blocking clears the relationship completely', () => {
     expect((await post('/friends/unblock', a.token, { user_id: b.id })).status).toBe(200);
     const again = await post('/friends/request', a.token, { receiver_id: b.id });
     expect(again.status).toBe(201);
+  }, 30000);
+});
+
+describe('reaction retries honour a stated desired state', () => {
+  const readDm = (id: string) => env.DB.prepare('SELECT reactions FROM messages WHERE id = ?').bind(id)
+    .first<{ reactions: string | null }>();
+  const readGroup = (id: string) => env.DB.prepare('SELECT reactions FROM group_messages WHERE id = ?').bind(id)
+    .first<{ reactions: string | null }>();
+  const has = (row: { reactions: string | null } | null, emoji: string, userId: string) => {
+    const map = row?.reactions ? JSON.parse(row.reactions) : {};
+    return Array.isArray(map[emoji]) && map[emoji].includes(userId);
+  };
+
+  it('a retried direct-message reaction with on:true does not flip back off', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount();
+    await friend(owner.id, peer.id);
+    const sent = await post('/messages', owner.token, { receiver_id: peer.id, content: 'hello' });
+    const id = (await sent.json() as { message: { id: string } }).message.id;
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(true);
+    // The caller lost the response and retries the identical request: the state
+    // it asked for must hold. A plain toggle would flip back off here — that is
+    // the 2026-11-23 Phase 1 residual this test pins down.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(true);
+    // Removal is equally repeatable.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(false);
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(false);
+    // A non-boolean desired state is refused, not silently read as a toggle.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: 'yes' })).status).toBe(400);
+    // Without `on`, the shipped toggle contract is untouched.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readDm(id), '❤️', owner.id)).toBe(true);
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readDm(id), '❤️', owner.id)).toBe(false);
+  }, 30000);
+
+  it('a retried group reaction with on:true does not flip back off', async () => {
+    const { owner, message } = await fixture();
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(false);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(false);
+    // Legacy toggle (no `on`) still flips both ways.
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readGroup(message), '❤️', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readGroup(message), '❤️', owner.id)).toBe(false);
   }, 30000);
 });
 
