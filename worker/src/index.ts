@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { Env, Variables } from './types';
 import { verifyAccessJWT } from './lib/jwt';
+import { runBackup } from './lib/backup';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -67,5 +68,12 @@ app.get('/realtime/connect', async (c) => {
   const stub = c.env.REALTIME.get(id);
   return stub.fetch(c.req.raw);
 });
+
+// Daily database backup cron (wrangler.toml [triggers]): dump → gzip → R2 →
+// prune by age. Attached to the default export so the runtime finds
+// `scheduled` beside `fetch`; tests call runBackup directly.
+(app as unknown as {
+  scheduled: (event: ScheduledController, env: Env) => Promise<unknown>;
+}).scheduled = (_event, cronEnv) => runBackup(cronEnv);
 
 export default app;

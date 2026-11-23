@@ -29,15 +29,15 @@ describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
   it('keeps the last 7 days, one file per ISO week up to 4 weeks, deletes the rest', () => {
     const now = Date.parse('2026-06-15T12:00:00Z'); // a Monday
     const keys = [
-      // Daily window: ages 0–6 all kept.
+      // Daily window: ages 0–6 all kept. (2026-06-15 is a Monday; ISO weeks
+      // run Monday–Sunday, so these dates group as noted.)
       ...['09', '10', '11', '12', '13', '14', '15'].map((d) => dated(`2026-06-${d}`)),
-      // Age 7–28: only each ISO week's latest file survives.
-      dated('2026-06-08'), // W24 latest (age 7) — kept
-      dated('2026-06-07'), // same week, older — deleted
-      dated('2026-06-01'), // W23 latest (age 14) — kept
-      dated('2026-05-30'), // W22 latest (age 16) — kept
-      dated('2026-05-18'), // W21 latest (age 28, boundary) — kept
-      // Beyond 4 weeks — deleted whatever week they sit in.
+      // Beyond the daily window: only each ISO week's latest file survives.
+      dated('2026-06-08'), // age 7, but its week already has newer files — deleted
+      dated('2026-06-07'), // age 8, latest of its week (Jun 1–7) — kept
+      dated('2026-06-01'), // same week as 06-07, older — deleted
+      dated('2026-05-30'), // age 16, latest of its week — kept
+      dated('2026-05-18'), // age 28 (boundary), latest of its week — kept
       dated('2026-05-17'), // age 29 — deleted
       dated('2026-05-11'), // age 35 — deleted
       // Never candidates for deletion.
@@ -47,7 +47,8 @@ describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
     expect(keysToDelete(keys, now).sort()).toEqual([
       dated('2026-05-11'),
       dated('2026-05-17'),
-      dated('2026-06-07'),
+      dated('2026-06-01'),
+      dated('2026-06-08'),
     ].sort());
   });
 
@@ -55,11 +56,13 @@ describe('backup retention: 7 daily + 4 weekly, older deleted', () => {
     const now = Date.parse('2026-01-10T12:00:00Z');
     const keys = [
       ...['04', '05', '06', '07', '08', '09', '10'].map((d) => dated(`2026-01-${d}`)),
-      dated('2025-12-31'), // 2026-W01 latest (age 10) — kept
-      dated('2025-12-29'), // same ISO week as 12-31 despite the year flip — deleted
-      dated('2025-12-28'), // 2025-W53 latest (age 13) — kept
+      // ISO week W01 spans the year boundary: Jan 4, Dec 31 and Dec 29 are
+      // all one week, so the year-end files yield to the newer Jan 4.
+      dated('2025-12-31'), // same week as the Jan dailies — deleted
+      dated('2025-12-29'), // same week — deleted
+      dated('2025-12-28'), // the week before (age 13), alone — kept
     ];
-    expect(keysToDelete(keys, now)).toEqual([dated('2025-12-29')]);
+    expect(keysToDelete(keys, now).sort()).toEqual([dated('2025-12-31'), dated('2025-12-29')].sort());
   });
 });
 
@@ -72,7 +75,7 @@ describe('database dump round-trip', () => {
     for (const row of tables.results ?? []) {
       await env.DB_RESTORE.prepare(`DROP TABLE IF EXISTS "${row.name.replace(/"/g, '""')}"`).run();
     }
-    await applyD1Migrations(env.DB_RESTORE, env.TEST_MIGRATIONS);
+    // Deliberately NOT migrated: the dump alone must recreate the schema.
 
     // Seed the source with rows that stress quoting: apostrophes, semicolons,
     // double quotes, newlines, unicode, and a NULL.
@@ -131,7 +134,8 @@ describe('runBackup', () => {
     expect(status.last_success_utc).toBe('2026-06-15T03:17:00.000Z');
     expect(status.key).toBe('nchat-2026-06-15.sql.gz');
 
-    const bytes = new Uint8Array(await (await env.BACKUPS.get('nchat-2026-06-15.sql.gz')!.arrayBuffer()));
+    const dumped = await env.BACKUPS.get('nchat-2026-06-15.sql.gz');
+    const bytes = new Uint8Array(await new Response(dumped!.body).arrayBuffer());
     const sql = await gunzip(bytes);
     expect(sql).toContain('-- NChat D1 backup');
     expect(sql).toContain('CREATE TABLE');
