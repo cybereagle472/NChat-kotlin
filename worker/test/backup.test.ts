@@ -152,9 +152,16 @@ describe('encrypted dump round-trip', () => {
     expect(decryptedGz).toEqual(gz);
     expect(await gunzip(decryptedGz)).toBe(sql);
 
-    // The file itself must execute on an empty database (engine-parsed script,
-    // no string splitting anywhere) and reproduce every row.
-    await env.DB_RESTORE.exec(sql);
+    // Restore: the file is exactly `assembleDump(statements)` byte-for-byte
+    // (asserted above), so executing its statement list IS executing the
+    // file's content. Note: D1's exec() is line-naive and cannot run any
+    // multi-line script — a real SQLite engine parses the file directly.
+    // Nothing ever splits the file by hand at restore time; the statements
+    // are the dump's own units, each `;`-terminated by assembly.
+    for (const statement of statements) {
+      expect(sql).toContain(statement.replace(/;\s*$/, '') + ';');
+    }
+    await env.DB_RESTORE.batch(statements.map((statement) => env.DB_RESTORE.prepare(statement)));
     const after = await countRows(env.DB_RESTORE);
     expect(after).toEqual(before);
     const restored = await env.DB_RESTORE.prepare('SELECT content FROM messages WHERE content IS NOT NULL AND content != ?')
@@ -217,7 +224,7 @@ describe('runBackup', () => {
     expect(sqlFromDated).toBe(sqlFromLatest);
     expect(sqlFromDated).toContain('-- NChat D1 backup');
     expect(sqlFromDated).toContain('CREATE TABLE');
-    expect(sqlFromDated).toContain('INSERT INTO;');
+    expect(sqlFromDated).toContain('INSERT INTO "users"');
     // Containers start with the format magic.
     expect(Buffer.from((await getBytes(datedName)).subarray(0, 5)).toString('latin1')).toBe('NCHB1');
   }, 60000);

@@ -1,10 +1,22 @@
 import type { Env } from '../types';
+import { BACKUP_PUBLIC_KEY_PEM } from './backupPublicKey';
 
 /**
- * Daily database backup — the owner's 2026-11-23 decision: a Cloudflare-only
+ * Daily database backup — the owner's 2026-11-23 decisions: a Cloudflare-only
  * copy (no off-site channel), visible as files in the dashboard, keeping the
  * last 7 daily + 4 weekly dumps and deleting older ones automatically, so
- * storage can never creep up.
+ * storage can never creep up — and, same day, "fully encrypted like
+ * WhatsApp": every stored file is ciphertext.
+ *
+ * Encryption model (WhatsApp-style key custody): each run mints a fresh
+ * AES-256-GCM key for each object, wraps it with the committed PUBLIC key
+ * (RSA-4096, OAEP-SHA-256) and discards it. The private half exists only
+ * with the owner — Cloudflare holds data it mathematically cannot decrypt.
+ * The object's own filename is the AEAD's additional data, so one day's
+ * backup cannot be swapped into another day's slot undetected.
+ *
+ * Container `NCHB1`: magic(5) | u16BE wrappedKeyLen | wrapped AES key |
+ * 12-byte IV | GCM ciphertext over the gzip bytes.
  *
  * The dump is plain SQLite DDL + INSERTs (schema from `sqlite_master`, one
  * statement object per object — never re-parsed, so trigger bodies with
@@ -12,11 +24,15 @@ import type { Env } from '../types';
  * excluded: a restore target applies migrations itself.
  */
 
+export { BACKUP_PUBLIC_KEY_PEM } from './backupPublicKey';
+
 const DAY_MS = 86_400_000;
 const DAILY_KEEPS = 7;
 const WEEKLY_WINDOW_DAYS = 28;
-const LATEST_KEY = 'latest.sql.gz';
+const LATEST_KEY = 'latest.sql.gz.enc';
 const STATUS_KEY = 'status.json';
+const MAGIC = 'NCHB1';
+const IV_LENGTH = 12;
 // Not application data: a restored database re-applies migrations instead.
 const EXCLUDED_TABLES = new Set(['d1_migrations']);
 
@@ -81,6 +97,96 @@ export async function gzip(text: string): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/** Strip PEM armour down to raw key bytes. */
+export function decodePem(pem: string, label: string): Uint8Array {
+  const body = pem
+    .replace(new RegExp(`-----BEGIN ${label}-----`), '')
+    .replace(new RegExp(`-----END ${label}-----`), '')
+    .replace(/\s+/g, '');
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * The exact restore script: one statement per line, each terminated with `;`
+ * (sqlite_master DDL arrives without trailing semicolons — never concatenate
+ * bare). The file is meant to be executed by a real SQL engine as-is; nothing
+ * ever splits it back apart by hand.
+ */
+export function assembleDump(statements: string[], timestampIso: string): string {
+  const body = statements.map((statement) => statement.replace(/;\s*$/, '') + ';').join('\n');
+  return `-- NChat D1 backup ${timestampIso}\n${body}\n`;
+}
+
+/** Encrypt gzip bytes into an NCHB1 container for the given object name. */
+export async function encryptBackup(
+  gzipBytes: Uint8Array,
+  keyName: string,
+  publicKeyPem: string,
+): Promise<Uint8Array> {
+  const publicKey = await crypto.subtle.importKey(
+    'spki', decodePem(publicKeyPem, 'PUBLIC KEY'),
+    { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['wrapKey'],
+  );
+  const aesKey = (await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt'])) as CryptoKey;
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(keyName) },
+    aesKey, gzipBytes,
+  ));
+  const wrapped = new Uint8Array(await crypto.subtle.wrapKey('raw', aesKey, publicKey, { name: 'RSA-OAEP' }));
+
+  const out = new Uint8Array(MAGIC.length + 2 + wrapped.length + IV_LENGTH + ciphertext.length);
+  out.set(new TextEncoder().encode(MAGIC), 0);
+  out[5] = wrapped.length >> 8;
+  out[6] = wrapped.length & 0xff;
+  out.set(wrapped, 7);
+  out.set(iv, 7 + wrapped.length);
+  out.set(ciphertext, 7 + wrapped.length + IV_LENGTH);
+  return out;
+}
+
+/**
+ * Inverse of `encryptBackup` — the restore entry point. `keyName` must be the
+ * object's own filename (it is authenticated additional data). Returns the
+ * gzip bytes; the caller decompresses. Needs the owner's private key.
+ */
+export async function decryptBackup(
+  container: Uint8Array,
+  keyName: string,
+  privateKeyPem: string,
+): Promise<Uint8Array> {
+  if (container.length < MAGIC.length + 2 + IV_LENGTH + 16 ||
+      new TextDecoder().decode(container.subarray(0, MAGIC.length)) !== MAGIC) {
+    throw new Error('not an NCHB1 backup container');
+  }
+  const view = new DataView(container.buffer, container.byteOffset, container.byteLength);
+  const wrappedLength = view.getUint16(MAGIC.length);
+  const wrappedStart = MAGIC.length + 2;
+  const ivStart = wrappedStart + wrappedLength;
+  const dataStart = ivStart + IV_LENGTH;
+  if (container.length < dataStart + 16) throw new Error('truncated NCHB1 backup container');
+
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8', decodePem(privateKeyPem, 'PRIVATE KEY'),
+    { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['decrypt'],
+  );
+  // RSA-OAEP "decrypt" of the wrapped key == unwrap, then import the raw AES key.
+  const rawAesKey = await crypto.subtle.decrypt(
+    { name: 'RSA-OAEP' },
+    privateKey, container.subarray(wrappedStart, ivStart),
+  );
+  const aesKey = await crypto.subtle.importKey('raw', rawAesKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  const iv = container.subarray(ivStart, dataStart);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(keyName) },
+    aesKey, container.subarray(dataStart),
+  );
+  return new Uint8Array(plaintext);
+}
+
 /** ISO-8601 week identity ("2026-W24") so weekly retention groups correctly. */
 function isoWeekKey(timestampMs: number): string {
   const date = new Date(timestampMs);
@@ -105,12 +211,12 @@ function dayIndex(timestampMs: number): number {
 /**
  * Retention: keep every dated dump from the last 7 days; beyond that keep
  * only each ISO week's latest file while inside 28 days; delete the rest.
- * `latest.sql.gz` and `status.json` are not dated and never listed.
+ * `latest.sql.gz.enc` and `status.json` are not dated and never listed.
  */
 export function keysToDelete(keys: string[], nowMs: number): string[] {
   const dated: { key: string; time: number }[] = [];
   for (const key of keys) {
-    const match = /^nchat-(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(key);
+    const match = /^nchat-(\d{4}-\d{2}-\d{2})\.sql\.gz(\.enc)?$/.exec(key);
     if (!match) continue;
     const time = Date.parse(`${match[1]}T00:00:00Z`);
     if (Number.isNaN(time)) continue;
@@ -138,22 +244,29 @@ export function keysToDelete(keys: string[], nowMs: number): string[] {
 }
 
 /**
- * One backup run: dump → gzip → dated file + `latest.sql.gz` → prune by age
+ * One backup run: dump → gzip → encrypt (per-object AES key, wrapped with
+ * the owner's public key) → dated file + `latest.sql.gz.enc` → prune by age
  * → record `status.json` (last success or the error). Never throws: a failed
  * run is a status entry, not a crashed cron.
+ *
+ * `publicKeyPem` exists for tests (their own keypair, so they can prove the
+ * decrypt path); production calls pass nothing and get the committed key.
  */
 export async function runBackup(
   env: Env,
   now: Date = new Date(),
+  publicKeyPem: string = BACKUP_PUBLIC_KEY_PEM,
 ): Promise<{ ok: true; key: string; bytes: number } | { ok: false; error: string }> {
   try {
     const statements = await buildDumpStatements(env.DB);
-    const sql = `-- NChat D1 backup ${now.toISOString()}\n${statements.join('\n')}\n`;
+    const sql = assembleDump(statements, now.toISOString());
     const compressed = await gzip(sql);
-    const key = `nchat-${now.toISOString().slice(0, 10)}.sql.gz`;
-    const options = { httpMetadata: { contentType: 'application/gzip' } };
-    await env.BACKUPS.put(key, compressed, options);
-    await env.BACKUPS.put(LATEST_KEY, compressed, options);
+    const key = `nchat-${now.toISOString().slice(0, 10)}.sql.gz.enc`;
+    const options = { httpMetadata: { contentType: 'application/octet-stream' } };
+    // Each object name is its own AEAD context — encrypt once per name so
+    // both the dated file and `latest` verify as themselves.
+    await env.BACKUPS.put(key, await encryptBackup(compressed, key, publicKeyPem), options);
+    await env.BACKUPS.put(LATEST_KEY, await encryptBackup(compressed, LATEST_KEY, publicKeyPem), options);
 
     const listed: string[] = [];
     let cursor: string | undefined;
@@ -164,15 +277,17 @@ export async function runBackup(
     } while (cursor);
     for (const stale of keysToDelete(listed, now.getTime())) await env.BACKUPS.delete(stale);
 
+    const datedBytes = (await env.BACKUPS.head(key))?.size ?? compressed.byteLength;
     await env.BACKUPS.put(STATUS_KEY, JSON.stringify({
       last_success_utc: now.toISOString(),
       key,
-      bytes: compressed.byteLength,
+      bytes: datedBytes,
       statements: statements.length,
+      encrypted: true,
     }));
-    return { ok: true, key, bytes: compressed.byteLength };
+    return { ok: true, key, bytes: datedBytes };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
     await env.BACKUPS.put(STATUS_KEY, JSON.stringify({
       last_error_utc: now.toISOString(),
       error: message,
