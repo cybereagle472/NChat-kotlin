@@ -83,7 +83,7 @@ describe('register + bundle round-trip', () => {
     expect(first.status).toBe(200);
     const firstBody = await first.json() as {
       user_id: string; identity_public_key: string; signed_prekey_public: string;
-      signed_prekey_signature: string; one_time_prekey: { id: string; public_key: string } | null;
+      signed_prekey_signature: string; one_time_prekey: { id: number; public_key: string } | null;
     };
     expect(firstBody.user_id).toBe(alice.id);
     expect(firstBody.identity_public_key).toBe(keys.identityPub);
@@ -93,7 +93,7 @@ describe('register + bundle round-trip', () => {
     expect(firstBody.one_time_prekey!.public_key).toBe(otk1.identityPub);
 
     const second = await get(`/keys/bundle/${alice.id}`, bob.token);
-    const secondBody = await second.json() as { one_time_prekey: { id: string; public_key: string } | null };
+    const secondBody = await second.json() as { one_time_prekey: { id: number; public_key: string } | null };
     expect(secondBody.one_time_prekey).not.toBeNull();
     expect(secondBody.one_time_prekey!.id).not.toBe(firstBody.one_time_prekey!.id);
     expect(secondBody.one_time_prekey!.public_key).toBe(otk2.identityPub);
@@ -149,6 +149,11 @@ describe('one-time prekey refill', () => {
   it('enforces array shape, per-key validity, and the100-unconsumed cap', async () => {
     const alice = await signup('alice');
     const keys = await makeKeys();
+    await post('/keys/register', alice.token, {
+      identity_public_key: keys.identityPub,
+      signed_prekey_public: keys.prekeyPub,
+      signed_prekey_signature: keys.signature,
+    });
 
     expect((await post('/keys/prekeys', alice.token, { public_keys: [] })).status).toBe(400);
     expect((await post('/keys/prekeys', alice.token, { public_keys: 'nope' })).status).toBe(400);
@@ -159,8 +164,8 @@ describe('one-time prekey refill', () => {
 
     // Seed the cap directly:100 stored → one more must be refused...
     for (let i = 0; i < 100; i++) {
-      await env.DB.prepare('INSERT INTO one_time_prekeys (id, user_id, public_key) VALUES (?, ?, ?)')
-        .bind(crypto.randomUUID(), alice.id, keys.identityPub).run();
+      await env.DB.prepare('INSERT INTO one_time_prekeys (user_id, public_key) VALUES (?, ?)')
+        .bind(alice.id, keys.identityPub).run();
     }
     expect((await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] })).status).toBe(400);
 
@@ -181,6 +186,29 @@ describe('bundle edge cases', () => {
     expect((await get(`/keys/bundle/${alice.id}`, null as unknown as string)).status).toBe(401);
   }, 30000);
 
+  it('parallel refills can never push the pool past the cap', async () => {
+    const alice = await signup('alice');
+    const keys = await makeKeys();
+    await post('/keys/register', alice.token, {
+      identity_public_key: keys.identityPub,
+      signed_prekey_public: keys.prekeyPub,
+      signed_prekey_signature: keys.signature,
+    });
+    for (let i = 0; i < 99; i++) {
+      await env.DB.prepare('INSERT INTO one_time_prekeys (user_id, public_key) VALUES (?, ?)')
+        .bind(alice.id, keys.identityPub).run();
+    }
+
+    const [a, b] = await Promise.all([
+      post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] }),
+      post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 400]);
+    const count = (await env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
+      .bind(alice.id).first<{ n: number }>())?.n;
+    expect(count).toBe(100);
+  }, 30000);
+
   it('concurrent fetches never hand out the same one-time key twice', async () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
@@ -198,13 +226,13 @@ describe('bundle edge cases', () => {
     }
 
     const fetches = await Promise.all([1, 2, 3, 4].map(() => get(`/keys/bundle/${alice.id}`, bob.token)));
-    const bodies = await Promise.all(fetches.map((r) => r.json() as Promise<{ one_time_prekey: { id: string; public_key: string } | null }>));
+    const bodies = await Promise.all(fetches.map((r) => r.json() as Promise<{ one_time_prekey: { id: number; public_key: string } | null }>));
     const ids = bodies.map((b) => b.one_time_prekey!.id);
     expect(new Set(ids).size).toBe(4);
     for (const b of bodies) expect(expected.has(b.one_time_prekey!.public_key)).toBe(true);
 
     const fifth = await get(`/keys/bundle/${alice.id}`, bob.token);
-    const fifthBody = await fifth.json() as { one_time_prekey: { id: string } | null };
+    const fifthBody = await fifth.json() as { one_time_prekey: { id: number } | null };
     expect(fifthBody.one_time_prekey).not.toBeNull();
     expect(ids).not.toContain(fifthBody.one_time_prekey!.id);
 
