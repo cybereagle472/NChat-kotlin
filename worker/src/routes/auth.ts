@@ -1,14 +1,17 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
-import { hashPassword, verifyPassword } from '../lib/password';
+import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/password';
 import { signJWT, verifyJWT } from '../lib/jwt';
 import { newId } from '../lib/id';
 import { requireAuth } from '../middleware/auth';
+import { clientAddressBucket, consumeLimit } from '../lib/rate-limit';
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const ACCESS_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TTL_DAYS = 30;
+// Fixed decoy: perform the normal PBKDF2 work even when no account exists.
+const DECOY_HASH = '100000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function userPublic(row: any) {
@@ -61,30 +64,16 @@ async function issueTokens(env: Env, userId: string) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Real-time "is this email already registered" check used by the Sign Up
-// form so a user finds out before filling out the whole form (and before
-// hitting the 409 on actual submit). Public/no-auth — it only ever reveals
-// whether an email is taken, which signup's own error response already
-// discloses anyway.
-auth.get('/check-email', async (c) => {
-  const email = (c.req.query('email') || '').trim().toLowerCase();
-  if (!email || !EMAIL_RE.test(email)) {
-    return c.json({ valid: false, exists: false });
-  }
-  const row = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-  return c.json({ valid: true, exists: !!row });
-});
-
 auth.post('/signup', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const email = (body.email || '').trim().toLowerCase();
-  const password = body.password || '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
   // full_name/username/avatar are collected later by the Profile Setup screen —
   // signup itself only needs an email + password, matching the existing UI.
-  const full_name = (body.full_name || '').trim();
+  const full_name = typeof body.full_name === 'string' ? body.full_name.trim() : '';
 
-  if (!email || !password) {
-    return c.json({ error: 'email and password are required' }, 400);
+  if (!email || !password || email.length > 254 || password.length > 1024 || full_name.length > 200) {
+    return c.json({ error: 'Invalid email, password, or name' }, 400);
   }
   if (!EMAIL_RE.test(email)) {
     return c.json({ error: 'Please enter a valid email address' }, 400);
@@ -93,35 +82,62 @@ auth.post('/signup', async (c) => {
     return c.json({ error: 'Password must be at least 6 characters' }, 400);
   }
 
+  const ip = clientAddressBucket(c.req.header('CF-Connecting-IP'));
+  if (!ip) return c.json({ error: 'Client address unavailable' }, 503);
+  if (!(await consumeLimit(c.env, 'signup-ip', ip, 10, 60 * 60 * 1000))) return c.json({ error: 'Too many attempts' }, 429);
+
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   if (existing) return c.json({ error: 'Email is already registered' }, 409);
 
-  const id = newId();
+  const id = newId(), sid = newId();
   const password_hash = await hashPassword(password);
-  await c.env.DB.prepare('INSERT INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?)')
-    .bind(id, email, password_hash, full_name)
-    .run();
-  await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO privacy_settings (user_id) VALUES (?)').bind(id),
-    c.env.DB.prepare('INSERT INTO notification_settings (user_id) VALUES (?)').bind(id),
+  const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 86400 * 1000).toISOString();
+  // Prepare the tokens before committing so signing errors cannot leave a
+  // newly registered account without a usable signup response.
+  const tokens = {
+    access_token: await signJWT({ sub: id }, c.env.JWT_SECRET, ACCESS_TTL_SECONDS),
+    refresh_token: await signJWT({ sub: id, sid }, c.env.JWT_SECRET, REFRESH_TTL_DAYS * 86400),
+    expires_in: ACCESS_TTL_SECONDS,
+  };
+  // The email may have been taken after the lookup. The dependent rows must
+  // only be inserted for this newly generated user id, in the same D1 batch.
+  // An error in settings or session creation rolls the account back as well.
+  const [created] = await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO users (id, email, password_hash, full_name) VALUES (?1, ?2, ?3, ?4)
+      ON CONFLICT(email) DO NOTHING RETURNING *`).bind(id, email, password_hash, full_name),
+    c.env.DB.prepare('INSERT INTO privacy_settings (user_id) SELECT id FROM users WHERE id = ?').bind(id),
+    c.env.DB.prepare('INSERT INTO notification_settings (user_id) SELECT id FROM users WHERE id = ?').bind(id),
+    c.env.DB.prepare('INSERT INTO sessions (id, user_id, expires_at) SELECT ?1, id, ?3 FROM users WHERE id = ?2').bind(sid, id, expiresAt),
   ]);
-
-  const tokens = await issueTokens(c.env, id);
-  const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
-  return c.json({ user: userPublic(row), ...tokens }, 201);
+  if (!created.meta.changes) return c.json({ error: 'Email is already registered' }, 409);
+  await sweepExpiredSessions(c.env);
+  return c.json({ user: userPublic(created.results[0]), ...tokens }, 201);
 });
 
 auth.post('/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const email = (body.email || '').trim().toLowerCase();
-  const password = body.password || '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
+  if (!email || email.length > 254 || !password || password.length > 1024) return c.json({ error: 'Invalid email or password' }, 400);
+  const ip = clientAddressBucket(c.req.header('CF-Connecting-IP'));
+  if (!ip) return c.json({ error: 'Client address unavailable' }, 503);
+  if (!(await consumeLimit(c.env, 'login-ip', ip, 60, 15 * 60 * 1000)) ||
+      !(await consumeLimit(c.env, 'login-account', email, 10, 15 * 60 * 1000))) return c.json({ error: 'Too many attempts' }, 429);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<any>();
-  if (!row || !(await verifyPassword(password, row.password_hash))) {
+  const valid = await verifyPassword(password, row?.password_hash ?? DECOY_HASH);
+  if (!row || !valid) {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
+  if (passwordNeedsUpgrade(row.password_hash)) {
+    const upgraded = await hashPassword(password);
+    // Do not overwrite a concurrent password change.
+    await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?')
+      .bind(upgraded, row.id, row.password_hash).run();
+  }
   const tokens = await issueTokens(c.env, row.id);
   return c.json({ user: userPublic(row), ...tokens });
 });

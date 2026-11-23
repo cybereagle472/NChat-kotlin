@@ -39,18 +39,18 @@ export async function getPrivacySettingsMap(env: Env, userIds: string[]): Promis
   const ids = [...new Set(userIds)].filter(Boolean);
   if (ids.length === 0) return map;
 
-  const placeholders = ids.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM privacy_settings WHERE user_id IN (${placeholders})`
-  )
-    .bind(...ids)
-    .all<PrivacySettingsRow>();
-
   const found = new Set<string>();
-  (results ?? []).forEach((r) => {
-    map.set(r.user_id, withDefaults(r.user_id, r));
-    found.add(r.user_id);
-  });
+  // D1 limits bound parameters; keep each query comfortably below that limit.
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const placeholders = chunk.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`SELECT * FROM privacy_settings WHERE user_id IN (${placeholders})`)
+      .bind(...chunk).all<PrivacySettingsRow>();
+    (results ?? []).forEach((r) => {
+      map.set(r.user_id, withDefaults(r.user_id, r));
+      found.add(r.user_id);
+    });
+  }
   // Anyone without a row yet (e.g. created before privacy_settings existed) still gets defaults.
   ids.filter((id) => !found.has(id)).forEach((id) => map.set(id, withDefaults(id)));
   return map;
@@ -61,31 +61,22 @@ export async function upsertPrivacySettings(
   userId: string,
   updates: Partial<Omit<PrivacySettingsRow, 'user_id'>>
 ): Promise<PrivacySettingsRow> {
-  const current = await getPrivacySettings(env, userId);
-  const next = { ...current, ...updates };
+  // Only named, validated fields are updated on conflict. Reading all fields
+  // first and writing the snapshot back can undo another device's privacy change.
+  const allowed: (keyof Omit<PrivacySettingsRow, 'user_id'>)[] = [
+    'last_seen_visibility', 'profile_photo_visibility', 'about_visibility',
+    'status_visibility', 'read_receipts', 'online_status_enabled',
+  ];
+  const keys = allowed.filter(key => updates[key] !== undefined);
+  if (keys.length === 0) return getPrivacySettings(env, userId);
+  const columns = keys.join(', ');
+  const placeholders = keys.map(() => '?').join(', ');
+  const assignments = keys.map(key => `${key} = excluded.${key}`).join(', ');
   await env.DB.prepare(
-    `INSERT INTO privacy_settings
-       (user_id, last_seen_visibility, profile_photo_visibility, about_visibility, status_visibility, read_receipts, online_status_enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET
-       last_seen_visibility = excluded.last_seen_visibility,
-       profile_photo_visibility = excluded.profile_photo_visibility,
-       about_visibility = excluded.about_visibility,
-       status_visibility = excluded.status_visibility,
-       read_receipts = excluded.read_receipts,
-       online_status_enabled = excluded.online_status_enabled`
-  )
-    .bind(
-      userId,
-      next.last_seen_visibility,
-      next.profile_photo_visibility,
-      next.about_visibility,
-      next.status_visibility,
-      next.read_receipts,
-      next.online_status_enabled
-    )
-    .run();
-  return next;
+    `INSERT INTO privacy_settings (user_id, ${columns}) VALUES (?, ${placeholders})
+     ON CONFLICT(user_id) DO UPDATE SET ${assignments}`
+  ).bind(userId, ...keys.map(key => updates[key])).run();
+  return getPrivacySettings(env, userId);
 }
 
 /** Are these two users friends? (self always counts as "yes" so self-checks never get redacted.) */
@@ -104,15 +95,18 @@ export async function getFriendIdSet(env: Env, userId: string, otherIds: string[
   const ids = [...new Set(otherIds)].filter((id) => id && id !== userId);
   const set = new Set<string>();
   if (ids.length === 0) return set;
-  const placeholders = ids.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT user1_id, user2_id FROM friendships
-     WHERE (user1_id = ? AND user2_id IN (${placeholders}))
-        OR (user2_id = ? AND user1_id IN (${placeholders}))`
-  )
-    .bind(userId, ...ids, userId, ...ids)
-    .all<{ user1_id: string; user2_id: string }>();
-  (results ?? []).forEach((r) => set.add(r.user1_id === userId ? r.user2_id : r.user1_id));
+  for (let i = 0; i < ids.length; i += 49) {
+    const chunk = ids.slice(i, i + 49);
+    const placeholders = chunk.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT user1_id, user2_id FROM friendships
+       WHERE (user1_id = ? AND user2_id IN (${placeholders}))
+          OR (user2_id = ? AND user1_id IN (${placeholders}))`
+    )
+      .bind(userId, ...chunk, userId, ...chunk)
+      .all<{ user1_id: string; user2_id: string }>();
+    (results ?? []).forEach((r) => set.add(r.user1_id === userId ? r.user2_id : r.user1_id));
+  }
   return set;
 }
 
@@ -120,7 +114,7 @@ export function isVisible(setting: PrivacyOption, isSelf: boolean, isFriend: boo
   if (isSelf) return true;
   if (setting === 'everyone') return true;
   if (setting === 'nobody') return false;
-  return isFriend;
+  return setting === 'contacts' && isFriend;
 }
 
 /**
@@ -165,4 +159,17 @@ export async function applyPrivacyToList<
     const settings = settingsMap.get(p.id) ?? withDefaults(p.id);
     return applyPrivacy(p, viewerId, settings, friendSet.has(p.id));
   });
+}
+
+/** Status audiences fail closed for unknown options and respect blocks in both directions. */
+export async function statusVisibleTo(env: Env, ownerId: string, viewerId: string, privacy: string): Promise<boolean> {
+  if (ownerId === viewerId) return true;
+  const [blocked, friends, settings] = await Promise.all([
+    env.DB.prepare('SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?) LIMIT 1')
+      .bind(ownerId, viewerId, viewerId, ownerId).first(),
+    areFriends(env, ownerId, viewerId),
+    getPrivacySettings(env, ownerId),
+  ]);
+  const permits = (setting: string) => setting === 'everyone' || (setting === 'contacts' && friends);
+  return !blocked && permits(privacy) && permits(settings.status_visibility);
 }

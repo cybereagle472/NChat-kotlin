@@ -6,20 +6,12 @@ import { ONLINE_THRESHOLD_MS } from '../lib/presence';
 const admin = new Hono<{ Bindings: Env; Variables: Variables }>();
 admin.use('*', requireAuth);
 
-// Mirrors the admin gate the frontend already uses (Settings.tsx) — kept as
-// the same hardcoded address rather than switching to the `is_admin` column
-// so behavior for the existing admin account doesn't change.
-const ADMIN_EMAIL = 'kazmiinasir6@gmail.com';
-
-// GET /admin/stats — lightweight counts for the in-app admin panel. Never
-// trust a client-supplied "I'm an admin" flag: look the caller's own email
-// up from their authenticated user id and check it server-side.
+// A role must be explicitly granted to an existing account by the operator.
+// An unverified email address alone is never proof of administration.
 admin.get('/stats', async (c) => {
   const userId = c.get('userId');
-  const me = await c.env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(userId).first<{ email: string }>();
-  if (!me || me.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-    return c.json({ error: 'Forbidden' }, 403);
-  }
+  const me = await c.env.DB.prepare('SELECT is_admin FROM users WHERE id = ?').bind(userId).first<{ is_admin: number }>();
+  if (!me || me.is_admin !== 1) return c.json({ error: 'Forbidden' }, 403);
 
   const onlineSince = Date.now() - ONLINE_THRESHOLD_MS;
   const [users, online, messages, groups] = await Promise.all([

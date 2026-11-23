@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import type { Env, Variables } from './types';
-import { verifyJWT } from './lib/jwt';
+import { verifyAccessJWT } from './lib/jwt';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -19,14 +19,15 @@ export { RealtimeRoom } from './durable-objects/RealtimeRoom';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-app.use(
-  '*',
-  cors({
-    origin: '*', // tighten to your real frontend origin(s) before going live
-    allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  })
-);
+// Bound input before JSON/multipart parsing. The supported Android app limits
+// status media to 48 MiB and chat attachments to 24 MiB; allow multipart
+// overhead while keeping Worker memory use bounded.
+const jsonBodyLimit = bodyLimit({ maxSize: 256 * 1024 });
+const uploadBodyLimit = bodyLimit({ maxSize: 50 * 1024 * 1024 });
+app.use('*', (c, next) => (c.req.path === '/media/upload' ? uploadBodyLimit : jsonBodyLimit)(c, next));
+
+// The supported Android client is not subject to browser CORS. Do not grant
+// cross-origin browser access by default; same-origin HTTP remains available.
 
 app.get('/', (c) => c.json({ ok: true, service: 'nchat-api' }));
 app.get('/health', (c) => c.json({ ok: true }));
@@ -52,7 +53,7 @@ app.get('/realtime/connect', async (c) => {
   const token = c.req.query('token');
   if (!room || !token) return c.json({ error: 'room and token query params are required' }, 400);
 
-  const payload = await verifyJWT<{ sub: string }>(token, c.env.JWT_SECRET);
+  const payload = await verifyAccessJWT(token, c.env.JWT_SECRET);
   if (!payload?.sub) return c.json({ error: 'Invalid or expired token' }, 401);
 
   // Clients may listen only to their own personal event stream. Other

@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact, limitSignal } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
+import { signalPayload } from '../lib/signalling';
 import { broadcastToRoom, userRoomId } from '../lib/realtime';
 import { applyPrivacy, getPrivacySettings, areFriends } from '../lib/privacy';
 
@@ -63,10 +65,10 @@ calls.get('/turn-credentials', async (c) => {
   }
 });
 
-calls.post('/', async (c) => {
+calls.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id, call_type, offer_sdp } = await c.req.json().catch(() => ({}));
-  if (!receiver_id || !call_type) return c.json({ error: 'receiver_id and call_type are required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id || typeof call_type !== 'string' || !call_type) return c.json({ error: 'receiver_id and call_type are required' }, 400);
   if (call_type !== 'audio' && call_type !== 'video') return c.json({ error: 'call_type must be audio or video' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot call yourself' }, 400);
 
@@ -79,12 +81,20 @@ calls.post('/', async (c) => {
 
   const id = newId();
   const created_at = nowIso();
-  await c.env.DB.prepare(
+  const inserted = await c.env.DB.prepare(
     `INSERT INTO calls (id, caller_id, receiver_id, call_type, status, offer_sdp, created_at)
-     VALUES (?, ?, ?, ?, 'ringing', ?, ?)`
+     SELECT ?1, ?2, ?3, ?4, 'ringing', ?5, ?6
+     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))
+       AND EXISTS (SELECT 1 FROM users WHERE id = ?3)`
   )
     .bind(id, userId, receiver_id, call_type, offer_sdp ? JSON.stringify(offer_sdp) : null, created_at)
     .run();
+  if (!inserted.meta.changes) {
+    const receiver = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(receiver_id).first();
+    return receiver
+      ? c.json({ error: 'Cannot call this user' }, 403)
+      : c.json({ error: 'User not found' }, 404);
+  }
 
   // The caller's privacy settings govern what the callee's incoming-call
   // screen shows for them (same "contacts"/"nobody" rules as everywhere
@@ -121,16 +131,17 @@ calls.post('/', async (c) => {
 // Generic signaling passthrough (ICE candidates, renegotiation, etc.) — the
 // Worker doesn't need to understand the payload shape, just forward it to
 // whichever of the two participants didn't send it.
-calls.post('/:id/signal', async (c) => {
+calls.post('/:id/signal', limitSignal, async (c) => {
   const userId = c.get('userId');
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json().catch(() => ({}));
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
   if (!isParticipant(call, userId)) return c.json({ error: 'Not authorized' }, 403);
 
+  if (call.ended_at || ['ended', 'declined', 'missed'].includes(call.status)) return c.json({ success: true });
   const otherId = call.caller_id === userId ? call.receiver_id : call.caller_id;
-  await broadcastToRoom(c.env, userRoomId(otherId), { type: 'call:signal', callId: id, from: userId, ...body });
+  await broadcastToRoom(c.env, userRoomId(otherId), { ...signalPayload(body), type: 'call:signal', callId: id, from: userId });
   return c.json({ success: true });
 });
 
@@ -143,9 +154,10 @@ calls.post('/:id/answer', async (c) => {
   if (call.receiver_id !== userId) return c.json({ error: 'Only the callee can answer' }, 403);
   if (call.status !== 'ringing') return c.json({ error: 'Call is no longer ringing' }, 409);
 
-  await c.env.DB.prepare("UPDATE calls SET status = 'answered', answer_sdp = ? WHERE id = ?")
-    .bind(JSON.stringify(answer_sdp ?? null), id)
+  const answered = await c.env.DB.prepare("UPDATE calls SET status = 'answered', answer_sdp = ? WHERE id = ? AND receiver_id = ? AND status = 'ringing' AND ended_at IS NULL")
+    .bind(JSON.stringify(answer_sdp ?? null), id, userId)
     .run();
+  if (!answered.meta.changes) return c.json({ error: 'Call is no longer ringing' }, 409);
   await broadcastToRoom(c.env, userRoomId(call.caller_id), { type: 'call:answered', callId: id, answer_sdp });
   return c.json({ success: true });
 });
@@ -160,9 +172,10 @@ calls.post('/:id/end', async (c) => {
   // Don't let a stale/duplicate "end" request overwrite an already-finished call's outcome.
   if (call.ended_at) return c.json({ success: true });
 
-  await c.env.DB.prepare("UPDATE calls SET status = ?, duration = ?, ended_at = datetime('now') WHERE id = ?")
-    .bind(status, duration ?? null, id)
+  const ended = await c.env.DB.prepare("UPDATE calls SET status = ?, duration = ?, ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL AND (caller_id = ? OR receiver_id = ?)")
+    .bind(status, duration ?? null, id, userId, userId)
     .run();
+  if (!ended.meta.changes) return c.json({ success: true });
 
   const otherId = call.caller_id === userId ? call.receiver_id : call.caller_id;
   await broadcastToRoom(c.env, userRoomId(otherId), { type: 'call:ended', callId: id, status });

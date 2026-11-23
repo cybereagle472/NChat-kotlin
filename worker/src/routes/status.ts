@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
+import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
+import { applyPrivacyToList, statusVisibleTo } from '../lib/privacy';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 
@@ -18,16 +22,20 @@ async function friendIdsOf(env: Env, userId: string): Promise<string[]> {
   return (results ?? []).map((r) => r.friend_id);
 }
 
-status.post('/', async (c) => {
+status.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
+  if (exceedsTextLimits(body, {text_content:4096, caption:4096, content_url:2048, thumbnail_url:65536, content_type:512, background_color:512, font_style:512, privacy:512})) return c.json({ error: 'Status field too long' }, 400);
+  const proofs = await attachmentProofs(c.env, userId, [body.content_url, body.thumbnail_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
   const id = newId();
   const created_at = nowIso();
   const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
-  await c.env.DB.prepare(
+  const write = c.env.DB.prepare(
     `INSERT INTO statuses (id, user_id, content_type, content_url, text_content, background_color, font_style, thumbnail_url, duration, caption, privacy, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+     WHERE ${attachmentProofGuard('?2', '?14')}`
   )
     .bind(
       id,
@@ -42,9 +50,11 @@ status.post('/', async (c) => {
       body.caption ?? null,
       body.privacy ?? 'contacts',
       created_at,
-      expires_at
-    )
-    .run();
+      expires_at,
+      JSON.stringify(proofs)
+    );
+  const inserted = await writeWithMediaReferences(c.env, write, 'status', id, userId, [body.content_url, body.thumbnail_url]);
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot attach this file' }, 403);
 
   const row = await c.env.DB.prepare('SELECT * FROM statuses WHERE id = ?').bind(id).first();
 
@@ -56,13 +66,15 @@ status.post('/', async (c) => {
     .first<{ full_name: string; username: string | null; avatar_url: string | null }>();
 
   const friendIds = await friendIdsOf(c.env, userId);
+  const visibility = await Promise.all(friendIds.map((friendId) => statusVisibleTo(c.env, userId, friendId, body.privacy ?? 'contacts')));
   await Promise.all(
-    friendIds.map((friendId) =>
-      broadcastToUser(c.env, friendId, {
+    friendIds.filter((_, index) => visibility[index]).map(async (friendId) => {
+      const [profile] = await applyPrivacyToList(c.env, friendId, [{ id: userId, avatar_url: poster?.avatar_url }]);
+      return broadcastToUser(c.env, friendId, {
         type: 'status:new',
-        status: { ...row, full_name: poster?.full_name, username: poster?.username, avatar_url: poster?.avatar_url }
-      })
-    )
+        status: { ...row, full_name: poster?.full_name, username: poster?.username, avatar_url: profile.avatar_url }
+      });
+    })
   );
 
   return c.json({ status: row }, 201);
@@ -75,7 +87,7 @@ status.get('/mine', async (c) => {
             s.font_style, s.thumbnail_url, s.duration, s.caption, s.privacy, s.created_at, s.expires_at,
             (SELECT COUNT(*) FROM status_views sv WHERE sv.status_id = s.id AND sv.viewer_id != s.user_id) as view_count
      FROM statuses s
-     WHERE s.user_id = ? AND s.expires_at > datetime('now')
+     WHERE s.user_id = ? AND datetime(s.expires_at) > datetime('now')
      ORDER BY s.created_at ASC`
   )
     .bind(userId)
@@ -97,23 +109,30 @@ status.get('/feed', async (c) => {
      FROM statuses s
      JOIN users u ON u.id = s.user_id
      JOIN friendships f ON (f.user1_id = ? AND f.user2_id = s.user_id) OR (f.user2_id = ? AND f.user1_id = s.user_id)
-     WHERE s.expires_at > datetime('now')
+     LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
+     WHERE datetime(s.expires_at) > datetime('now')
+       AND s.privacy IN ('everyone', 'contacts')
+       AND coalesce(ps.status_visibility, 'contacts') IN ('everyone', 'contacts')
+       AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = s.user_id AND b.blocked_user_id = ?)
+         OR (b.user_id = ? AND b.blocked_user_id = s.user_id))
        AND s.user_id NOT IN (SELECT muted_user_id FROM muted_statuses WHERE user_id = ?)
      ORDER BY s.created_at ASC`
   )
-    .bind(userId, userId, userId, userId)
-    .all();
-  return c.json({ statuses: results ?? [] });
+    .bind(userId, userId, userId, userId, userId, userId)
+    .all<{ user_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, userId, rows.map(row => ({ id: row.user_id, avatar_url: row.avatar_url })));
+  return c.json({ statuses: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
 status.post('/:id/view', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
 
-  const statusRow = await c.env.DB.prepare('SELECT user_id FROM statuses WHERE id = ?')
+  const statusRow = await c.env.DB.prepare("SELECT user_id, privacy FROM statuses WHERE id = ? AND datetime(expires_at) > datetime('now')")
     .bind(id)
-    .first<{ user_id: string }>();
-  if (!statusRow) return c.json({ error: 'Status not found' }, 404);
+    .first<{ user_id: string; privacy: string }>();
+  if (!statusRow || !(await statusVisibleTo(c.env, statusRow.user_id, userId, statusRow.privacy))) return c.json({ error: 'Status not found' }, 404);
 
   // Viewing your own status is not a "view" — don't record it, don't count
   // it, and don't notify yourself.
@@ -121,23 +140,49 @@ status.post('/:id/view', async (c) => {
     return c.json({ success: true });
   }
 
-  const inserted = await c.env.DB.prepare('INSERT OR IGNORE INTO status_views (id, status_id, viewer_id) VALUES (?, ?, ?)')
-    .bind(newId(), id, userId)
-    .run();
+  // Repeat the audience, block and expiry checks in the write, because the
+  // status may have changed since it was read above. Both audience settings
+  // must independently permit the viewer.
+  const friendship = `EXISTS (SELECT 1 FROM friendships f WHERE
+    (f.user1_id = s.user_id AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = s.user_id))`;
+  const viewId = newId();
+  const viewWrite = c.env.DB.prepare(`INSERT OR IGNORE INTO status_views (id, status_id, viewer_id)
+    SELECT ?1, s.id, ?3 FROM statuses s LEFT JOIN privacy_settings ps ON ps.user_id = s.user_id
+    WHERE s.id = ?2 AND datetime(s.expires_at) > datetime('now')
+      AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+        (b.user_id = s.user_id AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = s.user_id))
+      AND (s.privacy = 'everyone' OR (s.privacy = 'contacts' AND ${friendship}))
+      AND (coalesce(ps.status_visibility, 'contacts') = 'everyone' OR
+        (coalesce(ps.status_visibility, 'contacts') = 'contacts' AND ${friendship}))`)
+    .bind(viewId, id, userId);
+  // Increment only for the row inserted by this attempt. Keeping both writes
+  // in one D1 transaction prevents a failed counter update from consuming the
+  // unique view and making all subsequent retries silently skip the count.
+  const countWrite = c.env.DB.prepare(`UPDATE statuses SET view_count = view_count + 1 WHERE id = ?1
+    AND EXISTS (SELECT 1 FROM status_views WHERE id = ?2 AND status_id = ?1 AND viewer_id = ?3)`)
+    .bind(id, viewId, userId);
+  const [inserted] = await c.env.DB.batch([viewWrite, countWrite]);
+
+  if (!inserted.meta.changes) {
+    // A duplicate is successful only while the current status is still visible.
+    const current = await c.env.DB.prepare("SELECT user_id, privacy FROM statuses WHERE id = ? AND datetime(expires_at) > datetime('now')")
+      .bind(id).first<{ user_id: string; privacy: string }>();
+    if (!current || !(await statusVisibleTo(c.env, current.user_id, userId, current.privacy))) return c.json({ error: 'Status not found' }, 404);
+    return c.json({ success: true });
+  }
 
   if (inserted.meta.changes > 0) {
-    await c.env.DB.prepare('UPDATE statuses SET view_count = view_count + 1 WHERE id = ?').bind(id).run();
-
     // Tell the status owner so their viewer list / view count updates live
     // while they're looking at it.
     const viewer = await c.env.DB.prepare('SELECT full_name, username, avatar_url FROM users WHERE id = ?')
       .bind(userId)
       .first<{ full_name: string; username: string | null; avatar_url: string | null }>();
+    const [profile] = await applyPrivacyToList(c.env, statusRow.user_id, [{ id: userId, ...viewer }]);
     await broadcastToUser(c.env, statusRow.user_id, {
       type: 'status:view',
       status_id: id,
       viewer_id: userId,
-      viewer_profile: viewer ? { id: userId, ...viewer } : undefined
+      viewer_profile: viewer ? profile : undefined
     });
   }
 
@@ -146,6 +191,8 @@ status.post('/:id/view', async (c) => {
 
 status.get('/:id/views', async (c) => {
   const id = c.req.param('id');
+  const owned = await c.env.DB.prepare('SELECT 1 FROM statuses WHERE id = ? AND user_id = ?').bind(id, c.get('userId')).first();
+  if (!owned) return c.json({ error: 'Status not found' }, 404);
   const { results } = await c.env.DB.prepare(
     `SELECT sv.*, u.full_name, u.username, u.avatar_url FROM status_views sv
      JOIN users u ON u.id = sv.viewer_id
@@ -154,8 +201,10 @@ status.get('/:id/views', async (c) => {
      ORDER BY sv.viewed_at DESC`
   )
     .bind(id)
-    .all();
-  return c.json({ views: results ?? [] });
+    .all<{ viewer_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, c.get('userId'), rows.map(row => ({ id: row.viewer_id, avatar_url: row.avatar_url })));
+  return c.json({ views: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
 status.delete('/:id', async (c) => {

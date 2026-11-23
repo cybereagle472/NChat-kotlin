@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
 import { newId } from '../lib/id';
+import { canReadMedia } from '../lib/media-access';
 
 const media = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -12,18 +14,29 @@ function mediaTypeFromMime(mime: string): 'image' | 'video' | 'audio' | 'documen
   return 'document';
 }
 
+// Do not serve executable user-provided documents under the API origin.
+// Preserve ordinary image/audio/video types for Android playback and seeking.
+function safeResponseType(stored: string | null): { type: string; inline: boolean } {
+  const type = (stored ?? '').split(';', 1)[0].trim().toLowerCase();
+  const safeImage = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'image/heic', 'image/heif']);
+  const safeAudioVideo = /^(audio|video)\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/.test(type);
+  return safeImage.has(type) || safeAudioVideo ? { type, inline: true } : { type: 'application/octet-stream', inline: false };
+}
+
 // POST /media/upload — multipart/form-data with a "file" field.
 // Replaces supabase.storage.from('chat-media').upload(...)
-media.post('/upload', requireAuth, async (c) => {
+media.post('/upload', requireAuth, limitSend, async (c) => {
   const userId = c.get('userId');
   const form = await c.req.formData();
   const file = form.get('file');
   if (!(file instanceof File)) return c.json({ error: 'file is required (multipart/form-data)' }, 400);
+  if (file.size > 49 * 1024 * 1024) return c.json({ error: 'File too large' }, 413);
 
-  const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
+  const suffix = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
+  const ext = /^[a-zA-Z0-9]{1,16}$/.test(suffix) ? suffix : '';
   const key = `${userId}/${newId()}${ext ? `.${ext}` : ''}`;
 
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), {
+  await c.env.MEDIA.put(key, file, {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
   });
 
@@ -40,8 +53,7 @@ media.post('/upload', requireAuth, async (c) => {
   return c.json({ id, url, key, media_type, file_name: file.name, file_size: file.size }, 201);
 });
 
-// GET /media/file/:key — requires sign-in. Per-file authorization still needs
-// to be implemented before media can be considered private from other users.
+// GET /media/file/:key — signed-in users must be in the file's audience.
 //
 // Serves byte-range requests (HTTP 206 Partial Content), which this used to
 // skip entirely — every request got the whole object back with a plain 200,
@@ -60,11 +72,18 @@ media.post('/upload', requireAuth, async (c) => {
 // the HTTP spec (206 + Content-Range on a successful range request).
 media.get('/file/*', requireAuth, async (c) => {
   const key = c.req.path.replace(/^\/media\/file\//, '');
+  if (!(await canReadMedia(c.env, c.get('userId'), key))) return c.json({ error: 'Not found' }, 404);
   const object = await c.env.MEDIA.get(key, { range: c.req.raw.headers });
   if (!object) return c.json({ error: 'Not found' }, 404);
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
+  const served = safeResponseType(headers.get('content-type'));
+  headers.set('content-type', served.type);
+  if (served.inline) headers.delete('content-disposition');
+  else headers.set('content-disposition', 'attachment');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('content-security-policy', "sandbox; default-src 'none'");
   headers.set('etag', object.httpEtag);
   headers.set('cache-control', 'private, no-store');
   headers.set('accept-ranges', 'bytes');

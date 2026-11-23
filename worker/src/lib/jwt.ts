@@ -53,9 +53,17 @@ export async function verifyJWT<T = Record<string, unknown>>(token: string, secr
     );
     if (!valid) return null;
     const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(bodyB64)));
-    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || Math.floor(Date.now() / 1000) >= payload.exp) return null;
     return payload as T;
   } catch {
     return null;
   }
+}
+
+/** Access tokens issued by this Worker have no session id; refresh tokens do.
+ * Keep accepting already-issued access tokens without requiring new claims. */
+export async function verifyAccessJWT(token: string, secret: string): Promise<{ sub: string } | null> {
+  const payload = await verifyJWT<Record<string, unknown>>(token, secret);
+  if (!payload || typeof payload.sub !== 'string' || !payload.sub || Object.hasOwn(payload, 'sid')) return null;
+  return { sub: payload.sub };
 }

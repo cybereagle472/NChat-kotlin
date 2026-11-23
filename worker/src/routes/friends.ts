@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact } from '../middleware/rate-limit';
 import { newId } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresence, getPresenceMap, withPresence } from '../lib/presence';
@@ -24,10 +25,10 @@ function profilePublic(row: any, lastActiveAt?: number | null) {
 }
 
 
-friends.post('/request', async (c) => {
+friends.post('/request', limitContact, async (c) => {
   const userId = c.get('userId');
   const { receiver_id } = await c.req.json().catch(() => ({}));
-  if (!receiver_id || receiver_id === userId) return c.json({ error: 'Invalid receiver_id' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id || receiver_id === userId) return c.json({ error: 'Invalid receiver_id' }, 400);
 
   const blocked = await c.env.DB.prepare(
     'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
@@ -46,13 +47,32 @@ friends.post('/request', async (c) => {
     if (existing.status === 'accepted') return c.json({ error: 'Already friends' }, 409);
   }
 
-  const id = newId();
-  await c.env.DB.prepare(
-    `INSERT INTO friend_requests (id, sender_id, receiver_id, status) VALUES (?, ?, ?, 'pending')
-     ON CONFLICT(sender_id, receiver_id) DO UPDATE SET status = 'pending', updated_at = datetime('now')`
+  const candidateId = newId();
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO friend_requests (id, sender_id, receiver_id, status)
+     SELECT ?1, ?2, ?3, 'pending'
+     WHERE NOT EXISTS (SELECT 1 FROM blocked_users WHERE (user_id = ?2 AND blocked_user_id = ?3) OR (user_id = ?3 AND blocked_user_id = ?2))
+       AND NOT EXISTS (SELECT 1 FROM friend_requests WHERE status IN ('pending', 'accepted')
+         AND ((sender_id = ?2 AND receiver_id = ?3) OR (sender_id = ?3 AND receiver_id = ?2)))
+       AND NOT EXISTS (SELECT 1 FROM friendships WHERE (user1_id = ?2 AND user2_id = ?3) OR (user1_id = ?3 AND user2_id = ?2))
+       AND EXISTS (SELECT 1 FROM users WHERE id = ?3)
+     ON CONFLICT(sender_id, receiver_id) DO UPDATE SET status = 'pending', updated_at = datetime('now')
+     WHERE friend_requests.status = 'rejected'
+     RETURNING id`
   )
-    .bind(id, userId, receiver_id)
-    .run();
+    .bind(candidateId, userId, receiver_id)
+    .first<{ id: string }>();
+  if (!inserted) {
+    const blockedNow = await c.env.DB.prepare(
+      'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
+    ).bind(userId, receiver_id, receiver_id, userId).first();
+    if (blockedNow) return c.json({ error: 'Cannot send a request to this user' }, 403);
+    const receiverExists = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(receiver_id).first();
+    return receiverExists
+      ? c.json({ error: 'Request already pending or already friends' }, 409)
+      : c.json({ error: 'User not found' }, 404);
+  }
+  const { id } = inserted;
 
   const sender = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
   const senderLastActiveAt = await getPresence(c.env, userId);
@@ -86,17 +106,38 @@ friends.post('/:id/respond', async (c) => {
   if (!req) return c.json({ error: 'Request not found' }, 404);
   if (req.status !== 'pending') return c.json({ error: 'Request already handled' }, 409);
 
+  // Guard both mutations inside the same D1 transaction. A request may have
+  // been cancelled, handled, or blocked after the preliminary read.
+  const eligible = `id = ?1 AND receiver_id = ?2 AND status = 'pending'
+    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+      (b.user_id = friend_requests.sender_id AND b.blocked_user_id = friend_requests.receiver_id) OR
+      (b.user_id = friend_requests.receiver_id AND b.blocked_user_id = friend_requests.sender_id))`;
+  let changed: number;
   if (accept) {
-    const friendshipId = newId();
-    await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE friend_requests SET status = 'accepted', updated_at = datetime('now') WHERE id = ?").bind(
-        requestId
-      ),
+    const results = await c.env.DB.batch([
       c.env.DB.prepare(
-        'INSERT OR IGNORE INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)'
-      ).bind(friendshipId, req.sender_id, req.receiver_id),
+        `INSERT OR IGNORE INTO friendships (id, user1_id, user2_id)
+         SELECT ?3, sender_id, receiver_id FROM friend_requests WHERE ${eligible}`
+      ).bind(requestId, userId, newId()),
+      c.env.DB.prepare(
+        `UPDATE friend_requests SET status = 'accepted', updated_at = datetime('now') WHERE ${eligible}`
+      ).bind(requestId, userId),
     ]);
+    changed = results[1].meta.changes;
+  } else {
+    const result = await c.env.DB.prepare(
+      `UPDATE friend_requests SET status = 'rejected', updated_at = datetime('now') WHERE ${eligible}`
+    ).bind(requestId, userId).run();
+    changed = result.meta.changes;
+  }
+  if (!changed) {
+    const blocked = await c.env.DB.prepare(
+      'SELECT 1 FROM blocked_users WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)'
+    ).bind(userId, req.sender_id, req.sender_id, userId).first();
+    return blocked ? c.json({ error: 'Cannot respond to this user' }, 403) : c.json({ error: 'Request no longer pending' }, 409);
+  }
 
+  if (accept) {
     const accepter = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
     const accepterLastActiveAt = await getPresence(c.env, userId);
     const accepterSettings = await getPrivacySettings(c.env, userId);
@@ -109,9 +150,6 @@ friends.post('/:id/respond', async (c) => {
         : { id: userId },
     });
   } else {
-    await c.env.DB.prepare("UPDATE friend_requests SET status = 'rejected', updated_at = datetime('now') WHERE id = ?")
-      .bind(requestId)
-      .run();
     await broadcastToUser(c.env, req.sender_id, { type: 'friend:declined', userId });
   }
   return c.json({ success: true });
@@ -195,7 +233,7 @@ friends.get('/', async (c) => {
 friends.delete('/:friendId', async (c) => {
   const userId = c.get('userId');
   const friendId = c.req.param('friendId');
-  await c.env.DB.batch([
+  const results = await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)').bind(
       userId,
       friendId,
@@ -211,21 +249,19 @@ friends.delete('/:friendId', async (c) => {
   ]);
   // Let the other side know live too, so their Friends/Chats tabs drop this
   // person immediately instead of waiting for their next manual refresh.
-  await broadcastToUser(c.env, friendId, { type: 'friend:removed', userId });
+  if (results[0].meta.changes) await broadcastToUser(c.env, friendId, { type: 'friend:removed', userId });
   return c.json({ success: true });
 });
 
 friends.post('/block', async (c) => {
   const userId = c.get('userId');
   const { user_id } = await c.req.json().catch(() => ({}));
-  if (!user_id) return c.json({ error: 'user_id is required' }, 400);
+  if (typeof user_id !== 'string' || !user_id) return c.json({ error: 'user_id is required' }, 400);
   const id = newId();
-  await c.env.DB.batch([
-    c.env.DB.prepare('INSERT OR IGNORE INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)').bind(
-      id,
-      userId,
-      user_id
-    ),
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT OR IGNORE INTO blocked_users (id, user_id, blocked_user_id)
+      SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)`)
+      .bind(id, userId, user_id, user_id),
     c.env.DB.prepare('DELETE FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)').bind(
       userId,
       user_id,
@@ -233,6 +269,10 @@ friends.post('/block', async (c) => {
       userId
     ),
   ]);
+  if (!results[0].meta.changes) {
+    const userExists = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(user_id).first();
+    if (!userExists) return c.json({ error: 'User not found' }, 404);
+  }
   return c.json({ success: true });
 });
 

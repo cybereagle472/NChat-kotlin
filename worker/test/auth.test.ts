@@ -9,7 +9,7 @@ describe('account smoke test', () => {
   it('signs up, logs in, and reads the current profile', async () => {
     const credentials = { email: 'alice@example.test', password: 'password123' };
     const post = (path: string) => SELF.fetch(`https://example.test${path}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
       body: JSON.stringify(credentials),
     });
     const signup = await post('/auth/signup');
@@ -25,4 +25,95 @@ describe('account smoke test', () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toMatchObject({ profile: { id: created.user.id, email: credentials.email } });
   });
+});
+
+it('does not accept refresh tokens as API access tokens', async () => {
+  const signup = await SELF.fetch('https://example.test/auth/signup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` },
+    body: JSON.stringify({ email: 'bob@example.test', password: 'password123' }),
+  });
+  expect(signup.status).toBe(201);
+  const tokens = await signup.json() as { access_token: string; refresh_token: string };
+  const read = (token: string) => SELF.fetch('https://example.test/users/me', { headers: { Authorization: `Bearer ${token}` } });
+  expect((await read(tokens.access_token)).status).toBe(200);
+  expect((await read(tokens.refresh_token)).status).toBe(401);
+  const refresh = await SELF.fetch('https://example.test/auth/refresh', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+  });
+  expect(refresh.status).toBe(200);
+});
+
+it('upgrades weak password hashes after a successful login', async () => {
+  const email = 'legacy@example.test';
+  const signup = await SELF.fetch('https://example.test/auth/signup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1` }, body: JSON.stringify({email, password:'secret1'}),
+  });
+  expect(signup.status).toBe(201);
+  const weak = '1000:000102030405060708090a0b0c0d0e0f:6f8926ce4ca5c25a52786dd2e12bc46e17bd289c4e073a8f6d047e7efc748c88';
+  await env.DB.prepare('UPDATE users SET password_hash = ? WHERE email = ?').bind(weak, email).run();
+  const login = (password:string) => SELF.fetch('https://example.test/auth/login', {method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0,4)}::1`},body:JSON.stringify({email,password})});
+  expect((await login('wrong')).status).toBe(401);
+  expect((await env.DB.prepare('SELECT password_hash FROM users WHERE email = ?').bind(email).first<{password_hash:string}>())?.password_hash).toBe(weak);
+  expect((await login('secret1')).status).toBe(200);
+  expect((await env.DB.prepare('SELECT password_hash FROM users WHERE email = ?').bind(email).first<{password_hash:string}>())?.password_hash.startsWith('100000:')).toBe(true);
+});
+
+it('rejects malformed and unsupported password hashes without throwing', async () => {
+  const { verifyPassword } = await import('../src/lib/password');
+  for (const value of ['0:00:ff', '999999999:00:ff', 'abc:00:ff', '1000:nothex:garbage']) {
+    expect(await verifyPassword('secret1', value), value).toBe(false);
+  }
+});
+
+it('rejects a token at its expiration time', async () => {
+  const { signJWT } = await import('../src/lib/jwt');
+  const token = await signJWT({sub:'some-user'}, 'local-tests-only-not-a-production-secret', 0);
+  const response = await SELF.fetch('https://example.test/users/me', {headers:{Authorization:`Bearer ${token}`}});
+  expect(response.status).toBe(401);
+});
+
+describe('signup persistence and concurrency', () => {
+  for (const table of ['privacy_settings','notification_settings','sessions'] as const) {
+    it(`rolls back the entire signup if ${table} insertion fails`, async () => {
+      const email = `${crypto.randomUUID()}@example.test`, trigger = `fail_${crypto.randomUUID().replaceAll('-','')}`;
+      const signup = () => SELF.fetch('https://example.test/auth/signup', {
+        method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':`2001:db8:${crypto.randomUUID().slice(0,4)}::1`},
+        body:JSON.stringify({email,password:'password123'}),
+      });
+      await env.DB.prepare(`CREATE TRIGGER ${trigger} BEFORE INSERT ON ${table} WHEN EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND email='${email}') BEGIN SELECT RAISE(ABORT,'injected signup failure'); END`).run();
+      try { expect((await signup()).status).toBe(500); }
+      finally { await env.DB.prepare(`DROP TRIGGER ${trigger}`).run(); }
+      expect(await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first()).toBeNull();
+      const retried = await signup(); expect(retried.status).toBe(201);
+      const user = (await retried.json() as {user:{id:string}}).user;
+      for (const name of ['privacy_settings','notification_settings','sessions'])
+        expect(await env.DB.prepare(`SELECT 1 FROM ${name} WHERE user_id=?`).bind(user.id).first(),name).not.toBeNull();
+    },30000);
+  }
+
+  it('returns a clean conflict when two signups race for the same email', async () => {
+    const {default:app} = await import('../src/index');
+    const email = `${crypto.randomUUID()}@example.test`, body = JSON.stringify({email,password:'password123'});
+    let reached!:()=>void, resume!:()=>void;
+    const ready = new Promise<void>(resolve=>{reached=resolve;}), gate = new Promise<void>(resolve=>{resume=resolve;});
+    const db = {prepare(sql:string) {
+      const stmt = env.DB.prepare(sql);
+      if (sql !== 'SELECT id FROM users WHERE email = ?') return stmt;
+      return {bind(...args:unknown[]) {const bound=stmt.bind(...args);return {async first() {const result=await bound.first(); reached(); await gate; return result;}};}};
+    },batch:env.DB.batch.bind(env.DB)};
+    const request = app.request('https://example.test/auth/signup',{method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':'198.51.100.11'},body},{...env,DB:db});
+    await ready;
+    try {
+      const other = await SELF.fetch('https://example.test/auth/signup',{method:'POST',headers:{'Content-Type':'application/json','CF-Connecting-IP':'198.51.100.12'},body});
+      expect(other.status).toBe(201);
+    } finally { resume(); }
+    expect((await request).status).toBe(409);
+    const rows = await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).all<{id:string}>();
+    expect(rows.results).toHaveLength(1);
+    const id = rows.results[0].id;
+    for (const name of ['privacy_settings','notification_settings','sessions']) {
+      const rows = await env.DB.prepare(`SELECT user_id FROM ${name} WHERE user_id=?`).bind(id).all();
+      expect(rows.results,name).toHaveLength(1);
+    }
+  },30000);
 });

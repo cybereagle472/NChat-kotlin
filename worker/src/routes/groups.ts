@@ -1,9 +1,13 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact, limitSend } from '../middleware/rate-limit';
+import { attachmentProofs, attachmentProofGuard, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
+import { consumeLimit } from '../lib/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
-import { getPrivacySettings } from '../lib/privacy';
+import { applyPrivacyToList, getPrivacySettings } from '../lib/privacy';
 
 const groups = new Hono<{ Bindings: Env; Variables: Variables }>();
 groups.use('*', requireAuth);
@@ -33,7 +37,7 @@ async function broadcastToGroup(env: Env, groupId: string, payload: unknown, mem
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function groupWithMembers(env: Env, groupId: string): Promise<any | null> {
+async function groupWithMembers(env: Env, groupId: string, viewerId: string): Promise<any | null> {
   const group = await env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
   if (!group) return null;
   // last_read_at/read_receipts are LEFT JOINed so a member who has never
@@ -52,9 +56,12 @@ async function groupWithMembers(env: Env, groupId: string): Promise<any | null> 
   )
     .bind(groupId)
     .all<any>();
+  const profiles = await applyPrivacyToList(env, viewerId, (memberRows ?? []).map((m: any) => ({
+    id: m.user_id, full_name: m.full_name, username: m.username, avatar_url: m.avatar_url,
+  })));
   return {
     ...group,
-    members: (memberRows ?? []).map((m: any) => ({
+    members: (memberRows ?? []).map((m: any, index: number) => ({
       group_id: m.group_id,
       user_id: m.user_id,
       role: m.role,
@@ -64,9 +71,23 @@ async function groupWithMembers(env: Env, groupId: string): Promise<any | null> 
       // status to anyone else — same opt-out rule 1:1 chat already
       // enforces for its own read receipts (see POST /messages/mark-read).
       last_read_at: m.read_receipts ? (m.last_read_at ?? undefined) : undefined,
-      profile: { id: m.user_id, full_name: m.full_name, username: m.username, avatar_url: m.avatar_url },
+      profile: profiles[index],
     })),
   };
+}
+
+/** Group payloads contain member profiles and must be shaped per recipient. */
+async function broadcastGroupProjection(env: Env, groupId: string, type: string, memberIds?: string[]): Promise<void> {
+  const current = await memberIdsOf(env, groupId);
+  const recipients = memberIds ? current.filter(id => memberIds.includes(id)) : current;
+  await Promise.all(recipients.map(async viewerId => {
+    const group = await groupWithMembers(env, groupId, viewerId);
+    if (!group || !(await getMembership(env, groupId, viewerId))) return;
+    const payload = type === 'group:created' || type === 'group:updated'
+      ? { type, group }
+      : { type, group_id: groupId, members: group.members };
+    await broadcastToUser(env, viewerId, payload);
+  }));
 }
 
 /**
@@ -106,35 +127,52 @@ function groupMessageJson(row: any) {
   };
 }
 
-groups.post('/', async (c) => {
+groups.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { name, description, avatar_url, memberIds = [] } = await c.req.json().catch(() => ({}));
+  if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048}) || !Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length > 512)) return c.json({ error: 'Invalid group fields' }, 400);
   if (!name || !String(name).trim()) return c.json({ error: 'name is required' }, 400);
+  const proofs = await attachmentProofs(c.env, userId, [avatar_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
+
+  const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
+  // Validate in bounded chunks before doing any writes. Foreign keys still
+  // protect against deletion after this check, within the atomic batch below.
+  for (let i = 0; i < allMembers.length; i += 90) {
+    const chunk = allMembers.slice(i, i + 90);
+    const { results } = await c.env.DB.prepare(`SELECT id FROM users WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .bind(...chunk).all<{ id: string }>();
+    if (results.length !== chunk.length) return c.json({ error: 'User not found' }, 404);
+  }
+
+  const invitationCount = allMembers.length - 1;
+  if (invitationCount && !(await consumeLimit(c.env, 'group-members', userId, 256, 300_000, invitationCount))) {
+    return c.json({ error: 'Too many group member invitations' }, 429);
+  }
 
   const groupId = newId();
   const created_at = nowIso();
-  await c.env.DB.prepare('INSERT INTO groups (id, name, description, avatar_url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at)
-    .run();
-
-  const allMembers: string[] = Array.from(new Set([userId, ...(memberIds as string[])]));
-  const joinedAt = created_at;
-  await c.env.DB.batch(
-    allMembers.map((uid) =>
-      c.env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)').bind(
-        newId(),
-        groupId,
-        uid,
-        uid === userId ? 'admin' : 'member',
-        joinedAt
+  const write = c.env.DB.prepare(`INSERT INTO groups (id, name, description, avatar_url, created_by, created_at)
+    SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE ${attachmentProofGuard('?5', '?7')}`)
+    .bind(groupId, String(name).trim(), description?.trim() || null, avatar_url || null, userId, created_at, JSON.stringify(proofs));
+  // Create the group, provenance and every initial membership together. A
+  // failed membership insert must not leave an inaccessible orphan group.
+  const [inserted] = await c.env.DB.batch([
+    write,
+    ...mediaReferenceStatements(c.env, 'group_avatar', groupId, userId, [avatar_url]),
+    ...allMembers.map((uid) =>
+      c.env.DB.prepare(`INSERT INTO group_members (id, group_id, user_id, role, joined_at)
+        SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM groups WHERE id = ?2 AND created_by = ?6)`).bind(
+        newId(), groupId, uid, uid === userId ? 'admin' : 'member', created_at, userId
       )
-    )
-  );
+    ),
+  ]);
+  if (!inserted.meta.changes) return c.json({ error: 'Cannot attach this file' }, 403);
 
-  const group = await groupWithMembers(c.env, groupId);
+  const group = await groupWithMembers(c.env, groupId, userId);
   // Let every invited member's device pick up the new group immediately
   // (their Groups tab) without waiting for a manual refresh.
-  await broadcastToGroup(c.env, groupId, { type: 'group:created', group }, allMembers);
+  await broadcastGroupProjection(c.env, groupId, 'group:created', allMembers);
   return c.json({ group }, 201);
 });
 
@@ -149,7 +187,7 @@ groups.get('/', async (c) => {
   const groupsWithMembers = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const g of (groupRows ?? []) as any[]) {
-    const full = await groupWithMembers(c.env, g.id);
+    const full = await groupWithMembers(c.env, g.id, userId);
     const lastMessageRow = await c.env.DB.prepare(
       'SELECT * FROM group_messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1'
     )
@@ -198,7 +236,7 @@ groups.get('/:id', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const group = await groupWithMembers(c.env, groupId);
+  const group = await groupWithMembers(c.env, groupId, userId);
   if (!group) return c.json({ error: 'Group not found' }, 404);
   return c.json({ group });
 });
@@ -212,42 +250,67 @@ groups.get('/:id/members', async (c) => {
      JOIN users u ON u.id = gm.user_id WHERE gm.group_id = ?`
   )
     .bind(groupId)
-    .all();
-  return c.json({ members: results ?? [] });
+    .all<{ user_id: string; avatar_url: string | null; [key: string]: unknown }>();
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(c.env, c.get('userId'), rows.map(row => ({ id: row.user_id, avatar_url: row.avatar_url })));
+  return c.json({ members: rows.map((row, i) => ({ ...row, avatar_url: profiles[i].avatar_url })) });
 });
 
-groups.post('/:id/members', async (c) => {
+groups.post('/:id/members', limitContact, async (c) => {
   const userId = c.get('userId');
-  const groupId = c.req.param('id');
+  const groupId = c.req.param('id')!;
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
   if (membership.role !== 'admin') return c.json({ error: 'Only admins can add members' }, 403);
 
   const { memberIds = [] } = await c.req.json().catch(() => ({}));
-  const newIds = (memberIds as string[]).filter((uid) => uid);
+  if (!Array.isArray(memberIds) || memberIds.length > 256 || memberIds.some((id: unknown) => typeof id !== 'string' || id.length === 0 || id.length > 512)) return c.json({ error: 'Invalid member list' }, 400);
+  const newIds = [...new Set(memberIds as string[])].filter(uid => uid !== userId);
   if (newIds.length === 0) return c.json({ success: true });
+  // Reject nonexistent targets before charging the invite budget or attempting
+  // a foreign-key write. The insert batch remains atomic if a target is deleted
+  // after this validation query.
+  const { results: existingUsers } = await c.env.DB.prepare(
+    `SELECT id FROM users WHERE id IN (${newIds.map(() => '?').join(',')})`
+  ).bind(...newIds).all<{id:string}>();
+  if (existingUsers.length !== newIds.length) return c.json({ error: 'User not found' }, 404);
+  if (!(await consumeLimit(c.env, 'group-members', userId, 256, 300_000, newIds.length))) {
+    return c.json({ error: 'Too many group member invitations' }, 429);
+  }
 
   const joinedAt = nowIso();
-  await c.env.DB.batch(
-    newIds.map((uid) =>
-      c.env.DB.prepare('INSERT OR IGNORE INTO group_members (id, group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)').bind(
-        newId(),
-        groupId,
-        uid,
-        'member',
-        joinedAt
-      )
-    )
-  );
+  // D1 runs the authorization read and the guarded inserts in one batch
+  // transaction, so a concurrent demotion cannot authorize stale additions.
+  const [authorization] = await c.env.DB.batch([
+    c.env.DB.prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? AND role = 'admin'").bind(groupId, userId),
+    ...newIds.map((uid) =>
+      c.env.DB.prepare(`INSERT OR IGNORE INTO group_members (id, group_id, user_id, role, joined_at)
+        SELECT ?1, ?2, ?3, 'member', ?4
+        WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?5 AND role = 'admin')`)
+        .bind(newId(), groupId, uid, joinedAt, userId)
+    ),
+  ]);
+  if (!authorization.results.length) return c.json({ error: 'Only admins can add members' }, 403);
 
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group-member:joined', group_id: groupId, members: group?.members ?? [] });
+  const group = await groupWithMembers(c.env, groupId, userId);
+  await broadcastGroupProjection(c.env, groupId, 'group-member:joined');
   // Make sure the newly-added members themselves hear about it even if
   // broadcastToGroup's membership lookup (post-insert) already includes
   // them — kept explicit so this still works if that lookup ever changes.
-  await broadcastToGroup(c.env, groupId, { type: 'group:created', group }, newIds);
+  await broadcastGroupProjection(c.env, groupId, 'group:created', newIds);
   return c.json({ success: true, members: group?.members ?? [] });
 });
+
+// D1 batch is transactional: neither messages nor the group are deleted if
+// another member joins before the empty-group check executes.
+async function cleanupEmptyGroup(env: Env, groupId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM group_messages WHERE group_id = ?1
+      AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)`).bind(groupId),
+    env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+      AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)`).bind(groupId),
+  ]);
+}
 
 groups.delete('/:id/members/:userId', async (c) => {
   const userId = c.get('userId');
@@ -260,7 +323,23 @@ groups.delete('/:id/members/:userId', async (c) => {
     return c.json({ error: 'Only admins can remove other members' }, 403);
   }
 
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, targetId).run();
+  // Keep the authorization and last-admin guard in the same atomic DELETE,
+  // so concurrent removals cannot both eliminate the final administrator.
+  const deleted = await c.env.DB.prepare(`DELETE FROM group_members
+    WHERE group_id = ?1 AND user_id = ?2
+      AND EXISTS (SELECT 1 FROM group_members actor WHERE actor.group_id = ?1 AND actor.user_id = ?3
+        AND (actor.role = 'admin' OR ?2 = ?3))
+      AND (role != 'admin'
+        OR NOT EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2)
+        OR EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2 AND other.role = 'admin'))`)
+    .bind(groupId, targetId, userId).run();
+  if (!deleted.meta.changes) {
+    const [actor, target] = await Promise.all([getMembership(c.env, groupId, userId), getMembership(c.env, groupId, targetId)]);
+    if (!actor || (actor.role !== 'admin' && userId !== targetId)) return c.json({ error: 'Not authorized' }, 403);
+    if (!target) return c.json({ error: 'Member not found' }, 404);
+    return c.json({ error: 'Make someone else an admin before removing the last admin' }, 400);
+  }
+  await cleanupEmptyGroup(c.env, groupId);
   await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   await broadcastToUser(c.env, targetId, { type: 'group-member:left', group_id: groupId, user_id: targetId });
   return c.json({ success: true });
@@ -270,29 +349,20 @@ groups.post('/:id/leave', async (c) => {
   const userId = c.get('userId');
   const groupId = c.req.param('id');
 
-  const { results: members } = await c.env.DB.prepare('SELECT user_id, role FROM group_members WHERE group_id = ?')
-    .bind(groupId)
-    .all<{ user_id: string; role: string }>();
-  const allMembers = members ?? [];
-  if (!allMembers.some((member) => member.user_id === userId)) {
-    return c.json({ error: 'Not a member of this group' }, 403);
-  }
-  const admins = allMembers.filter((m) => m.role === 'admin');
-  const isOnlyAdmin = admins.length === 1 && admins[0].user_id === userId;
-
-  if (isOnlyAdmin && allMembers.length > 1) {
+  // The last-admin invariant must be checked by the same statement that
+  // removes the member; two administrators can leave concurrently.
+  const deleted = await c.env.DB.prepare(`DELETE FROM group_members
+    WHERE group_id = ?1 AND user_id = ?2
+      AND (role != 'admin'
+        OR NOT EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2)
+        OR EXISTS (SELECT 1 FROM group_members other WHERE other.group_id = ?1 AND other.user_id != ?2 AND other.role = 'admin'))`)
+    .bind(groupId, userId).run();
+  if (!deleted.meta.changes) {
+    if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
     return c.json({ error: 'Make someone else an admin before you leave' }, 400);
   }
-
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(groupId, userId).run();
-
-  if (allMembers.length <= 1) {
-    // That was the last member — nothing left to keep the group around for.
-    await c.env.DB.prepare('DELETE FROM group_messages WHERE group_id = ?').bind(groupId).run();
-    await c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(groupId).run();
-  } else {
-    await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: userId });
-  }
+  await cleanupEmptyGroup(c.env, groupId);
+  await broadcastToGroup(c.env, groupId, { type: 'group-member:left', group_id: groupId, user_id: userId });
   await broadcastToUser(c.env, userId, { type: 'group-member:left', group_id: groupId, user_id: userId });
   return c.json({ success: true });
 });
@@ -308,9 +378,14 @@ groups.patch('/:id/members/:userId', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can change member roles' }, 403);
 
-  await c.env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(role, groupId, targetId).run();
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group-member:updated', group_id: groupId, members: group?.members ?? [] });
+  const changed = await c.env.DB.prepare(`UPDATE group_members SET role = ?1 WHERE group_id = ?2 AND user_id = ?3
+    AND EXISTS (SELECT 1 FROM group_members actor WHERE actor.group_id = ?2 AND actor.user_id = ?4 AND actor.role = 'admin')`)
+    .bind(role, groupId, targetId, userId).run();
+  if (!changed.meta.changes) {
+    if ((await getMembership(c.env, groupId, userId))?.role !== 'admin') return c.json({ error: 'Only admins can change member roles' }, 403);
+    return c.json({ error: 'Member not found' }, 404);
+  }
+  await broadcastGroupProjection(c.env, groupId, 'group-member:updated');
   return c.json({ success: true });
 });
 
@@ -335,21 +410,32 @@ groups.patch('/:id', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can update group info' }, 403);
 
   const { name, description, avatar_url } = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(groupId).first<any>();
+  if (exceedsTextLimits({name,description,avatar_url}, {name:100,description:2048,avatar_url:2048})) return c.json({ error: 'Group field too long' }, 400);
+  const proofs = await attachmentProofs(c.env, userId, [avatar_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
+  const current = await c.env.DB.prepare('SELECT 1 FROM groups WHERE id = ?').bind(groupId).first();
   if (!current) return c.json({ error: 'Group not found' }, 404);
 
-  const nextName = name !== undefined ? String(name).trim() : current.name;
-  const nextDescription = description !== undefined ? (String(description).trim() || null) : current.description;
-  const nextAvatar = avatar_url !== undefined ? avatar_url : current.avatar_url;
+  // Preserve omitted fields from the row at write time, not from the earlier
+  // read: another admin may have replaced the avatar (and its grants) since.
+  const write = c.env.DB.prepare(
+    `UPDATE groups SET name = CASE WHEN ?7 THEN ?1 ELSE name END,
+     description = CASE WHEN ?8 THEN ?2 ELSE description END,
+     avatar_url = CASE WHEN ?9 THEN ?3 ELSE avatar_url END,
+     updated_at = datetime('now') WHERE id = ?4
+     AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?4 AND user_id = ?5 AND role = 'admin')
+     AND ${attachmentProofGuard('?5', '?6')}`
+  ).bind(name !== undefined ? String(name).trim() : null,
+    description !== undefined ? (String(description).trim() || null) : null,
+    avatar_url !== undefined ? avatar_url : null, groupId, userId, JSON.stringify(proofs),
+    name !== undefined ? 1 : 0, description !== undefined ? 1 : 0, avatar_url !== undefined ? 1 : 0);
+  const updated = avatar_url !== undefined
+    ? (await c.env.DB.batch([write, ...guardedGroupAvatarReferences(c.env, groupId, userId, avatar_url, JSON.stringify(proofs))]))[0]
+    : await write.run();
+  if (!updated.meta.changes) return c.json({ error: 'Only admins can update group info' }, 403);
 
-  await c.env.DB.prepare(
-    "UPDATE groups SET name = ?, description = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?"
-  )
-    .bind(nextName, nextDescription, nextAvatar, groupId)
-    .run();
-
-  const group = await groupWithMembers(c.env, groupId);
-  await broadcastToGroup(c.env, groupId, { type: 'group:updated', group });
+  const group = await groupWithMembers(c.env, groupId, userId);
+  await broadcastGroupProjection(c.env, groupId, 'group:updated');
   return c.json({ success: true, group });
 });
 
@@ -360,13 +446,12 @@ groups.delete('/:id', async (c) => {
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can delete the group' }, 403);
 
   const memberIds = await memberIdsOf(c.env, groupId);
-  // Explicit cascade: D1/SQLite only enforces ON DELETE CASCADE for
-  // connections that ran `PRAGMA foreign_keys = ON`, which isn't
-  // guaranteed to carry over to every request's connection, so these are
-  // deleted directly rather than relying on it.
-  await c.env.DB.prepare('DELETE FROM group_messages WHERE group_id = ?').bind(groupId).run();
-  await c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ?').bind(groupId).run();
-  await c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(groupId).run();
+  // D1 enforces foreign keys; the schema's cascades remove group messages,
+  // members, read state and calls atomically with this guarded deletion.
+  const deleted = await c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
+    .bind(groupId, userId).run();
+  if (!deleted.meta.changes) return c.json({ error: 'Only admins can delete the group' }, 403);
 
   await broadcastToGroup(c.env, groupId, { type: 'group:deleted', group_id: groupId }, memberIds);
   return c.json({ success: true });
@@ -395,13 +480,16 @@ groups.get('/:id/messages', async (c) => {
   return c.json({ messages });
 });
 
-groups.post('/:id/messages', async (c) => {
+groups.post('/:id/messages', limitSend, async (c) => {
   const userId = c.get('userId');
-  const groupId = c.req.param('id');
+  const groupId = c.req.param('id')!;
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
   const body = await c.req.json().catch(() => ({}));
+  if ((body.content != null && typeof body.content !== 'string') || exceedsTextLimits(body, {content:65536, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
+  const proofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
+  if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id, same pattern as 1:1
   // messages — a retried send (e.g. after a flaky connection) must not
@@ -449,10 +537,13 @@ groups.post('/:id/messages', async (c) => {
   // migration. Try the full insert first (so duration is saved once the
   // migration has run), and silently fall back to the pre-migration
   // column list if it hasn't, so sending never breaks either way.
+  let inserted: D1Result;
   try {
-    await c.env.DB.prepare(
+    const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, duration, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+       AND ${attachmentProofGuard('?3', '?12')}`
     )
       .bind(
         id,
@@ -465,14 +556,18 @@ groups.post('/:id/messages', async (c) => {
         body.duration ?? null,
         body.client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
-      )
-      .run();
+        created_at,
+        JSON.stringify(proofs)
+      );
+    inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   } catch (err) {
+    if (!String(err).includes('no such column: duration') && !String(err).includes('no column named duration')) throw err;
     console.error('[groups] insert with duration column failed, retrying without it (migration 0003 likely not applied yet):', err);
-    await c.env.DB.prepare(
+    const write = c.env.DB.prepare(
       `INSERT INTO group_messages (id, group_id, sender_id, content, type, media_url, thumbnail_url, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+       AND ${attachmentProofGuard('?3', '?11')}`
     )
       .bind(
         id,
@@ -484,10 +579,13 @@ groups.post('/:id/messages', async (c) => {
         body.thumbnail_url ?? null,
         body.client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
-      )
-      .run();
+        created_at,
+        JSON.stringify(proofs)
+      );
+    inserted = await writeWithMediaReferences(c.env, write, 'group_message', id, userId, [body.media_url, body.thumbnail_url]);
   }
+
+  if (!inserted.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
 
   await broadcastToGroup(c.env, groupId, { type: 'group-message:new', message: msg });
 
@@ -505,10 +603,14 @@ groups.post('/messages/:messageId/delete-for-me', async (c) => {
   if (!row) return c.json({ error: 'Message not found' }, 404);
   if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
-  if (!deletedFor.includes(userId)) deletedFor.push(userId);
-
-  await c.env.DB.prepare('UPDATE group_messages SET deleted_for = ? WHERE id = ?').bind(JSON.stringify(deletedFor), messageId).run();
+  // Apply the idempotent hide to the current array at write time, so two
+  // members hiding a message concurrently cannot overwrite one another.
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET deleted_for = CASE
+    WHEN EXISTS (SELECT 1 FROM json_each(coalesce(deleted_for, '[]')) WHERE value = ?1) THEN deleted_for
+    ELSE json_insert(coalesce(deleted_for, '[]'), '$[#]', ?1) END WHERE id = ?2
+    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?1)`)
+    .bind(userId, messageId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
   return c.json({ success: true });
 });
 
@@ -530,9 +632,11 @@ groups.post('/messages/:messageId/delete-for-everyone', async (c) => {
     return c.json({ error: 'Cannot delete messages older than 1 hour' }, 400);
   }
 
-  await c.env.DB.prepare("UPDATE group_messages SET is_deleted = 1, content = 'This message was deleted' WHERE id = ?")
-    .bind(messageId)
-    .run();
+  const updated = await c.env.DB.prepare(`UPDATE group_messages SET is_deleted = 1, content = 'This message was deleted'
+    WHERE id = ?1 AND sender_id = ?2
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?2)`)
+    .bind(messageId, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Not a member of this group' }, 403);
 
   await broadcastToGroup(c.env, row.group_id, { type: 'group-message:delete', group_id: row.group_id, message_id: messageId });
   return c.json({ success: true });
@@ -542,23 +646,38 @@ groups.post('/messages/:messageId/reaction', async (c) => {
   const userId = c.get('userId');
   const messageId = c.req.param('messageId');
   const { emoji } = await c.req.json().catch(() => ({}));
+  if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   if (!emoji) return c.json({ error: 'emoji is required' }, 400);
 
-  const row = await c.env.DB.prepare('SELECT group_id, reactions FROM group_messages WHERE id = ?').bind(messageId).first<{
-    group_id: string;
-    reactions: string | null;
-  }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
-  if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+  // Compare-and-swap preserves the toggle semantics without losing changes
+  // made after the read. Bound retries under sustained contention.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const row = await c.env.DB.prepare('SELECT group_id, reactions FROM group_messages WHERE id = ?').bind(messageId).first<{
+      group_id: string;
+      reactions: string | null;
+    }>();
+    if (!row) return c.json({ error: 'Message not found' }, 404);
+    if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const reactions: Record<string, string[]> = row.reactions ? JSON.parse(row.reactions) : {};
-  const list = reactions[emoji] ?? [];
-  reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
-  if (reactions[emoji].length === 0) delete reactions[emoji];
+    // Treat all reaction keys literally, including JavaScript prototype names.
+    const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    if (!Object.hasOwn(reactions, emoji) && Object.keys(reactions).length >= 64) {
+      return c.json({ error: 'This message has too many different reactions' }, 400);
+    }
+    const list = reactions[emoji] ?? [];
+    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  await c.env.DB.prepare('UPDATE group_messages SET reactions = ? WHERE id = ?').bind(JSON.stringify(reactions), messageId).run();
-  await broadcastToGroup(c.env, row.group_id, { type: 'group-message:reaction', group_id: row.group_id, message_id: messageId, reactions });
-  return c.json({ reactions });
+    const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2 AND reactions IS ?4
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = group_messages.group_id AND user_id = ?3)`)
+      .bind(JSON.stringify(reactions), messageId, userId, row.reactions).run();
+    if (updated.meta.changes) {
+      await broadcastToGroup(c.env, row.group_id, { type: 'group-message:reaction', group_id: row.group_id, message_id: messageId, reactions });
+      return c.json({ reactions });
+    }
+    if (!(await getMembership(c.env, row.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+  }
+  return c.json({ error: 'Reaction changed concurrently; retry' }, 409);
 });
 
 // POST /groups/:id/typing — ephemeral group typing indicator, no DB write.

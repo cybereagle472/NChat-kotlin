@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitContact, limitSignal } from '../middleware/rate-limit';
 import { newId, nowIso } from '../lib/id';
+import { signalPayload } from '../lib/signalling';
 import { broadcastToUser } from '../lib/realtime';
 import { getMembership, memberIdsOf } from './groups';
+import { applyPrivacyToList } from '../lib/privacy';
 
 /**
  * Group voice/video calling.
@@ -43,6 +46,13 @@ async function getCallOr404(env: Env, id: string) {
   return env.DB.prepare('SELECT * FROM group_calls WHERE id = ?').bind(id).first<GroupCallRow>();
 }
 
+// Removed members retain a participant row so they can still hang up.
+async function belongsToCall(env: Env, call: GroupCallRow, userId: string): Promise<boolean> {
+  if (await getMembership(env, call.group_id, userId)) return true;
+  return !!(await env.DB.prepare('SELECT 1 FROM group_call_participants WHERE call_id = ? AND user_id = ?')
+    .bind(call.id, userId).first());
+}
+
 interface ParticipantBrief {
   user_id: string;
   full_name: string;
@@ -54,11 +64,15 @@ async function joinedParticipantsOf(env: Env, callId: string, excludingUserId?: 
     `SELECT gcp.user_id, u.full_name, u.avatar_url
      FROM group_call_participants gcp
      JOIN users u ON u.id = gcp.user_id
+     JOIN group_calls gc ON gc.id = gcp.call_id
+     JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = gcp.user_id
      WHERE gcp.call_id = ? AND gcp.status = 'joined' AND gcp.user_id != ?`
   )
     .bind(callId, excludingUserId ?? '')
     .all<{ user_id: string; full_name: string; avatar_url: string | null }>();
-  return (results ?? []).map((r) => ({ user_id: r.user_id, full_name: r.full_name, avatar_url: r.avatar_url ?? undefined }));
+  const rows = results ?? [];
+  const profiles = await applyPrivacyToList(env, excludingUserId ?? '', rows.map(r => ({id:r.user_id, avatar_url:r.avatar_url})));
+  return rows.map((r, i) => ({ user_id: r.user_id, full_name: r.full_name, avatar_url: profiles[i].avatar_url ?? undefined }));
 }
 
 function callToWire(call: GroupCallRow) {
@@ -81,13 +95,16 @@ function callToWire(call: GroupCallRow) {
  */
 async function joinCall(env: Env, call: GroupCallRow, userId: string) {
   const now = nowIso();
-  await env.DB.prepare(
+  const joined = await env.DB.prepare(
     `INSERT INTO group_call_participants (call_id, user_id, status, joined_at)
-     VALUES (?, ?, 'joined', ?)
+     SELECT gc.id, ?2, 'joined', ?3 FROM group_calls gc
+     JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = ?2
+     WHERE gc.id = ?1 AND gc.status = 'active'
      ON CONFLICT(call_id, user_id) DO UPDATE SET status = 'joined', joined_at = excluded.joined_at, left_at = NULL`
   )
     .bind(call.id, userId, now)
     .run();
+  if (!joined.meta.changes) return null;
 
   const alreadyJoined = await joinedParticipantsOf(env, call.id, userId);
 
@@ -110,7 +127,7 @@ async function joinCall(env: Env, call: GroupCallRow, userId: string) {
 // "Call" button in the group chat never has to know or care whether
 // someone else already started one; it just always gets you into the
 // group's one active call.
-groupCalls.post('/', async (c) => {
+groupCalls.post('/', limitContact, async (c) => {
   const userId = c.get('userId');
   const { group_id, call_type } = await c.req.json().catch(() => ({}));
   if (!group_id || !call_type) return c.json({ error: 'group_id and call_type are required' }, 400);
@@ -127,6 +144,10 @@ groupCalls.post('/', async (c) => {
 
   if (existing) {
     const result = await joinCall(c.env, existing, userId);
+    if (!result) {
+      if (!(await getMembership(c.env, existing.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+      return c.json({ error: 'Call is no longer active' }, 409);
+    }
     return c.json(result);
   }
 
@@ -134,30 +155,46 @@ groupCalls.post('/', async (c) => {
   const created_at = nowIso();
   const memberIds = await memberIdsOf(c.env, group_id);
 
-  await c.env.DB.batch([
+  // The conditional insert and participant setup are one D1 transaction.
+  // A concurrent starter that lost the insert joins the winner instead.
+  const [created] = await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO group_calls (id, group_id, caller_id, call_type, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)`
+      `INSERT INTO group_calls (id, group_id, caller_id, call_type, status, created_at)
+       SELECT ?1, ?2, ?3, ?4, 'active', ?5
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?2 AND user_id = ?3)
+         AND NOT EXISTS (SELECT 1 FROM group_calls WHERE group_id = ?2 AND status = 'active')`
     ).bind(id, group_id, userId, call_type, created_at),
     c.env.DB.prepare(
-      `INSERT INTO group_call_participants (call_id, user_id, status, joined_at) VALUES (?, ?, 'joined', ?)`
+      `INSERT INTO group_call_participants (call_id, user_id, status, joined_at)
+       SELECT ?1, ?2, 'joined', ?3 WHERE EXISTS (SELECT 1 FROM group_calls WHERE id = ?1)`
     ).bind(id, userId, created_at),
     ...memberIds
       .filter((m) => m !== userId)
       .map((m) =>
-        c.env.DB.prepare(`INSERT INTO group_call_participants (call_id, user_id, status) VALUES (?, ?, 'ringing')`).bind(id, m)
+        c.env.DB.prepare(`INSERT INTO group_call_participants (call_id, user_id, status)
+          SELECT ?1, ?2, 'ringing' WHERE EXISTS (SELECT 1 FROM group_calls WHERE id = ?1)
+            AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?3 AND user_id = ?2)`).bind(id, m, group_id)
       ),
   ]);
+  if (!created.meta.changes) {
+    if (!(await getMembership(c.env, group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+    const winner = await c.env.DB.prepare(
+      `SELECT * FROM group_calls WHERE group_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
+    ).bind(group_id).first<GroupCallRow>();
+    if (!winner) return c.json({ error: 'Call is no longer active' }, 409);
+    const result = await joinCall(c.env, winner, userId);
+    if (!result) {
+      if (!(await getMembership(c.env, winner.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+      return c.json({ error: 'Call is no longer active' }, 409);
+    }
+    return c.json(result);
+  }
 
-  // Group membership already means your name/avatar are visible to the
-  // rest of the group (see groupWithMembers in routes/groups.ts, which
-  // doesn't mask member profiles either) — a group call's ringing screen
-  // follows the same rule rather than re-applying 1:1's stranger-facing
-  // privacy masking.
+  // Caller photos are shaped separately for each recipient's privacy view.
   const caller = await c.env.DB.prepare('SELECT full_name, avatar_url FROM users WHERE id = ?').bind(userId).first<{
     full_name: string;
     avatar_url: string | null;
   }>();
-  const callerProfile = caller ? { id: userId, full_name: caller.full_name, avatar_url: caller.avatar_url ?? undefined } : undefined;
 
   const group = await c.env.DB.prepare('SELECT name, avatar_url FROM groups WHERE id = ?').bind(group_id).first<{
     name: string;
@@ -167,8 +204,10 @@ groupCalls.post('/', async (c) => {
   await Promise.all(
     memberIds
       .filter((m) => m !== userId)
-      .map((m) =>
-        broadcastToUser(c.env, m, {
+      .map(async (m) => {
+        if (!(await getMembership(c.env, group_id, m))) return;
+        const [callerProfile] = await applyPrivacyToList(c.env, m, [{ id: userId, full_name: caller?.full_name, avatar_url: caller?.avatar_url }]);
+        return broadcastToUser(c.env, m, {
           type: 'group-call:incoming',
           call: {
             id,
@@ -177,11 +216,11 @@ groupCalls.post('/', async (c) => {
             group_avatar_url: group?.avatar_url ?? undefined,
             call_type,
             caller_id: userId,
-            caller_profile: callerProfile,
+            caller_profile: caller ? callerProfile : undefined,
             created_at,
           },
-        })
-      )
+        });
+      })
   );
 
   return c.json({ call: { id, group_id, caller_id: userId, call_type, status: 'active', created_at }, participants: [] }, 201);
@@ -204,6 +243,10 @@ groupCalls.post('/:id/join', async (c) => {
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
   const result = await joinCall(c.env, call, userId);
+  if (!result) {
+    if (!(await getMembership(c.env, call.group_id, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+    return c.json({ error: 'Call is no longer active' }, 409);
+  }
   return c.json(result);
 });
 
@@ -211,9 +254,9 @@ groupCalls.post('/:id/join', async (c) => {
 // infer "the other participant" because there are only ever two), a
 // group call can have many participants, so the sender names exactly who
 // a given offer/answer/ICE candidate is for.
-groupCalls.post('/:id/signal', async (c) => {
+groupCalls.post('/:id/signal', limitSignal, async (c) => {
   const userId = c.get('userId');
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json().catch(() => ({}));
   const to = body?.to as string | undefined;
   if (!to) return c.json({ error: 'to is required' }, 400);
@@ -224,8 +267,17 @@ groupCalls.post('/:id/signal', async (c) => {
   const membership = await getMembership(c.env, call.group_id, userId);
   if (!membership) return c.json({ error: 'Not authorized' }, 403);
 
-  const { to: _to, ...signal } = body;
-  await broadcastToUser(c.env, to, { type: 'group-call:signal', call_id: id, from: userId, ...signal });
+  if (call.status !== 'active') return c.json({ success: true });
+  // Both peers must have joined the active call and still belong to the
+  // group; a ringing or historical participant cannot exchange signaling.
+  const authorized = await c.env.DB.prepare(`SELECT 1 FROM group_calls gc
+    JOIN group_call_participants sender ON sender.call_id = gc.id AND sender.user_id = ?2 AND sender.status = 'joined'
+    JOIN group_call_participants recipient ON recipient.call_id = gc.id AND recipient.user_id = ?3 AND recipient.status = 'joined'
+    JOIN group_members sm ON sm.group_id = gc.group_id AND sm.user_id = sender.user_id
+    JOIN group_members rm ON rm.group_id = gc.group_id AND rm.user_id = recipient.user_id
+    WHERE gc.id = ?1 AND gc.status = 'active'`).bind(id, userId, to).first();
+  if (!authorized) return c.json({ error: 'Not authorized' }, 403);
+  await broadcastToUser(c.env, to, { ...signalPayload(body), type: 'group-call:signal', call_id: id, from: userId });
   return c.json({ success: true });
 });
 
@@ -234,17 +286,28 @@ groupCalls.post('/:id/decline', async (c) => {
   const id = c.req.param('id');
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
+  if (!(await getMembership(c.env, call.group_id, userId))) return c.json({ error: 'Not authorized' }, 403);
 
-  await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'declined' WHERE call_id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .run();
+  // Only an outstanding invitation to an active call can be declined.
+  // Check membership and call state in the update, not only in a prior read.
+  const updated = await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'declined'
+    WHERE call_id = ?1 AND user_id = ?2 AND status = 'ringing'
+      AND EXISTS (SELECT 1 FROM group_calls gc JOIN group_members gm ON gm.group_id = gc.group_id
+        WHERE gc.id = ?1 AND gc.status = 'active' AND gm.user_id = ?2)`)
+    .bind(id, userId).run();
+  if (!updated.meta.changes) {
+    if (!(await getMembership(c.env, call.group_id, userId))) return c.json({ error: 'Not authorized' }, 403);
+    return c.json({ error: 'Call is no longer ringing' }, 409);
+  }
 
-  await broadcastToUser(c.env, call.caller_id, {
-    type: 'group-call:participant-declined',
-    call_id: id,
-    group_id: call.group_id,
-    user_id: userId,
-  });
+  if (await getMembership(c.env, call.group_id, call.caller_id)) {
+    await broadcastToUser(c.env, call.caller_id, {
+      type: 'group-call:participant-declined',
+      call_id: id,
+      group_id: call.group_id,
+      user_id: userId,
+    });
+  }
   return c.json({ success: true });
 });
 
@@ -256,6 +319,7 @@ groupCalls.post('/:id/leave', async (c) => {
   const id = c.req.param('id');
   const call = await getCallOr404(c.env, id);
   if (!call) return c.json({ error: 'Call not found' }, 404);
+  if (!(await belongsToCall(c.env, call, userId))) return c.json({ error: 'Not authorized' }, 403);
 
   const now = nowIso();
   await c.env.DB.prepare(`UPDATE group_call_participants SET status = 'left', left_at = ? WHERE call_id = ? AND user_id = ?`)
@@ -276,10 +340,19 @@ groupCalls.post('/:id/leave', async (c) => {
   );
 
   if (stillJoined.length === 0 && call.status === 'active') {
-    await c.env.DB.prepare(`UPDATE group_calls SET status = 'ended', ended_at = ? WHERE id = ?`).bind(now, id).run();
+    // A join can occur after stillJoined was read. Only end while there
+    // are no joined current members, checked atomically with the update.
+    const ended = await c.env.DB.prepare(`UPDATE group_calls SET status = 'ended', ended_at = ?1
+      WHERE id = ?2 AND status = 'active' AND NOT EXISTS (
+        SELECT 1 FROM group_call_participants p
+        JOIN group_calls gc ON gc.id = p.call_id
+        JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = p.user_id
+        WHERE p.call_id = ?2 AND p.status = 'joined'
+      )`).bind(now, id).run();
+    if (!ended.meta.changes) return c.json({ success: true });
 
     const { results: stillRinging } = await c.env.DB.prepare(
-      `SELECT user_id FROM group_call_participants WHERE call_id = ? AND status = 'ringing'`
+      `SELECT gcp.user_id FROM group_call_participants gcp JOIN group_calls gc ON gc.id = gcp.call_id JOIN group_members gm ON gm.group_id = gc.group_id AND gm.user_id = gcp.user_id WHERE gcp.call_id = ? AND gcp.status = 'ringing'`
     )
       .bind(id)
       .all<{ user_id: string }>();

@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { limitSend } from '../middleware/rate-limit';
+import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
+import { exceedsTextLimits } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -41,6 +44,25 @@ function messageJson(row: any) {
 async function broadcastToParticipants(env: Env, userA: string, userB: string, payload: unknown) {
   await Promise.all([broadcastToUser(env, userA, payload), broadcastToUser(env, userB, payload)]);
 }
+
+/** Direct contact is allowed only for accepted friends without a block. */
+async function mayMessage(env: Env, userId: string, otherId: string): Promise<boolean> {
+  if (userId === otherId) return false;
+  const row = await env.DB.prepare(`SELECT 1 FROM friendships f
+    WHERE ((f.user1_id = ?1 AND f.user2_id = ?2) OR (f.user1_id = ?2 AND f.user2_id = ?1))
+    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = ?1 AND b.blocked_user_id = ?2)
+      OR (b.user_id = ?2 AND b.blocked_user_id = ?1)) LIMIT 1`).bind(userId, otherId).first();
+  return !!row;
+}
+
+// Use within a messages UPDATE so contact authorization is checked at the
+// write, not only before it. Local-only delete-for-me remains available.
+const messageContactGuard = `EXISTS (SELECT 1 FROM friendships f WHERE
+  (f.user1_id = messages.sender_id AND f.user2_id = messages.receiver_id) OR
+  (f.user1_id = messages.receiver_id AND f.user2_id = messages.sender_id))
+  AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+    (b.user_id = messages.sender_id AND b.blocked_user_id = messages.receiver_id) OR
+    (b.user_id = messages.receiver_id AND b.blocked_user_id = messages.sender_id))`;
 
 // GET /messages/with/:otherId — conversation history with another user.
 // Supports ?limit= (default/max 200) and ?before= (ISO timestamp) for
@@ -138,11 +160,16 @@ messages.get('/chats', async (c) => {
   return c.json({ chats });
 });
 
-messages.post('/', async (c) => {
+messages.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  const mediaProofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
+  if (!mediaProofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
   // Idempotent retry support via client_message_id.
   if (client_message_id) {
@@ -159,10 +186,7 @@ messages.post('/', async (c) => {
   // there's no DB-generated column (defaults are all 0/null for a brand
   // new message) — so build the response/broadcast payload straight from
   // those values instead of writing the row and then reading it back out
-  // of D1 a second time. Combined with running the insert and the
-  // Durable Object broadcast concurrently (rather than one after the
-  // other) this turns what used to be three sequential D1/DO round trips
-  // into effectively one, which is what made sending a message feel slow.
+  // of D1 a second time. Publish only after the database write succeeds.
   const msg = messageJson({
     id,
     sender_id: userId,
@@ -185,10 +209,14 @@ messages.post('/', async (c) => {
     created_at,
   });
 
-  await Promise.all([
-    c.env.DB.prepare(
+  const write = c.env.DB.prepare(
       `INSERT INTO messages (id, sender_id, receiver_id, content, type, media_url, thumbnail_url, file_name, file_size, duration, client_message_id, reply_to, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+       WHERE EXISTS (SELECT 1 FROM friendships f WHERE
+         (f.user1_id = ?2 AND f.user2_id = ?3) OR (f.user1_id = ?3 AND f.user2_id = ?2))
+       AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE
+         (b.user_id = ?2 AND b.blocked_user_id = ?3) OR (b.user_id = ?3 AND b.blocked_user_id = ?2))
+       AND ${attachmentProofGuard('?2', '?14')}`
     )
       .bind(
         id,
@@ -203,12 +231,13 @@ messages.post('/', async (c) => {
         body.duration ?? null,
         client_message_id ?? null,
         body.reply_to ?? null,
-        created_at
-      )
-      .run(),
-    // Fan out to both participants so any open tab/device updates live.
-    broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg }),
-  ]);
+        created_at,
+        JSON.stringify(mediaProofs)
+      );
+  const inserted = await writeWithMediaReferences(c.env, write, 'message', id, userId, [body.media_url, body.thumbnail_url]);
+  if (!inserted.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  // Fan out only after the row is durable.
+  await broadcastToParticipants(c.env, userId, receiver_id, { type: 'message:new', message: msg });
 
   return c.json({ message: msg }, 201);
 });
@@ -217,6 +246,7 @@ messages.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
   const { content } = await c.req.json().catch(() => ({}));
+  if (typeof content !== 'string' || exceedsTextLimits({ content }, { content: 65536 })) return c.json({ error: 'Invalid or oversized content' }, 400);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').bind(id, userId).first<any>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
@@ -229,17 +259,14 @@ messages.patch('/:id', async (c) => {
 
   // `row` already has every column (it was a `SELECT *`), so the updated
   // row can be built in memory instead of writing then reading it back a
-  // second time, and the write + broadcast can run concurrently instead
-  // of one after the other — same latency win as sending a new message.
+  // second time. Publish only after the update succeeds.
   const edited_at = nowIso();
   const updatedMsg = messageJson({ ...row, content, is_edited: 1, edited_at });
 
-  await Promise.all([
-    c.env.DB.prepare("UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ?")
-      .bind(content, edited_at, id)
-      .run(),
-    broadcastToParticipants(c.env, userId, row.receiver_id, { type: 'message:edit', message: updatedMsg }),
-  ]);
+  const updated = await c.env.DB.prepare(`UPDATE messages SET content = ?, is_edited = 1, edited_at = ? WHERE id = ? AND sender_id = ? AND ${messageContactGuard}`)
+    .bind(content, edited_at, id, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  await broadcastToParticipants(c.env, userId, row.receiver_id, { type: 'message:edit', message: updatedMsg });
   return c.json({ message: updatedMsg });
 });
 
@@ -252,7 +279,8 @@ messages.delete('/:id', async (c) => {
   }>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
 
-  await c.env.DB.prepare("UPDATE messages SET is_deleted = 1, content = '' WHERE id = ?").bind(id).run();
+  const updated = await c.env.DB.prepare(`UPDATE messages SET is_deleted = 1, content = '' WHERE id = ? AND sender_id = ? AND ${messageContactGuard}`).bind(id, userId).run();
+  if (!updated.meta.changes) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   await broadcastToParticipants(c.env, userId, row.receiver_id, {
     type: 'message:delete',
     messageId: id,
@@ -266,17 +294,13 @@ messages.delete('/:id', async (c) => {
 messages.post('/:id/delete-for-me', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare(
-    'SELECT deleted_for FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)'
-  )
-    .bind(id, userId, userId)
-    .first<{ deleted_for: string | null }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
-
-  const deletedFor: string[] = row.deleted_for ? JSON.parse(row.deleted_for) : [];
-  if (!deletedFor.includes(userId)) deletedFor.push(userId);
-
-  await c.env.DB.prepare('UPDATE messages SET deleted_for = ? WHERE id = ?').bind(JSON.stringify(deletedFor), id).run();
+  // Mutate the current array in the same write, not a stale pre-read. Local
+  // hiding remains permitted after blocking, but only to a message participant.
+  const updated = await c.env.DB.prepare(`UPDATE messages SET deleted_for = CASE
+    WHEN EXISTS (SELECT 1 FROM json_each(coalesce(deleted_for, '[]')) WHERE value = ?1) THEN deleted_for
+    ELSE json_insert(coalesce(deleted_for, '[]'), '$[#]', ?1) END
+    WHERE id = ?2 AND (sender_id = ?1 OR receiver_id = ?1)`).bind(userId, id).run();
+  if (!updated.meta.changes) return c.json({ error: 'Message not found' }, 404);
   return c.json({ success: true });
 });
 
@@ -284,45 +308,62 @@ messages.post('/:id/reaction', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
   const { emoji } = await c.req.json().catch(() => ({}));
-  const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ?').bind(id).first<{
-    reactions: string | null;
-    sender_id: string;
-    receiver_id: string;
-  }>();
-  if (!row) return c.json({ error: 'Message not found' }, 404);
+  if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
+  // Compare-and-swap the entire JSON object. Recompute a toggle after a
+  // conflicting write rather than overwriting another participant's reaction.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const row = await c.env.DB.prepare('SELECT reactions, sender_id, receiver_id FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)').bind(id, userId, userId).first<{
+      reactions: string | null;
+      sender_id: string;
+      receiver_id: string;
+    }>();
+    if (!row) return c.json({ error: 'Message not found' }, 404);
 
-  const reactions: Record<string, string[]> = row.reactions ? JSON.parse(row.reactions) : {};
-  const list = reactions[emoji] ?? [];
-  reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
-  if (reactions[emoji].length === 0) delete reactions[emoji];
+    // Emoji is user input; a null prototype makes keys such as "constructor"
+    // and "__proto__" ordinary reaction keys rather than object properties.
+    const reactions: Record<string, string[]> = Object.assign(Object.create(null), row.reactions ? JSON.parse(row.reactions) : {});
+    if (!Object.hasOwn(reactions, emoji) && Object.keys(reactions).length >= 64) {
+      const otherId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+      if (!(await mayMessage(c.env, userId, otherId))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+      return c.json({ error: 'This message has too many different reactions' }, 400);
+    }
+    const list = reactions[emoji] ?? [];
+    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    if (reactions[emoji].length === 0) delete reactions[emoji];
 
-  await c.env.DB.prepare('UPDATE messages SET reactions = ? WHERE id = ?').bind(JSON.stringify(reactions), id).run();
-  await broadcastToParticipants(c.env, row.sender_id, row.receiver_id, {
-    type: 'message:reaction',
-    messageId: id,
-    reactions,
-    sender_id: row.sender_id,
-    receiver_id: row.receiver_id,
-  });
-  return c.json({ reactions });
+    const updated = await c.env.DB.prepare(`UPDATE messages SET reactions = ?1 WHERE id = ?2 AND (sender_id = ?3 OR receiver_id = ?3)
+      AND reactions IS ?4 AND ${messageContactGuard}`).bind(JSON.stringify(reactions), id, userId, row.reactions).run();
+    if (updated.meta.changes) {
+      await broadcastToParticipants(c.env, row.sender_id, row.receiver_id, {
+        type: 'message:reaction', messageId: id, reactions,
+        sender_id: row.sender_id, receiver_id: row.receiver_id,
+      });
+      return c.json({ reactions });
+    }
+    const otherId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+    if (!(await mayMessage(c.env, userId, otherId))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  }
+  return c.json({ error: 'Reaction changed concurrently; retry' }, 409);
 });
 
 messages.post('/mark-read', async (c) => {
   const userId = c.get('userId');
   const { sender_id } = await c.req.json().catch(() => ({}));
-  if (!sender_id) return c.json({ error: 'sender_id is required' }, 400);
+  if (typeof sender_id !== 'string' || !sender_id) return c.json({ error: 'sender_id is required' }, 400);
+  if (sender_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, sender_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
+  // Identify exactly the rows changed by this authorized write. A separate
+  // pre-read can race both new messages and a block/unfriend.
   const { results } = await c.env.DB.prepare(
-    'SELECT id FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0'
-  )
-    .bind(sender_id, userId)
-    .all<{ id: string }>();
+    `UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0 AND ${messageContactGuard} RETURNING id`
+  ).bind(sender_id, userId).all<{ id: string }>();
   const messageIds = (results ?? []).map((r) => r.id);
+  if (messageIds.length === 0 && !(await mayMessage(c.env, userId, sender_id))) {
+    return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+  }
 
   if (messageIds.length > 0) {
-    await c.env.DB.prepare('UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?')
-      .bind(sender_id, userId)
-      .run();
     // The reader's (userId's) own Read Receipts setting controls whether the
     // sender gets told their messages were read — same rule enforced for
     // the regular history fetch in GET /with/:otherId.
@@ -342,7 +383,9 @@ messages.post('/mark-read', async (c) => {
 messages.post('/typing', async (c) => {
   const userId = c.get('userId');
   const { receiver_id, is_typing } = await c.req.json().catch(() => ({}));
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
   await broadcastToUser(c.env, receiver_id, {
     type: 'typing',
@@ -360,7 +403,9 @@ messages.post('/typing', async (c) => {
 messages.post('/recording', async (c) => {
   const userId = c.get('userId');
   const { receiver_id, is_recording } = await c.req.json().catch(() => ({}));
-  if (!receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
+  if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
 
   await broadcastToUser(c.env, receiver_id, {
     type: 'recording',
