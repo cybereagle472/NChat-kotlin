@@ -45,6 +45,7 @@ import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
+import com.nchat.app.network.E2eeKeys
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.MediaFiles
@@ -518,8 +519,16 @@ object ServiceLocator {
                 archived.clearAll()
                 pinned.clearAll()
                 notifications.cancelAll()
-            }
+            },
+            e2eeKeys = e2eeKeys
         )
+    }
+
+    /** Phase A: public-key registration; sign-in and launch both call this (idempotent). */
+    val e2eeKeys: E2eeKeys by lazy { E2eeKeys(requireContext(), api, tokens) }
+
+    fun syncE2eeKeys() {
+        appScope.launch { e2eeKeys.sync() }
     }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)

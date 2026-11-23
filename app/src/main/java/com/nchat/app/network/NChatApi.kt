@@ -55,6 +55,24 @@ class NChatApi(private val client: ApiClient) {
 
     suspend fun me(): UserEnvelope = decode(client.get("/auth/me"))
 
+    // ------------------------------------------------------------ e2ee keys
+    // Public material only — the private halves never leave the device.
+
+    suspend fun registerKeys(
+        identityPublicKey: String,
+        signedPrekeyPublic: String,
+        signedPrekeySignature: String,
+    ) {
+        client.post(
+            "/keys/register",
+            body {
+                put("identity_public_key", identityPublicKey)
+                put("signed_prekey_public", signedPrekeyPublic)
+                put("signed_prekey_signature", signedPrekeySignature)
+            }
+        )
+    }
+
     // ----------------------------------------------------------------- users
 
     suspend fun myProfile(): ProfileEnvelope = decode(client.get("/users/me"))

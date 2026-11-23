@@ -3,6 +3,7 @@ package com.nchat.app.data.repository
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.AuthResponse
 import com.nchat.app.data.local.ChatListCache
+import com.nchat.app.network.E2eeKeys
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +31,9 @@ class RemoteAuthRepository(
      * Everything else that is private to the account and lives on the device — drafts and
      * starred messages. The next person to sign in on this phone must not find them.
      */
-    private val clearLocalState: () -> Unit = {}
+    private val clearLocalState: () -> Unit = {},
+    /** Phase A: registers this device's public key material right after sign-in (idempotent). */
+    private val e2eeKeys: E2eeKeys? = null
 ) : AuthRepository {
 
     private val _session = MutableStateFlow(tokens.email)
@@ -133,6 +136,9 @@ class RemoteAuthRepository(
         }
         _session.value = email
         _profileComplete.value = tokens.profileComplete
+        // Fire-and-forget: sync() never throws and re-uploads the same material,
+        // so a failed attempt simply retries on the next launch or sign-in.
+        scope.launch { e2eeKeys?.sync() }
     }
 
     private companion object {

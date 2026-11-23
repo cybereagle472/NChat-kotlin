@@ -25,6 +25,9 @@ class NChatApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         CrashLog.install(this)
         ServiceLocator.init(this)
+        // Phase A self-heal: existing users register their public key material on
+        // first launch after this update; sign-in covers new sessions. Idempotent.
+        ServiceLocator.syncE2eeKeys()
     }
 
     override fun newImageLoader(): ImageLoader =
