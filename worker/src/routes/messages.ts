@@ -3,7 +3,8 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
-import { exceedsTextLimits, DIRECT_MESSAGE_TYPES } from '../lib/input';
+import { decodeExact, exceedsTextLimits, DIRECT_MESSAGE_TYPES, SPKI_BYTES } from '../lib/input';
+import { mayMessage } from '../lib/contacts';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -46,15 +47,6 @@ async function broadcastToParticipants(env: Env, userA: string, userB: string, p
 }
 
 /** Direct contact is allowed only for accepted friends without a block. */
-async function mayMessage(env: Env, userId: string, otherId: string): Promise<boolean> {
-  if (userId === otherId) return false;
-  const row = await env.DB.prepare(`SELECT 1 FROM friendships f
-    WHERE ((f.user1_id = ?1 AND f.user2_id = ?2) OR (f.user1_id = ?2 AND f.user2_id = ?1))
-    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = ?1 AND b.blocked_user_id = ?2)
-      OR (b.user_id = ?2 AND b.blocked_user_id = ?1)) LIMIT 1`).bind(userId, otherId).first();
-  return !!row;
-}
-
 // Use within a messages UPDATE so contact authorization is checked at the
 // write, not only before it. Local-only delete-for-me remains available.
 const messageContactGuard = `EXISTS (SELECT 1 FROM friendships f WHERE
@@ -164,9 +156,13 @@ messages.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
-  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
+  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512, recipient_identity_key:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
   if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
   if (typeof type !== 'string' || !DIRECT_MESSAGE_TYPES.has(type)) return c.json({ error: 'Unknown message type' }, 400);
+  // A sealed message must say which identity key it was sealed for (public
+  // material only). It is compared below, never stored and never echoed.
+  const sealedFor = type === 'e2ee' ? body.recipient_identity_key : null;
+  if (type === 'e2ee' && !decodeExact(sealedFor, SPKI_BYTES)) return c.json({ error: 'Sealed messages must name the recipient identity key' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   const mediaProofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
@@ -178,6 +174,20 @@ messages.post('/', limitSend, async (c) => {
       .bind(userId, client_message_id)
       .first();
     if (existing) return c.json({ message: messageJson(existing) });
+  }
+
+  // Sealed for an identity key the recipient no longer has (reinstall, new
+  // phone) or never had: nobody could ever open it. Refuse instead of storing
+  // it, so the sender starts a new session and seals again. This runs after
+  // the contact check above — a stranger gets the 403 and learns nothing
+  // about key state — and after the idempotent replay, so a message already
+  // stored is still acknowledged.
+  if (type === 'e2ee') {
+    const current = await c.env.DB.prepare('SELECT identity_public_key FROM user_crypto_keys WHERE user_id = ?')
+      .bind(receiver_id).first<{ identity_public_key: string }>();
+    if (current?.identity_public_key !== sealedFor) {
+      return c.json({ error: 'The recipient has registered different keys', code: 'identity_changed' }, 409);
+    }
   }
 
   const id = newId();

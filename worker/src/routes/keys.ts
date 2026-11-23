@@ -3,13 +3,18 @@ import type { Context } from 'hono';
 import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
+import { decodeExact, SPKI_BYTES } from '../lib/input';
+import { mayMessage } from '../lib/contacts';
 
 /**
  * E2EE key infrastructure — public keys only.
  *
- * POST /keys/register  upsert identity + signed prekey (signature verified)
+ * POST /keys/register  upsert identity + signed prekey (signature verified);
+ *                      a NEW identity discards the old one-time prekeys
  * POST /keys/prekeys   refill one-time prekeys (1..100,100-unconsumed cap)
- * GET  /keys/bundle/:userId  identity + signed prekey + one popped OTK
+ * GET  /keys/prekeys   the caller's own unconsumed count
+ * GET  /keys/bundle/:userId  identity + signed prekey + one popped OTK,
+ *                      only for callers who may message that user
  *
  * Wire format (locked by tests): SPKI DER of a P-256 key = exactly 91 bytes;
  * ECDSA signature = exactly 64 bytes (P1363 r||s, WebCrypto's native format —
@@ -18,26 +23,9 @@ import { limitSend } from '../middleware/rate-limit';
 
 const keys = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-const SPKI_BYTES = 91;
 const SIGNATURE_BYTES = 64;
 const MAX_PREKEYS_PER_CALL = 100;
 const MAX_UNCONSUMED_PREKEYS = 100;
-
-/** Strict decode: canonical base64, exact byte length. null = reject. */
-function decodeExact(value: unknown, bytes: number): Uint8Array | null {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
-  let binary: string;
-  try {
-    binary = atob(value);
-  } catch {
-    return null;
-  }
-  if (binary.length !== bytes) return null;
-  if (btoa(binary) !== value) return null; // non-canonical padding/bits
-  const out = new Uint8Array(bytes);
-  for (let i = 0; i < bytes; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
 
 /** Verify the signed-prekey signature with the uploader's identity key. */
 async function signatureMatches(identitySpki: Uint8Array, prekeySpki: Uint8Array, signature: Uint8Array): Promise<boolean> {
@@ -78,7 +66,17 @@ keys.post('/register', requireAuth, limitSend, async (c) => {
   }
 
   const userId = c.get('userId');
-  await c.env.DB.prepare(
+  // A different identity key means a different installation: the private
+  // halves of the one-time prekeys uploaded before it no longer exist, and a
+  // session started against one could never be opened. They go in the same
+  // transaction as the new identity (the DELETE still sees the old row).
+  // Rotating only the signed prekey, or registering the same material again,
+  // leaves them alone.
+  const discardStalePrekeys = c.env.DB.prepare(
+    `DELETE FROM one_time_prekeys WHERE user_id = ?1
+       AND EXISTS (SELECT 1 FROM user_crypto_keys WHERE user_id = ?1 AND identity_public_key <> ?2)`,
+  ).bind(userId, body.identity_public_key);
+  const upsert = c.env.DB.prepare(
     `INSERT INTO user_crypto_keys (user_id, identity_public_key, signed_prekey_public, signed_prekey_signature, updated_at)
      VALUES (?, ?, ?, ?, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
@@ -86,7 +84,8 @@ keys.post('/register', requireAuth, limitSend, async (c) => {
        signed_prekey_public = excluded.signed_prekey_public,
        signed_prekey_signature = excluded.signed_prekey_signature,
        updated_at = datetime('now')`,
-  ).bind(userId, body.identity_public_key, body.signed_prekey_public, body.signed_prekey_signature).run();
+  ).bind(userId, body.identity_public_key, body.signed_prekey_public, body.signed_prekey_signature);
+  await c.env.DB.batch([discardStalePrekeys, upsert]);
   return c.json({ ok: true });
 });
 
@@ -138,8 +137,19 @@ keys.get('/prekeys', requireAuth, limitSend, async (c) => {
 // GET /keys/bundle/:userId — serve public material; pop exactly one one-time
 // prekey per fetch (single-statement DELETE ... RETURNING = atomic under
 // concurrency, so two fetchers can never receive the same key).
+//
+// Only for callers who may message the target (or the target itself): a
+// bundle is the first step of a direct message, and each fetch spends a
+// one-time prekey — a stranger must be able to do neither. A refusal is the
+// same 404 as "no keys", so it says nothing about the target's key state.
+// (Group E2EE will need bundles between group members who are not contacts;
+// widen this rule there, not here.)
 keys.get('/bundle/:userId', requireAuth, limitSend, async (c) => {
   const targetId = c.req.param('userId');
+  const userId = c.get('userId');
+  if (!targetId || (targetId !== userId && !(await mayMessage(c.env, userId, targetId)))) {
+    return c.json({ error: 'No keys registered for this user' }, 404);
+  }
   const stored = await c.env.DB.prepare(
     'SELECT identity_public_key, signed_prekey_public, signed_prekey_signature FROM user_crypto_keys WHERE user_id = ?',
   ).bind(targetId).first<{ identity_public_key: string; signed_prekey_public: string; signed_prekey_signature: string }>();
