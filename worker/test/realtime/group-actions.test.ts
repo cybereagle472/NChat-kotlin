@@ -1345,6 +1345,36 @@ describe('friend request response authorization under concurrency', () => {
   });
 });
 
+describe('accepted friend request with a missing friendship row', () => {
+  // A destructive block deletes the friendships row and leaves the accepted
+  // request behind; unblock restores neither. Such a pair could never message
+  // again (403) and could never re-friend (409 "Already friends"), so the
+  // app's Add button could only ever raise an error. Sending the request
+  // again must repair the relationship instead of refusing forever.
+  it('sending the request again repairs the friendship and reopens messaging', async () => {
+    const a = await mediaAccount(), b = await mediaAccount();
+    await env.DB.prepare("INSERT INTO friend_requests (id, sender_id, receiver_id, status) VALUES (?, ?, ?, 'accepted')")
+      .bind(crypto.randomUUID(), a.id, b.id).run();
+    const retry = await post('/friends/request', a.token, { receiver_id: b.id });
+    expect(retry.status).toBe(409); // the app reads this as "already friends"
+    expect(((await retry.json()) as { error: string }).error.toLowerCase()).toContain('already friend');
+    expect(await env.DB.prepare('SELECT 1 FROM friendships WHERE (user1_id=? AND user2_id=?) OR (user1_id=? AND user2_id=?)')
+      .bind(a.id, b.id, b.id, a.id).first()).not.toBeNull();
+    const message = await post('/messages', a.token, { receiver_id: b.id, content: 'reconnected', client_message_id: crypto.randomUUID() });
+    expect(message.status).toBe(201);
+  }, 30000);
+  it('does not repair while a block exists in either direction', async () => {
+    const a = await mediaAccount(), b = await mediaAccount();
+    await env.DB.prepare("INSERT INTO friend_requests (id, sender_id, receiver_id, status) VALUES (?, ?, ?, 'accepted')")
+      .bind(crypto.randomUUID(), a.id, b.id).run();
+    await env.DB.prepare('INSERT INTO blocked_users (id, user_id, blocked_user_id) VALUES (?, ?, ?)')
+      .bind(crypto.randomUUID(), a.id, b.id).run();
+    expect((await post('/friends/request', b.token, { receiver_id: a.id })).status).toBe(403);
+    expect(await env.DB.prepare('SELECT 1 FROM friendships WHERE (user1_id=? AND user2_id=?) OR (user1_id=? AND user2_id=?)')
+      .bind(a.id, b.id, b.id, a.id).first()).toBeNull();
+  }, 30000);
+});
+
 describe('friend request creation concurrency', () => {
   it('does not duplicate or re-announce concurrent same-direction requests', async () => {
     const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
