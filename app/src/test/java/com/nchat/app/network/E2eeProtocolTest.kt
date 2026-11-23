@@ -86,15 +86,17 @@ class E2eeProtocolTest {
         val third = E2eeProtocol.seal(aliceSession, bytes("three"))
 
         val accepted = E2eeProtocol.openFirst(bob, bobPrekey, otkId = 1, oneTimePrekeyPrivate = otk.private, first)!!
+        assertArrayEquals(bytes("one"), accepted.plaintext)
         val bobSession = accepted.session
 
-        // Arrive as three, one, two — all must decrypt.
+        // Three arrives before two: the gap key is stashed, then two pops it.
         val gotThird = E2eeProtocol.open(bobSession, third)
-        val gotFirst = E2eeProtocol.open(bobSession, first)
         val gotSecond = E2eeProtocol.open(bobSession, second)
         assertArrayEquals(bytes("three"), gotThird)
-        assertArrayEquals(bytes("one"), gotFirst)
         assertArrayEquals(bytes("two"), gotSecond)
+
+        // Replaying the already-consumed first message fails closed.
+        assertNull(E2eeProtocol.open(bobSession, first))
     }
 
     @Test
@@ -155,8 +157,8 @@ class E2eeProtocolTest {
     fun hkdfMatchesRfc5869CaseOne() {
         // RFC 5869 A.1 — SHA-256, basic test case: pins extract+expand exactly.
         val ikm = ByteArray(22) { 0x0b }
-        val salt = ByteArray(13) { 0x00 }
-        val info = ByteArray(10) { 0xf0.toByte() }
+        val salt = ByteArray(13) { it.toByte() }
+        val info = ByteArray(10) { (0xf0 + it).toByte() }
         val okm = E2eeProtocol.hkdf(ikm = ikm, salt = salt, info = info, length = 42)
         val expected = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
         assertEquals(expected, okm.joinToString("") { "%02x".format(it.toInt() and 0xff) })
