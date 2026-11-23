@@ -3,7 +3,7 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
 import { attachmentProofs, attachmentProofGuard, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
-import { exceedsTextLimits } from '../lib/input';
+import { exceedsTextLimits, GROUP_MESSAGE_TYPES } from '../lib/input';
 import { consumeLimit } from '../lib/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -495,6 +495,7 @@ groups.post('/:id/messages', limitSend, async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   if ((body.content != null && typeof body.content !== 'string') || exceedsTextLimits(body, {content:65536, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
+  if (body.type != null && (typeof body.type !== 'string' || !GROUP_MESSAGE_TYPES.has(body.type))) return c.json({ error: 'Unknown message type' }, 400);
   const proofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
   if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
 

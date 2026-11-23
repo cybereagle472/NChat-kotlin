@@ -103,25 +103,36 @@ keys.post('/prekeys', requireAuth, limitSend, async (c) => {
   }
 
   const userId = c.get('userId');
+  // Fast path only when the pool is already full — partial fills are the
+  // conditional insert's job (it fits as many as the cap allows).
   const stored = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
     .bind(userId).first<{ n: number }>())?.n ?? 0;
-  if (stored + publicKeys.length > MAX_UNCONSUMED_PREKEYS) {
+  if (stored >= MAX_UNCONSUMED_PREKEYS) {
     return c.json({ error: `One-time prekey pool full (${stored} of ${MAX_UNCONSUMED_PREKEYS} unconsumed)` }, 400);
   }
 
   // Conditional insert: each row checks the live count inside its own
   // statement, so parallel refills can never push the pool past the cap
-  // (a plain check-then-insert would race).
+  // (a plain check-then-insert would race). RETURNING yields the row ids
+  // so the client can pair each public key with the private half it keeps.
   const insert = c.env.DB.prepare(
     `INSERT INTO one_time_prekeys (user_id, public_key)
-      SELECT ?, ? WHERE (SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = ?) < ${MAX_UNCONSUMED_PREKEYS}`,
+      SELECT ?, ? WHERE (SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = ?) < ${MAX_UNCONSUMED_PREKEYS}
+      RETURNING id`,
   );
   const results = await c.env.DB.batch(publicKeys.map((value) => insert.bind(userId, value, userId)));
-  const accepted = results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
-  if (accepted === 0) {
+  const ids = (results.flatMap((result) => result.results ?? []) as { id: number }[]).map((row) => row.id);
+  if (ids.length === 0) {
     return c.json({ error: `One-time prekey pool full (${MAX_UNCONSUMED_PREKEYS} unconsumed)` }, 400);
   }
-  return c.json({ ok: true, stored: accepted }, 201);
+  return c.json({ ok: true, stored: ids.length, ids }, 201);
+});
+
+// GET /keys/prekeys — the caller's own unconsumed count, for refill planning.
+keys.get('/prekeys', requireAuth, limitSend, async (c) => {
+  const stored = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
+    .bind(c.get('userId')).first<{ n: number }>())?.n ?? 0;
+  return c.json({ remaining: stored });
 });
 
 // GET /keys/bundle/:userId — serve public material; pop exactly one one-time

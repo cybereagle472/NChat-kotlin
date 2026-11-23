@@ -68,7 +68,7 @@ describe('sealed (e2ee) direct messages', () => {
 
     const read = await history(bob.token, alice.id);
     expect(read.status).toBe(200);
-    const rows = await read.json() as { type: string; content: string; id: string }[];
+    const rows = (await read.json() as { messages: { type: string; content: string; id: string }[] }).messages;
     expect(rows).toHaveLength(1);
     expect(rows[0].type).toBe('e2ee');
     expect(rows[0].content).toBe(envelope);
@@ -84,12 +84,12 @@ describe('sealed (e2ee) direct messages', () => {
     const first = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId });
     const second = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId });
     expect(first.status).toBe(201);
-    expect(second.status).toBe(201);
+    expect(second.status).toBe(200); // idempotent replay of the stored row
     const id1 = (await first.json() as { message: { id: string } }).message.id;
     const id2 = (await second.json() as { message: { id: string } }).message.id;
     expect(id2).toBe(id1);
 
-    const rows = await (await history(bob.token, alice.id)).json() as unknown[];
+    const rows = (await (await history(bob.token, alice.id)).json() as { messages: unknown[] }).messages;
     expect(rows).toHaveLength(1);
   }, 30000);
 
@@ -106,7 +106,7 @@ describe('sealed (e2ee) direct messages', () => {
       body: JSON.stringify({ content: 'tampered' }),
     });
     expect(edited.status).toBe(400);
-    const rows = await (await history(bob.token, alice.id)).json() as { content: string }[];
+    const rows = (await (await history(bob.token, alice.id)).json() as { messages: { content: string }[] }).messages;
     expect(rows[0].content).toBe(envelope);
   }, 30000);
 });

@@ -3,7 +3,7 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
-import { exceedsTextLimits } from '../lib/input';
+import { exceedsTextLimits, DIRECT_MESSAGE_TYPES } from '../lib/input';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -166,6 +166,7 @@ messages.post('/', limitSend, async (c) => {
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
   if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
   if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof type !== 'string' || !DIRECT_MESSAGE_TYPES.has(type)) return c.json({ error: 'Unknown message type' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   const mediaProofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);

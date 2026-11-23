@@ -77,7 +77,7 @@ describe('register + bundle round-trip', () => {
     const otk2 = await makeKeys();
     const refill = await post('/keys/prekeys', alice.token, { public_keys: [otk1.identityPub, otk2.identityPub] });
     expect(refill.status).toBe(201);
-    expect(await refill.json()).toEqual({ ok: true, stored: 2 });
+    expect(await refill.json()).toEqual({ ok: true, stored: 2, ids: [expect.any(Number), expect.any(Number)] });
 
     const first = await get(`/keys/bundle/${alice.id}`, bob.token);
     expect(first.status).toBe(200);
@@ -173,7 +173,7 @@ describe('one-time prekey refill', () => {
     await get(`/keys/bundle/${alice.id}`, alice.token);
     const after = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] });
     expect(after.status).toBe(201);
-    expect(await after.json()).toEqual({ ok: true, stored: 1 });
+    expect(await after.json()).toEqual({ ok: true, stored: 1, ids: [expect.any(Number)] });
   }, 60000);
 });
 
