@@ -1375,6 +1375,27 @@ describe('accepted friend request with a missing friendship row', () => {
   }, 30000);
 });
 
+describe('blocking clears the relationship completely', () => {
+  // The2026-11-23 production deadlock: /friends/block deleted the friendships
+  // row but left the friend_requests row 'accepted', so the pair could never
+  // message again (403) nor re-friend (409 "Already friends"). A block must
+  // clear the accepted request too, so an unblock starts from a clean state.
+  it('removes the accepted request so the pair can re-friend after an unblock', async () => {
+    const a = await mediaAccount(), b = await mediaAccount();
+    const first = await post('/friends/request', a.token, { receiver_id: b.id });
+    expect(first.status).toBe(201);
+    const { id } = await first.json() as { id: string };
+    expect((await post(`/friends/${id}/respond`, b.token, { accept: true })).status).toBe(200);
+    expect((await post('/friends/block', a.token, { user_id: b.id })).status).toBe(200);
+    expect(await env.DB.prepare(
+      "SELECT 1 FROM friend_requests WHERE status='accepted' AND ((sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?))"
+    ).bind(a.id, b.id, b.id, a.id).first()).toBeNull();
+    expect((await post('/friends/unblock', a.token, { user_id: b.id })).status).toBe(200);
+    const again = await post('/friends/request', a.token, { receiver_id: b.id });
+    expect(again.status).toBe(201);
+  }, 30000);
+});
+
 describe('friend request creation concurrency', () => {
   it('does not duplicate or re-announce concurrent same-direction requests', async () => {
     const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
