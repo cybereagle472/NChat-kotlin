@@ -1,12 +1,14 @@
 package com.nchat.app.network
 
 import java.nio.charset.StandardCharsets
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -16,6 +18,29 @@ import org.junit.Test
  * serialization. Everything runs on the plain JVM — no Android APIs.
  */
 class E2eeProtocolTest {
+
+    /**
+     * Android's platform ECDH class (javax.crypto.KeyAgreement) is a stub on
+     * the JVM, so the tests swap in the JDK's java.security.KeyAgreement —
+     * identical P-256 agreement, real implementation.
+     */
+    private object JvmEcdh : E2eeProtocol.EcdhEngine {
+        override fun agree(privateKey: java.security.PrivateKey, publicKey: java.security.PublicKey): ByteArray =
+            java.security.KeyAgreement.getInstance("ECDH").run {
+                init(privateKey)
+                doFinal(publicKey)
+            }
+    }
+
+    @Before
+    fun useJvmEcdh() {
+        E2eeProtocol.ecdhEngine = JvmEcdh
+    }
+
+    @After
+    fun restorePlatformEcdh() {
+        E2eeProtocol.ecdhEngine = E2eeProtocol.PlatformEcdh
+    }
 
     private fun bytes(value: String) = value.toByteArray(StandardCharsets.UTF_8)
 

@@ -4,16 +4,18 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.security.KeyAgreement
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
+import java.security.PrivateKey
+import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.Arrays
 import javax.crypto.Cipher
+import javax.crypto.KeyAgreement
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -447,11 +449,28 @@ object E2eeProtocol {
         return messageKey to next
     }
 
+    /**
+     * ECDH backend. Android provides `javax.crypto.KeyAgreement` only (its
+     * libcore has no `java.security.KeyAgreement`), while the plain JVM unit
+     * tests have the opposite — so the engine is swapped in the test source
+     * set. Both perform the same standard P-256 agreement.
+     */
+    internal interface EcdhEngine {
+        fun agree(privateKey: PrivateKey, publicKey: PublicKey): ByteArray
+    }
+
+    internal object PlatformEcdh : EcdhEngine {
+        override fun agree(privateKey: PrivateKey, publicKey: PublicKey): ByteArray =
+            KeyAgreement.getInstance("ECDH").run {
+                init(privateKey)
+                doFinal(publicKey)
+            }
+    }
+
+    internal var ecdhEngine: EcdhEngine = PlatformEcdh
+
     private fun dh(privateKey: ByteArray, publicKey: ByteArray): ByteArray =
-        KeyAgreement.getInstance("ECDH").run {
-            init(loadPrivate(privateKey))
-            doFinal(loadPublic(publicKey))
-        }
+        ecdhEngine.agree(loadPrivate(privateKey), loadPublic(publicKey))
 
     private fun gcmEncrypt(key: ByteArray, header: ByteArray, plaintext: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(CIPHER)
