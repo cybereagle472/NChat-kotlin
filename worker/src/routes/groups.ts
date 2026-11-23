@@ -445,13 +445,20 @@ groups.delete('/:id', async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (membership?.role !== 'admin') return c.json({ error: 'Only admins can delete the group' }, 403);
 
-  const memberIds = await memberIdsOf(c.env, groupId);
   // D1 enforces foreign keys; the schema's cascades remove group messages,
   // members, read state and calls atomically with this guarded deletion.
-  const deleted = await c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
-    AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
-    .bind(groupId, userId).run();
+  // The recipient list is read in the SAME batch as the delete: a member
+  // added between a separate read and the DELETE would be cascaded away
+  // without ever being told the group is gone (the "pre-delete snapshot"
+  // notification race of the 2026-11-23 Phase 1 sign-off).
+  const [snapshot, deleted] = await c.env.DB.batch([
+    c.env.DB.prepare('SELECT user_id FROM group_members WHERE group_id = ?').bind(groupId),
+    c.env.DB.prepare(`DELETE FROM groups WHERE id = ?1
+      AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin')`)
+      .bind(groupId, userId),
+  ]);
   if (!deleted.meta.changes) return c.json({ error: 'Only admins can delete the group' }, 403);
+  const memberIds = (snapshot.results ?? []).map((row) => (row as { user_id: string }).user_id);
 
   await broadcastToGroup(c.env, groupId, { type: 'group:deleted', group_id: groupId }, memberIds);
   return c.json({ success: true });

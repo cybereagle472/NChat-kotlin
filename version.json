@@ -1,9 +1,9 @@
 {
-  "versionCode": 84,
-  "versionName": "1.0.76",
-  "releaseTag": "nchat-v1.0.76",
-  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.76/nchat-ui-lab.apk",
+  "versionCode": 85,
+  "versionName": "1.0.77",
+  "releaseTag": "nchat-v1.0.77",
+  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.77/nchat-ui-lab.apk",
   "apkUrls": [],
   "signingCertSha256": "429c0bb9664496faaa275638852d4e6b366bfb203c4e5c6d6b60101106e67912",
-  "releaseNotes": "NChat 1.0.76 repairs friendships and adds Unfriend.\n\nSome older conversations lost their friendship record while the chat stayed on screen, and messages to them could not be sent anymore. This version shows the correct Add button for those people so you can reconnect with one tap, and it adds an Unfriend option in two places: on the Friends list (the person-remove icon on the right of each row) and in a person's profile menu (top-right, beside Block).\n\nBlocking someone now also ends the friendship on the server, so a blocked-then-unblocked pair can become friends again instead of being stuck.\n\nMessages, photos, voice notes and calls are otherwise unchanged. Package identity and the verified signing key are unchanged."
+  "releaseNotes": "NChat 1.0.77 makes reactions and live updates more reliable.\n\nA reaction you add can no longer disappear because a request was repeated: the app now tells the server exactly the state you tapped, and the server keeps it — the same for removing one.\n\nBehind the scenes, a live update (a new message, a read tick, a group event) can no longer fail a save that already succeeded. What you see stays in step with what is stored.\n\nNo changes to how messages, photos, voice notes and calls work. Package identity and the verified signing key are unchanged."
 }

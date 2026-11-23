@@ -1032,27 +1032,18 @@ describe('group deletion authorization under concurrency', () => {
     const { owner, outsider, group, message } = await fixture();
     await env.DB.prepare('INSERT INTO group_members (id, group_id, user_id, role) VALUES (?, ?, ?, ?)')
       .bind(crypto.randomUUID(), group, outsider.id, 'admin').run();
-    let reached!: () => void, release!: () => void;
-    const ready = new Promise<void>(resolve => { reached = resolve; });
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    const db = {
-      prepare(sql:string) {
-        const statement = env.DB.prepare(sql);
-        if (sql !== 'SELECT user_id FROM group_members WHERE group_id = ?') return statement;
-        return {bind(...args:unknown[]) {
-          const bound = statement.bind(...args);
-          return {async all() { const result = await bound.all(); reached(); await gate; return result; }};
-        }};
-      },
-      batch: env.DB.batch.bind(env.DB),
-    };
+    // The snapshot of recipients and the guarded delete now run in one D1
+    // batch, so the gate sits in front of that batch: the demotion lands
+    // after the route's authorization pre-checks and before the write, the
+    // exact window this test has always pinned.
+    const paused = pauseBatch();
     const request = app.request(`https://example.test/groups/${group}`, {
       method:'DELETE', headers:{Authorization:`Bearer ${owner.token}`},
-    }, {...env, DB:db} as unknown as Env);
-    await ready;
+    }, paused.bindings);
+    await paused.reached;
     try {
       await env.DB.prepare("UPDATE group_members SET role='member' WHERE group_id=? AND user_id=?").bind(group, owner.id).run();
-    } finally { release(); }
+    } finally { paused.resume(); }
     expect((await request).status).toBe(403);
     expect(await env.DB.prepare('SELECT id FROM groups WHERE id=?').bind(group).first()).not.toBeNull();
     expect(await env.DB.prepare('SELECT id FROM group_messages WHERE id=?').bind(message).first()).not.toBeNull();
