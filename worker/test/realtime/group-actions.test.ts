@@ -1396,6 +1396,60 @@ describe('blocking clears the relationship completely', () => {
   }, 30000);
 });
 
+describe('reaction retries honour a stated desired state', () => {
+  const readDm = (id: string) => env.DB.prepare('SELECT reactions FROM messages WHERE id = ?').bind(id)
+    .first<{ reactions: string | null }>();
+  const readGroup = (id: string) => env.DB.prepare('SELECT reactions FROM group_messages WHERE id = ?').bind(id)
+    .first<{ reactions: string | null }>();
+  const has = (row: { reactions: string | null } | null, emoji: string, userId: string) => {
+    const map = row?.reactions ? JSON.parse(row.reactions) : {};
+    return Array.isArray(map[emoji]) && map[emoji].includes(userId);
+  };
+
+  it('a retried direct-message reaction with on:true does not flip back off', async () => {
+    const owner = await mediaAccount(), peer = await mediaAccount();
+    await friend(owner.id, peer.id);
+    const sent = await post('/messages', owner.token, { receiver_id: peer.id, content: 'hello' });
+    const id = (await sent.json() as { message: { id: string } }).message.id;
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(true);
+    // The caller lost the response and retries the identical request: the state
+    // it asked for must hold. A plain toggle would flip back off here — that is
+    // the 2026-11-23 Phase 1 residual this test pins down.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(true);
+    // Removal is equally repeatable.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(false);
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readDm(id), '👍', owner.id)).toBe(false);
+    // A non-boolean desired state is refused, not silently read as a toggle.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '👍', on: 'yes' })).status).toBe(400);
+    // Without `on`, the shipped toggle contract is untouched.
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readDm(id), '❤️', owner.id)).toBe(true);
+    expect((await post(`/messages/${id}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readDm(id), '❤️', owner.id)).toBe(false);
+  }, 30000);
+
+  it('a retried group reaction with on:true does not flip back off', async () => {
+    const { owner, message } = await fixture();
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: true })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(false);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '👍', on: false })).status).toBe(200);
+    expect(has(await readGroup(message), '👍', owner.id)).toBe(false);
+    // Legacy toggle (no `on`) still flips both ways.
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readGroup(message), '❤️', owner.id)).toBe(true);
+    expect((await post(`/groups/messages/${message}/reaction`, owner.token, { emoji: '❤️' })).status).toBe(200);
+    expect(has(await readGroup(message), '❤️', owner.id)).toBe(false);
+  }, 30000);
+});
+
 describe('friend request creation concurrency', () => {
   it('does not duplicate or re-announce concurrent same-direction requests', async () => {
     const sender = await mediaAccount(), receiver = await mediaAccount(), target = await inbox(receiver);
