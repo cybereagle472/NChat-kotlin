@@ -7,8 +7,6 @@ import java.io.DataOutputStream
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
-import java.security.PrivateKey
-import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
@@ -450,30 +448,17 @@ object E2eeProtocol {
     }
 
     /**
-     * ECDH backend. Android provides `javax.crypto.KeyAgreement` only (its
-     * libcore has no `java.security.KeyAgreement`), while the plain JVM unit
-     * tests have the opposite — so the engine is swapped in the test source
-     * set. Both perform the same standard P-256 agreement.
+     * ECDH over P-256. JCA's KeyAgreement lives in `javax.crypto` (there is
+     * no `java.security.KeyAgreement` on either the JDK or Android), and the
+     * class is real on both the device and the plain-JVM unit tests — the
+     * two-step init/doPhase/generateSecret flow is the portable API.
      */
-    internal interface EcdhEngine {
-        fun agree(privateKey: PrivateKey, publicKey: PublicKey): ByteArray
-    }
-
-    internal object PlatformEcdh : EcdhEngine {
-        override fun agree(privateKey: PrivateKey, publicKey: PublicKey): ByteArray =
-            KeyAgreement.getInstance("ECDH").run {
-                // Android's javax.crypto.KeyAgreement exposes the two-step
-                // API only — there is no doFinal(Key) on the platform class.
-                init(privateKey)
-                doPhase(publicKey, true)
-                generateSecret()
-            }
-    }
-
-    internal var ecdhEngine: EcdhEngine = PlatformEcdh
-
     private fun dh(privateKey: ByteArray, publicKey: ByteArray): ByteArray =
-        ecdhEngine.agree(loadPrivate(privateKey), loadPublic(publicKey))
+        KeyAgreement.getInstance("ECDH").run {
+            init(loadPrivate(privateKey))
+            doPhase(loadPublic(publicKey), true)
+            generateSecret()
+        }
 
     private fun gcmEncrypt(key: ByteArray, header: ByteArray, plaintext: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(CIPHER)

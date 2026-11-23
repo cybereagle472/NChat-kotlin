@@ -3,14 +3,12 @@ package com.nchat.app.network
 import com.nchat.app.network.E2eeProtocol.Envelope
 import com.nchat.app.network.E2eeProtocol.PeerBundle
 import java.nio.charset.StandardCharsets
-import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
@@ -20,34 +18,6 @@ import org.junit.Test
  * serialization. Everything runs on the plain JVM — no Android APIs.
  */
 class E2eeProtocolTest {
-
-    /**
-     * Android's platform ECDH class (javax.crypto.KeyAgreement) is a stub on
-     * the JVM, so the tests swap in the JDK's java.security.KeyAgreement —
-     * identical P-256 agreement, real implementation.
-     */
-    private object JvmEcdh : E2eeProtocol.EcdhEngine {
-        override fun agree(privateKey: java.security.PrivateKey, publicKey: java.security.PublicKey): ByteArray {
-            // java.security.KeyAgreement exists on the JDK at runtime but not
-            // in android.jar, which is what unit tests compile against.
-            val type = Class.forName("java.security.KeyAgreement")
-            val agreement = type.getMethod("getInstance", String::class.java).invoke(null, "ECDH")
-            type.getMethod("init", java.security.Key::class.java).invoke(agreement, privateKey)
-            type.getMethod("doPhase", java.security.Key::class.java, Boolean::class.javaPrimitiveType)
-                .invoke(agreement, publicKey, true)
-            return type.getMethod("generateSecret").invoke(agreement) as ByteArray
-        }
-    }
-
-    @Before
-    fun useJvmEcdh() {
-        E2eeProtocol.ecdhEngine = JvmEcdh
-    }
-
-    @After
-    fun restorePlatformEcdh() {
-        E2eeProtocol.ecdhEngine = E2eeProtocol.PlatformEcdh
-    }
 
     private fun bytes(value: String) = value.toByteArray(StandardCharsets.UTF_8)
 
@@ -189,7 +159,7 @@ class E2eeProtocolTest {
         val info = ByteArray(10) { 0xf0.toByte() }
         val okm = E2eeProtocol.hkdf(ikm = ikm, salt = salt, info = info, length = 42)
         val expected = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
-        assertEquals(expected, okm.joinToString("") { "%02x".format(it) })
+        assertEquals(expected, okm.joinToString("") { "%02x".format(it.toInt() and 0xff) })
     }
 
     @Test
