@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +50,7 @@ import com.nchat.app.core.designsystem.NcSpace
 import com.nchat.app.core.designsystem.NcTheme
 import com.nchat.app.core.designsystem.NcToaster
 import com.nchat.app.data.ServiceLocator
+import com.nchat.app.data.model.FriendRelation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.core.designsystem.pressFeedback
@@ -81,6 +83,10 @@ fun ProfileViewScreen(
     // or the conversation.
     val blockedIds by ServiceLocator.friendRepository.blockedIds.collectAsStateWithLifecycle()
     val blocked = id in blockedIds
+    // Friendship is the server's answer, not the chat's existence: a conversation
+    // survives unfriending, so only the graph decides whether Unfriend is offered.
+    val friendGraph by ServiceLocator.friendRepository.friends.collectAsStateWithLifecycle()
+    val isFriend = id.isNotBlank() && friendGraph.any { it.id == id && it.relation == FriendRelation.Friend }
 
     Column(modifier = modifier.fillMaxSize().background(Color.White)) {
         Box(
@@ -136,6 +142,31 @@ fun ProfileViewScreen(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false }
                 ) {
+                    // Unfriend sits beside Block: before 2026-11-23 no screen offered
+                    // it at all (the Friends list had no button and the confirm
+                    // dialog existed but nothing opened it).
+                    if (isFriend) DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Unfriend",
+                                fontSize = 14.sp,
+                                color = Color(0xFF334155)
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.PersonRemove,
+                                contentDescription = null,
+                                tint = extra.textTertiary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            ServiceLocator.friendRepository.unfriend(id)
+                            NcToaster.show("$name unfriended")
+                            menuOpen = false
+                        }
+                    )
                     // Groups have no 1:1 block; only real people do.
                     if (id.isNotBlank()) DropdownMenuItem(
                         text = {

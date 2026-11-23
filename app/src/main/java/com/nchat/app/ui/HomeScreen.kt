@@ -112,9 +112,6 @@ fun HomeScreen(
     val pendingSent by ServiceLocator.friendRepository.pendingSent.collectAsStateWithLifecycle()
     val friendActionError by ServiceLocator.friendRepository.actionError.collectAsStateWithLifecycle()
     val friendSearchError by ServiceLocator.friendRepository.searchError.collectAsStateWithLifecycle()
-    // Everyone this account already has a 1:1 conversation with: Find offers them Message
-    // instead of Add, even when the server holds no friendship row for them.
-    val chatPeerIds = remember(chats) { chats.filterNot { it.isGroup }.map { it.id }.toSet() }
 
     /*
      * A completely empty home screen is the worst thing this app can show, because a failed
@@ -285,7 +282,6 @@ fun HomeScreen(
                         searchError = friendSearchError,
                         onSearch = { ServiceLocator.friendRepository.search(it) },
                         sentRequestIds = pendingSent,
-                        chatIds = chatPeerIds,
                         loadError = friendGraphError,
                         emptyHint = friendGraphNote,
                         onRetry = {
