@@ -28,7 +28,8 @@ class E2eeProtocolTest {
         override fun agree(privateKey: java.security.PrivateKey, publicKey: java.security.PublicKey): ByteArray =
             java.security.KeyAgreement.getInstance("ECDH").run {
                 init(privateKey)
-                doFinal(publicKey)
+                doPhase(publicKey, true)
+                generateSecret()
             }
     }
 

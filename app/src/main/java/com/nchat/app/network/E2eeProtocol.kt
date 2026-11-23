@@ -462,8 +462,11 @@ object E2eeProtocol {
     internal object PlatformEcdh : EcdhEngine {
         override fun agree(privateKey: PrivateKey, publicKey: PublicKey): ByteArray =
             KeyAgreement.getInstance("ECDH").run {
+                // Android's javax.crypto.KeyAgreement exposes the two-step
+                // API only — there is no doFinal(Key) on the platform class.
                 init(privateKey)
-                doFinal(publicKey)
+                doPhase(publicKey, true)
+                generateSecret()
             }
     }
 
