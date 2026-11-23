@@ -13,3 +13,4 @@ server/data/
 worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
+nchat-backup-private-key.pem
