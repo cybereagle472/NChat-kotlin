@@ -645,9 +645,13 @@ groups.post('/messages/:messageId/delete-for-everyone', async (c) => {
 groups.post('/messages/:messageId/reaction', async (c) => {
   const userId = c.get('userId');
   const messageId = c.req.param('messageId');
-  const { emoji } = await c.req.json().catch(() => ({}));
+  const { emoji, on } = await c.req.json().catch(() => ({}));
   if (typeof emoji !== 'string' || !emoji || exceedsTextLimits({emoji}, {emoji:32})) return c.json({ error: 'Invalid reaction' }, 400);
   if (!emoji) return c.json({ error: 'emoji is required' }, 400);
+  // `on` states the result the caller wants, so a retry after a lost response
+  // repeats the intent instead of toggling back (Phase 1 residual). Absent,
+  // the shipped toggle contract is unchanged for older app builds.
+  if (on !== undefined && typeof on !== 'boolean') return c.json({ error: 'Invalid reaction' }, 400);
 
   // Compare-and-swap preserves the toggle semantics without losing changes
   // made after the read. Bound retries under sustained contention.
@@ -665,7 +669,12 @@ groups.post('/messages/:messageId/reaction', async (c) => {
       return c.json({ error: 'This message has too many different reactions' }, 400);
     }
     const list = reactions[emoji] ?? [];
-    reactions[emoji] = list.includes(userId) ? list.filter((u) => u !== userId) : [...list, userId];
+    const present = list.includes(userId);
+    // Already in the requested state: a repeated request must succeed as a
+    // no-op instead of toggling. Membership was re-checked above this attempt.
+    if (on !== undefined && present === on) return c.json({ reactions });
+    const remove = on === undefined ? present : !on;
+    reactions[emoji] = remove ? list.filter((u) => u !== userId) : [...list, userId];
     if (reactions[emoji].length === 0) delete reactions[emoji];
 
     const updated = await c.env.DB.prepare(`UPDATE group_messages SET reactions = ?1 WHERE id = ?2 AND reactions IS ?4

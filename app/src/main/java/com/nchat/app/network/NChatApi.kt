@@ -187,8 +187,8 @@ class NChatApi(private val client: ApiClient) {
         client.post("/messages/$id/delete-for-me")
     }
 
-    suspend fun reactToMessage(id: String, emoji: String): ReactionsEnvelope =
-        decode(client.post("/messages/$id/reaction", body { put("emoji", emoji) }))
+    suspend fun reactToMessage(id: String, emoji: String, on: Boolean): ReactionsEnvelope =
+        decode(client.post("/messages/$id/reaction", body { put("emoji", emoji); put("on", on) }))
 
     suspend fun markConversationRead(senderId: String) {
         client.post("/messages/mark-read", body { put("sender_id", senderId) })
@@ -327,8 +327,8 @@ class NChatApi(private val client: ApiClient) {
         client.post("/groups/messages/$messageId/delete-for-everyone")
     }
 
-    suspend fun reactToGroupMessage(messageId: String, emoji: String): ReactionsEnvelope =
-        decode(client.post("/groups/messages/$messageId/reaction", body { put("emoji", emoji) }))
+    suspend fun reactToGroupMessage(messageId: String, emoji: String, on: Boolean): ReactionsEnvelope =
+        decode(client.post("/groups/messages/$messageId/reaction", body { put("emoji", emoji); put("on", on) }))
 
     suspend fun sendGroupTyping(groupId: String, isTyping: Boolean) {
         client.post(
