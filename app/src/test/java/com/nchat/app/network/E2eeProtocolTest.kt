@@ -42,7 +42,7 @@ class E2eeProtocolTest {
         assertEquals(7, first.otkId)
 
         // Responder: looks the one-time private half up by id, derives the same SK.
-        val accepted = E2eeProtocol.openFirst(bob, otkId = 7, oneTimePrekeyPrivate = otk.private, first)
+        val accepted = E2eeProtocol.openFirst(bob, bobPrekey, otkId = 7, oneTimePrekeyPrivate = otk.private, first)
         assertNotNull(accepted)
         assertArrayEquals(bytes("hello"), accepted!!.plaintext)
         val bobSession = accepted.session
@@ -83,7 +83,7 @@ class E2eeProtocolTest {
         val second = E2eeProtocol.seal(aliceSession, bytes("two"))
         val third = E2eeProtocol.seal(aliceSession, bytes("three"))
 
-        val accepted = E2eeProtocol.openFirst(bob, otkId = 1, oneTimePrekeyPrivate = otk.private, first)!!
+        val accepted = E2eeProtocol.openFirst(bob, bobPrekey, otkId = 1, oneTimePrekeyPrivate = otk.private, first)!!
         val bobSession = accepted.session
 
         // Arrive as three, one, two — all must decrypt.
@@ -110,7 +110,7 @@ class E2eeProtocolTest {
         )
         val aliceSession = E2eeProtocol.initiate(alice, bundle)
         val sealed = E2eeProtocol.seal(aliceSession, bytes("secret"))
-        val bobSession = E2eeProtocol.openFirst(bob, 3, otk.private, sealed)!!.session
+        val bobSession = E2eeProtocol.openFirst(bob, bobPrekey, 3, otk.private, sealed)!!.session
 
         // Flip one ciphertext byte: GCM authentication must fail closed.
         val tampered = sealed.copy(ciphertext = sealed.ciphertext.copyOf().also { it[0] = (it[0] + 1).toByte() })
@@ -125,6 +125,7 @@ class E2eeProtocolTest {
     fun envelopeJsonRoundTripsByteForByte() {
         val envelope = Envelope(
             v = E2eeProtocol.VERSION,
+            ik = ByteArray(91) { (it + 40).toByte() },
             dh = ByteArray(91) { it.toByte() },
             n = 4,
             pn = 2,
@@ -136,6 +137,7 @@ class E2eeProtocolTest {
         val parsed = Envelope.fromJson(json)
         assertNotNull(parsed)
         assertEquals(envelope.v, parsed!!.v)
+        assertArrayEquals(envelope.ik, parsed.ik)
         assertArrayEquals(envelope.dh, parsed.dh)
         assertEquals(envelope.n, parsed.n)
         assertEquals(envelope.pn, parsed.pn)
@@ -172,12 +174,10 @@ class E2eeProtocolTest {
             oneTimePrekeyPublic = otk.public,
         )
         val session = E2eeProtocol.initiate(alice, bundle)
-        E2eeProtocol.seal(session, bytes("persist me"))
-
         val restored = E2eeProtocol.deserialize(session.serialize())
         assertNotNull(restored)
         val sealed = E2eeProtocol.seal(restored!!, bytes("after restart"))
-        val accepted = E2eeProtocol.openFirst(bob, 11, otk.private, sealed)
+        val accepted = E2eeProtocol.openFirst(bob, bobPrekey, 11, otk.private, sealed)
         assertNotNull(accepted)
         assertArrayEquals(bytes("after restart"), accepted!!.plaintext)
 
@@ -203,7 +203,7 @@ class E2eeProtocolTest {
         val session = E2eeProtocol.initiate(alice, bundle)
         val sealed = E2eeProtocol.seal(session, bytes("only for the right key"))
         // The WRONG private half: X3DH derives a different SK → GCM must fail.
-        val opened = E2eeProtocol.openFirst(bob, 5, otherOtk.private, sealed)
+        val opened = E2eeProtocol.openFirst(bob, bobPrekey, 5, otherOtk.private, sealed)
         assertNull(opened)
         assertFalse(opened != null)
     }

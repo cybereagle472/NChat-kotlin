@@ -71,7 +71,7 @@ class E2eeKeys(
     private fun generateAndPersist(): Material {
         val identity = generateEcKeypair()
         val prekey = generateEcKeypair()
-        val signature = derToP1363(sign(prekey.public.encoded, identity.private))
+        val signature = E2eeProtocol.derToP1363(sign(prekey.public.encoded, identity.private))
         val material = Material(
             identityPublic = encodeBase64(identity.public.encoded),
             prekeyPublic = encodeBase64(prekey.public.encoded),
@@ -112,33 +112,4 @@ class E2eeKeys(
         const val KEY_PREKEY_PUBLIC = "signed_prekey_public"
         const val KEY_PREKEY_SIGNATURE = "signed_prekey_signature"
     }
-}
-
-/**
- * ECDSA signatures travel as DER (`30 len 02 rlen r 02 slen s`) but the wire
- * contract wants fixed-width P1363: r and s each left-padded to 32 bytes.
- */
-private fun derToP1363(der: ByteArray): ByteArray {
-    if (der.size < 8 || der[0] != 0x30.toByte() || (der[1].toInt() and 0xff) != der.size - 2) {
-        error("unexpected ECDSA DER structure (${der.size} bytes)")
-    }
-    var index = 2
-    if (der[index] != 0x02.toByte()) error("DER: expected r integer")
-    val rLength = der[index + 1].toInt() and 0xff
-    index += 2
-    val r = der.copyOfRange(index, index + rLength)
-    index += rLength
-    if (der[index] != 0x02.toByte()) error("DER: expected s integer")
-    val sLength = der[index + 1].toInt() and 0xff
-    index += 2
-    val s = der.copyOfRange(index, index + sLength)
-    if (index + sLength != der.size) error("DER: trailing bytes")
-    return fixedWidth(r) + fixedWidth(s)
-}
-
-private fun fixedWidth(value: ByteArray): ByteArray = when {
-    value.size == 32 -> value
-    value.size == 33 && value[0].toInt() == 0 -> value.copyOfRange(1, 33)
-    value.size < 32 -> ByteArray(32 - value.size) + value
-    else -> error("ECDSA integer does not fit32 bytes (${value.size})")
 }
