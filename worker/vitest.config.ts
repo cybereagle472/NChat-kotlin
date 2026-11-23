@@ -7,8 +7,8 @@ export default defineConfig(async () => ({
     miniflare: {
       compatibilityDate: '2024-11-01',
       compatibilityFlags: ['nodejs_compat'],
-      d1Databases: { DB: 'nchat-db-test' },
-      r2Buckets: { MEDIA: 'nchat-media-test' },
+      d1Databases: { DB: 'nchat-db-test', DB_RESTORE: 'nchat-db-restore-test' },
+      r2Buckets: { MEDIA: 'nchat-media-test', BACKUPS: 'nchat-backups-test' },
       durableObjects: { REALTIME: 'RealtimeRoom' },
       bindings: {
         JWT_SECRET: 'local-tests-only-not-a-production-secret',

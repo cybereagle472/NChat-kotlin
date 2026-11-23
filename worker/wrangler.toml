@@ -17,6 +17,14 @@ database_id = "6dc0888d-645c-470c-8f27-fa8d5a21ba80"
 binding = "MEDIA"
 bucket_name = "nchat-media"
 
+# ── Daily database backup dumps (owner decision 2026-11-23: Cloudflare-only
+# copy, 7 daily + 4 weekly, auto-deleted) — see src/lib/backup.ts ──
+# Create the bucket in the dashboard (R2 → Create bucket) or with
+# `wrangler r2 bucket create nchat-backups` BEFORE this config deploys.
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "nchat-backups"
+
 # ── Durable Object for realtime (replaces Supabase Realtime) ──
 [[durable_objects.bindings]]
 name = "REALTIME"
@@ -25,6 +33,12 @@ class_name = "RealtimeRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RealtimeRoom"]
+
+# ── Daily backup schedule (src/lib/backup.ts) ──
+# 03:17 UTC every night — off-peak, and off the hour so it never collides
+# with other hourly jobs.
+[triggers]
+crons = ["17 3 * * *"]
 
 [vars]
 # Public base URL this Worker is deployed at (used to build media URLs).

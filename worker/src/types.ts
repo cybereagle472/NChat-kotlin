@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
+  /** Daily database dumps (nchat-backups) — see src/lib/backup.ts. */
+  BACKUPS: R2Bucket;
   REALTIME: DurableObjectNamespace;
   JWT_SECRET: string;
   PUBLIC_API_URL: string;
