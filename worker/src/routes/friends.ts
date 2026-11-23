@@ -44,7 +44,25 @@ friends.post('/request', limitContact, async (c) => {
     .first<{ id: string; status: string }>();
   if (existing) {
     if (existing.status === 'pending') return c.json({ error: 'Request already pending' }, 409);
-    if (existing.status === 'accepted') return c.json({ error: 'Already friends' }, 409);
+    if (existing.status === 'accepted') {
+      // Self-heal: a destructive block deletes the friendships row but leaves
+      // this request accepted, and unblock restores neither — so the pair
+      // could never message again (403) and never re-friend (409 "Already
+      // friends"), and the app's Add button could only ever raise an error.
+      // A block in either direction was already refused above, so restoring
+      // is safe. The app reads this 409 as "already friends" and refreshes.
+      const friendship = await c.env.DB.prepare(
+        'SELECT 1 FROM friendships WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)'
+      )
+        .bind(userId, receiver_id, receiver_id, userId)
+        .first();
+      if (!friendship) {
+        await c.env.DB.prepare('INSERT OR IGNORE INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)')
+          .bind(newId(), userId, receiver_id)
+          .run();
+      }
+      return c.json({ error: 'Already friends' }, 409);
+    }
   }
 
   const candidateId = newId();
