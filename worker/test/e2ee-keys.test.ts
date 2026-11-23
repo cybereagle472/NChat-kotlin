@@ -23,6 +23,12 @@ async function signup(name: string) {
   return { id: body.user.id, token: body.access_token };
 }
 
+/** Bundles are served only between users who may message each other. */
+async function becomeFriends(a: { id: string }, b: { id: string }) {
+  await env.DB.prepare('INSERT INTO friendships (id, user1_id, user2_id) VALUES (?, ?, ?)')
+    .bind(crypto.randomUUID(), a.id, b.id).run();
+}
+
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
 async function makeKeys() {
@@ -63,6 +69,7 @@ describe('register + bundle round-trip', () => {
   it('stores public keys and serves a bundle that pops one-time prekeys', async () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
+    await becomeFriends(alice, bob);
     const keys = await makeKeys();
 
     const registered = await post('/keys/register', alice.token, {
@@ -212,6 +219,7 @@ describe('bundle edge cases', () => {
   it('concurrent fetches never hand out the same one-time key twice', async () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
+    await becomeFriends(alice, bob);
     const keys = await makeKeys();
     await post('/keys/register', alice.token, {
       identity_public_key: keys.identityPub,
@@ -245,6 +253,7 @@ describe('prekey status and refill ids', () => {
   it('reports the caller remaining count and returns row ids on refill', async () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
+    await becomeFriends(alice, bob);
     const keys = await makeKeys();
     await post('/keys/register', alice.token, {
       identity_public_key: keys.identityPub,

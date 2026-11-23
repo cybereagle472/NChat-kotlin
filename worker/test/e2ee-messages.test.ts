@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * relay for `type: 'e2ee'` — it stores and returns the opaque envelope
  * unchanged, enforces the same social/size/idempotency rules as plaintext,
  * and rejects unknown message types outright (fail closed).
+ *
+ * A sealed send names the identity key it was sealed for; what happens when
+ * that key is missing, malformed or out of date is e2ee-recovery.test.ts.
  */
 
 beforeEach(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
@@ -34,18 +37,36 @@ function send(token: string, body: Record<string, unknown>) {
   });
 }
 
+/** Registers key material for `user` and returns the identity key a sealed send to them must name. */
+async function registerKeys(user: { token: string }) {
+  const identity = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
+  const prekey = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
+  const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+  const identityPub = b64(new Uint8Array(await crypto.subtle.exportKey('spki', identity.publicKey)));
+  const prekeyBytes = new Uint8Array(await crypto.subtle.exportKey('spki', prekey.publicKey));
+  const signature = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, identity.privateKey, prekeyBytes));
+  const response = await SELF.fetch('https://example.test/keys/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}`, 'CF-Connecting-IP': `2001:db8:${crypto.randomUUID().slice(0, 4)}::1` },
+    body: JSON.stringify({ identity_public_key: identityPub, signed_prekey_public: b64(prekeyBytes), signed_prekey_signature: b64(signature) }),
+  });
+  expect(response.status).toBe(200);
+  return identityPub;
+}
+
 function history(token: string, otherId: string) {
   return SELF.fetch(`https://example.test/messages/with/${otherId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
+// Opaque to the server: only its bytes matter here.
 const envelope = JSON.stringify({
   v: 1,
   dh: 'AOCsVJxqKzN2mH8vYtQwErTyUiOpAsDfGhJkLzXcVbNm',
   n: 0,
   pn: 0,
-  otk: 17,
+  otk: 'q83vEjRWeJCr',
   ct: 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkw',
 });
 
@@ -54,12 +75,14 @@ describe('sealed (e2ee) direct messages', () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
     await becomeFriends(alice, bob);
+    const bobIdentity = await registerKeys(bob);
 
     const sent = await send(alice.token, {
       receiver_id: bob.id,
       content: envelope,
       type: 'e2ee',
       client_message_id: crypto.randomUUID(),
+      recipient_identity_key: bobIdentity,
     });
     expect(sent.status).toBe(201);
     const message = (await sent.json() as { message: { type: string; content: string; id: string } }).message;
@@ -79,10 +102,11 @@ describe('sealed (e2ee) direct messages', () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
     await becomeFriends(alice, bob);
+    const bobIdentity = await registerKeys(bob);
     const clientId = crypto.randomUUID();
 
-    const first = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId });
-    const second = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId });
+    const first = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId, recipient_identity_key: bobIdentity });
+    const second = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: clientId, recipient_identity_key: bobIdentity });
     expect(first.status).toBe(201);
     expect(second.status).toBe(200); // idempotent replay of the stored row
     const id1 = (await first.json() as { message: { id: string } }).message.id;
@@ -97,7 +121,9 @@ describe('sealed (e2ee) direct messages', () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
     await becomeFriends(alice, bob);
-    const sent = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: crypto.randomUUID() });
+    const bobIdentity = await registerKeys(bob);
+    const sent = await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: crypto.randomUUID(), recipient_identity_key: bobIdentity });
+    expect(sent.status).toBe(201);
     const message = (await sent.json() as { message: { id: string } }).message;
 
     const edited = await SELF.fetch(`https://example.test/messages/${message.id}`, {
@@ -116,6 +142,7 @@ describe('message type hardening (fail closed)', () => {
     const alice = await signup('alice');
     const bob = await signup('bob');
     await becomeFriends(alice, bob);
+    const bobIdentity = await registerKeys(bob);
 
     expect((await send(alice.token, { receiver_id: bob.id, content: 'x', type: 'E2EE' })).status).toBe(400);
     expect((await send(alice.token, { receiver_id: bob.id, content: 'x', type: 'weird type!' })).status).toBe(400);
@@ -123,7 +150,7 @@ describe('message type hardening (fail closed)', () => {
     expect((await send(alice.token, { receiver_id: bob.id, content: 'x', type: 'text; DROP TABLE' })).status).toBe(400);
     // The known set still passes.
     expect((await send(alice.token, { receiver_id: bob.id, content: 'hi', type: 'text' })).status).toBe(201);
-    expect((await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee' })).status).toBe(201);
+    expect((await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', recipient_identity_key: bobIdentity })).status).toBe(201);
   }, 30000);
 
   it('rejects sealed group messages until group E2EE ships', async () => {
