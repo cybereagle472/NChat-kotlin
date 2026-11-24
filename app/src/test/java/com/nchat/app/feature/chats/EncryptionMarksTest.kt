@@ -77,24 +77,44 @@ class EncryptionMarksTest {
     }
 
     @Test
-    fun onlyWhatWouldHaveBeenSealedAndHasReachedTheServerIsMarked() {
+    fun sealedHistoryThisPhoneHoldsNoKeysForStillSetsTheMeasure() {
+        // After a reinstall: the sealed messages of before are on the server, and nothing has
+        // been agreed with the other person from this phone yet.
+        val unreadable = text("for the phone before", 400).copy(unreadable = true)
+        assertEquals(
+            setOf("after it"),
+            unsealedMessageIds(listOf(text("before it", 350), unreadable, text("after it", 450)), encryptedSince = null),
+        )
+    }
+
+    @Test
+    fun everyKindIsMarkedSoThatACaptionIsNoWayAroundIt() {
         val messages = listOf(
-            // Attachments are not sealed yet; marking each of them would say nothing.
-            text("photo", 500).copy(kind = MessageKind.Photo),
+            text("photo with a caption", 500).copy(kind = MessageKind.Photo),
             text("video", 500).copy(kind = MessageKind.Video),
             text("voice", 500).copy(kind = MessageKind.Voice),
             text("document", 500).copy(kind = MessageKind.Document),
-            // A position is sealed like text.
             text("position", 500).copy(kind = MessageKind.Location),
+            text("my photo", 500, mine = true).copy(kind = MessageKind.Photo),
+        )
+        assertEquals(messages.map { it.id }.toSet(), unsealedMessageIds(messages, encryptedSince = 300))
+    }
+
+    @Test
+    fun whatCarriesNobodysWordsOrNeverReachedTheServerIsNotMarked() {
+        val messages = listOf(
             text("deleted", 500).copy(deleted = true),
             text("system line", 500).copy(systemEvent = true),
             // On their way, or never sent: the server has not seen them.
             text("sending", 500, mine = true).copy(state = DeliveryState.Sending),
             text("failed", 500, mine = true).copy(failed = true),
+            text("photo still uploading", 500, mine = true).copy(kind = MessageKind.Photo, state = DeliveryState.Sending),
             text("sent", 500, mine = true),
             text("read", 500, mine = true).copy(state = DeliveryState.Read),
+            // Somebody else's message has no "sending": whatever state it carries, it arrived.
+            text("theirs", 500).copy(state = DeliveryState.Sending),
         )
-        assertEquals(setOf("position", "sent", "read"), unsealedMessageIds(messages, encryptedSince = 300))
+        assertEquals(setOf("sent", "read", "theirs"), unsealedMessageIds(messages, encryptedSince = 300))
     }
 
     // ------------------------------------------------------------- wording

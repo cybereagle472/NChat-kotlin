@@ -1388,10 +1388,12 @@ class E2eeClientTest {
         val server = Server()
         val alice = server.install("alice")
         val oldBob = server.install("bob")
-        val a = alice.client(server)
+        val announced = Collections.synchronizedList(ArrayList<String>())
+        val a = alice.client(server, changes = { announced += it })
         assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
         assertTrue(a.setVerified("bob", oldBob.identityKey, true))
         val newBob = server.install("bob", installation = "2")
+        announced.clear()
 
         val posted = ArrayList<E2eeClient.Sealed>()
         fun attempt(client: E2eeClient = a): String? = try {
@@ -1413,6 +1415,7 @@ class E2eeClientTest {
             listOf(oldBob.identityKey),
             posted.map { it.recipientIdentity },
         )
+        assertEquals("the refusal comes with the news that explains it", listOf("bob"), announced.toList())
         val security = a.security("bob")!!
         assertEquals(newBob.identityKey, security.key)
         assertTrue(security.changed && security.held)
@@ -1484,6 +1487,16 @@ class E2eeClientTest {
         assertTrue(a.setVerified("bob", newBob.identityKey, false))
         assertTrue(a.security("bob")!!.held)
         sealFailsWith(a, "bob", E2eeText.CODE_CHANGED)
+        // Nor is it in the middle of other work, where what is in memory is what gets written.
+        val more = send(newBob.client(server), "bob", "alice", "more")
+        a.batch {
+            assertTrue(a.setVerified("bob", newBob.identityKey, false))
+            assertEquals("more", read(a, more))
+            assertTrue(a.security("bob")!!.held)
+        }
+        assertTrue(a.security("bob")!!.held)
+        assertTrue("and that is what was stored", alice.client(server).security("bob")!!.held)
+        sealFailsWith(alice.client(server), "bob", E2eeText.CODE_CHANGED)
 
         assertTrue(a.setVerified("bob", newBob.identityKey, true))
         assertEquals(newBob.identityKey, runBlocking { a.seal("bob", "c-ok", E2eePayload.text("ok")) }!!.recipientIdentity)
