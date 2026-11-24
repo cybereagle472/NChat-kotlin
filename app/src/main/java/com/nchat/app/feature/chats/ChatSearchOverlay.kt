@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
@@ -453,7 +454,9 @@ fun StarredMessagesSheet(
 fun ChatOptionsSheet(
     onDismiss: () -> Unit,
     onStarred: () -> Unit,
-    onMedia: () -> Unit = {}
+    onMedia: () -> Unit = {},
+    /** Opens the chat's encryption sheet (the security code); null where there is none, as in a group. */
+    onEncryption: (() -> Unit)? = null
 ) {
     val extra = NcTheme.extra
     Dialog(
@@ -478,6 +481,9 @@ fun ChatOptionsSheet(
             ) {
                 OptionRow("Media, links and docs", Icons.Rounded.PhotoLibrary) { onMedia() }
                 OptionRow("Starred messages", Icons.Rounded.Star) { onStarred() }
+                if (onEncryption != null) {
+                    OptionRow("Encryption", Icons.Rounded.Lock) { onEncryption() }
+                }
             }
         }
     }

@@ -187,6 +187,15 @@ fun ConversationScreen(
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
+    /*
+     * End-to-end encryption, as far as this phone knows it for this chat: null for a group and
+     * for a conversation nothing was ever encrypted in. It decides three things on this screen —
+     * the notice when the other person's security code changed, the sheet that shows the code,
+     * and which messages are marked as having gone through the server readable.
+     */
+    val security by viewModel.security.collectAsStateWithLifecycle()
+    var encryptionOpen by remember { mutableStateOf(false) }
+    val unsealedIds = remember(messages, security?.since) { unsealedMessageIds(messages, security?.since) }
     val wallpaperId by ServiceLocator.wallpapers.selection.collectAsStateWithLifecycle()
     val wallpaper = remember(wallpaperId) {
         com.nchat.app.data.local.Wallpaper.entries.firstOrNull { it.id == wallpaperId }
@@ -557,6 +566,17 @@ fun ConversationScreen(
                 )
             }
 
+            // The other person's security code changed and the user has not answered that yet.
+            val securityNow = security
+            if (securityNow != null && securityNow.changed) {
+                SecurityChangeBanner(
+                    notice = securityChangeNotice(chatTitle, securityNow),
+                    acceptLabel = securityAcceptLabel(securityNow),
+                    onView = { encryptionOpen = true },
+                    onAccept = { securityNow.key?.let { key -> viewModel.acceptSecurityChange(key) } }
+                )
+            }
+
             /*
              * The pinned banner, right under the header where WhatsApp puts it. It is a banner,
              * not a list: one message per chat, replaced when another is pinned, and tap-to-jump
@@ -655,7 +675,8 @@ fun ConversationScreen(
                                     // One name per run, not per bubble: repeating "Zaid" above
                                     // every line he sends is noise, and it is the first thing
                                     // that makes a group thread look machine-generated.
-                                    showName = item.showSender
+                                    showName = item.showSender,
+                                    notEncrypted = message.id in unsealedIds
                                 )
                             }
                         }
@@ -1021,7 +1042,27 @@ fun ConversationScreen(
             onMedia = {
                 optionsOpen = false
                 mediaSheetOpen = true
+            },
+            // One-to-one chats only: a group has no security code (its messages are not sealed).
+            onEncryption = if (isGroupChat) {
+                null
+            } else {
+                {
+                    optionsOpen = false
+                    encryptionOpen = true
+                }
             }
+        )
+    }
+
+    if (encryptionOpen) {
+        SecurityCodeDialog(
+            name = chatTitle,
+            security = security,
+            loadCode = { key -> viewModel.securityCode(key) },
+            onSetVerified = { key, verified -> viewModel.setVerified(key, verified) },
+            onAccept = { key -> viewModel.acceptSecurityChange(key) },
+            onDismiss = { encryptionOpen = false }
         )
     }
 
@@ -1969,6 +2010,14 @@ private fun MessageInfoDialog(
             InfoRow("Type", kindLabel)
             InfoRow("Sent", stamp)
             InfoRow("Status", status)
+            InfoRow(
+                "Security",
+                when {
+                    message.encrypted -> "End-to-end encrypted"
+                    message.unreadable -> "End-to-end encrypted, for another phone"
+                    else -> "Not end-to-end encrypted"
+                }
+            )
             if (flags.isNotEmpty()) InfoRow("Flags", flags.joinToString(" · "))
             if (message.text.isNotBlank()) {
                 HorizontalDivider(

@@ -13,6 +13,7 @@ internal object E2eeText {
     const val PEER_HAS_NO_KEYS = "this contact can't receive encrypted messages right now (they may have signed out)"
     const val PEER_KEYS_UNVERIFIED = "this contact's encryption keys could not be checked"
     const val REPLACED = "this account is now in use on another phone"
+    const val CODE_CHANGED = "this contact's security code changed. Check the notice at the top of the chat, then send it again"
     const val UNAVAILABLE =
         "encrypted chats can't be opened on this phone right now. Restart NChat; if that doesn't help, sign out and sign in again"
 
@@ -83,6 +84,8 @@ class EndToEnd(
     private val onReplaced: () -> Unit,
     /** Trouble worth recording; never contains message content or key material. */
     private val report: (what: String, error: Throwable) -> Unit = { _, _ -> },
+    /** What [SealedMessaging.security] answers for this peer has changed; see [E2eeClient]. */
+    private val onSecurityChanged: (peerId: String) -> Unit = {},
 ) {
     private class Account(val userId: String, val keys: E2eeKeys, val client: E2eeClient) {
         fun close() {
@@ -104,6 +107,14 @@ class EndToEnd(
             editOf: String?,
             send: suspend (E2eeClient.Sealed) -> T,
         ): T? = throw IllegalStateException(reason)
+
+        override fun security(peerId: String): PeerSecurity? = null
+
+        override fun securityCode(peerId: String, key: String): String? = null
+
+        override fun acceptChange(peerId: String, key: String): Boolean = false
+
+        override fun setVerified(peerId: String, key: String, verified: Boolean): Boolean = false
     }
 
     private val lock = Any()
@@ -216,6 +227,7 @@ class EndToEnd(
             signedPrekey = keys::signedPrekey,
             fetchBundle = fetchBundle,
             prepare = keys::ensureRegistered,
+            onSecurityChanged = onSecurityChanged,
         )
         return Account(userId, keys, client)
     }

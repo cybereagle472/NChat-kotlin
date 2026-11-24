@@ -25,6 +25,7 @@ import com.nchat.app.network.MessageDto
 import com.nchat.app.network.MessageEnvelope
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NcJson
+import com.nchat.app.network.PeerSecurity
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.RealtimeEvent
@@ -41,8 +42,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -112,7 +115,13 @@ class RemoteChatRepository(
      * when sealing is not possible it is one that refuses — so nothing here can fall back to
      * sending in the clear by finding "no encryption" where it expected some.
      */
-    private val encryption: () -> SealedMessaging
+    private val encryption: () -> SealedMessaging,
+    /**
+     * The other person's id, each time what [SealedMessaging.security] answers about the
+     * conversation with them has changed: encryption began, their keys changed, or the user
+     * settled a notice.
+     */
+    private val securityChanges: Flow<String> = emptyFlow()
 ) : ChatRepository {
 
 
@@ -125,6 +134,9 @@ class RemoteChatRepository(
 
     private val _groups = MutableStateFlow<List<Group>>(emptyList())
     override val groups: StateFlow<List<Group>> = _groups.asStateFlow()
+
+    private val _security = MutableStateFlow<Map<String, PeerSecurity>>(emptyMap())
+    override val security: StateFlow<Map<String, PeerSecurity>> = _security.asStateFlow()
 
     private val conversations = mutableMapOf<String, MutableStateFlow<List<Message>>>()
     /**
@@ -232,6 +244,7 @@ class RemoteChatRepository(
         // Do not sweep voice files from an outbox snapshot: a corrupt queue, a failed
         // message, or a concurrent recording can leave a needed clip outside that snapshot.
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
+        scope.launch { securityChanges.collect { peerId -> refreshSecurity(peerId) } }
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
         // somebody who never had them.
@@ -250,6 +263,7 @@ class RemoteChatRepository(
                 if (signedIn) return@collect
                 _chats.value = emptyList()
                 _groups.value = emptyList()
+                _security.value = emptyMap()
                 names.clear()
                 historyPeers = emptyList()
                 historyProbedFor = null
@@ -528,6 +542,9 @@ class RemoteChatRepository(
 
     override fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>> {
         val stream = stream(chatId)
+        // Every time it opens, not only the first: the screen shows whether the other person's
+        // keys changed, and that must not depend on an announcement having been caught.
+        refreshSecurity(chatId)
         val first = synchronized(requested) { requested.add(chatId) }
         if (first) scope.launch {
             /*
@@ -805,6 +822,43 @@ class RemoteChatRepository(
 
     /** The server's answer to an envelope sealed for keys the recipient no longer has. */
     private fun keysChanged(error: Throwable): Boolean = error is ApiException && error.status == 409
+
+    // ------------------------------------------------------- security codes
+
+    override fun refreshSecurity(chatId: String) {
+        if (chatId.isBlank() || isGroup(chatId)) return
+        scope.launch(Dispatchers.IO) { readSecurity(chatId) }
+    }
+
+    /** One read of this phone's sealed storage; call it off the main thread. */
+    private fun readSecurity(peerId: String) {
+        val account = myId
+        val known = runCatching { encryption().security(peerId) }.getOrNull()
+        // Signed out, or somebody else signed in, while this was read: not theirs to see.
+        if (account.isBlank() || account != myId) return
+        _security.update { current -> if (known == null) current - peerId else current + (peerId to known) }
+    }
+
+    override suspend fun securityCode(chatId: String, key: String): String? = withContext(Dispatchers.Default) {
+        runCatching { encryption().securityCode(chatId, key) }.getOrNull()
+    }
+
+    override fun acceptSecurityChange(chatId: String, key: String) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { encryption().acceptChange(chatId, key) }
+            readSecurity(chatId)
+        }
+    }
+
+    override fun setVerified(chatId: String, key: String, verified: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            val stored = runCatching { encryption().setVerified(chatId, key, verified) }.getOrDefault(false)
+            readSecurity(chatId)
+            // The code on the screen was for other keys than the contact has now, or the phone
+            // could not store the tick. Said, because a tick that silently did not take is worse.
+            if (verified && !stored) NcToaster.show("Couldn't mark as verified — check the security code and try again")
+        }
+    }
 
     /**
      * A recorded voice note: on disk first, then uploaded, then posted.

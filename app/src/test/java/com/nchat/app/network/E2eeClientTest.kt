@@ -34,6 +34,9 @@ class E2eeClientTest {
 
     private class MemoryVault : SecretVault {
         val entries = LinkedHashMap<String, String>()
+
+        /** How each entry was last written: synced to stable storage, or not. */
+        val durable = HashMap<String, Boolean>()
         var sessionWrites = 0
         var poolReads = 0
         var failSessionWrites = false
@@ -56,6 +59,7 @@ class E2eeClientTest {
                 sessionWrites++
             }
             if (value == null) entries.remove(key) else entries[key] = value
+            this.durable[key] = durable
         }
     }
 
@@ -1538,6 +1542,44 @@ class E2eeClientTest {
     }
 
     @Test
+    fun theSameWhenItIsThePeerWhoWritesFirstAfterTheRecordWasLost() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        assertEquals("sealed", read(oldBob.client(server), send(alice.client(server, clock = { 3_000L }), "alice", "bob", "sealed")))
+        val entry = alice.vault.entries.keys.single { it.startsWith("e2ee.session.") }
+        alice.vault.entries[entry] = "damaged beyond repair"
+
+        val a = alice.client(server, clock = { 8_000L })
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("hello again", read(a, send(newBob.client(server), "bob", "alice", "hello again")))
+        val security = a.security("bob")!!
+        assertEquals(newBob.identityKey, security.key)
+        assertTrue("these are not known to be the keys bob had", security.changed)
+        assertFalse(security.verified || security.held)
+        assertEquals(0L, security.since)
+    }
+
+    @Test
+    fun whatIsLearntAboutAPeersKeysIsOnStableStorageAtOnce() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        val oldB = oldBob.client(server)
+        assertEquals("first", read(oldB, send(a, "alice", "bob", "first")))
+        assertEquals("the first keys of a peer", true, oldBob.vault.durable["e2ee.session.alice"])
+        assertEquals("yo", read(a, send(oldB, "bob", "alice", "yo")))
+        assertEquals("an ordinary message is written, not synced", false, alice.vault.durable["e2ee.session.bob"])
+
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new", read(a, send(newBob.client(server), "bob", "alice", "new")))
+        assertEquals("other keys than before", true, alice.vault.durable["e2ee.session.bob"])
+        assertEquals("more", read(a, send(newBob.client(server), "bob", "alice", "more")))
+        assertEquals(false, alice.vault.durable["e2ee.session.bob"])
+    }
+
+    @Test
     fun aRecordFromBeforeCodesWereKeptStillNamesThePeersKeys() {
         val server = Server()
         val alice = server.install("alice")
@@ -1636,9 +1678,13 @@ class E2eeClientTest {
         val a = alice.client(server)
         assertEquals("hi", read(bob.client(server), send(a, "alice", "bob", "hi")))
 
-        // A tick that could not be stored is not a tick.
+        // A tick that could not be stored is not a tick — not even for the rest of the same unit of work.
         alice.vault.failSessionWrites = true
         assertFalse(a.setVerified("bob", bob.identityKey, true))
+        a.batch {
+            assertFalse(a.setVerified("bob", bob.identityKey, true))
+            assertFalse(a.security("bob")!!.verified)
+        }
         alice.vault.failSessionWrites = false
         assertFalse(a.security("bob")!!.verified)
         assertFalse(alice.client(server).security("bob")!!.verified)

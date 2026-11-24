@@ -3,7 +3,12 @@ package com.nchat.app.feature.chats
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.network.PeerSecurity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -90,5 +95,46 @@ class EncryptionMarksTest {
             text("read", 500, mine = true).copy(state = DeliveryState.Read),
         )
         assertEquals(setOf("position", "sent", "read"), unsealedMessageIds(messages, encryptedSince = 300))
+    }
+
+    // ------------------------------------------------------------- wording
+
+    private val settled = PeerSecurity(key = "their-key", verified = false, changed = false, held = false, since = 0L)
+
+    @Test
+    fun theNoticeSaysWhatChangedAndWhatWaits() {
+        val changed = settled.copy(changed = true)
+        val held = changed.copy(held = true)
+        val lost = changed.copy(key = null)
+
+        assertTrue(securityChangeNotice("Sara", changed).startsWith("Sara's security code changed."))
+        assertFalse("nothing waits for a contact nobody had verified", securityChangeNotice("Sara", changed).contains("wait"))
+        assertTrue(securityChangeNotice("Sara", held).contains("messages to Sara wait"))
+        assertTrue(securityChangeNotice("Sara", lost).contains("could not be read"))
+
+        assertEquals("OK", securityAcceptLabel(changed))
+        assertEquals("Accept", securityAcceptLabel(held))
+        assertNull("no key yet: nothing to accept", securityAcceptLabel(lost))
+        assertNull(securityAcceptLabel(held.copy(key = null)))
+    }
+
+    @Test
+    fun theSheetNeverCallsAChatEncryptedThatIsNot() {
+        val never = encryptionSummary("Sara", null)
+        assertTrue(never.contains("not end-to-end encrypted yet"))
+
+        val encrypted = encryptionSummary("Sara", settled)
+        assertTrue(encrypted.contains("are end-to-end encrypted"))
+        assertTrue("and says what is not covered", encrypted.contains("voice messages and files are not encrypted yet"))
+        assertEquals("a verified chat is described the same way", encrypted, encryptionSummary("Sara", settled.copy(verified = true)))
+
+        val changed = encryptionSummary("Sara", settled.copy(changed = true))
+        val held = encryptionSummary("Sara", settled.copy(changed = true, held = true))
+        val lost = encryptionSummary("Sara", settled.copy(changed = true, key = null))
+        assertTrue(changed.contains("security code changed"))
+        assertTrue(held.contains("Nothing is sent to Sara"))
+        assertTrue(lost.contains("could not be read"))
+        assertEquals("four states, four texts", 4, setOf(encrypted, changed, held, lost).size)
+        assertNotEquals(never, encrypted)
     }
 }

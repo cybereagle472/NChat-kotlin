@@ -10,6 +10,7 @@ import com.nchat.app.data.model.MessageKind
 import com.nchat.app.core.util.PickedFile
 import com.nchat.app.data.local.DraftStore
 import com.nchat.app.data.repository.ChatRepository
+import com.nchat.app.network.PeerSecurity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,14 @@ class ConversationViewModel(
     val chat: StateFlow<Chat?> = repository.chats
         .map { chats -> chats.firstOrNull { it.id == chatId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * What this phone knows about the end-to-end encryption of this chat: null for a group, and
+     * for a conversation nothing was ever encrypted in.
+     */
+    val security: StateFlow<PeerSecurity?> = repository.security
+        .map { known -> known[chatId] }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repository.security.value[chatId])
 
     private val _composerText = MutableStateFlow("")
     val composerText: StateFlow<String> = _composerText.asStateFlow()
@@ -164,6 +173,19 @@ class ConversationViewModel(
     /** Tapping the warning on a bubble that never reached the server. */
     fun onRetrySend(messageId: String) {
         repository.retrySend(chatId, messageId)
+    }
+
+    /** The sixty digits for [key], worked out when the user asks to see them. */
+    suspend fun securityCode(key: String): String? = repository.securityCode(chatId, key)
+
+    /** The user has seen the notice that the other person's security code changed. */
+    fun acceptSecurityChange(key: String) {
+        repository.acceptSecurityChange(chatId, key)
+    }
+
+    /** The user compared the code shown for [key] with the other person's, or takes that back. */
+    fun setVerified(key: String, verified: Boolean) {
+        repository.setVerified(chatId, key, verified)
     }
 
     fun loadOlder() = repository.loadOlder(chatId)

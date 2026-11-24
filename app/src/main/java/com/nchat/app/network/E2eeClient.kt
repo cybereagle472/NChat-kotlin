@@ -27,7 +27,53 @@ interface SealedMessaging {
         editOf: String? = null,
         send: suspend (E2eeClient.Sealed) -> T,
     ): T?
+
+    /**
+     * What this phone knows about the encryption of the conversation with
+     * [peerId]; null when nothing was ever encrypted with them. Never throws.
+     */
+    fun security(peerId: String): PeerSecurity?
+
+    /**
+     * The number both people compare (see [SecurityCode]), for the key that
+     * [security] reported as [key]. Null when that is no longer the peer's
+     * key, or this phone has no confirmed keys of its own. Never throws.
+     */
+    fun securityCode(peerId: String, key: String): String?
+
+    /**
+     * The user has seen that the peer's keys changed. False — and nothing
+     * changes — when the peer's key is no longer [key], the key the notice
+     * on the screen was about. Never throws.
+     */
+    fun acceptChange(peerId: String, key: String): Boolean
+
+    /**
+     * The user compared the code shown for [key] with the other person's
+     * ([verified]), or takes that back. Verifying also settles a pending
+     * change. False when the peer's key is no longer [key]. Never throws.
+     */
+    fun setVerified(peerId: String, key: String, verified: Boolean): Boolean
 }
+
+/**
+ * What a phone knows about the encryption of one conversation.
+ *
+ * [key] is the other person's identity key (base64) as this phone last saw
+ * it — null when it holds none at the moment, because its record of them
+ * could not be read. [verified]: the user compared the security code for
+ * that key. [changed]: the key took another's place and the user has not
+ * acknowledged it yet. [held]: it took the place of a verified key, and
+ * nothing is sent until the user has looked. [since]: when encryption with
+ * this person began, by this phone's clock.
+ */
+data class PeerSecurity(
+    val key: String?,
+    val verified: Boolean,
+    val changed: Boolean,
+    val held: Boolean,
+    val since: Long,
+)
 
 /**
  * Seal/open orchestration for direct messages.
@@ -66,10 +112,14 @@ interface SealedMessaging {
  * use up a message number each time, and a peer refuses a message that is
  * too many numbers ahead of the last one it saw.
  *
- * **What this does not do yet.** The first identity key a peer presents is
- * accepted, and so is a later change of it: there is no key verification
- * between users. That defeats a server that only stores or leaks data, not
- * one that actively substitutes keys.
+ * **Whose keys.** The first identity key a peer presents is taken on trust
+ * — two phones that have never met can do nothing else — and kept. From
+ * then on another key is never taken silently: the user is told
+ * ([PeerSecurity.changed]), and where they had verified the old key,
+ * nothing more is sealed for that peer until they have looked
+ * ([PeerSecurity.held]); what arrives is still shown. A server that hands
+ * out keys of its own from the very first message is caught only by the
+ * two people comparing their [securityCode] — which is what it is for.
  *
  * Every call is safe from any thread. The receive path ([reveal]) never
  * touches the network and never throws.
@@ -88,6 +138,14 @@ class E2eeClient(
      * sign-in). It reports nothing — [identity] is simply asked again.
      */
     private val prepare: suspend () -> Unit = {},
+    /** This phone's clock; dates the beginning of encryption with a peer. */
+    private val clock: () -> Long = { System.currentTimeMillis() },
+    /**
+     * What [security] answers for this peer has changed. Called after the
+     * unit of work that changed it, on the thread that did the work, with no
+     * lock held: the listener may ask this client anything.
+     */
+    private val onSecurityChanged: (peerId: String) -> Unit = {},
 ) : SealedMessaging {
 
     /**
@@ -108,6 +166,12 @@ class E2eeClient(
     private val changedPeers = LinkedHashSet<String>()
     private val spentOneTimeKeys = LinkedHashSet<String>()
 
+    /** Peers whose record must be on stable storage when the unit of work ends, not merely written. */
+    private val durablePeers = LinkedHashSet<String>()
+
+    /** Peers to announce through [onSecurityChanged] once the unit of work is over. */
+    private val securityChanges = LinkedHashSet<String>()
+
     /**
      * Per peer: messages that would not open. They are not tried again until
      * something changes for that peer (a message opens, a session appears) or
@@ -121,13 +185,32 @@ class E2eeClient(
      * archive sync and one write per peer. Wrap whole pages of history in it —
      * opening a hundred new messages then costs one sync instead of a hundred.
      */
-    override fun <T> batch(block: () -> T): T = synchronized(lock) {
-        depth++
+    override fun <T> batch(block: () -> T): T {
+        var announce: List<String> = emptyList()
         try {
-            block()
+            return synchronized(lock) {
+                depth++
+                try {
+                    block()
+                } finally {
+                    depth--
+                    if (depth == 0) {
+                        commit()
+                        if (securityChanges.isNotEmpty()) {
+                            announce = securityChanges.toList()
+                            securityChanges.clear()
+                        }
+                    }
+                }
+            }
         } finally {
-            depth--
-            if (depth == 0) commit()
+            // After the work and outside the lock; a listener that fails is the listener's problem.
+            for (peerId in announce) {
+                try {
+                    onSecurityChanged(peerId)
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 
@@ -175,8 +258,16 @@ class E2eeClient(
                             throw IllegalStateException(E2eeText.PEER_KEYS_UNVERIFIED, unverified)
                         }
                         val record = existing ?: E2eeStore.PeerRecord()
+                        noteIdentity(peerId, record, bundle.identityPublic, first = existing == null)
                         record.sessions.add(0, E2eeStore.StoredSession(session, retired = false))
                         records[peerId] = record
+                        if (record.trust?.held == true) {
+                            // Kept all the same: the notice must outlive a restart, and the next
+                            // attempt must not cost the peer another one-time prekey.
+                            store.savePeer(peerId, record, durable = true)
+                            changedPeers.remove(peerId)
+                            error(E2eeText.CODE_CHANGED)
+                        }
                         sealOn(peerId, record, clientId, payload, target)
                     }
                     existing != null -> error(E2eeText.PEER_HAS_NO_KEYS)
@@ -223,6 +314,9 @@ class E2eeClient(
     private fun sealOnCurrent(peerId: String, clientId: String, payload: E2eePayload, target: String): Sealed? {
         check(!closed) { E2eeText.SIGNED_OUT }
         val record = recordFor(peerId) ?: return null
+        // A contact the user had verified now presents other keys: nothing is sealed for them,
+        // and no bundle is fetched, until the user has looked.
+        if (record.trust?.held == true) error(E2eeText.CODE_CHANGED)
         if (record.sendable() == null) return null
         return sealOn(peerId, record, clientId, payload, target)
     }
@@ -334,7 +428,8 @@ class E2eeClient(
 
     private fun open(peerId: String, key: String, envelopeJson: String, bindings: List<ByteArray>): E2eePayload? {
         val envelope = E2eeProtocol.Envelope.fromJson(envelopeJson) ?: return null
-        val record = recordFor(peerId) ?: E2eeStore.PeerRecord()
+        val known = recordFor(peerId)
+        val record = known ?: E2eeStore.PeerRecord()
 
         for (index in record.sessions.indices) {
             val stored = record.sessions[index]
@@ -368,6 +463,7 @@ class E2eeClient(
         } ?: return null
 
         val peerIdentity = opened.session.remoteIdentityKey()
+        noteIdentity(peerId, record, peerIdentity, first = known == null)
         for (stored in record.sessions) {
             // A different identity key means a new installation; the old one is not listening any more.
             if (!stored.session.remoteIdentityKey().contentEquals(peerIdentity)) stored.retired = true
@@ -410,8 +506,9 @@ class E2eeClient(
             if (changedPeers.isNotEmpty() || spentOneTimeKeys.isNotEmpty()) {
                 archive.flush()
                 for (peerId in changedPeers) {
-                    // Not synced: if this write is lost, the keys are derived again and the archive answers first.
-                    records[peerId]?.let { store.savePeer(peerId, it, durable = false) }
+                    // Not synced as a rule: if this write is lost, the keys are derived again and the
+                    // archive answers first. What is known about a peer's key is not found out twice.
+                    records[peerId]?.let { store.savePeer(peerId, it, durable = peerId in durablePeers) }
                 }
                 store.removeOneTimeKeys(spentOneTimeKeys)
             }
@@ -421,7 +518,124 @@ class E2eeClient(
             records.clear()
             changedPeers.clear()
             spentOneTimeKeys.clear()
+            durablePeers.clear()
         }
+    }
+
+    // --------------------------------------------------------- whose keys
+
+    /**
+     * A session built with [identity] as the peer's key is about to join
+     * [record]; [first] when no record of this peer existed. The first key
+     * is taken on trust. A different one later is taken too — the session
+     * exists — but never silently: see [PeerSecurity].
+     */
+    private fun noteIdentity(peerId: String, record: E2eeStore.PeerRecord, identity: ByteArray, first: Boolean) {
+        val trust = record.trust ?: when {
+            first -> E2eeStore.Trust(identity.copyOf(), since = clock())
+            // A record that says nothing about the peer's key: its newest session knows one…
+            record.sessions.isNotEmpty() -> E2eeStore.Trust(record.sessions.first().session.remoteIdentityKey())
+            // …and with no session either, nothing is known. The user is told so rather than spared.
+            else -> E2eeStore.Trust(identity.copyOf(), changed = true)
+        }.also {
+            record.trust = it
+            securityChanges += peerId
+            durablePeers += peerId
+        }
+        if (trust.identity.contentEquals(identity)) return
+        trust.identity = identity.copyOf()
+        trust.changed = true
+        if (trust.verified) {
+            // The tick was for the other key. It does not pass on, and what it protected is not sent on.
+            trust.verified = false
+            trust.held = true
+        }
+        securityChanges += peerId
+        durablePeers += peerId
+    }
+
+    /** What [record] knows of the peer's key; for a record that says nothing, what its newest session knows. */
+    private fun trustOf(record: E2eeStore.PeerRecord): E2eeStore.Trust? =
+        record.trust ?: record.sessions.firstOrNull()?.let { E2eeStore.Trust(it.session.remoteIdentityKey()) }
+
+    override fun security(peerId: String): PeerSecurity? = try {
+        batch {
+            if (closed) return@batch null
+            val record = recordFor(peerId) ?: return@batch null
+            val trust = trustOf(record)
+            if (trust != null) {
+                PeerSecurity(encodeBase64(trust.identity), trust.verified, trust.changed, trust.held, trust.since)
+            } else {
+                // Encrypted before, and nothing of it can be read: whose keys those were is not known any more.
+                PeerSecurity(key = null, verified = false, changed = true, held = false, since = 0L)
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun securityCode(peerId: String, key: String): String? = try {
+        val keys = batch {
+            if (closed) return@batch null
+            val trust = recordFor(peerId)?.let(::trustOf) ?: return@batch null
+            if (encodeBase64(trust.identity) != key) return@batch null
+            val own = identity()?.identityPublic ?: return@batch null
+            own to trust.identity.copyOf()
+        }
+        // Outside the lock: ten thousand hashes must not hold up a message.
+        keys?.let { SecurityCode.of(localId, it.first, peerId, it.second) }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun acceptChange(peerId: String, key: String): Boolean = settle(peerId, key) { trust ->
+        val pending = trust.changed || trust.held
+        trust.changed = false
+        trust.held = false
+        pending
+    }
+
+    override fun setVerified(peerId: String, key: String, verified: Boolean): Boolean = settle(peerId, key) { trust ->
+        if (verified) {
+            // Having compared the code is the most the user can say about a change.
+            val news = !trust.verified || trust.changed || trust.held
+            trust.verified = true
+            trust.changed = false
+            trust.held = false
+            news
+        } else {
+            val news = trust.verified
+            trust.verified = false
+            news
+        }
+    }
+
+    /**
+     * Applies what the user said about the key they were shown ([key]);
+     * [change] answers whether that was news. False when [key] is no longer
+     * the peer's key, or what was said could not be stored — then it counts
+     * as not said.
+     */
+    private fun settle(peerId: String, key: String, change: (E2eeStore.Trust) -> Boolean): Boolean = try {
+        batch {
+            if (closed) return@batch false
+            val record = recordFor(peerId) ?: return@batch false
+            val trust = trustOf(record) ?: return@batch false
+            if (encodeBase64(trust.identity) != key) return@batch false
+            if (change(trust)) {
+                record.trust = trust
+                try {
+                    store.savePeer(peerId, record, durable = true)
+                } catch (failure: Exception) {
+                    records.remove(peerId)
+                    throw failure
+                }
+                securityChanges += peerId
+            }
+            true
+        }
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -453,6 +667,8 @@ class E2eeClient(
             records.clear()
             changedPeers.clear()
             spentOneTimeKeys.clear()
+            durablePeers.clear()
+            securityChanges.clear()
             unreadable.clear()
         }
     }

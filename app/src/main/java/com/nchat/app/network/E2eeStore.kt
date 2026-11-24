@@ -197,8 +197,34 @@ class E2eeStore(private val vault: SecretVault) {
          */
         val unsent: LinkedHashMap<String, Unsent> = LinkedHashMap()
 
+        /**
+         * What is known about the peer's identity key. Null in a record that
+         * says nothing about it: one written before this was kept, or one
+         * that could not be read.
+         */
+        var trust: Trust? = null
+
         fun sendable(): StoredSession? = sessions.firstOrNull { !it.retired }
     }
+
+    /**
+     * The peer's identity key as this phone last saw it, and what the user
+     * has been told and has said about it.
+     *
+     * [verified]: the user compared the security code for [identity] with
+     * the other person. [changed]: [identity] took the place of another key
+     * and the user has not acknowledged that yet. [held]: it took the place
+     * of a key that was verified — nothing is sealed for it until the user
+     * has looked. [since]: when encryption with this peer began, by this
+     * phone's clock (0: as far back as anybody knows).
+     */
+    class Trust(
+        var identity: ByteArray,
+        var verified: Boolean = false,
+        var changed: Boolean = false,
+        var held: Boolean = false,
+        val since: Long = 0L,
+    )
 
     /** [content] identifies what was sealed (a digest); [recipientIdentity] is the key it was sealed for. */
     class Unsent(val content: String, val envelope: String, val recipientIdentity: String)
@@ -213,6 +239,7 @@ class E2eeStore(private val vault: SecretVault) {
         val stored = vault.read(entry) ?: return if (vault.contains(entry)) record else null
         try {
             val root = Json.parseToJsonElement(stored).jsonObject
+            record.trust = (root["t"] as? JsonObject)?.let(::readTrust)
             for (element in root["s"] as? JsonArray ?: JsonArray(emptyList())) {
                 val item = element as? JsonObject ?: continue
                 val blob = (item["b"] as? JsonPrimitive)?.content?.let { decodeBase64(it) } ?: continue
@@ -235,6 +262,20 @@ class E2eeStore(private val vault: SecretVault) {
             // starts a new session, it never falls back to plaintext.
         }
         return record
+    }
+
+    /** Null unless the note names a real key: "unknown" is better than a key nobody ever presented. */
+    private fun readTrust(note: JsonObject): Trust? {
+        val identity = (note["i"] as? JsonPrimitive)?.content?.let { decodeBase64(it) } ?: return null
+        if (!E2eeProtocol.isValidPublicKey(identity)) return null
+        fun flag(name: String): Boolean = (note[name] as? JsonPrimitive)?.content == "true"
+        return Trust(
+            identity = identity,
+            verified = flag("v"),
+            changed = flag("c"),
+            held = flag("h"),
+            since = (note["s"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L,
+        )
     }
 
     fun savePeer(peerId: String, record: PeerRecord, durable: Boolean) {
@@ -281,6 +322,18 @@ class E2eeStore(private val vault: SecretVault) {
                     }
                 },
             )
+            record.trust?.let { trust ->
+                put(
+                    "t",
+                    buildJsonObject {
+                        put("i", encodeBase64(trust.identity))
+                        put("v", trust.verified)
+                        put("c", trust.changed)
+                        put("h", trust.held)
+                        put("s", trust.since)
+                    },
+                )
+            }
         }
         vault.write(SESSION_PREFIX + peerId, encoded.toString(), durable)
     }

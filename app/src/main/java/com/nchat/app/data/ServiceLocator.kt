@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.core.graphics.drawable.toBitmap
 import coil.request.SuccessResult
 import coil.request.ImageRequest
@@ -565,6 +567,17 @@ object ServiceLocator {
      * Everything is under `files/e2ee`, sealed with a key that [SecurePrefs] keeps under the
      * Android Keystore. A sign-out erases both; an expired session erases neither.
      */
+    /**
+     * The other person's id, each time what is known about the encryption of the chat with
+     * them changes. A buffer rather than a call into the chat repository: the encryption layer
+     * must not need the repository to exist, and a notice that is dropped here is read again
+     * the next time that chat opens.
+     */
+    private val securityEvents = MutableSharedFlow<String>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
     val endToEnd: EndToEnd by lazy {
         val context = requireContext()
         // Key material in the format of an early build, which was never registered anywhere.
@@ -575,7 +588,8 @@ object ServiceLocator {
             directory = ApiKeyDirectory(api),
             fetchBundle = { peerId -> api.fetchPeerBundle(peerId) },
             onReplaced = { movedToAnotherPhone() },
-            report = { what, error -> CrashLog.note(what, error) }
+            report = { what, error -> CrashLog.note(what, error) },
+            onSecurityChanged = { peerId -> securityEvents.tryEmit(peerId) }
         ).also { created ->
             if (!tokens.signedIn.value) return@also
             val userId = tokens.userId
@@ -656,7 +670,8 @@ object ServiceLocator {
             onIncoming = { chat, message ->
                 notifications.show(chat, message, mentioned = mentionsMe(chat, message))
             },
-            encryption = { endToEnd.messaging() }
+            encryption = { endToEnd.messaging() },
+            securityChanges = securityEvents
         )
     }
     val friendRepository: FriendRepository by lazy {

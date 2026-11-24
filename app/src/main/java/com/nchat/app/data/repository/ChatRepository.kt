@@ -4,6 +4,7 @@ import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.network.PeerSecurity
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -21,6 +22,29 @@ interface ChatRepository {
      * chat list say "couldn't load chats" instead of quietly showing nothing.
      */
     val syncError: StateFlow<String?>
+
+    /**
+     * What this phone knows about the end-to-end encryption of each one-to-one conversation, by
+     * chat id: whose keys the other person uses, whether the user has verified them, and
+     * whether they changed. A chat that is not in here was never encrypted on this phone.
+     */
+    val security: StateFlow<Map<String, PeerSecurity>>
+
+    /** Reads [security] for [chatId] again; a conversation asks for it when it opens. */
+    fun refreshSecurity(chatId: String)
+
+    /**
+     * The security code of [chatId] — the sixty digits both people compare — for the key that
+     * [security] reported as [key]. Null when that is no longer the other person's key, or
+     * this phone has no keys of its own yet.
+     */
+    suspend fun securityCode(chatId: String, key: String): String?
+
+    /** The user has seen the notice that the security code of [chatId] changed. */
+    fun acceptSecurityChange(chatId: String, key: String)
+
+    /** The user compared the code shown for [key] with the other person's, or takes that back. */
+    fun setVerified(chatId: String, key: String, verified: Boolean)
 
     /** Reloads chats + groups now (used by the retry button). */
     fun refresh()
