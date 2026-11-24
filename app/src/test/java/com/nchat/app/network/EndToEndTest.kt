@@ -709,6 +709,42 @@ class EndToEndTest {
     }
 
     @Test
+    fun signingOutBeforeEverythingWasReadLeavesNoBackup() {
+        // Two chats, each longer than a piece of the file. The account leaves while the first
+        // is being written: the second can no longer be read, and a file that holds one chat
+        // out of two must not be handed over as the backup.
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val carol = Phone(server).signIn("carol")
+        val alice = phone.signIn("alice")
+        for (index in 0 until 20) {
+            assertNotNull(read(alice, "bob", send(bob, "alice", "from bob $index " + "x".repeat(4_000))!!))
+            assertNotNull(read(alice, "carol", send(carol, "alice", "from carol $index " + "x".repeat(4_000))!!))
+        }
+        val file = object : ByteArrayOutputStream() {
+            var writes = 0
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                super.write(bytes, offset, length)
+                if (++writes == 2) alice.signOut()
+            }
+        }
+        try {
+            val written = alice.backUp(file, "correct horse battery".toCharArray())
+            fail("a backup of ${written?.chats} chat(s) out of two, passed off as whole")
+        } catch (expected: IOException) {
+            // intended
+        }
+        val again = phone.signIn("alice")
+        try {
+            again.restore(ByteArrayInputStream(file.toByteArray()), "correct horse battery".toCharArray())
+            fail("half a backup restored as if it were one")
+        } catch (failure: E2eeBackup.Failure) {
+            assertEquals(E2eeBackup.Problem.Damaged, failure.problem)
+        }
+    }
+
+    @Test
     fun aRestoreCutOffBySigningOutWritesNothing() {
         val server = Server()
         val phone = Phone(server)
