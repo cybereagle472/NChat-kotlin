@@ -2071,6 +2071,11 @@ class RemoteChatRepository(
             val error = response.exceptionOrNull() ?: run {
                 // Deleted on the server: what the phone kept of it goes as well.
                 forgetSealed(chatId, target)
+                // And for one's own message deleted for everyone, the sealed file itself: nobody
+                // is meant to open it again, so the server need not go on holding it.
+                if (forEveryone && target.isMine && SealedMedia.isSealed(target.mediaUrl)) {
+                    runCatching { api.deleteMedia(target.mediaUrl.orEmpty()) }
+                }
                 if (reportSuccess) NcToaster.show(if (forEveryone) "Message deleted for everyone" else "Message deleted for you")
                 return@launch
             }

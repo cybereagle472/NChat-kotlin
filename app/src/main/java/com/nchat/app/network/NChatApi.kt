@@ -634,6 +634,16 @@ class NChatApi(private val client: ApiClient) {
         return decode(client.upload("/media/upload", "sealed", "application/octet-stream", bytes, onProgress, audience))
     }
 
+    /**
+     * Removes a file this account uploaded from the server. The server does it for the
+     * uploader only; for anybody else's file the answer is "not found".
+     */
+    suspend fun deleteMedia(url: String) {
+        val key = (SealedMedia.strip(url) ?: return).substringAfter("/media/file/", "").substringBefore('?')
+        if (key.isBlank()) return
+        client.delete("/media/file/$key")
+    }
+
     // --------------------------------------------------------------- privacy
 
     suspend fun privacySettings(): SettingsEnvelope = decode(client.get("/privacy"))

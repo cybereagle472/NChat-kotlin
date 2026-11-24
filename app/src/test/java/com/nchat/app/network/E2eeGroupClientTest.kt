@@ -474,8 +474,13 @@ class E2eeGroupClientTest {
         assertNull(attempt(a, arrives = false))
         assertNull(attempt(a, arrives = false))
         assertNull("also after a restart", attempt(alice.client(hub), arrives = false))
+        // Until it has arrived, the envelope is kept with the group's record…
+        val signature = Regex("\"sig\":\"([^\"]+)\"").find(attempts.first())!!.groupValues[1]
+        assertTrue(alice.vault.entries.values.any { it.contains(signature) })
         val row = attempt(alice.client(hub), arrives = true)!!
         assertEquals("the same envelope every time", 1, attempts.toSet().size)
+        // …and once the server has it, no longer.
+        assertFalse(alice.vault.entries.values.any { it.contains(signature) })
         assertEquals("the plan", read(hub, bob, row))
         // The number the retries would have used up is the next message's.
         val next = send(hub, alice, "next")!!
@@ -532,9 +537,12 @@ class E2eeGroupClientTest {
         val chain = E2eeGroup.chainId(row.envelope)!!
         val key = hub.keyFor("bob", "alice", chain)!!
 
-        // The server puts the key envelope into the chat between alice and bob.
+        // The server puts the key envelope into the chat between alice and bob — under any id,
+        // also one made up of exactly what the envelope was sealed for.
         val b = bob.client(hub)
         assertNull(b.reveal("alice", "s-1", "c-1", mine = false, envelope = key))
+        assertNull(b.reveal("alice", "$group:$chain", "$group:$chain", mine = false, envelope = key))
+        assertNull(b.reveal("alice", "k:$group:$chain", "k:$group:$chain", mine = false, envelope = key))
         // Or hands it out as the key of another chain, another group, another sender.
         assertFalse(b.acceptGroupKey(group, "alice", encodeBase64(ByteArray(16) { 7 }), key))
         assertFalse(b.acceptGroupKey("g-other", "alice", chain, key))
@@ -645,7 +653,9 @@ class E2eeGroupClientTest {
         val rows = (1..7).map { send(hub, alice, "message $it", a)!! }
         val chains = rows.map { E2eeGroup.chainId(it.envelope) }
         assertEquals("three messages to a chain", listOf(3, 3, 1), chains.distinct().map { chain -> chains.count { it == chain } })
-        for ((index, row) in rows.withIndex()) assertEquals("message ${index + 1}", read(hub, bob, row))
+        // Newest first, as the app meets a conversation: by the time the older messages are
+        // opened, bob holds the chains that came after theirs as well.
+        for (index in rows.indices.reversed()) assertEquals("message ${index + 1}", read(hub, bob, rows[index]))
 
         alice.chainMessages = E2eeGroup.MAX_CHAIN_MESSAGES
         val fresh = alice.client(hub)
@@ -657,6 +667,9 @@ class E2eeGroupClientTest {
         val later = send(hub, alice, "a month on", fresh)!!
         assertNotEquals("a chain is not kept for ever", E2eeGroup.chainId(soon.envelope), E2eeGroup.chainId(later.envelope))
         assertEquals("a month on", read(hub, bob, later))
+        // A message is opened with the chain it names, not with whichever one arrived last.
+        assertEquals("today", read(hub, bob, today))
+        assertEquals("four weeks on", read(hub, bob, soon))
     }
 
     @Test
@@ -672,10 +685,13 @@ class E2eeGroupClientTest {
         bob.now = 9_000L
         assertEquals("first", read(hub, bob, row))
         assertEquals(9_000L, bob.client(hub).groupSecurity(group)!!.since)
-        // It does not move afterwards.
+        // It does not move afterwards — not for who writes, not for who reads.
         alice.now = 50_000L
-        send(hub, alice, "second")!!
+        val second = send(hub, alice, "second")!!
         assertEquals(5_000L, alice.client(hub).groupSecurity(group)!!.since)
+        bob.now = 60_000L
+        assertEquals("second", read(hub, bob, second))
+        assertEquals(9_000L, bob.client(hub).groupSecurity(group)!!.since)
         assertNull(carol.client(hub).groupSecurity("g-other"))
     }
 
