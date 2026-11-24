@@ -1,4 +1,4 @@
-run: 45361569521
+run: 45363963066
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -79,103 +79,123 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 > Task :app:bundleDebugClassesToRuntimeJar
 > Task :app:bundleDebugClassesToCompileJar
 
+> Task :app:compileDebugUnitTestKotlin
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:778:20 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:778:36 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:783:20 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:783:36 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:784:20 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:784:55 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:797:21 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:797:37 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:807:29 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:827:29 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:834:20 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:834:36 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:849:21 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:849:37 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:852:20 Type mismatch: inferred type is Unit but Boolean was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:852:36 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:856:29 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:864:29 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:280:87 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:282:27 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:284:35 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:286:9 Overload resolution ambiguity: 
+public constructor File(p0: File!, p1: String!) defined in java.io.File
+public constructor File(p0: String!, p1: String!) defined in java.io.File
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:287:9 Overload resolution ambiguity: 
+public constructor File(p0: File!, p1: String!) defined in java.io.File
+public constructor File(p0: String!, p1: String!) defined in java.io.File
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:288:9 Overload resolution ambiguity: 
+public constructor File(p0: File!, p1: String!) defined in java.io.File
+public constructor File(p0: String!, p1: String!) defined in java.io.File
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:292:39 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:294:20 Overload resolution ambiguity: 
+public constructor File(p0: File!, p1: String!) defined in java.io.File
+public constructor File(p0: String!, p1: String!) defined in java.io.File
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:300:30 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:304:20 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:304:46 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:306:31 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:306:55 Unresolved reference: mediaDirectory
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:315:44 Unresolved reference: willSeal
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:35:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:37:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:39:22 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:46:27 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:56:31 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:57:25 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:58:33 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:60:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:61:21 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:62:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:67:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:73:50 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:73:58 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:74:50 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:75:50 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:76:50 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:77:50 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:80:33 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:81:25 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:82:79 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:84:27 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:89:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:89:47 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:90:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:90:47 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:92:45 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:92:63 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:94:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:95:71 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:96:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:97:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:98:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:99:29 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:105:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:106:20 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:107:47 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:107:70 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:123:36 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:125:61 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:154:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:155:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:168:28 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:169:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Double, p1: Double, p2: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Float, p1: Float, p2: Float): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Any!, p2: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Array<(out) Any!>!, p2: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Double, p2: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Long, p2: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:177:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:178:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:199:25 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:214:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:215:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:231:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:247:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:248:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:254:31 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:263:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:264:21 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:265:21 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:279:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:283:13 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:285:68 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:286:69 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:301:44 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:309:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:310:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:324:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:325:23 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:333:48 Unresolved reference: SealedMedia
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:344:21 Unresolved reference: SealedMediaStore
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SealedMediaTest.kt:345:23 Unresolved reference: SealedMedia
+
 > Task :app:compileDebugUnitTestKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:80:64 Unresolved reference: PHOTO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:80:93 Cannot find a parameter with this name: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:81:34 Unresolved reference: PHOTO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:84:37 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:86:64 Unresolved reference: VOICE
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:86:75 Cannot find a parameter with this name: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:87:34 Unresolved reference: VOICE
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:90:37 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:92:75 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:44 Unresolved reference: PHOTO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:55 Cannot find a parameter with this name: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:72 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:31 Unresolved reference: PHOTO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:50 Unresolved reference: VIDEO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:69 Unresolved reference: VOICE
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:88 Unresolved reference: DOCUMENT
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:44 Unresolved reference: DOCUMENT
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:58 Cannot find a parameter with this name: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:80 Unresolved reference: isAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:101:44 Unresolved reference: VIDEO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:101:55 Unresolved reference: isAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:102:43 Unresolved reference: isAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:103:62 Unresolved reference: isAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:104:99 Unresolved reference: isAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:156:57 Unresolved reference: VIDEO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:156:79 Cannot find a parameter with this name: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:159:60 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:163:34 Unresolved reference: VIDEO
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:166:37 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:167:47 Unresolved reference: attachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:49:13 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:52:49 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:63:85 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:68:26 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:75:66 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:85:26 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:86:26 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:87:52 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:107:9 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:109:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:116:13 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:122:9 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:123:40 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:132:21 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:133:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:135:34 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:136:83 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:137:37 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:150:17 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:151:17 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:156:17 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:160:24 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:160:51 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:168:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:169:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:175:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:180:42 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:182:34 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:188:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:190:39 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:192:38 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:193:43 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:195:59 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:196:44 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:197:35 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:198:40 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:199:31 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:200:33 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:206:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:211:42 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:212:37 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:213:40 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:215:21 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:217:47 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:218:34 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:224:22 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:225:62 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:225:95 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:226:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:228:45 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:230:21 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:235:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:236:55 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:236:81 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:238:13 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:238:74 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:248:23 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:258:23 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:268:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:268:50 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:278:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:279:20 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:294:61 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:296:48 Unresolved reference: E2eeAttachment
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:298:21 Unresolved reference: E2eeAttachment
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795511054948.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795511950838.json
 
 FAILURE: Build failed with an exception.
 
@@ -219,6 +239,34 @@ org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:com
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
@@ -345,6 +393,34 @@ Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionExcept
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
@@ -381,5 +457,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 1m 18s
+BUILD FAILED in 1m 40s
 22 actionable tasks: 10 executed, 12 from cache
