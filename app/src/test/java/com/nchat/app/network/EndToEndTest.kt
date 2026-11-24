@@ -269,6 +269,56 @@ class EndToEndTest {
         assertNotNull(bob)
     }
 
+    // ---------------------------------------------------------- opened files
+
+    @Test
+    fun openedFilesAreKeptWithTheAccountAndGoWhenItGoes() {
+        val server = Server()
+        val phone = Phone(server)
+        Phone(server).signIn("bob")
+
+        assertNull("nobody signed in: nowhere to keep anybody's files", phone.start().mediaDirectory())
+        val alice = phone.signIn("alice")
+        val media = alice.mediaDirectory()!!
+        assertTrue("inside what belongs to the account", media.absolutePath.startsWith(phone.root.absolutePath))
+        assertEquals(media, alice.mediaDirectory())
+        // A photo that was opened, and the thumbnail of another.
+        File(media, "thumbs").mkdirs()
+        File(media, "opened.jpg").writeBytes(ByteArray(64) { 7 })
+        File(media, "thumbs/t.jpg").writeBytes(ByteArray(8) { 9 })
+
+        // A restart keeps them; opening the account again does not sweep them away.
+        val restarted = phone.start().also { it.resume("alice") }
+        assertEquals(media, restarted.mediaDirectory())
+        assertNotNull(send(restarted, "bob", "still here"))
+        assertTrue(File(media, "opened.jpg").isFile)
+
+        // Signing out takes them with the keys, before any network.
+        restarted.signOut()
+        assertFalse(media.exists())
+        assertTrue("files left behind: ${phone.files()}", phone.files().isEmpty())
+        assertNull(restarted.mediaDirectory())
+
+        // What one account opened is not there for the next.
+        val again = phone.signIn("alice")
+        File(again.mediaDirectory()!!.also { it.mkdirs() }, "opened.jpg").writeBytes(ByteArray(64) { 7 })
+        val carol = phone.signIn("carol")
+        assertNotEquals(again.mediaDirectory(), carol.mediaDirectory())
+        assertTrue(phone.files().none { it.name == "opened.jpg" })
+    }
+
+    @Test
+    fun withNobodySignedInNoFileIsPrepared() {
+        val server = Server()
+        val idle = Phone(server).start()
+        try {
+            runBlocking { idle.messaging().willSeal("bob") }
+            fail("answered for nobody")
+        } catch (_: IllegalStateException) {
+            // intended: an error — "false" would have meant "upload it unsealed"
+        }
+    }
+
     // ------------------------------------------------------------- sign-out
 
     @Test

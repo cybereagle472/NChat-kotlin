@@ -145,7 +145,8 @@ class EncryptionMarksTest {
 
         val encrypted = encryptionSummary("Sara", settled)
         assertTrue(encrypted.contains("are end-to-end encrypted"))
-        assertTrue("and says what is not covered", encrypted.contains("voice messages and files are not encrypted yet"))
+        assertTrue("and says what is covered", encrypted.contains("photos, videos, voice messages and files"))
+        assertFalse("nothing in a chat with one person is left out any more", encrypted.contains("not encrypted"))
         assertEquals("a verified chat is described the same way", encrypted, encryptionSummary("Sara", settled.copy(verified = true)))
 
         val changed = encryptionSummary("Sara", settled.copy(changed = true))

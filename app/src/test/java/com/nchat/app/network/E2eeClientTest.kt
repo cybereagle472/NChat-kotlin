@@ -765,6 +765,109 @@ class E2eeClientTest {
         assertEquals("no new session was started", fetches, server.fetches.get())
     }
 
+    // ------------------------------------------------------ before a file
+
+    @Test
+    fun whetherAFileWillBeSealedIsKnownBeforeItIsUploaded() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+
+        // Both have keys: the session the file's message will use is started now.
+        assertTrue(runBlocking { a.willSeal("bob") })
+        assertEquals(1, server.fetches.get())
+        assertEquals(bob.identityKey, a.security("bob")!!.key)
+        assertTrue("on stable storage: the upload that follows may take minutes", alice.vault.durable.values.any { it })
+        // Asking again costs bob nothing, and neither does the message itself.
+        assertTrue(runBlocking { a.willSeal("bob") })
+        assertTrue(runBlocking { alice.client(server).willSeal("bob") })
+        assertEquals("photo", read(bob.client(server), send(a, "alice", "bob", "photo")))
+        assertEquals(1, server.fetches.get())
+    }
+
+    @Test
+    fun aFileForSomebodyWithoutKeysGoesAsBeforeOnlyWhereNothingWasEverEncrypted() {
+        val server = Server()
+        val alice = server.install("alice")
+        val a = alice.client(server)
+
+        // Carol's app has no keys: files go as they always did, and nothing is remembered.
+        val stored = LinkedHashMap(alice.vault.entries)
+        assertFalse(runBlocking { a.willSeal("carol") })
+        assertNull(a.security("carol"))
+        assertEquals(stored, alice.vault.entries)
+
+        // Bob had keys and a conversation; now the server says he has none.
+        val bob = server.install("bob")
+        assertEquals("hi", read(bob.client(server), send(a, "alice", "bob", "hi")))
+        a.retireSessions("bob")
+        bob.identity = null
+        try {
+            runBlocking { a.willSeal("bob") }
+            fail("a file was about to go out unsealed in a conversation that is encrypted")
+        } catch (refused: IllegalStateException) {
+            assertEquals(E2eeText.PEER_HAS_NO_KEYS, refused.message)
+        }
+    }
+
+    @Test
+    fun noFileIsPreparedForAContactWhoseVerifiedKeysChanged() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        assertTrue(a.setVerified("bob", oldBob.identityKey, true))
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new", read(a, send(newBob.client(server), "bob", "alice", "new")))
+
+        val fetches = server.fetches.get()
+        try {
+            runBlocking { a.willSeal("bob") }
+            fail("prepared a file for keys nobody has looked at")
+        } catch (refused: IllegalStateException) {
+            assertEquals(E2eeText.CODE_CHANGED, refused.message)
+        }
+        assertEquals(fetches, server.fetches.get())
+        assertTrue(a.acceptChange("bob", newBob.identityKey))
+        assertTrue(runBlocking { a.willSeal("bob") })
+    }
+
+    @Test
+    fun withoutKeysOfItsOwnAPhoneSealsNoFileAndSaysWhichCaseItIs() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("hi", read(bob.client(server), send(a, "alice", "bob", "hi")))
+        server.install("dave")
+
+        alice.identity = null
+        // Never encrypted with dave, and this phone has no keys: as before, and dave's keys are not touched.
+        val fetches = server.fetches.get()
+        assertFalse(runBlocking { a.willSeal("dave") })
+        assertEquals(fetches, server.fetches.get())
+        // With bob there is a session, and it still seals.
+        assertTrue(runBlocking { a.willSeal("bob") })
+        // With bob's session retired and no keys to start another: not ready, never "unsealed is fine".
+        a.retireSessions("bob")
+        try {
+            runBlocking { a.willSeal("bob") }
+            fail("answered for a conversation it cannot seal in")
+        } catch (refused: IllegalStateException) {
+            assertEquals(E2eeText.NOT_READY, refused.message)
+        }
+
+        a.close()
+        try {
+            runBlocking { a.willSeal("bob") }
+            fail("a closed client answered")
+        } catch (refused: IllegalStateException) {
+            assertEquals(E2eeText.SIGNED_OUT, refused.message)
+        }
+    }
+
     // -------------------------------------------------------------- closing
 
     // ------------------------------------------- history as the app meets it
