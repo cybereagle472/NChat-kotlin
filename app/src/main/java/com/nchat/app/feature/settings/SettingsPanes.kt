@@ -1175,7 +1175,7 @@ fun BackupPane(onBack: () -> Unit) {
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            busy = "Saving the backup…"
+            busy = BackupText.SAVING
             saveNotice = try {
                 BackupText.written(backup.save(target, secret.toCharArray())).also {
                     passphrase = ""
@@ -1198,7 +1198,7 @@ fun BackupPane(onBack: () -> Unit) {
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            busy = "Restoring…"
+            busy = BackupText.RESTORING
             restoreNotice = try {
                 BackupText.restored(backup.restore(source, secret.toCharArray())).also { restorePassphrase = "" }
             } catch (cancelled: CancellationException) {

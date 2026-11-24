@@ -30,12 +30,12 @@ internal object BackupText {
     /** After a backup was written; [result] is null when there was nothing to write it from. */
     fun written(result: E2eeBackup.Written?): String {
         if (result == null) return UNAVAILABLE + " Nothing was saved."
-        val missing = if (result.unreadableChats == 0) {
-            ""
-        } else {
-            " ${counted(result.unreadableChats, "chat")} could not be read on this phone and ${if (result.unreadableChats == 1) "is" else "are"} not in the file."
+        val unreadable = if (result.unreadableChats == 0) "" else " ${counted(result.unreadableChats, "chat")} could not be read on this phone"
+        if (result.messages == 0) {
+            return "There are no encrypted messages on this phone to back up. No file was saved." +
+                if (unreadable.isEmpty()) "" else "$unreadable."
         }
-        if (result.messages == 0) return "There are no encrypted messages on this phone yet, so the file holds nothing.$missing"
+        val missing = if (unreadable.isEmpty()) "" else "$unreadable and ${if (result.unreadableChats == 1) "is" else "are"} not in the file."
         return "Saved ${counted(result.messages, "message")} from ${counted(result.chats, "chat")}. " +
             "Keep the file and remember the passphrase: one is worth nothing without the other.$missing"
     }
@@ -60,6 +60,11 @@ internal object BackupText {
                 "This backup file is damaged. ${counted(failure.restored, "message")} came back; the rest of the file cannot be read."
             }
     }
+
+    /** Shown while the work is under way. Making the key from the passphrase is slow on purpose. */
+    const val SAVING = "Saving the backup. This can take up to a minute…"
+
+    const val RESTORING = "Restoring. This can take up to a minute…"
 
     const val TYPE_AGAIN = "Type the passphrase again, then save."
 
