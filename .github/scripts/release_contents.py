@@ -31,8 +31,10 @@ REQUIRED = [
     "com.nchat.app.NChatApplication",
     "com.nchat.app.MainActivity",
     "com.journeyapps.barcodescanner.CaptureActivity",
-    # A layout file of the scanning library names this one.
+    # Layout files of the scanning library name these.
     "com.journeyapps.barcodescanner.DecoratedBarcodeView",
+    "com.journeyapps.barcodescanner.BarcodeView",
+    "com.journeyapps.barcodescanner.ViewfinderView",
     # The app's own code, and a serializer the compiler generated for it.
     "com.nchat.app.network.E2eeProtocol",
     "com.nchat.app.network.UserDto$$serializer",
