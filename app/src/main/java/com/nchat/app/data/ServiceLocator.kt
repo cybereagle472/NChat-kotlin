@@ -33,6 +33,8 @@ import com.nchat.app.data.notifications.NcNotifications
 import com.nchat.app.data.push.BackgroundSyncService
 import com.nchat.app.data.push.BatteryExemption
 import com.nchat.app.data.model.UserProfile
+import com.nchat.app.feature.chats.announcesSecurityChange
+import com.nchat.app.feature.chats.securityNotification
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
 import com.nchat.app.data.repository.ChatRepository
@@ -51,6 +53,7 @@ import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ApiKeyDirectory
 import com.nchat.app.network.EndToEnd
 import com.nchat.app.network.LocalSeal
+import com.nchat.app.network.PeerSecurity
 import com.nchat.app.network.PrefsKeyring
 import com.nchat.app.network.SecurePrefs
 import com.nchat.app.network.fetchPeerBundle
@@ -426,6 +429,31 @@ object ServiceLocator {
      * from an ordinary message — and therefore the only place a notification can say "you were
      * mentioned" instead of just showing the line.
      */
+    /**
+     * A contact's security code changed while the app ran. Inside the chat that is a banner and
+     * on the chat's row a notice; whoever is looking at neither is told here, once per change.
+     * When the change has been looked at, the announcement goes.
+     */
+    private fun announceSecurityChange(chat: com.nchat.app.data.model.Chat, before: PeerSecurity?, now: PeerSecurity?) {
+        val key = "security:${chat.id}"
+        val text = if (announcesSecurityChange(before, now)) securityNotification(chat.title, now) else null
+        when {
+            text != null -> if (notifications.activeChatId != chat.id) {
+                notifications.showEvent(
+                    key = key,
+                    title = chat.title,
+                    body = text,
+                    chatId = chat.id,
+                    chatTitle = chat.title,
+                    avatarUrl = chat.avatarUrl,
+                    // Messages to this person wait only when the old code had been verified.
+                    highPriority = now?.held == true
+                )
+            }
+            now == null || !(now.changed || now.held) -> notifications.cancelEvent(key)
+        }
+    }
+
     private fun mentionsMe(chat: com.nchat.app.data.model.Chat, message: com.nchat.app.data.model.Message): Boolean {
         if (!chat.isGroup || message.isMine) return false
         val text = message.text
@@ -678,9 +706,15 @@ object ServiceLocator {
             voiceClips = voiceClips,
             // A message from somebody else becomes a system notification, unless that chat is the
             // one currently on screen (`NcNotifications.activeChatId`).
-            onIncoming = { chat, message ->
-                notifications.show(chat, message, mentioned = mentionsMe(chat, message))
+            onIncoming = { chat, message, encryptedSince ->
+                notifications.show(
+                    chat,
+                    message,
+                    mentioned = mentionsMe(chat, message),
+                    encryptedSince = encryptedSince
+                )
             },
+            onSecurityChanged = { chat, before, now -> announceSecurityChange(chat, before, now) },
             encryption = { endToEnd.messaging() },
             securityChanges = securityEvents,
             mediaRoot = serverUrl

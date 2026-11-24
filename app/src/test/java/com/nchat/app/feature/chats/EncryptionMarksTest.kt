@@ -2,6 +2,7 @@ package com.nchat.app.feature.chats
 
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.DeliveryState
+import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
 import com.nchat.app.network.PeerSecurity
@@ -179,21 +180,36 @@ class EncryptionMarksTest {
     }
 
     @Test
+    fun theGroupsTabSaysTheSameAboutAGroup() {
+        fun group(lastAt: Long, unsealed: Boolean) = Group(
+            id = "g", name = "Family", description = "", memberCount = 3,
+            lastActivity = "Sara: words", lastActivityAt = lastAt, lastActivityUnsealed = unsealed,
+        )
+        assertEquals(ChatListMark(ChatLock.None, null, false), groupListMark(group(500, unsealed = true), encryptedSince = null))
+        assertEquals(ChatListMark(ChatLock.Encrypted, null, false), groupListMark(group(500, unsealed = false), 300L))
+        assertEquals(ChatListMark(ChatLock.Encrypted, null, true), groupListMark(group(500, unsealed = true), 300L))
+        assertEquals("from before the group was encrypted", ChatListMark(ChatLock.Encrypted, null, false), groupListMark(group(200, unsealed = true), 300L))
+        // The same answer as for the row the group has in the chat list.
+        val row = row(500, unsealed = true, group = true)
+        assertEquals(chatListMark(row, null, 300L), groupListMark(group(500, unsealed = true), 300L))
+    }
+
+    @Test
     fun whatALineUnderAChatsNameIsToldAboutItsMessage() {
         // The row keeps one fact about its newest message: were these somebody's words, readable
         // by the server? Whether that deserves a mark depends on the chat, which the list knows.
-        assertTrue(reachedServerReadable(text("theirs", 500)))
-        assertTrue(reachedServerReadable(text("mine, sent", 500, mine = true)))
-        assertFalse(reachedServerReadable(text("sealed", 500, sealed = true)))
-        assertFalse("sealed, though this phone cannot open it", reachedServerReadable(text("closed", 500).copy(unreadable = true)))
-        assertFalse(reachedServerReadable(text("deleted", 500).copy(deleted = true)))
-        assertFalse(reachedServerReadable(text("system line", 500).copy(systemEvent = true)))
-        assertFalse("still on its way", reachedServerReadable(text("sending", 500, mine = true).copy(state = DeliveryState.Sending)))
-        assertFalse("never sent", reachedServerReadable(text("failed", 500, mine = true).copy(failed = true)))
-        assertTrue("somebody else's message has no 'sending'", reachedServerReadable(text("theirs", 500).copy(state = DeliveryState.Sending)))
+        assertTrue(text("theirs", 500).reachedServerReadable)
+        assertTrue(text("mine, sent", 500, mine = true).reachedServerReadable)
+        assertFalse(text("sealed", 500, sealed = true).reachedServerReadable)
+        assertFalse("sealed, though this phone cannot open it", text("closed", 500).copy(unreadable = true).reachedServerReadable)
+        assertFalse(text("deleted", 500).copy(deleted = true).reachedServerReadable)
+        assertFalse(text("system line", 500).copy(systemEvent = true).reachedServerReadable)
+        assertFalse("still on its way", text("sending", 500, mine = true).copy(state = DeliveryState.Sending).reachedServerReadable)
+        assertFalse("never sent", text("failed", 500, mine = true).copy(failed = true).reachedServerReadable)
+        assertTrue("somebody else's message has no 'sending'", text("theirs", 500).copy(state = DeliveryState.Sending).reachedServerReadable)
         // It is the same measure the conversation uses for its own marks.
         for (message in listOf(text("a", 500), text("b", 500, sealed = true), text("c", 500).copy(deleted = true), text("d", 500, mine = true).copy(failed = true))) {
-            assertEquals(message.id, reachedServerReadable(message), message.id in unsealedMessageIds(listOf(message), encryptedSince = 300))
+            assertEquals(message.id, message.reachedServerReadable, message.id in unsealedMessageIds(listOf(message), encryptedSince = 300))
         }
     }
 

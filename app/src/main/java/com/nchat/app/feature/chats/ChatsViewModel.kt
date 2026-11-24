@@ -17,7 +17,13 @@ data class ChatsUiState(
     val chats: List<Chat> = emptyList(),
     val totalUnread: Int = 0,
     /** Set when the last refresh failed; the list then explains itself instead of looking empty. */
-    val error: String? = null
+    val error: String? = null,
+    /**
+     * What each row says about encryption, by chat id: the lock, a changed security code that
+     * has not been looked at, and "Not encrypted" for a preview the server could read. A chat
+     * without an entry was never encrypted on this phone.
+     */
+    val marks: Map<String, ChatListMark> = emptyMap()
 ) {
     val isEmpty: Boolean get() = chats.isEmpty()
 }
@@ -29,7 +35,13 @@ class ChatsViewModel(
     private val query = MutableStateFlow("")
 
     val uiState: StateFlow<ChatsUiState> =
-        combine(repository.chats, query, repository.syncError) { chats, currentQuery, error ->
+        combine(
+            repository.chats,
+            query,
+            repository.syncError,
+            repository.security,
+            repository.groupEncryptedSince
+        ) { chats, currentQuery, error, security, groupEncryptedSince ->
             // The Chats tab is 1:1 only, exactly like the reference's `Chats.tsx` (rows keyed
             // on the contact's `user_id`); groups belong to the Groups tab.
             val directOnly = chats.filterNot { it.isGroup }
@@ -45,7 +57,10 @@ class ChatsViewModel(
                 query = currentQuery,
                 chats = visible,
                 totalUnread = directOnly.sumOf { it.unreadCount },
-                error = error
+                error = error,
+                marks = visible
+                    .associate { chat -> chat.id to chatListMark(chat, security[chat.id], groupEncryptedSince[chat.id]) }
+                    .filterValues { mark -> mark.lock != ChatLock.None }
             )
         }.stateIn(
             scope = viewModelScope,

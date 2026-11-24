@@ -482,10 +482,12 @@ class EndToEndTest {
         phone.signIn("alice", later)
         assertArrayEquals(words, later.localSeal()!!.open("outbox", stored))
 
-        // It is not the key of the encrypted history: neither opens the other's files.
+        // It is not the key of the encrypted history: neither opens what the other sealed.
+        // (A sealed file is a heading of 13 bytes — mark, version, which key — and then the box.)
         val box = SealedBox(phone.keyring.entry!!.key)
-        assertNull(box.open("outbox", stored))
-        assertNull(later.localSeal()!!.open("outbox", box.seal("outbox", words)))
+        val heading = 13
+        assertNull(box.open("outbox", stored.copyOfRange(heading, stored.size)))
+        assertNull(later.localSeal()!!.open("outbox", stored.copyOf(heading) + box.seal("outbox", words)))
 
         // Signing out: nothing to seal with any more, and signing in again does not bring the old key back.
         runBlocking { later.signOut()() }

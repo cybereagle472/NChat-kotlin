@@ -76,6 +76,10 @@ class LocalStoresTest {
         val file = everyFile().single()
         file.copyTo(File(file.parentFile, "carol.json"))
         assertEquals(emptyList<Message>(), MessageStore(root, mine).load("alice", "carol"))
+        // …nor in the same conversation's place under another account.
+        file.copyTo(File(root, "zoe/bob.json"))
+        assertEquals(emptyList<Message>(), MessageStore(root, mine).load("zoe", "bob"))
+        assertEquals(listOf(message), MessageStore(root, mine).load("alice", "bob"))
     }
 
     @Test
@@ -110,9 +114,11 @@ class LocalStoresTest {
         // The ones nobody opened are sealed in one pass, and read as before afterwards. A write
         // of that earlier build that died half-way was not sealed either: it goes.
         val interrupted = File(root, "alice/message-1234.tmp").also { it.writeText("""[{"text":"$secret"}]""") }
+        val somethingElse = File(root, "alice/notes.txt").also { it.writeText("not a conversation") }
         assertTrue(readable(untouched).contains(secret))
         assertEquals(1, store.sealPlainFiles())
         assertFalse(interrupted.exists())
+        assertEquals("what is not a conversation is not this store's to touch", "not a conversation", somethingElse.readText())
         assertNothingReadable("Carol")
         assertEquals("m2", MessageStore(root, mine).load("alice", "carol").single().id)
         assertEquals("a second pass finds nothing to do", 0, store.sealPlainFiles())
@@ -257,6 +263,10 @@ class LocalStoresTest {
         assertNothingReadable("bob")
         assertEquals(secret, DraftStore(file, mine).get("bob"))
         assertEquals("", DraftStore(file, another).get("bob"))
+        // Saying the same again writes nothing: the view model does that on every keystroke's pause.
+        val written = file.readBytes().toList()
+        DraftStore(file, mine).set("bob", secret)
+        assertEquals(written, file.readBytes().toList())
 
         // Without a key: not read, not written, and what is there stays.
         val before = file.readBytes().toList()
@@ -328,6 +338,18 @@ class LocalStoresTest {
         PinnedMessageStore(pins, mine).unpin("chat-with-bob")
         ArchivedStore(archive, mine).unarchive("chat-with-carol")
         assertEquals(emptyList<File>(), everyFile())
+    }
+
+    @Test
+    fun aFileOfOneStoreDoesNotOpenInAnothersPlace() {
+        // Drafts and pins are both "one text per chat". Without the place sealed in, a file of
+        // drafts put where the pins are would be read as pins.
+        val drafts = folder.root.resolve("drafts.json")
+        DraftStore(drafts, mine).set("bob", secret)
+        val pins = folder.root.resolve("pinned.json")
+        drafts.copyTo(pins)
+        assertNull(PinnedMessageStore(pins, mine).pinnedId("bob"))
+        assertEquals(secret, DraftStore(drafts, mine).get("bob"))
     }
 
     // -------------------------------------------- the account ends, or changes

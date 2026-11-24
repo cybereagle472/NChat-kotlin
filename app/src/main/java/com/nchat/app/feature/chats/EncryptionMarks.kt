@@ -1,6 +1,7 @@
 package com.nchat.app.feature.chats
 
-import com.nchat.app.data.model.DeliveryState
+import com.nchat.app.data.model.Chat
+import com.nchat.app.data.model.Group
 import com.nchat.app.data.model.Message
 import com.nchat.app.network.PeerSecurity
 
@@ -40,11 +41,117 @@ fun unsealedMessageIds(messages: List<Message>, encryptedSince: Long?): Set<Stri
             sealedSeen = true
             continue
         }
-        if (message.deleted || message.systemEvent) continue
-        if (message.isMine && (message.failed || message.state == DeliveryState.Sending)) continue
+        if (!message.reachedServerReadable) continue
         if (sealedSeen || (encryptedSince != null && message.timestamp >= encryptedSince)) marked += message.id
     }
     return marked
+}
+
+// ------------------------------------------------------------ outside the conversation
+
+/** What a row of the chat list says about the encryption of its conversation. */
+enum class ChatLock {
+    /** Nothing was ever encrypted in it on this phone. */
+    None,
+
+    /** End-to-end encrypted. */
+    Encrypted,
+
+    /** Encrypted, and something about the other person's keys changed that the user has not looked at. */
+    Changed,
+
+    /** As [Changed], and the old security code had been verified: nothing is sent until the user has looked. */
+    Held,
+}
+
+/**
+ * Everything a row of the chat list shows about encryption.
+ *
+ * [notice] takes the place of the preview for as long as a change is not looked at — inside
+ * the chat it is a banner, and somebody who never opens the chat would not learn of it.
+ *
+ * [unsealedPreview]: the newest message, which the row previews, reached the server readable
+ * although the chat is encrypted. The lock on a row must not vouch for words that never were
+ * sealed, so the preview says "Not encrypted". A row has one message to go by and not the rows
+ * around it, so only the second rule of [unsealedMessageIds] applies: the message is dated at
+ * or after the moment encryption began on this phone.
+ */
+data class ChatListMark(val lock: ChatLock, val notice: String?, val unsealedPreview: Boolean)
+
+/**
+ * [security]: what this phone knows about the other person of a one-to-one chat, null when
+ * nothing was ever encrypted with them. [groupEncryptedSince]: when a group was first encrypted
+ * on this phone, null when it never was. Each is looked at only for its own kind of chat.
+ */
+fun chatListMark(chat: Chat, security: PeerSecurity?, groupEncryptedSince: Long?): ChatListMark {
+    val known = security.takeIf { !chat.isGroup }
+    val since = if (chat.isGroup) groupEncryptedSince else known?.since
+    val lock = when {
+        chat.isGroup -> if (groupEncryptedSince != null) ChatLock.Encrypted else ChatLock.None
+        known == null -> ChatLock.None
+        known.held -> ChatLock.Held
+        known.changed -> ChatLock.Changed
+        else -> ChatLock.Encrypted
+    }
+    val notice = when {
+        known == null || lock == ChatLock.None || lock == ChatLock.Encrypted -> null
+        known.key == null -> "Encryption keys could not be read"
+        known.held -> "Security code changed — messages are waiting"
+        else -> "Security code changed"
+    }
+    return ChatListMark(
+        lock = lock,
+        notice = notice,
+        unsealedPreview = chat.lastMessageUnsealed && since != null && chat.lastMessageAt >= since,
+    )
+}
+
+/**
+ * The same for a row of the Groups tab. A group has no security code of its own, so there is
+ * never a notice: it is encrypted on this phone since [encryptedSince], or it is not.
+ */
+fun groupListMark(group: Group, encryptedSince: Long?): ChatListMark = ChatListMark(
+    lock = if (encryptedSince != null) ChatLock.Encrypted else ChatLock.None,
+    notice = null,
+    unsealedPreview = group.lastActivityUnsealed && encryptedSince != null && group.lastActivityAt >= encryptedSince,
+)
+
+/** In front of a preview or a notification of words the server could read in an encrypted chat. */
+const val NOT_ENCRYPTED_PREFIX = "Not encrypted · "
+
+/**
+ * What a notification says for [message]: [body], and in front of it that it was not encrypted
+ * when it reached the server readable although its chat is encrypted on this phone since
+ * [encryptedSince] (null: never). A notification is where a message slipped into an encrypted
+ * chat would be read first, and there it would look like any other.
+ */
+fun notificationBody(body: String, message: Message, encryptedSince: Long?): String =
+    if (encryptedSince != null && message.reachedServerReadable && message.timestamp >= encryptedSince) {
+        NOT_ENCRYPTED_PREFIX + body
+    } else {
+        body
+    }
+
+/**
+ * What the notification about a changed security code says; null when there is nothing to
+ * announce. Keys this phone could not read are not news about the other person: that is said
+ * in the chat and on its row, not announced.
+ */
+fun securityNotification(name: String, security: PeerSecurity?): String? = when {
+    security == null || security.key == null -> null
+    security.changed || security.held -> securityChangeNotice(name, security)
+    else -> null
+}
+
+/**
+ * True when what this phone knows about somebody went from [before] to [now] in a way the user
+ * has not been told of: their code changed, it changed again, or messages now wait for it.
+ * Not for a change that was there already, and not when it was looked at.
+ */
+fun announcesSecurityChange(before: PeerSecurity?, now: PeerSecurity?): Boolean {
+    if (now == null || !(now.changed || now.held)) return false
+    if (before == null || !(before.changed || before.held)) return true
+    return before.key != now.key || (now.held && !before.held)
 }
 
 /**

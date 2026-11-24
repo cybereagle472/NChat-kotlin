@@ -57,6 +57,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,7 +119,14 @@ class RemoteChatRepository(
      * A message from somebody else has just landed (socket event). The platform layer turns this
      * into a system notification; the repository stays free of Android notification code.
      */
-    private val onIncoming: ((Chat, Message) -> Unit)? = null,
+    private val onIncoming: ((chat: Chat, message: Message, encryptedSince: Long?) -> Unit)? = null,
+    /**
+     * What this phone knows about the other person of a one-to-one chat changed while the app
+     * ran: [before] and [now] as [security] had it and has it. The platform layer announces a
+     * changed code to whoever is not looking at that chat, and takes the announcement away once
+     * the change was looked at; the repository stays free of notification code and of wording.
+     */
+    private val onSecurityChanged: ((chat: Chat, before: PeerSecurity?, now: PeerSecurity?) -> Unit)? = null,
     /**
      * End-to-end encryption for one-to-one texts and locations (see [SealedMessaging]).
      *
@@ -184,6 +193,12 @@ class RemoteChatRepository(
     private val olderLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     private val groupIds = mutableSetOf<String>()
     private val names = mutableMapOf<String, String>()
+
+    /**
+     * Chats whose encryption state was read for the list while this account is signed in;
+     * guarded by itself. Declared up here, before `init`: the coroutines started there use it.
+     */
+    private val securityRead = HashSet<String>()
     private val typingJobs = mutableMapOf<String, Job>()
     private val deliveryGate = DeliveryGate()
 
@@ -266,7 +281,17 @@ class RemoteChatRepository(
         // Do not sweep voice files from an outbox snapshot: a corrupt queue, a failed
         // message, or a concurrent recording can leave a needed clip outside that snapshot.
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
-        scope.launch { securityChanges.collect { peerId -> refreshSecurity(peerId) } }
+        scope.launch(Dispatchers.IO) { securityChanges.collect { peerId -> securityChanged(peerId) } }
+        // The list says for every row whether its chat is encrypted and whether a changed code
+        // waits to be looked at — not only for the chat that is open. What this phone knows is
+        // read once per chat, off the main thread; what changes later arrives through
+        // [securityChanges] and with the group messages themselves.
+        scope.launch(Dispatchers.IO) {
+            _chats.map { rows -> rows.map { it.id to it.isGroup } }.distinctUntilChanged().collect { rows ->
+                val fresh = synchronized(securityRead) { rows.filter { (id, _) -> securityRead.add(id) } }
+                for ((id, group) in fresh) if (group) readGroupSecurity(id) else readSecurity(id)
+            }
+        }
         // Signing out must not leave the previous account's threads in memory: after a new
         // sign-in on the same process they would be "kept" by the merge above and shown to
         // somebody who never had them.
@@ -287,6 +312,7 @@ class RemoteChatRepository(
                 _groups.value = emptyList()
                 _security.value = emptyMap()
                 _groupEncryptedSince.value = emptyMap()
+                synchronized(securityRead) { securityRead.clear() }
                 names.clear()
                 historyPeers = emptyList()
                 historyProbedFor = null
@@ -486,6 +512,7 @@ class RemoteChatRepository(
                 lastMessage = previewOf(dto, profile.id, isGroup = false),
                 lastMessageAt = isoMillis(dto.createdAt),
                 lastMessageKind = dto.shownKind(profile.id),
+                lastMessageUnsealed = dto.toModel(profile.id).reachedServerReadable,
                 lastMessageMine = dto.senderId == me,
                 lastMessageState = if (dto.senderId == me) {
                     if (dto.isRead) DeliveryState.Read else DeliveryState.Sent
@@ -948,6 +975,25 @@ class RemoteChatRepository(
     }
 
     // ------------------------------------------------------- security codes
+
+    /** Since when [chatId] is encrypted on this phone, as far as has been read; null when it is not. */
+    private fun encryptedSince(chatId: String): Long? =
+        if (isGroup(chatId)) _groupEncryptedSince.value[chatId] else _security.value[chatId]?.since
+
+    /**
+     * The encryption layer says that what it knows about [peerId] changed: read it again and
+     * pass on what it was and what it is. Only changes that happen while the app runs come this
+     * way — one that was there at start-up is on the chat's row, and is not announced again.
+     */
+    private fun securityChanged(peerId: String) {
+        if (peerId.isBlank()) return
+        val before = _security.value[peerId]
+        readSecurity(peerId)
+        val now = _security.value[peerId]
+        val callback = onSecurityChanged ?: return
+        val chat = _chats.value.firstOrNull { it.id == peerId } ?: Chat(id = peerId, title = nameOf(peerId))
+        runCatching { callback(chat, before, now) }
+    }
 
     override fun refreshSecurity(chatId: String) {
         if (chatId.isBlank()) return
@@ -2493,6 +2539,7 @@ class RemoteChatRepository(
                 lastMessage = existing.lastMessage.ifBlank { fresh.lastMessage },
                 lastMessageAt = existing.lastMessageAt.takeIf { it > 0L } ?: fresh.lastMessageAt,
                 lastMessageKind = if (existing.lastMessage.isBlank()) fresh.lastMessageKind else existing.lastMessageKind,
+                lastMessageUnsealed = if (existing.lastMessage.isBlank()) fresh.lastMessageUnsealed else existing.lastMessageUnsealed,
                 lastMessageMine = existing.lastMessageMine,
                 lastMessageState = existing.lastMessageState,
                 unreadCount = existing.unreadCount,
@@ -2663,7 +2710,7 @@ class RemoteChatRepository(
             scope.launch { runCatching { refresh() } }
             return
         }
-        runCatching { callback(chat, dto.toModel(chatId)) }
+        runCatching { callback(chat, dto.toModel(chatId), encryptedSince(chatId)) }
     }
 
     private fun preview(chatId: String, message: Message, state: DeliveryState) {
@@ -2677,6 +2724,8 @@ class RemoteChatRepository(
                     lastMessageSender = sender,
                     lastMessageAt = System.currentTimeMillis(),
                     lastMessageKind = message.kind,
+                    // Still on its way: the server has not seen it, sealed or not.
+                    lastMessageUnsealed = false,
                     lastMessageMine = true,
                     lastMessageState = state,
                     lastMessageFailed = false,
@@ -2755,6 +2804,7 @@ class RemoteChatRepository(
                         lastMessageSender = null,
                         lastMessageAt = 0L,
                         lastMessageKind = MessageKind.Text,
+                        lastMessageUnsealed = false,
                         lastMessageMine = false,
                         lastMessageState = null,
                         lastMessageFailed = false
@@ -2772,6 +2822,7 @@ class RemoteChatRepository(
                     lastMessageSender = previewParts(newest, chat.isGroup).first,
                     lastMessageAt = newest.timestamp,
                     lastMessageKind = newest.kind,
+                    lastMessageUnsealed = newest.reachedServerReadable,
                     lastMessageMine = newest.isMine,
                     lastMessageState = if (newest.isMine) newest.state else null,
                     lastMessageFailed = newest.isMine && newest.failed
@@ -2782,8 +2833,10 @@ class RemoteChatRepository(
 
     private fun bumpPreview(chatId: String, dto: MessageDto) {
         val isGroupChat = isGroup(chatId)
-        val (sender, _) = previewParts(dto.toModel(chatId), isGroupChat)
-        val line = previewOf(dto, chatId, isGroupChat)
+        val message = dto.toModel(chatId)
+        val (sender, _) = previewParts(message, isGroupChat)
+        val line = previewLine(message, isGroupChat)
+        val unsealed = message.reachedServerReadable
         _chats.update { list ->
             if (list.none { it.id == chatId }) {
                 // A message from somebody the server does not list as a friend still deserves
@@ -2798,6 +2851,7 @@ class RemoteChatRepository(
                     lastMessageAt = isoMillis(dto.createdAt),
                     lastMessageMine = false,
                     lastMessageKind = dto.shownKind(chatId),
+                    lastMessageUnsealed = unsealed,
                     unreadCount = 1
                 )
             } else {
@@ -2810,6 +2864,7 @@ class RemoteChatRepository(
                         lastMessageMine = false,
                         lastMessageState = null,
                         lastMessageKind = dto.shownKind(chatId),
+                        lastMessageUnsealed = unsealed,
                         unreadCount = chat.unreadCount + 1,
                         isTyping = false,
                         isRecording = false
@@ -2906,6 +2961,7 @@ class RemoteChatRepository(
             lastMessageSender = null,
             lastMessageAt = isoMillis(last?.createdAt),
             lastMessageKind = last?.shownKind(userId) ?: MessageKind.Text,
+            lastMessageUnsealed = last?.let { it.toModel(userId).reachedServerReadable } == true,
             lastMessageMine = last?.senderId == myId,
             lastMessageState = when {
                 last == null || last.senderId != myId -> null
@@ -2926,6 +2982,7 @@ class RemoteChatRepository(
         lastMessageSender = lastMessage?.let { previewParts(it.inGroup(id).toModel(id), true).first },
         lastMessageAt = isoMillis(lastMessage?.createdAt ?: createdAt),
         lastMessageKind = lastMessage?.kind() ?: MessageKind.Text,
+        lastMessageUnsealed = lastMessage?.let { it.inGroup(id).toModel(id).reachedServerReadable } == true,
         lastMessageMine = lastMessage?.senderId == myId,
         lastMessageState = when {
             lastMessage == null || lastMessage.senderId != myId -> null
@@ -2960,7 +3017,8 @@ class RemoteChatRepository(
             // ignore it and guess the roster from the friend list instead.
             members = roster,
             createdBy = createdBy,
-            myRole = members.firstOrNull { it.userId == myId }?.role
+            myRole = members.firstOrNull { it.userId == myId }?.role,
+            lastActivityUnsealed = lastMessage?.let { it.inGroup(id).toModel(id).reachedServerReadable } == true
         )
     }
 
