@@ -19,7 +19,7 @@ This block outranks everything below it. Older text below may say that the Cloud
 5. **Phase 1 (critical security) in `worker/`: the code has landed and is deployed; verification and residual-risk sign-off remain.** PR #92 (partial: profile/group privacy, personal-room realtime, media sign-in) was merged 2026-11-22 as `0ea52f9e32c806ffd1ccd720282bd76fd87d0743`, build succeeded 05:10:56 UTC. The full remediation — per-file media authorization with trusted-reference provenance, status/DM/group/call authorization, credential and action rate limits, CORS removal, stored admin role, input and body-size bounds, safe media responses, write-time race guards, dependency refresh — was merged as PR #93 on 2026-11-23 at 03:15:57 UTC (`b0cf659e615c2700542c8cea37bf5a825b9002be`); its `Workers Builds: nchat-friends` check succeeded at 03:16:31 UTC, so it is live. The owner reported applying migration 0006 in the production console (PR #93 body); live probes on 2026-11-23 found `/health` answering, `/auth/check-email` gone (the #93 marker), and media/search refusing without a token. Before Phase 1 may be called finished: the owner's post-deploy app check (sign-in, chat, photo, voice, search) and the residual-risk decisions in the 2026-11-23 entry at the end of this file. Phase 2 (§33) is next after that. The first Cloudflare build succeeded and the owner has replaced `JWT_SECRET` (rules 6 and 9). The owner confirmed Search (Find) passes on 2026-11-22; the owner also confirmed only the Android app uses NChat (§33).
 6. **A merge to `main` that changes a file under `worker/` is a deployment to every user.** Since the evening of 2026-11-11 Cloudflare builds the backend from this repository: the owner connected the Worker's build to `cybereagle472/NChat-kotlin` (branch `main`, root directory `worker`, deploy command `npx wrangler deploy`, watch path `worker/*`; §27, “Cloudflare connected to this repository”). Tell the owner so before merging anything that touches `worker/`. The result of a build is the check `Workers Builds: nchat-friends` on the commit. No agent has access to the Cloudflare account: an agent sees that check, never the build log. The first build from this repository succeeded: PR #91 merge commit `c2b3e7c`, check `Workers Builds: nchat-friends`, 2026-11-11 17:47:07 UTC (§27, §36). Verify the check after every deployment; a merge alone does not prove a later build succeeded. *Until that evening this rule said: deploying does not work; Cloudflare is connected to `nchat-friends`, and every build since 2026-11-03 05:09 UTC has failed.*
 7. **Do not change these in `worker/wrangler.toml`** without the owner's explicit instruction: `name = "nchat-friends"` (the live Worker's name and with it its address — another name creates a second, empty backend), the D1 `database_name` and `database_id`, the R2 `bucket_name`, the Durable Object binding and its `[[migrations]]` tag, and `PUBLIC_API_URL`. **The same holds in the Cloudflare dashboard, and the owner has to be told in so many words:** on 2026-11-11 the owner renamed the Worker there to `nchat-kotlin`. The address changed with the name and the old address stopped answering, so the installed app had nothing to reach, until the name was set back (§27, “The rename of 2026-11-11”). The name is part of the address that is built into every installed app and stored in front of every media file. It says nothing about which repository the code is in.
-8. **Run nothing against the live account** — no `wrangler deploy`, `wrangler d1 execute --remote`, `wrangler secret put`, `wrangler r2 …` — and never ask the owner for Cloudflare passwords or tokens. A change to the live database is applied by the owner: give the exact command and say what it does.
+8. **Run nothing against the live account** — no `wrangler deploy`, `wrangler d1 execute --remote`, `wrangler secret put`, `wrangler r2 …` — and never ask the owner for Cloudflare passwords or tokens. **The owner has no PC and no terminal: a phone and the Cloudflare dashboard, nothing else. Never hand the owner a `wrangler`, `npx` or any other terminal command, and never offer one as an option.** The owner can do two things: tap in the dashboard, and say "merge" (a merge to `main` is the deployment, rule 6). A change to the live database is applied by the owner in the dashboard's D1 console (D1 → `nchat-db` → Console): give the SQL itself in the chat, in code blocks, one statement per block, without comments, safe to run twice where SQL allows it (`IF NOT EXISTS`), then one check query and the result it must show. Say what it does, and whether it may be run before the deployment. *Until 2026-11-24 this rule ended "give the exact command and say what it does". Agents then gave `npx wrangler d1 execute …` for 0007, for 0008 and for 0009, although the owner had said on 2026-11-23 that there is no PC — it is recorded in the backup entries near the end of this file, where no agent reading the rules would look. The owner had to say it again each time.*
 9. **The owner replaced `JWT_SECRET` on 2026-11-11.** The app subsequently asked for sign-in again, confirming the new secret is live according to the owner. Rotation signed existing users out; the backend has no password reset, so §27 describes the manual recovery for a user locked out. Never record the secret itself.
 
 10. **Keep this block true.** When Cloudflare is connected to this repository, when a build succeeds, when Phase 1 lands in `worker/`, change the rules above in the same commit.
@@ -469,7 +469,7 @@ All dates are 2026-11-09 unless a row says otherwise: rows touched by the Phase 
 | Database migrations | PARTIALLY_IMPLEMENTED | five SQL files, `schema.sql` | §25 and package scripts | Version table/runner, 0003–0005 scripts, copy-based migration tests | 2026-11-09 |
 | Backup/restore | NOT_STARTED | N/A | docs only recommend backup | SQLite-aware backup, media backup, restore drill | 2026-11-09 |
 | Audit logs / monitoring / alerting | PARTIALLY_IMPLEMENTED | `ApiLog`, `CrashLog`, tracing | Source | Server audit events, structured metrics, alerting, retention | 2026-11-09 |
-| E2EE | NOT_STARTED | N/A | no keys/sessions/ciphertext | Signal Protocol evaluation, device keys, group encryption, tests | 2026-11-09 |
+| E2EE | IMPLEMENTED_UNVERIFIED — built on pull request #98; not merged, not deployed, never run on a phone (*NOT_STARTED until 2026-11-23*) | `app/…/network/E2ee*.kt`, `SealedMedia.kt`, `SecurityCode.kt`; `worker/src/routes/keys.ts`, `groups.ts`, `media.ts`, `messages.ts`; migrations 0008, 0009 | CI green on both workflows; 277 backend tests, 235 JVM tests of the encryption code, mutation testing (E2EE entries at the end of this file) | The owner's SQL in the D1 console, the merge, a run on two phones; then backup of encrypted history, QR code, marks in the chat list, sealing the phone's own cache | 2026-11-24 |
 | Disappearing / view-once media | NOT_STARTED | N/A | no TTL/view-once columns | Schema, enforcement, client expiry, media deletion | 2026-11-09 |
 | Report user/message | NOT_STARTED | N/A | no route/table | Report flow, moderation, privacy-preserving evidence | 2026-11-09 |
 | Admin/stats | IMPLEMENTED_UNVERIFIED | `/admin/stats` | Source; no Android surface **2026-11-10:** (Rust, Phase 1 branch) test `admin_stats_are_denied_to_ordinary_accounts` | Role-based auth instead of hardcoded email; tests **2026-11-10:** a Rust denial test exists; role-based authorization still open in both backends **Third turn:** Rust — the gate is the stored role `users.is_admin`, with three tests (`b15a73c`, §19.5 #43); the Worker was not changed | 2026-11-10 |
@@ -813,6 +813,12 @@ Phase 1 critical security; Phase 2 account lifecycle; Phase 3 reliable messaging
 | 0003 | `0003_group_voice_duration.sql` | `ALTER group_messages ADD COLUMN duration TEXT` | Manual Wrangler only; no npm script |
 | 0004 | `0004_group_read_state.sql` | `group_read_state` table + indexes | Manual Wrangler only; no npm script |
 | 0005 | `0005_group_calls.sql` | `group_calls`, `group_call_participants`, indexes; documents mesh/no-SFU | Manual Wrangler only; no npm script |
+| 0006 | `0006_trusted_media_references.sql` | `trusted_media_references` table, index, six cleanup triggers | Applied by the owner in the D1 console before PR #93 was merged (owner's report, 2026-11-23) |
+| 0007 | `0007_restore_friendships.sql` | restores friendship rows that an accepted request still declares | Its content was run by the owner in the D1 console on 2026-11-23 |
+| 0008 | `0008_e2ee_keys.sql` | `user_crypto_keys`, `one_time_prekeys`, index | **Not applied as of 2026-11-24.** The owner runs it in the D1 console: the statements are in the entry "E2EE: handed to the owner" at the end of this file |
+| 0009 | `0009_e2ee_attachments_groups.sql` | two nullable columns on `media_attachments`; `group_sender_keys`, index | As 0008 |
+
+*2026-11-24:* every migration since 0006 has reached the live database through the dashboard's D1 console, pasted by the owner on a phone. That is the only way there is (rule 8); "Manual Wrangler" in the rows above describes what the old repository's notes assumed, not something the owner can do.
 
 `server/migrations/` and `worker/migrations/` contain identical table sets (verified by parsing SQL). `server/schema.sql` contains the same 22 tables with `CREATE TABLE IF NOT EXISTS` and indexes; it is safe to rerun on a fresh/current database but is **not** a migration system and will not add missing columns to an old database. There is no `schema_migrations` table, checksum, rollback script, or staging-copy test. Never delete/recreate production databases. Back up `NCHAT_DATA_DIR` (SQLite + `media/`) and use a SQLite-aware backup for a live WAL database; document rollback limitations before any migration.
 
@@ -1345,6 +1351,8 @@ At that time questions 2 and 3 were unanswered. Update 2026-11-22: question 2 is
 2. *Ask whether `JWT_SECRET` has been replaced.* If not, say again, in two sentences, why and how (§27). If a user is locked out afterwards, prepare the reset by hand that §27 describes.
 3. *Ask questions 2 and 3 above:* update: Search (Find) passes, per owner on 2026-11-22. The owner also confirmed only the Android app uses NChat.
 4. *Then Phase 1, step 1:* a way to test `worker/`, and a workflow that runs it. Deploys are automatic now, so this is also what stands between a mistake and every user (§24 #38). Until it exists: run `npm run typecheck` and the dry-run bundle before every merge that touches `worker/`, and tell the owner that the merge is a deployment.
+
+**Where the roadmap stands (2026-11-24).** Phase 0: done. Phase 1: deployed (rule 5). **Phase 9 was taken out of order by the owner on 2026-11-23**, together with the media compression of Phase 5 ("full E2EE + media compression like competitors"): it is built on pull request #98 and is not merged, not deployed and has not run on a phone — the E2EE entries at the end of this file. The owner has said that **Phase 2 comes next**, once that is handed over. Phases 3–8, 10 and 11 are untouched, except where an entry at the end says otherwise (the daily encrypted backup of Phase 11 is live).
 
 **Phase 2 — Core account lifecycle:** phone/OTP or documented email verification, country/format validation, duplicate detection, expiry/resend/attempt limits, device/IP rate limits, default privacy/notification/security settings, session/device registry, logout/re-login, account deletion/export. Deliverable: tested complete lifecycle.
 
@@ -2520,12 +2528,91 @@ With this, everything a conversation carries is sealed when it is encrypted: tex
 13. **A sign-in that could not register its keys** still takes the account over when it later connects.
 14. **Video:** whether a given phone's encoder accepts these settings is known only on that phone. The fallback is the old behaviour, so the worst case is what the released app does today.
 
-**Deploying, when the time comes.** Two migrations now, both additive, applied by the owner from `worker/`:
+**Deploying, when the time comes.** Two migrations now, both additive: 0008 and 0009. The owner applies them in the D1 console — the statements, the check and the order of the steps are in the next entry. *Until 2026-11-24 this paragraph gave two `npx wrangler d1 execute` commands and said "then deploy the Worker". The owner has no PC and cannot run either (rule 8); a deployment is a merge.* A Worker without the tables answers 501 for what it cannot do yet, and the app then carries on as before in conversations that were never encrypted.
 
-    npx wrangler d1 execute nchat-db --remote --file=./migrations/0008_e2ee_keys.sql
-    npx wrangler d1 execute nchat-db --remote --file=./migrations/0009_e2ee_attachments_groups.sql
+**Next.** (1) **Two phones.** *(There is no test backend, as this said until 2026-11-24: the owner has one backend. The order is in the next entry — SQL, merge, then the APK from the release page on two phones.)* Go through: sign-in, a chat, a photo, a voice message, a video, a group of three, removing a member, deleting a message, signing out. (2) A way for a member to ask for a chain again (limit 5). (3) Sealing what the phone keeps at rest (limit 10). (4) The mark in the chat list and in notifications; a QR code. (5) Key backup. (6) R8, and `targetSdk` (34 today). Then the review of the whole and the merge.
 
-then deploy the Worker, then release the app. The order is the safe one and not a trap: a Worker without the tables answers 501 for what it cannot do yet, and the app then carries on as before in conversations that were never encrypted.
+### E2EE: handed to the owner — SQL for the console instead of commands; where every part stands (2026-11-24)
 
-**Next.** (1) **Two phones.** Install the APK that CI builds from this branch on two phones against a test backend and go through: sign-in, a chat, a photo, a voice message, a video, a group of three, removing a member, deleting a message, signing out. (2) A way for a member to ask for a chain again (limit 5). (3) Sealing what the phone keeps at rest (limit 10). (4) The mark in the chat list and in notifications; a QR code. (5) Key backup. (6) R8, and `targetSdk` (34 today). Then the review of the whole and the merge.
+**Does this reach users? No.** Documentation only. Pull request #98 is still open; nothing is merged or deployed.
+
+**What went wrong, and the rule that changed.** The report that went with `6dc0967` told the owner to run two `npx wrangler d1 execute` commands and offered "deploy this branch with wrangler" as one of two ways forward. The owner has no PC and no terminal, only a phone and the Cloudflare dashboard, had said so on 2026-11-23, and had to say it again. Rule 8 at the top of this file now says it where every agent reads it.
+
+**The SQL for the D1 console** (dashboard → D1 → `nchat-db` → Console). Seven statements, one at a time, in this order. They are migrations 0008 and 0009 without their comments and with `IF NOT EXISTS`:
+
+    CREATE TABLE IF NOT EXISTS user_crypto_keys (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      identity_public_key TEXT NOT NULL,
+      signed_prekey_public TEXT NOT NULL,
+      signed_prekey_signature TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS one_time_prekeys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      public_key TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_one_time_prekeys_by_user ON one_time_prekeys(user_id, id);
+
+    CREATE TABLE IF NOT EXISTS group_sender_keys (
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      chain_id TEXT NOT NULL,
+      recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_identity_key TEXT NOT NULL,
+      envelope TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (group_id, sender_id, chain_id, recipient_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_group_sender_keys_by_recipient ON group_sender_keys(group_id, recipient_id);
+
+    ALTER TABLE media_attachments ADD COLUMN sealed_for_user TEXT;
+
+    ALTER TABLE media_attachments ADD COLUMN sealed_for_group TEXT;
+
+**The check** — it must list four names: `user_crypto_keys`, `one_time_prekeys`, `group_sender_keys`, `media_attachments`:
+
+    SELECT name FROM sqlite_master
+    WHERE (type = 'table' AND name IN ('user_crypto_keys', 'one_time_prekeys', 'group_sender_keys'))
+       OR (name = 'media_attachments' AND sql LIKE '%sealed_for_user%' AND sql LIKE '%sealed_for_group%');
+
+**How this was verified** (in the Worker's test database, 2026-11-24; the test was not kept):
+- Run one statement at a time on a database that has migrations 0001–0007, the seven statements give exactly the schema that the files 0008 and 0009 give (every row of `sqlite_master` compared).
+- The check lists nothing before, three names after the first five statements, three after the sixth, four after the seventh.
+- Run a second time, the five `CREATE`s do nothing and the two `ALTER`s answer `duplicate column name`; nothing changes.
+- **It may be run before the deployment.** The code that is live today (`main` at `d33f490`) was run against a database that has 0008 and 0009: all its 206 tests pass (32 + 174), the backup round-trip among them. Every statement in that code names its columns, and the backup reads the schema from `sqlite_master`, so the new tables are in the nightly backup from the first night.
+- Not known: whether the console takes several statements in one paste. One at a time works either way.
+
+**The order proposed to the owner, 2026-11-24 — not yet answered.**
+1. The owner runs the seven statements and the check.
+2. The owner says "merge". The merge is the deployment of the backend (rule 6). **No version bump in it:** `version.json` stays at 85, so no installed app is offered an update (`AutoUpdater`: `remoteCode <= VERSION_CODE` → nothing). The APK workflow on `main` replaces the file of release `nchat-v1.0.77` with the new build. Check `Workers Builds: nchat-friends` on the merge commit.
+3. The owner installs that APK on two phones from the release page and goes through: sign-in, a chat, a photo, a voice message, a video, a group of three, removing a member, deleting a message, signing out.
+4. Then the version bump (86, 1.0.78) as a change of its own. That is the moment every user is offered the new app. Until then two builds are called 1.0.77; that is the price of testing before everybody is asked to update, and it ends with step 4.
+5. Phase 2 (§33).
+
+Going back, if step 3 goes wrong: the backend rolls back with a tap (dashboard → the Worker → Deployments). Two phones that have already exchanged sealed messages keep them only in the new app; the old app shows such a row as text it cannot read.
+
+**Where every part of the E2EE programme stands.** "Built" means: code and tests on the branch, CI green. By rule 4 nothing here may be called finished, because none of it is deployed.
+
+| Part | Batch | Built and tested | Live for users |
+|---|---|---|---|
+| Keys on the server and in the app | 1, 2 | yes | no |
+| Messages to one person: texts, locations, edits | 3 | yes | no |
+| Whose keys: one phone per account, security code, notice when keys change, lock and "Not encrypted" | 3 | yes | no |
+| Group messages | 4 | yes | no |
+| Photos, videos, voice messages, documents | 5 | yes | no |
+| Media made smaller: photos (already), voice messages, videos | 5 | yes | no |
+| A deleted message leaves the phone; a sealed message is not replaced by a readable one | 6 | yes | no |
+| Backup of encrypted history (a reinstall loses it) | 6 | **no** | no |
+| A QR code for the security code | 6 | **no** | no |
+| Lock marks and key-change notices in the chat list and in notifications | 6 | **no** | no |
+| Sealing what the phone itself keeps (cache, queue, opened files) | 6 | **no** | no |
+| A way for a group member to ask again for a chain they could not open | 6 | **no** | no |
+| A smaller app (R8); `targetSdk` above 34 | 6 | **no** | no |
+
+**About the letters.** The owner speaks of phases by letter. That plan was given in a session before these entries; this file records only that "Phase A" was the key infrastructure (the Batch 1 entry). Do not guess what the other letters were: name the parts by what they are, as in the table.
 
