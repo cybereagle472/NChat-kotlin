@@ -1,4 +1,4 @@
-run: 45347722146
+run: 45354870011
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -34,22 +34,22 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:550:13 Variable 'current' is never used
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:919:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:923:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1195:39 Variable 'failure' initializer is redundant
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1695:44 The corresponding parameter in the supertype 'ChatRepository' is named 'pinned'. This may cause problems when calling this function with named arguments.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1249:39 Variable 'failure' initializer is redundant
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1749:44 The corresponding parameter in the supertype 'ChatRepository' is named 'pinned'. This may cause problems when calling this function with named arguments.
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:70 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:98 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:124:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:458:9 Variable 'extra' is never used
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1734:45 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1843:40 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:2549:71 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:125:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:461:9 Variable 'extra' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1775:45 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1884:40 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:2598:71 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:66 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:94 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageActionsMenu.kt:185:54 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageActionsMenu.kt:187:50 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:246:49 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:592:53 Parameter 'mine' is never used
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:728:5 Parameter 'mediaUrl' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:253:49 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:625:53 Parameter 'mine' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:761:5 Parameter 'mediaUrl' is never used
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/VoiceRecorder.kt:203:61 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/discover/DiscoverScreen.kt:803:5 Parameter 'onUnfriendClick' is never used
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/discover/DiscoverScreen.kt:839:38 'Chat: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Chat
@@ -76,202 +76,41 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 
 > Task :app:compileDebugJavaWithJavac
 > Task :app:processDebugJavaRes
-> Task :app:bundleDebugClassesToCompileJar
 > Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
 
 > Task :app:compileDebugUnitTestKotlin
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:30:42 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:36:42 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:48:68 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:49:78 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:58:13 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:61:37 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:62:42 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:70:13 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/feature/chats/EncryptionMarksTest.kt:92:57 Unresolved reference: unsealedMessageIds
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:112:13 Cannot find a parameter with this name: clock
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:113:13 Cannot find a parameter with this name: onSecurityChanged
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1225:61 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1228:25 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1234:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1243:33 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1244:69 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1245:65 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1246:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1247:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1256:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1257:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1269:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1270:23 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1272:9 Overload resolution ambiguity: 
-public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1273:22 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1274:22 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1277:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1278:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1279:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1282:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1298:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1304:46 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1306:13 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1307:15 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1313:41 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1314:22 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1315:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1316:42 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1337:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1341:92 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1351:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1352:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1358:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1366:54 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1367:42 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1368:61 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1374:22 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1375:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1389:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1402:35 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1412:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1426:22 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1443:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1449:71 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1450:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1451:65 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1452:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1453:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1454:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1455:23 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1456:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1457:23 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1458:89 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1461:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1462:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1474:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1477:42 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1480:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1481:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1482:42 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1484:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1486:41 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1498:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1499:41 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1500:69 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1504:41 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1506:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1507:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1508:42 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1518:26 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1523:24 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1531:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1536:22 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1537:42 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1552:26 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1555:25 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1560:44 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1561:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1575:57 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1576:51 Unresolved reference: changed
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1576:77 Unresolved reference: verified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1576:100 Unresolved reference: held
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1587:29 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1590:26 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1593:71 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1594:26 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1608:27 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1609:27 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1610:46 Unresolved reference: CODE_CHANGED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1613:26 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1613:48 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1627:22 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1628:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1641:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1643:23 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1644:42 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1647:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1648:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1649:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1650:23 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1652:25 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1656:22 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1657:22 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1658:23 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1659:23 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:1660:42 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:219:16 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:219:34 Unresolved reference: Trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:222:46 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:230:20 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:230:38 Unresolved reference: Trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:232:49 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:233:13 None of the following functions can be called with the arguments supplied: 
-public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
-public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:245:44 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:262:50 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeStoreTest.kt:266:46 Unresolved reference: trust
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:121:13 Cannot find a parameter with this name: onSecurityChanged
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:121:54 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:218:38 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:225:41 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:226:37 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:230:38 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:231:22 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:232:80 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:235:38 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:237:38 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:239:38 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:240:59 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:247:37 Unresolved reference: security
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:248:37 Unresolved reference: securityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:249:38 Unresolved reference: setVerified
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:250:38 Unresolved reference: acceptChange
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:32:32 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:33:73 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:41:31 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:42:25 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:42:76 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:50:24 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:51:32 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:57:20 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:58:72 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:59:74 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:61:28 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:71:28 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:73:35 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:74:44 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:83:22 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:83:43 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:92:20 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:93:22 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:101:15 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:102:15 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:103:15 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:104:15 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:105:15 Unresolved reference: SecurityCode
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/SecurityCodeTest.kt:106:15 Unresolved reference: SecurityCode
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:738:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:754:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:417:13 Unsafe use of a nullable receiver of type File?
 
-> Task :app:compileDebugUnitTestKotlin FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795505090593.json
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+
+> Task :app:testDebugUnitTest
+
+com.nchat.app.feature.chats.EncryptionMarksTest > everyKindIsMarkedSoThatACaptionIsNoWayAroundIt FAILED
+    java.lang.AssertionError at EncryptionMarksTest.kt:100
+
+com.nchat.app.feature.chats.EncryptionMarksTest > sealedHistoryThisPhoneHoldsNoKeysForStillSetsTheMeasure FAILED
+    java.lang.AssertionError at EncryptionMarksTest.kt:84
+
+231 tests completed, 2 failed
+
+> Task :app:testDebugUnitTest FAILED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795508320232.json
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:compileDebugUnitTestKotlin'.
-> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
-   > Compilation error. See log for more details
+Execution failed for task ':app:testDebugUnitTest'.
+> There were failing tests. See the report at: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/build/reports/tests/testDebugUnitTest/index.html
 
 * Try:
-> Run with --info or --debug option to get more log output.
 > Run with --scan to get full insights.
-> Get more help at https://help.gradle.org.
 
 * Exception is:
-org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileDebugUnitTestKotlin'.
+org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:testDebugUnitTest'.
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:149)
 	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:282)
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:147)
@@ -302,18 +141,20 @@ org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:com
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
-Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
-	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:283)
-	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
-	at org.gradle.internal.Factories$1.create(Factories.java:31)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:321)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:304)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLock(DefaultWorkerLeaseService.java:309)
-	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:126)
-	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:92)
-	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForAll(DefaultAsyncWorkTracker.java:78)
-	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForCompletion(DefaultAsyncWorkTracker.java:66)
-	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:256)
+Caused by: org.gradle.api.internal.exceptions.MarkedVerificationException: There were failing tests. See the report at: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/build/reports/tests/testDebugUnitTest/index.html
+	at org.gradle.api.tasks.testing.AbstractTestTask.handleTestFailures(AbstractTestTask.java:621)
+	at org.gradle.api.tasks.testing.AbstractTestTask.handleCollectedResults(AbstractTestTask.java:483)
+	at org.gradle.api.tasks.testing.AbstractTestTask.executeTests(AbstractTestTask.java:478)
+	at org.gradle.api.tasks.testing.Test.executeTests(Test.java:690)
+	at com.android.build.gradle.tasks.factory.AndroidUnitTest.executeTests(AndroidUnitTest.java:119)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.doExecute(StandardTaskAction.java:58)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:248)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:29)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:26)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
@@ -428,39 +269,7 @@ Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionExcept
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
-Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
-	at org.jetbrains.kotlin.gradle.tasks.TasksUtilsKt.throwExceptionIfCompilationFailed(tasksUtils.kt:20)
-	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotlinCompilerWork.kt:141)
-	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction.execute(GradleCompilerRunnerWithWorkers.kt:73)
-	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
-	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
-	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
-	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
-	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
-	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
-	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
-	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
-	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
-	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(AbstractWorker.java:41)
-	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationWorkerFactory.java:59)
-	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(DefaultWorkerExecutor.java:170)
-	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runExecution(DefaultConditionalExecutionQueue.java:187)
-	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.access$700(DefaultConditionalExecutionQueue.java:120)
-	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1.run(DefaultConditionalExecutionQueue.java:162)
-	at org.gradle.internal.Factories$1.create(Factories.java:31)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
-	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:114)
-	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runBatch(DefaultConditionalExecutionQueue.java:157)
-	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.run(DefaultConditionalExecutionQueue.java:126)
-	... 2 more
 
 
-BUILD FAILED in 1m 35s
-22 actionable tasks: 10 executed, 12 from cache
+BUILD FAILED in 1m 58s
+24 actionable tasks: 12 executed, 12 from cache
