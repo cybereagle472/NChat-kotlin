@@ -42,6 +42,20 @@ class OutgoingMediaTest {
     }
 
     @Test
+    fun aSealedFileKeepsItsAddressAndTheThumbnailThatTravelsWithIt() {
+        // The address of a sealed file carries its key in the fragment; the thumbnail of a file
+        // waiting to be sent is a picture written out as text. Both must survive the queue.
+        val sealed = "https://example.com/media/file/u/f#nchat-sealed:v1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8:10:jpg"
+        val inline = "data:image/jpeg;base64,/9j/4AAQSkZJRg"
+        val image = voice.copy(type = "image", mediaUrl = sealed, thumbnailUrl = inline, text = "caption")
+        assertEquals(image, image.prepareMediaForDelivery())
+        assertEquals(sealed, sealed.shareableMediaUrl())
+        // Anything else that is not an address is still dropped.
+        assertNull(image.copy(thumbnailUrl = "data:text/html;base64,PGh0bWw+").prepareMediaForDelivery()?.thumbnailUrl)
+        assertNull(image.copy(thumbnailUrl = "file:///private/thumb.jpg").prepareMediaForDelivery()?.thumbnailUrl)
+    }
+
+    @Test
     fun normalTextAndLocationDoNotRequireMediaUrls() {
         val text = voice.copy(type = "text", text = "hello")
         val location = voice.copy(type = "location", text = "33.1,73.1")

@@ -39,6 +39,8 @@ import androidx.compose.material.icons.rounded.MarkChatRead
 import androidx.compose.material.icons.rounded.MarkChatUnread
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Mic
@@ -196,6 +198,7 @@ fun ChatsScreen(
                     ChatRow(
                         chat = chat,
                         draft = drafts[chat.id],
+                        mark = state.marks[chat.id],
                         onClick = {
                             viewModel.markRead(chat.id)
                             onOpenChat(chat)
@@ -512,6 +515,8 @@ private fun ArchivedChatsDialog(
 private fun ChatRow(
     chat: Chat,
     draft: String? = null,
+    /** What the row says about encryption; null for a chat nothing was ever encrypted in. */
+    mark: ChatListMark? = null,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleMute: () -> Unit,
@@ -520,6 +525,7 @@ private fun ChatRow(
 ) {
     val extra = NcTheme.extra
     val hasUnread = chat.unreadCount > 0
+    val securityNotice = mark?.notice
     var menuOpen by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -581,11 +587,32 @@ private fun ChatRow(
 
                     chat.isTyping -> TypingLine(label = "typing", iconColor = extra.typing)
 
-                    else -> PreviewLine(chat = chat, hasUnread = hasUnread, draft = draft)
+                    // A security code that changed and has not been looked at is what this
+                    // row is about until it has been — inside the chat it is a banner, and
+                    // somebody who does not open the chat would never learn of it.
+                    securityNotice != null -> SecurityNoticeLine(notice = securityNotice)
+
+                    else -> PreviewLine(
+                        chat = chat,
+                        hasUnread = hasUnread,
+                        draft = draft,
+                        unsealed = mark?.unsealedPreview == true
+                    )
                 }
 
                 Spacer(modifier = Modifier.size(NcSpace.sm))
 
+                if (mark != null && mark.lock != ChatLock.None) {
+                    val settled = mark.lock == ChatLock.Encrypted
+                    Icon(
+                        imageVector = Icons.Rounded.Lock,
+                        contentDescription = if (settled) "End-to-end encrypted" else "Security code changed",
+                        tint = if (settled) extra.textMuted else SecurityAttention,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(12.dp)
+                    )
+                }
                 if (chat.pinned) {
                     Icon(
                         imageVector = Icons.Rounded.PushPin,
@@ -715,8 +742,42 @@ private fun RowScope.TypingLine(
     }
 }
 
+/** Amber: something about a chat's encryption wants a look. Reads on the light and the dark list alike. */
+private val SecurityAttention = Color(0xFFF59E0B)
+
+/** In place of the preview while a changed security code has not been looked at. */
 @Composable
-private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? = null) {
+private fun RowScope.SecurityNoticeLine(notice: String) {
+    Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.ErrorOutline,
+            contentDescription = null,
+            tint = SecurityAttention,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = notice,
+            style = MaterialTheme.typography.bodyMedium,
+            color = SecurityAttention,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+    }
+}
+
+/**
+ * [unsealed]: the newest message reached the server readable although this chat is encrypted.
+ * The lock on the row must not vouch for it, so the preview says so — the same words the bubble
+ * carries inside the chat.
+ */
+@Composable
+private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? = null, unsealed: Boolean = false) {
     val extra = NcTheme.extra
 
     if (!draft.isNullOrBlank()) {
@@ -753,6 +814,21 @@ private fun RowScope.PreviewLine(chat: Chat, hasUnread: Boolean, draft: String? 
     ) {
         if (chat.lastMessageMine) {
             if (chat.lastMessageFailed) DeliveryFailed() else DeliveryTick(state = chat.lastMessageState)
+        }
+        if (unsealed) {
+            Icon(
+                imageVector = Icons.Rounded.LockOpen,
+                contentDescription = null,
+                tint = SecurityAttention,
+                modifier = Modifier.size(13.dp)
+            )
+            Text(
+                text = "Not encrypted",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SecurityAttention,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
         }
         KindIcon(kind = chat.lastMessageKind)
 

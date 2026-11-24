@@ -67,6 +67,38 @@ object MediaPreparer {
     }.getOrNull()
 
     /**
+     * A thumbnail small enough to travel *inside* a sealed message.
+     *
+     * A readable message points at a thumbnail file on the server. A sealed one cannot — the
+     * server would hold a readable picture of an encrypted photo — so the preview goes into
+     * the message itself, and has to be small: [INLINE_DIMENSION] on its longest side and at
+     * most [INLINE_BYTES]. Returns null when [jpeg] is not a picture or will not fit; the
+     * bubble then shows its plain tile until the file itself is there.
+     */
+    fun inlinePreview(jpeg: ByteArray?): ByteArray? {
+        if (jpeg == null || jpeg.isEmpty()) return null
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, INLINE_DIMENSION)
+            }
+            val decoded = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options) ?: return null
+            val small = scaleDown(decoded, INLINE_DIMENSION)
+            for (quality in intArrayOf(INLINE_QUALITY, INLINE_QUALITY - 20, INLINE_QUALITY - 35)) {
+                val encoded = encode(small, quality) ?: return null
+                if (encoded.size <= INLINE_BYTES) return encoded
+            }
+            null
+        }.getOrNull()
+    }
+
+    private const val INLINE_DIMENSION = 256
+    private const val INLINE_QUALITY = 60
+    private const val INLINE_BYTES = 20 * 1024
+
+    /**
      * Decodes [uri], applies its EXIF rotation, downscales it and returns JPEG bytes plus a
      * thumbnail. Returns null when the image cannot be decoded (the caller then falls back to
      * uploading the original file).

@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { newId } from '../lib/id';
 import { canReadMedia } from '../lib/media-access';
+import { mayMessage } from '../lib/contacts';
 
 const media = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -31,6 +32,44 @@ media.post('/upload', requireAuth, limitSend, async (c) => {
   const file = form.get('file');
   if (!(file instanceof File)) return c.json({ error: 'file is required (multipart/form-data)' }, 400);
   if (file.size > 49 * 1024 * 1024) return c.json({ error: 'File too large' }, 413);
+
+  // A sealed file — an attachment of an encrypted conversation. The server
+  // cannot read the message that carries its key, so the uploader names the
+  // audience here: one person, or one group.
+  const forUser = form.get('sealed_for_user');
+  const forGroup = form.get('sealed_for_group');
+  if (forUser !== null || forGroup !== null) {
+    const audience = forUser !== null ? forUser : forGroup;
+    if (forUser !== null && forGroup !== null) return c.json({ error: 'A sealed file has one audience' }, 400);
+    if (typeof audience !== 'string' || !audience || audience.length > 512) return c.json({ error: 'Invalid audience' }, 400);
+    if (forUser !== null && audience === userId) return c.json({ error: 'Cannot seal a file for yourself' }, 400);
+    const allowed = forUser !== null
+      ? await mayMessage(c.env, userId, audience)
+      : !!(await c.env.DB.prepare('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?').bind(audience, userId).first());
+    if (!allowed) return c.json({ error: 'Cannot send files to this audience' }, 403);
+
+    // Nothing the phone says about the file is kept: not its name, not its
+    // type. They would describe content the server is not meant to know.
+    const sealedKey = `${userId}/${newId()}`;
+    await c.env.MEDIA.put(sealedKey, file, { httpMetadata: { contentType: 'application/octet-stream' } });
+    const sealedId = newId();
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO media_attachments (id, uploader_id, file_path, file_name, file_size, mime_type, media_type, sealed_for_user, sealed_for_group)
+         VALUES (?, ?, ?, 'sealed', ?, 'application/octet-stream', 'sealed', ?, ?)`
+      )
+        .bind(sealedId, userId, sealedKey, file.size, forUser !== null ? audience : null, forGroup !== null ? audience : null)
+        .run();
+    } catch (err) {
+      // A file nobody is recorded as allowed to read must not stay behind.
+      await c.env.MEDIA.delete(sealedKey);
+      // The database has not been given the audience columns (migration 0009).
+      if (/sealed_for_(user|group)/.test(String(err))) return c.json({ error: 'Sealed files are not available on this server yet', code: 'e2ee_unavailable' }, 501);
+      throw err;
+    }
+    const sealedUrl = `${c.env.PUBLIC_API_URL}/media/file/${sealedKey}`;
+    return c.json({ id: sealedId, url: sealedUrl, key: sealedKey, media_type: 'sealed', file_name: 'sealed', file_size: file.size }, 201);
+  }
 
   const suffix = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
   const ext = /^[a-zA-Z0-9]{1,16}$/.test(suffix) ? suffix : '';

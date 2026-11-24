@@ -1,0 +1,97 @@
+name: Encryption tests on Android
+
+# The end-to-end encryption tests, run on Android itself: an emulator of the
+# oldest system the app supports (API 24) and one of the system it targets
+# (API 34). The JVM run in "Build NChat APK" proves the logic; this proves it
+# against the cryptography, the Keystore and the file system a phone has.
+#
+# Then the app itself is started there — the build that is made the way the
+# release is made (the `smoke` build type: same code, same shrinking) — and
+# has to come up with its first screen and without a crash. It is the only
+# place where the app runs at all before it reaches a phone. It gets no
+# further than the sign-in screen: beyond it is the server, and there is one.
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  device-tests:
+    name: Emulator, API ${{ matrix.api-level }}
+    # A commit that only adds tests which are meant to fail first says so with [red]:
+    # there is nothing to learn from an emulator about code that is not written yet.
+    if: ${{ !contains(github.event.head_commit.message, '[red]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 24
+            target: default
+            arch: x86
+          - api-level: 34
+            target: google_apis
+            arch: x86_64
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+      - name: Let the emulator use hardware virtualisation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build the app and its tests
+        env:
+          # An address that leads nowhere: the app shows its sign-in screen and reaches no server.
+          NCHAT_API_BASE: https://nchat-smoke.invalid
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleSmoke 2>&1 | tee /tmp/device-build.log
+      - name: Run the tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          disable-animations: true
+          script: bash .github/scripts/on_emulator.sh ${{ matrix.api-level }}
+      - name: Report what ran
+        if: always()
+        env:
+          API_LEVEL: ${{ matrix.api-level }}
+        run: python3 .github/scripts/device_test_report.py app/build/outputs/androidTest-results "$API_LEVEL" /tmp/device-build.log /tmp/device-run.log
+      - name: Keep the report where it can be read
+        if: failure()
+        env:
+          API_LEVEL: ${{ matrix.api-level }}
+        run: |
+          mkdir -p .ci
+          cat /tmp/device-report.log /tmp/app-start.log > ".ci/device-tests-api$API_LEVEL.log" 2> /dev/null || true
+          git config user.name "nchat-ci"
+          git config user.email "ci@nchat.local"
+          git add -f ".ci/device-tests-api$API_LEVEL.log"
+          git commit -m "ci: capture device test failures, API $API_LEVEL [skip ci]" || exit 0
+          # Two emulators may get here at the same moment: the second one fetches and tries again.
+          for attempt in 1 2 3 4; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then break; fi
+            sleep 7
+          done

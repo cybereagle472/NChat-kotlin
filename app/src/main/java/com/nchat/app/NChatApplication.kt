@@ -25,6 +25,10 @@ class NChatApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         CrashLog.install(this)
         ServiceLocator.init(this)
+        // End-to-end encryption: confirm this phone's public keys with the server. Somebody
+        // who was already signed in when this version arrived registers here for the first
+        // time; a sign-in does the same for a new session.
+        ServiceLocator.syncE2eeKeys()
     }
 
     override fun newImageLoader(): ImageLoader =

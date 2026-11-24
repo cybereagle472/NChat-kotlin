@@ -22,6 +22,7 @@ import com.nchat.app.R
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
+import com.nchat.app.feature.chats.notificationBody
 
 /**
  * System notifications — the thing NChat did not have at all until 1.0.51.
@@ -98,7 +99,13 @@ class NcNotifications(
         }
     }
 
-    fun show(chat: Chat, message: Message, mentioned: Boolean = false) {
+    /**
+     * [encryptedSince]: since when this chat is end-to-end encrypted on this phone, null when
+     * it is not. A message that reached the server readable in such a chat is announced as
+     * "Not encrypted" — a notification is where words slipped into an encrypted chat would be
+     * read first, and without the mark they would look like any others.
+     */
+    fun show(chat: Chat, message: Message, mentioned: Boolean = false, encryptedSince: Long? = null) {
         if (!canPost()) return
         if (chat.id == activeChatId) return
         ensureChannels()
@@ -106,7 +113,7 @@ class NcNotifications(
         val entry = lines.getOrPut(chat.id) { mutableListOf() }
         entry += Line(
             sender = if (chat.isGroup) message.authorName else chat.title,
-            body = bodyOf(message),
+            body = notificationBody(bodyOf(message), message, encryptedSince),
             at = if (message.timestamp > 0) message.timestamp else System.currentTimeMillis(),
             // Kept so tapping the notification can land on this exact bubble, not just the chat.
             id = message.id

@@ -88,6 +88,7 @@ fun HomeScreen(
     )
 
     val groups by ServiceLocator.chatRepository.groups.collectAsStateWithLifecycle()
+    val groupEncryptedSince by ServiceLocator.chatRepository.groupEncryptedSince.collectAsStateWithLifecycle()
     val statuses by ServiceLocator.statusRepository.statuses.collectAsStateWithLifecycle()
     val postState by ServiceLocator.statusRepository.post.collectAsStateWithLifecycle()
     val calls by ServiceLocator.callRepository.history.collectAsStateWithLifecycle()
@@ -260,6 +261,7 @@ fun HomeScreen(
 
                     HomeTab.Groups -> GroupsScreen(
                         groups = groups,
+                        encryptedSince = groupEncryptedSince,
                         friends = friends,
                         listState = groupsListState,
                         onOpenGroup = { group ->

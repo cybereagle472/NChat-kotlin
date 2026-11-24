@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +37,8 @@ import com.nchat.app.core.designsystem.NcUnreadBadge
 import com.nchat.app.core.util.TimeFormat
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.Group
+import com.nchat.app.feature.chats.ChatLock
+import com.nchat.app.feature.chats.groupListMark
 import com.nchat.app.ui.components.NcHeaderAction
 import com.nchat.app.ui.components.NcTabHeader
 import androidx.compose.foundation.background
@@ -50,6 +53,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun GroupsScreen(
     groups: List<Group>,
+    /** Since when each group is end-to-end encrypted on this phone, by group id; none for one that is not. */
+    encryptedSince: Map<String, Long> = emptyMap(),
     friends: List<Friend>,
     listState: LazyListState,
     onOpenGroup: (Group) -> Unit,
@@ -94,6 +99,7 @@ fun GroupsScreen(
                     verticalArrangement = Arrangement.spacedBy(NcSpace.sm)
                 ) {
                     items(items = groups, key = { it.id }) { group ->
+                        val mark = groupListMark(group, encryptedSince[group.id])
                         NcGlassRow(onClick = { onOpenGroup(group) }) {
                             NcAvatar(
                                 name = group.name,
@@ -160,6 +166,17 @@ fun GroupsScreen(
                                         maxLines = 1,
                                         modifier = Modifier.padding(start = 4.dp)
                                     )
+                                    if (mark.unsealedPreview) {
+                                        // The lock on this row must not vouch for words the
+                                        // server could read: the same mark the bubble carries.
+                                        Text(
+                                            text = " · Not encrypted",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color(0xFFF59E0B),
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1
+                                        )
+                                    }
                                     Text(
                                         text = " · ${group.lastActivity}",
                                         style = MaterialTheme.typography.bodyMedium,
@@ -173,6 +190,16 @@ fun GroupsScreen(
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
                                     Spacer(modifier = Modifier.size(NcSpace.sm))
+                                    if (mark.lock != ChatLock.None) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Lock,
+                                            contentDescription = "End-to-end encrypted",
+                                            tint = extra.textMuted,
+                                            modifier = Modifier
+                                                .padding(end = 4.dp)
+                                                .size(12.dp)
+                                        )
+                                    }
                                     if (group.unreadCount > 0) {
                                         NcUnreadBadge(count = group.unreadCount)
                                     }

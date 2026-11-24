@@ -187,6 +187,16 @@ fun ConversationScreen(
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
+    /*
+     * End-to-end encryption, as far as this phone knows it for this chat: null for a group and
+     * for a conversation nothing was ever encrypted in. It decides three things on this screen —
+     * the notice when the other person's security code changed, the sheet that shows the code,
+     * and which messages are marked as having gone through the server readable.
+     */
+    val security by viewModel.security.collectAsStateWithLifecycle()
+    var encryptionOpen by remember { mutableStateOf(false) }
+    val encryptedSince by viewModel.encryptedSince.collectAsStateWithLifecycle()
+    val unsealedIds = remember(messages, encryptedSince) { unsealedMessageIds(messages, encryptedSince) }
     val wallpaperId by ServiceLocator.wallpapers.selection.collectAsStateWithLifecycle()
     val wallpaper = remember(wallpaperId) {
         com.nchat.app.data.local.Wallpaper.entries.firstOrNull { it.id == wallpaperId }
@@ -331,6 +341,13 @@ fun ConversationScreen(
         val kind = pendingKind
         pendingKind = null
         if (uri == null || kind == null) return
+        if (kind == MessageKind.Video) {
+            // A camera clip is far larger than an attachment may be. It is re-encoded first —
+            // which takes a while, so the bubble appears now and the work goes on behind it.
+            val app = context.applicationContext
+            viewModel.onSendVideo { com.nchat.app.core.util.prepareVideo(app, uri) }
+            return
+        }
         val picked = readPickedFile(context, uri)
         if (picked == null) {
             NcToaster.show("That file is too large (max 24 MB)")
@@ -350,9 +367,6 @@ fun ConversationScreen(
                     thumbnail = prepared.thumbnail
                 )
             }
-        } else if (kind == MessageKind.Video) {
-            // A clip gets a poster frame so the bubble shows the video, not a black tile.
-            picked.copy(thumbnail = MediaPreparer.videoPoster(context, uri))
         } else {
             picked
         }
@@ -557,6 +571,17 @@ fun ConversationScreen(
                 )
             }
 
+            // The other person's security code changed and the user has not answered that yet.
+            val securityNow = security
+            if (securityNow != null && securityNow.changed) {
+                SecurityChangeBanner(
+                    notice = securityChangeNotice(chatTitle, securityNow),
+                    acceptLabel = securityAcceptLabel(securityNow),
+                    onView = { encryptionOpen = true },
+                    onAccept = { securityNow.key?.let { key -> viewModel.acceptSecurityChange(key) } }
+                )
+            }
+
             /*
              * The pinned banner, right under the header where WhatsApp puts it. It is a banner,
              * not a list: one message per chat, replaced when another is pinned, and tap-to-jump
@@ -655,7 +680,8 @@ fun ConversationScreen(
                                     // One name per run, not per bubble: repeating "Zaid" above
                                     // every line he sends is noise, and it is the first thing
                                     // that makes a group thread look machine-generated.
-                                    showName = item.showSender
+                                    showName = item.showSender,
+                                    notEncrypted = message.id in unsealedIds
                                 )
                             }
                         }
@@ -1021,7 +1047,25 @@ fun ConversationScreen(
             onMedia = {
                 optionsOpen = false
                 mediaSheetOpen = true
+            },
+            // A chat with one person shows the security code; a group says whether it is
+            // encrypted and who reads what (codes are compared in the chats with its members).
+            onEncryption = {
+                optionsOpen = false
+                encryptionOpen = true
             }
+        )
+    }
+
+    if (encryptionOpen) {
+        SecurityCodeDialog(
+            name = chatTitle,
+            security = if (isGroupChat) null else security,
+            summary = if (isGroupChat) groupEncryptionSummary(encryptedSince != null) else encryptionSummary(chatTitle, security),
+            loadCode = { key -> viewModel.securityCode(key) },
+            onSetVerified = { key, verified -> viewModel.setVerified(key, verified) },
+            onAccept = { key -> viewModel.acceptSecurityChange(key) },
+            onDismiss = { encryptionOpen = false }
         )
     }
 
@@ -1969,6 +2013,14 @@ private fun MessageInfoDialog(
             InfoRow("Type", kindLabel)
             InfoRow("Sent", stamp)
             InfoRow("Status", status)
+            InfoRow(
+                "Security",
+                when {
+                    message.encrypted -> "End-to-end encrypted"
+                    message.unreadable -> "End-to-end encrypted, for another phone"
+                    else -> "Not end-to-end encrypted"
+                }
+            )
             if (flags.isNotEmpty()) InfoRow("Flags", flags.joinToString(" · "))
             if (message.text.isNotBlank()) {
                 HorizontalDivider(

@@ -14,3 +14,6 @@ worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
 nchat-backup-private-key.pem
+
+# Python bytecode from running the workflow scripts' tests
+__pycache__/

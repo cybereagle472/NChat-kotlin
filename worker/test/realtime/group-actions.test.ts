@@ -463,7 +463,11 @@ describe('credential abuse limits', () => {
     expect(replies.every(r => r.status === 401 || r.status === 429)).toBe(true);
   });
   it('limits signups per connecting address even when emails and forwarded headers vary', async () => {
-    const ip = `2001:db8:${Math.floor(Math.random() * 65535).toString(16)}::1`;
+    // An address block no other test draws from. Every other signup in this
+    // suite comes from `2001:db8:<random>::1`, and the limiter's state outlives
+    // a test: exhausting one of THOSE blocks here made a later, unrelated
+    // signup fail with 429 whenever the two random numbers met.
+    const ip = `2001:db8:0:${(1 + Math.floor(Math.random() * 65535)).toString(16)}::1`;
     const statuses: number[] = [];
     for (let i = 0; i < 12; i++) statuses.push((await authRequest('/auth/signup', {email:`${crypto.randomUUID()}@example.test`,password:'password123'}, ip, `203.0.113.${i+1}`)).status);
     expect(statuses.slice(0, 10).every(s => s === 201)).toBe(true);

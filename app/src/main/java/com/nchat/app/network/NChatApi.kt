@@ -46,14 +46,72 @@ class NChatApi(private val client: ApiClient) {
             )
         )
 
-    suspend fun logout(refreshToken: String?) {
+    /**
+     * Ends the session on the server. [identityPublicKey] names the end-to-end encryption
+     * identity this phone is erasing with it, so the server stops handing those keys out.
+     */
+    suspend fun logout(refreshToken: String?, identityPublicKey: String? = null) {
         client.post(
             "/auth/logout",
-            body { if (refreshToken != null) put("refresh_token", refreshToken) }
+            body {
+                if (refreshToken != null) put("refresh_token", refreshToken)
+                if (identityPublicKey != null) put("identity_public_key", identityPublicKey)
+            }
         )
     }
 
     suspend fun me(): UserEnvelope = decode(client.get("/auth/me"))
+
+    // ------------------------------------------------------------ e2ee keys
+    // Public material only — the private halves never leave the device.
+
+    suspend fun registerKeys(
+        identityPublicKey: String,
+        signedPrekeyPublic: String,
+        signedPrekeySignature: String,
+    ) {
+        client.post(
+            "/keys/register",
+            body {
+                put("identity_public_key", identityPublicKey)
+                put("signed_prekey_public", signedPrekeyPublic)
+                put("signed_prekey_signature", signedPrekeySignature)
+            }
+        )
+    }
+
+    /**
+     * What it takes to start a sealed conversation with [userId]. A 404 means
+     * that account has no keys (an older app), a 501 that the server has no
+     * key directory at all; both read as null. Any other failure propagates:
+     * a timeout must never look like "no keys".
+     */
+    suspend fun keyBundle(userId: String): BundleDto? = try {
+        decode(client.get("/keys/bundle/$userId"))
+    } catch (error: ApiException) {
+        if (error.status == 404 || error.status == KEYS_NOT_SET_UP) null else throw error
+    }
+
+    suspend fun keyStatus(): KeyStatusDto = decode(client.get("/keys/prekeys"))
+
+    /**
+     * Adds one-time prekeys under [identityPublicKey]. False when the server
+     * holds a different identity key for the account (409): another
+     * installation has registered since.
+     */
+    suspend fun uploadPrekeys(identityPublicKey: String, publicKeys: List<String>): Boolean = try {
+        client.post(
+            "/keys/prekeys",
+            body {
+                put("identity_public_key", identityPublicKey)
+                putJsonArray("public_keys") { publicKeys.forEach { add(it) } }
+            },
+        )
+        true
+    } catch (error: ApiException) {
+        if (error.status == 409) false else throw error
+    }
+
 
     // ----------------------------------------------------------------- users
 
@@ -158,13 +216,17 @@ class NChatApi(private val client: ApiClient) {
         duration: String? = null,
         fileName: String? = null,
         fileSize: String? = null,
+        /** For a sealed message (`type = "e2ee"`): the identity key its envelope was sealed for. */
+        recipientIdentityKey: String? = null,
     ): MessageEnvelope = decode(
         client.post(
             "/messages",
             body {
+                keepsNoFileKey(content, mediaUrl, thumbnailUrl)
                 put("receiver_id", receiverId)
                 put("content", content)
                 put("type", type)
+                if (recipientIdentityKey != null) put("recipient_identity_key", recipientIdentityKey)
                 if (clientMessageId != null) put("client_message_id", clientMessageId)
                 if (replyTo != null) put("reply_to", replyTo)
                 if (mediaUrl != null) put("media_url", mediaUrl)
@@ -176,8 +238,17 @@ class NChatApi(private val client: ApiClient) {
         )
     )
 
-    suspend fun editMessage(id: String, content: String): MessageEnvelope =
-        decode(client.patch("/messages/$id", body { put("content", content) }))
+    /** [recipientIdentityKey] accompanies the new envelope of a sealed message, and only that. */
+    suspend fun editMessage(id: String, content: String, recipientIdentityKey: String? = null): MessageEnvelope =
+        decode(
+            client.patch(
+                "/messages/$id",
+                body {
+                    put("content", content)
+                    if (recipientIdentityKey != null) put("recipient_identity_key", recipientIdentityKey)
+                },
+            )
+        )
 
     suspend fun deleteMessage(id: String) {
         client.delete("/messages/$id")
@@ -304,12 +375,16 @@ class NChatApi(private val client: ApiClient) {
         mediaUrl: String? = null,
         thumbnailUrl: String? = null,
         duration: String? = null,
+        /** For a sealed message (`type = "e2ee"`): the id of the sender's chain it was sealed with. */
+        chainId: String? = null,
     ): MessageEnvelope = decode(
         client.post(
             "/groups/$groupId/messages",
             body {
+                keepsNoFileKey(content, mediaUrl, thumbnailUrl)
                 put("content", content)
                 put("type", type)
+                if (chainId != null) put("chain_id", chainId)
                 if (clientMessageId != null) put("client_message_id", clientMessageId)
                 if (replyTo != null) put("reply_to", replyTo)
                 if (mediaUrl != null) put("media_url", mediaUrl)
@@ -318,6 +393,72 @@ class NChatApi(private val client: ApiClient) {
             }
         )
     )
+
+    // -------------------------------------------------- sealed group messages
+
+    /**
+     * The other members of a group and the keys they have registered; with [chainId], also who
+     * holds that chain of this phone's, and whether somebody holds it who should not.
+     */
+    suspend fun groupRoster(groupId: String, chainId: String?): GroupRosterDto =
+        decode(client.get("/groups/$groupId/roster", if (chainId != null) mapOf("chain" to chainId) else emptyMap()))
+
+    /** Hands this phone's chain [chainId] to members: one sealed envelope each, kept for that member alone. */
+    suspend fun handOverGroupKeys(groupId: String, chainId: String, keys: List<GroupKey>) {
+        client.post(
+            "/groups/$groupId/keys",
+            body {
+                put("chain_id", chainId)
+                putJsonArray("keys") {
+                    keys.forEach { key ->
+                        add(
+                            buildJsonObject {
+                                put("recipient_id", key.recipientId)
+                                put("recipient_identity_key", key.recipientIdentity)
+                                put("envelope", key.envelope)
+                            }
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    /** The envelopes that hand this phone the chains in [wanted]; a chain the server has none for is simply absent. */
+    suspend fun fetchGroupKeys(groupId: String, wanted: List<GroupKeyRef>): List<GroupKeyDto> {
+        val answer: GroupKeysDto = decode(
+            client.post(
+                "/groups/$groupId/keys/fetch",
+                body {
+                    putJsonArray("wanted") {
+                        wanted.forEach { ref ->
+                            add(
+                                buildJsonObject {
+                                    put("sender_id", ref.senderId)
+                                    put("chain_id", ref.chainId)
+                                }
+                            )
+                        }
+                    }
+                }
+            )
+        )
+        return answer.keys
+    }
+
+    /**
+     * Tells the server that the envelope which was to hand this phone the chain [chainId] of
+     * [senderId] does not open here, so that [senderId] hands it over once more.
+     */
+    suspend fun askGroupKeyAgain(groupId: String, senderId: String, chainId: String) {
+        client.post(
+            "/groups/$groupId/keys/again",
+            body {
+                put("sender_id", senderId)
+                put("chain_id", chainId)
+            }
+        )
+    }
 
     suspend fun deleteGroupMessageForMe(messageId: String) {
         client.post("/groups/messages/$messageId/delete-for-me")
@@ -367,6 +508,7 @@ class NChatApi(private val client: ApiClient) {
         client.post(
             "/status",
             body {
+                keepsNoFileKey(textContent, contentUrl, caption)
                 put("content_type", contentType)
                 put("text_content", textContent)
                 put("privacy", privacy)
@@ -488,6 +630,34 @@ class NChatApi(private val client: ApiClient) {
     ): MediaDto =
         decode(client.upload("/media/upload", fileName, mimeType, bytes, onProgress))
 
+    /**
+     * Uploads a file that was sealed on this phone ([E2eeAttachment]) for one person
+     * ([forUser]) or one group ([forGroup]) — the only ones the server will hand it to.
+     *
+     * The name and type sent with it say nothing: the server is given bytes and an audience,
+     * and what the file is travels inside the sealed message.
+     */
+    suspend fun uploadSealed(
+        bytes: ByteArray,
+        forUser: String? = null,
+        forGroup: String? = null,
+        onProgress: ((Float) -> Unit)? = null
+    ): MediaDto {
+        require((forUser == null) != (forGroup == null)) { "a sealed file has one audience" }
+        val audience = if (forUser != null) mapOf("sealed_for_user" to forUser) else mapOf("sealed_for_group" to forGroup!!)
+        return decode(client.upload("/media/upload", "sealed", "application/octet-stream", bytes, onProgress, audience))
+    }
+
+    /**
+     * Removes a file this account uploaded from the server. The server does it for the
+     * uploader only; for anybody else's file the answer is "not found".
+     */
+    suspend fun deleteMedia(url: String) {
+        val key = (SealedMedia.strip(url) ?: return).substringAfter("/media/file/", "").substringBefore('?')
+        if (key.isBlank()) return
+        client.delete("/media/file/$key")
+    }
+
     // --------------------------------------------------------------- privacy
 
     suspend fun privacySettings(): SettingsEnvelope = decode(client.get("/privacy"))
@@ -517,7 +687,28 @@ class NChatApi(private val client: ApiClient) {
 
     // ------------------------------------------------------------- internals
 
+    companion object {
+        /**
+         * `/keys/…` on a server that has not been given its key tables yet. Unlike every
+         * other 5xx this is not "try again later": until somebody sets the server up, there
+         * is no end-to-end encryption to wait for.
+         */
+        const val KEYS_NOT_SET_UP = 501
+    }
+
     private fun body(block: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject(block)
+
+    /**
+     * The last line of defence for the key of a sealed file.
+     *
+     * Inside the app a sealed file is an address with its key in the fragment (see
+     * [SealedMedia]). That string must never be sent to the server as readable data: the key
+     * would be stored next to the file it protects. Every place that sends an address as part
+     * of a readable message checks here, and a request that would carry one is not made.
+     */
+    private fun keepsNoFileKey(vararg readable: String?) {
+        check(readable.none { SealedMedia.carriesKey(it) }) { "this file can only be sent encrypted" }
+    }
 
     /**
      * JSON → DTO, with a parse failure written to [ApiLog].

@@ -85,6 +85,13 @@ class SecurePrefs(context: Context, name: String) {
         else editor.putString(key, sealed?.let { PREFIX + it } ?: value)
     }
 
+    /**
+     * True when something is stored under [key], readable or not. [getString] answers `null`
+     * both for "never written" and for "written, but the Keystore will not decrypt it now";
+     * a caller that would otherwise create a replacement has to know which it is.
+     */
+    fun contains(key: String): Boolean = prefs.contains(key)
+
     fun getBoolean(key: String, default: Boolean = false): Boolean =
         getString(key)?.toBooleanStrictOrNull() ?: default
 

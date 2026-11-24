@@ -72,6 +72,18 @@ data class Message(
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
     val deleted: Boolean = false,
     /**
+     * End-to-end encrypted: the message arrived as a sealed envelope and was opened on this
+     * phone with the conversation's keys, so nobody in between could read or write it. False
+     * for everything the server could read — group messages, attachments, and messages from or
+     * to an app without encryption keys.
+     */
+    val encrypted: Boolean = false,
+    /**
+     * A sealed message this phone has no key for — it was sent to, or from, another
+     * installation. [text] is then a notice in its place, not something anybody wrote.
+     */
+    val unreadable: Boolean = false,
+    /**
      * How much of this message's file has reached the server, 0f…1f — null when nothing is
      * uploading.
      *
@@ -80,6 +92,22 @@ data class Message(
      */
     @Transient val uploadProgress: Float? = null
 ) {
+
+    /**
+     * These are somebody's words, and the server could read them: the message was not sealed,
+     * and it is not a deleted message, a system line, or one of this phone's own that is still
+     * on its way or failed (the server has not seen those at all).
+     *
+     * Whether that deserves a mark depends on the conversation — in one that is end-to-end
+     * encrypted it says "Not encrypted", in the bubble, on the chat's row and in a notification.
+     */
+    val reachedServerReadable: Boolean
+        get() = when {
+            encrypted || unreadable -> false
+            deleted || systemEvent -> false
+            isMine && (failed || state == DeliveryState.Sending) -> false
+            else -> true
+        }
 
     /**
      * This message as one line of text — a chat-list row, or the quote inside a reply.
@@ -203,6 +231,15 @@ data class Chat(
      * failed in both places.
      */
     val lastMessageFailed: Boolean = false,
+    /**
+     * The newest message is somebody's words that the server could read: it was not sealed, and
+     * it is not a system line, a deleted message or one of this phone's own still on its way.
+     *
+     * The row keeps the fact and nothing else. Whether it deserves "Not encrypted" in front of
+     * the preview depends on whether the chat is encrypted on this phone, which the list knows
+     * and this row does not (see `chatListMark`).
+     */
+    val lastMessageUnsealed: Boolean = false,
     val unreadCount: Int = 0,
     val isTyping: Boolean = false,
     val isRecording: Boolean = false,
@@ -365,7 +402,13 @@ data class Group(
     /** Who created the group; only they may delete it. */
     val createdBy: String? = null,
     /** This account's role in the group, so the UI knows whether to offer admin actions. */
-    val myRole: String? = null
+    val myRole: String? = null,
+    /**
+     * The newest message, which [lastActivity] quotes, is somebody's words that the server could
+     * read (see [Message.reachedServerReadable]). The Groups tab says "Not encrypted" for it when
+     * the group is encrypted on this phone.
+     */
+    val lastActivityUnsealed: Boolean = false
 ) {
     val iAmAdmin: Boolean get() = myRole == "admin"
 }

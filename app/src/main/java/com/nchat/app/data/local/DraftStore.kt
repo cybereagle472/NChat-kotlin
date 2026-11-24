@@ -1,10 +1,8 @@
 package com.nchat.app.data.local
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.nchat.app.network.LocalSeal
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -20,52 +18,43 @@ import java.io.File
  *
  * Writes are debounced by the view model, not here: this class is the storage, and the caller
  * decides how often it is asked to persist.
+ *
+ * A draft is a message that has not been sent yet, so the file is sealed for the account that
+ * is signed in (see [SealedState]); with nothing to seal with, a draft lives for as long as the
+ * app runs and is not written down.
  */
-class DraftStore(context: Context) {
+class DraftStore internal constructor(file: File, seal: () -> LocalSeal?) {
 
-    private val file = File(context.applicationContext.filesDir, "drafts.json")
+    constructor(context: Context, seal: () -> LocalSeal?) :
+        this(File(context.applicationContext.filesDir, "drafts.json"), seal)
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    private val _drafts = MutableStateFlow(load())
-    val drafts: StateFlow<Map<String, String>> = _drafts.asStateFlow()
+    private val state = SealedState(
+        file = file,
+        place = "drafts",
+        seal = seal,
+        empty = emptyMap<String, String>(),
+        isEmpty = { it.isEmpty() },
+        decode = { json.decodeFromString(MAP_SERIALIZER, it) },
+        encode = { json.encodeToString(MAP_SERIALIZER, it) },
+    )
 
-    fun get(chatId: String): String = _drafts.value[chatId].orEmpty()
+    val drafts: StateFlow<Map<String, String>> get() = state.value
+
+    fun get(chatId: String): String = state.current()[chatId].orEmpty()
 
     /** Stores [text] for [chatId]; blank text removes the entry instead of keeping an empty one. */
     fun set(chatId: String, text: String) {
-        val current = _drafts.value[chatId].orEmpty()
-        if (current == text) return
-        _drafts.update { drafts ->
-            if (text.isBlank()) drafts - chatId else drafts + (chatId to text)
-        }
-        persist()
+        state.update { drafts -> if (text.isBlank()) drafts - chatId else drafts + (chatId to text) }
     }
 
     fun clear(chatId: String) = set(chatId, "")
 
-    fun clearAll() {
-        _drafts.value = emptyMap()
-        runCatching { file.delete() }
-    }
-
-    private fun load(): Map<String, String> = runCatching {
-        if (!file.exists()) return emptyMap()
-        json.decodeFromString(MAP_SERIALIZER, file.readText())
-    }.getOrDefault(emptyMap())
-
-    private fun persist() = runCatching {
-        val drafts = _drafts.value
-        if (drafts.isEmpty()) {
-            file.delete()
-            return@runCatching
-        }
-        file.parentFile?.mkdirs()
-        file.writeText(json.encodeToString(MAP_SERIALIZER, drafts))
-    }
+    fun clearAll() = state.clear()
 
     private companion object {
         val MAP_SERIALIZER = MapSerializer(String.serializer(), String.serializer())

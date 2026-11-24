@@ -3,7 +3,8 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitContact, limitSend } from '../middleware/rate-limit';
 import { attachmentProofs, attachmentProofGuard, guardedGroupAvatarReferences, mediaReferenceStatements, writeWithMediaReferences } from '../lib/media-access';
-import { exceedsTextLimits } from '../lib/input';
+import { CHAIN_ID_BYTES, decodeExact, exceedsTextLimits, GROUP_MESSAGE_TYPES, KEY_ENVELOPE_BYTES, KEYS_PER_REQUEST, SEALED_CONTENT_BYTES, SPKI_BYTES, TEXT_CONTENT_BYTES } from '../lib/input';
+import { registeredIdentityKey } from '../lib/keys';
 import { consumeLimit } from '../lib/rate-limit';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
@@ -464,6 +465,202 @@ groups.delete('/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ───────────────────────── sealed group messages ─────────────────────────
+//
+// A member seals what they write to a group with a chain of their own and
+// hands that chain to each other member inside a sealed one-to-one envelope.
+// The server keeps those envelopes (group_sender_keys) and the messages; it
+// can open neither. Its part is to keep the two in step — see rosterOf.
+//
+// An envelope that does not open on the phone it was sealed for (that phone
+// lost the session it was sealed on, or the envelope did not arrive whole) is
+// no use to anybody, and the first envelope for a member is otherwise kept
+// for good. That member says so (POST …/keys/again): the envelope is emptied
+// — the row stays, so it is still known that they were to hold the chain —
+// and the roster tells the sender to hand the chain to them once more, on a
+// new session. An empty envelope is written by nothing else.
+
+/** The members of a group, or their keys, are not what the sender's chain was handed out for. */
+const ROSTER_CHANGED = { error: 'The members of this group or their keys have changed', code: 'roster_changed' };
+const SEALED_GROUPS_UNAVAILABLE = { error: 'Sealed group messages are not available on this server yet', code: 'e2ee_unavailable' };
+
+/** A database that has not been given migration 0008 or 0009. */
+function lacksKeyTables(err: unknown): boolean {
+  return /no such table: (group_sender_keys|user_crypto_keys)/.test(String(err));
+}
+
+type RosterEntry = { user_id: string; identity_key: string | null; has_key: boolean; again: boolean };
+
+/**
+ * Everybody in the group but `userId`, with the identity key they have
+ * registered (null: an app without keys) and whether they hold the chain
+ * `chainId` of `userId` — handed to them under the keys they have now.
+ * `again`: they were handed it and said that envelope does not open; they
+ * do not hold it, and are to be handed it once more.
+ *
+ * `stale` is the other half: somebody holds that chain who should not read
+ * what is sealed with it from here on — a member who has left, or one who
+ * has registered other keys since, whose previous phone still has it. A
+ * sender whose chain is stale starts a new one.
+ */
+async function rosterOf(env: Env, groupId: string, userId: string, chainId: string | null): Promise<{ members: RosterEntry[]; stale: boolean }> {
+  const [members, holders] = await env.DB.batch([
+    env.DB.prepare(`SELECT gm.user_id AS user_id, k.identity_public_key AS identity_key
+      FROM group_members gm LEFT JOIN user_crypto_keys k ON k.user_id = gm.user_id
+      WHERE gm.group_id = ?1 AND gm.user_id != ?2`).bind(groupId, userId),
+    env.DB.prepare(`SELECT recipient_id, recipient_identity_key, envelope = '' AS emptied FROM group_sender_keys
+      WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3`).bind(groupId, userId, chainId ?? ''),
+  ]);
+  const current = new Map((members.results as { user_id: string; identity_key: string | null }[]).map((row) => [row.user_id, row.identity_key]));
+  const held = new Map((holders.results as { recipient_id: string; recipient_identity_key: string; emptied: number }[]).map((row) => [row.recipient_id, row]));
+  // Emptied or not, an envelope for somebody who should not read any more makes the chain stale:
+  // that they could not open it is only their word.
+  const stale = [...held].some(([holder, row]) => current.get(holder) !== row.recipient_identity_key);
+  return {
+    members: [...current].map(([user_id, identity_key]) => {
+      const row = held.get(user_id);
+      const theirs = row !== undefined && identity_key !== null && row.recipient_identity_key === identity_key;
+      return { user_id, identity_key, has_key: theirs && !row.emptied, again: theirs && !!row.emptied };
+    }),
+    stale,
+  };
+}
+
+// GET /groups/:id/roster[?chain=…] — who a sealed message has to be for.
+groups.get('/:id/roster', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id')!;
+  if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+  const chain = c.req.query('chain');
+  if (chain !== undefined && !decodeExact(chain, CHAIN_ID_BYTES)) return c.json({ error: 'Invalid chain id' }, 400);
+  try {
+    return c.json(await rosterOf(c.env, groupId, userId, chain ?? null));
+  } catch (err) {
+    if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+    throw err;
+  }
+});
+
+// POST /groups/:id/keys — hand one's chain to other members: one sealed
+// envelope each, kept for that member alone.
+groups.post('/:id/keys', limitSend, async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id')!;
+  if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const chain = body.chain_id;
+  const keys: unknown = body.keys;
+  if (!decodeExact(chain, CHAIN_ID_BYTES)) return c.json({ error: 'Invalid chain id' }, 400);
+  if (!Array.isArray(keys) || keys.length === 0 || keys.length > KEYS_PER_REQUEST) return c.json({ error: 'Invalid key list' }, 400);
+  const encoder = new TextEncoder();
+  const recipients = new Set<string>();
+  for (const key of keys) {
+    if (typeof key !== 'object' || key === null) return c.json({ error: 'Invalid key list' }, 400);
+    const { recipient_id, recipient_identity_key, envelope } = key as Record<string, unknown>;
+    if (typeof recipient_id !== 'string' || !recipient_id || recipient_id.length > 512 || recipient_id === userId || recipients.has(recipient_id)) return c.json({ error: 'Invalid key list' }, 400);
+    if (!decodeExact(recipient_identity_key, SPKI_BYTES)) return c.json({ error: 'Invalid key list' }, 400);
+    if (typeof envelope !== 'string' || !envelope || encoder.encode(envelope).byteLength > KEY_ENVELOPE_BYTES) return c.json({ error: 'Invalid key list' }, 400);
+    recipients.add(recipient_id);
+  }
+  const entries = keys as { recipient_id: string; recipient_identity_key: string; envelope: string }[];
+
+  try {
+    // Every envelope must be for somebody who is in the group, under the keys
+    // they have now. One that is not means the sender's picture of the group
+    // is out of date: nothing is stored, and the sender looks again.
+    const { members } = await rosterOf(c.env, groupId, userId, chain);
+    const current = new Map(members.map((member) => [member.user_id, member.identity_key]));
+    if (entries.some((entry) => current.get(entry.recipient_id) !== entry.recipient_identity_key)) return c.json(ROSTER_CHANGED, 409);
+
+    // The first envelope for a member stays: it may have been opened already,
+    // and a later one would start further on and leave a hole. The one
+    // exception is an envelope that member said does not open: the new one
+    // takes its place, when it is for the same keys. Each row is guarded by
+    // the same conditions again, so a member who left in the meantime is
+    // simply not written.
+    await c.env.DB.batch(entries.map((entry) => c.env.DB.prepare(
+      `INSERT INTO group_sender_keys (group_id, sender_id, chain_id, recipient_id, recipient_identity_key, envelope)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6
+       WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2)
+         AND EXISTS (SELECT 1 FROM group_members gm JOIN user_crypto_keys k ON k.user_id = gm.user_id
+                     WHERE gm.group_id = ?1 AND gm.user_id = ?4 AND k.identity_public_key = ?5)
+       ON CONFLICT (group_id, sender_id, chain_id, recipient_id) DO UPDATE SET envelope = excluded.envelope
+         WHERE group_sender_keys.envelope = '' AND group_sender_keys.recipient_identity_key = excluded.recipient_identity_key`,
+    ).bind(groupId, userId, chain, entry.recipient_id, entry.recipient_identity_key, entry.envelope)));
+  } catch (err) {
+    if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+    throw err;
+  }
+  return c.json({ success: true });
+});
+
+// POST /groups/:id/keys/fetch — the envelopes that hand the caller the
+// chains they ask for. Only their own, and only those sealed for the keys
+// they have now: one sealed for a phone they no longer use cannot be opened.
+groups.post('/:id/keys/fetch', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id')!;
+  if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const wanted: unknown = body.wanted;
+  if (!Array.isArray(wanted) || wanted.length > KEYS_PER_REQUEST) return c.json({ error: 'Invalid request' }, 400);
+  const pairs: { sender_id: string; chain_id: string }[] = [];
+  for (const item of wanted) {
+    if (typeof item !== 'object' || item === null) return c.json({ error: 'Invalid request' }, 400);
+    const { sender_id, chain_id } = item as Record<string, unknown>;
+    if (typeof sender_id !== 'string' || !sender_id || sender_id.length > 512 || !decodeExact(chain_id, CHAIN_ID_BYTES)) return c.json({ error: 'Invalid request' }, 400);
+    pairs.push({ sender_id, chain_id: chain_id as string });
+  }
+  if (pairs.length === 0) return c.json({ keys: [] });
+
+  try {
+    // No keys of one's own: nothing can have been sealed for this caller. The
+    // empty identity matches no row, and the query still says so if the table is missing.
+    const identity = (await registeredIdentityKey(c.env, userId)) ?? '';
+    const found = await c.env.DB.batch(pairs.map((pair) => c.env.DB.prepare(
+      `SELECT sender_id, chain_id, envelope FROM group_sender_keys
+       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3 AND recipient_id = ?4 AND recipient_identity_key = ?5
+         AND envelope != ''`,
+    ).bind(groupId, pair.sender_id, pair.chain_id, userId, identity)));
+    return c.json({ keys: found.flatMap((result) => result.results) });
+  } catch (err) {
+    if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+    throw err;
+  }
+});
+
+// POST /groups/:id/keys/again — the caller could not open the envelope that
+// was to hand them a chain. Only their own envelope, only the one sealed for
+// the keys they have now, and only once: `asked` is false when there was
+// nothing to empty. The sender learns of it from the roster.
+groups.post('/:id/keys/again', limitSend, async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id')!;
+  if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+
+  const body: unknown = await c.req.json().catch(() => null);
+  if (typeof body !== 'object' || body === null) return c.json({ error: 'Invalid request' }, 400);
+  const { sender_id, chain_id } = body as Record<string, unknown>;
+  if (typeof sender_id !== 'string' || !sender_id || sender_id.length > 512 || sender_id === userId || !decodeExact(chain_id, CHAIN_ID_BYTES)) {
+    return c.json({ error: 'Invalid request' }, 400);
+  }
+
+  try {
+    const identity = (await registeredIdentityKey(c.env, userId)) ?? '';
+    const emptied = await c.env.DB.prepare(
+      `UPDATE group_sender_keys SET envelope = ''
+       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3 AND recipient_id = ?4 AND recipient_identity_key = ?5
+         AND envelope != ''`,
+    ).bind(groupId, sender_id, chain_id as string, userId, identity).run();
+    return c.json({ success: true, asked: (emptied.meta.changes ?? 0) > 0 });
+  } catch (err) {
+    if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+    throw err;
+  }
+});
+
 groups.get('/:id/messages', async (c) => {
   const userId = c.get('userId');
   const groupId = c.req.param('id');
@@ -493,8 +690,18 @@ groups.post('/:id/messages', limitSend, async (c) => {
   const membership = await getMembership(c.env, groupId, userId);
   if (!membership) return c.json({ error: 'Not a member of this group' }, 403);
 
-  const body = await c.req.json().catch(() => ({}));
-  if ((body.content != null && typeof body.content !== 'string') || exceedsTextLimits(body, {content:65536, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
+  const raw = await c.req.json().catch(() => ({}));
+  const sealed = raw.type === 'e2ee';
+  if ((raw.content != null && typeof raw.content !== 'string') || exceedsTextLimits(raw, {content: sealed ? SEALED_CONTENT_BYTES : TEXT_CONTENT_BYTES, type:512, media_url:2048, thumbnail_url:65536, client_message_id:512, reply_to:512})) return c.json({ error: 'Invalid group message' }, 400);
+  if (raw.type != null && (typeof raw.type !== 'string' || !GROUP_MESSAGE_TYPES.has(raw.type))) return c.json({ error: 'Unknown message type' }, 400);
+  // A sealed message is bound to its client id and sealed with one of the
+  // sender's chains; without either nobody could open it.
+  if (sealed && (typeof raw.client_message_id !== 'string' || !raw.client_message_id)) return c.json({ error: 'Sealed messages must carry a client_message_id' }, 400);
+  if (sealed && !decodeExact(raw.chain_id, CHAIN_ID_BYTES)) return c.json({ error: 'Sealed group messages must name their chain' }, 400);
+  if (sealed && !raw.content) return c.json({ error: 'Invalid group message' }, 400);
+  // What a message replies to, its file and its length are inside a sealed
+  // message. Nothing readable is stored beside one, whatever the app sent.
+  const body = sealed ? { ...raw, media_url: undefined, thumbnail_url: undefined, duration: undefined, reply_to: undefined } : raw;
   const proofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
   if (!proofs) return c.json({ error: 'Cannot attach this file' }, 403);
 
@@ -506,6 +713,21 @@ groups.post('/:id/messages', limitSend, async (c) => {
       .bind(groupId, userId, body.client_message_id)
       .first();
     if (existing) return c.json({ message: groupMessageJson(existing) });
+  }
+
+  // A sealed message is stored only when everybody who should read it can,
+  // and nobody else: every other member with keys holds the chain, and no
+  // one holds it who has left or has registered other keys since. Otherwise
+  // the sender looks at the roster again. This comes after the replay check:
+  // a message that is already stored is acknowledged whatever changed since.
+  if (sealed) {
+    try {
+      const { members, stale } = await rosterOf(c.env, groupId, userId, raw.chain_id);
+      if (stale || members.some((member) => member.identity_key !== null && !member.has_key)) return c.json(ROSTER_CHANGED, 409);
+    } catch (err) {
+      if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+      throw err;
+    }
   }
 
   const id = newId();

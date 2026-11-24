@@ -16,6 +16,7 @@ import java.io.File
  *
  * AAC in an MP4 container (`.m4a`) is what both Android and the worker handle without
  * transcoding; the worker stores it as `media_type: "audio"` and serves it with byte ranges.
+ * It is recorded as speech, not as music: see [QUALITIES].
  */
 class VoiceRecorder(private val context: Context) {
 
@@ -49,10 +50,22 @@ class VoiceRecorder(private val context: Context) {
     /**
      * Starts capturing. Returns false when the microphone is unavailable (permission denied,
      * already in use, no encoder) so the caller can put the UI back instead of pretending.
+     *
+     * The settings are tried in order ([QUALITIES]): the compact one first, and the one every
+     * phone is known to accept as the fallback, so a device whose encoder refuses the first
+     * still records.
      */
     @SuppressLint("MissingPermission")
     fun start(): Boolean {
         release()
+        for (quality in QUALITIES) {
+            if (startWith(quality)) return true
+        }
+        return false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startWith(quality: Quality): Boolean {
         val output = File(context.cacheDir, "voice-${System.currentTimeMillis()}.m4a")
         val created = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(context)
@@ -65,8 +78,8 @@ class VoiceRecorder(private val context: Context) {
             created.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             created.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             created.setAudioChannels(1)
-            created.setAudioSamplingRate(44_100)
-            created.setAudioEncodingBitRate(64_000)
+            created.setAudioSamplingRate(quality.sampleRate)
+            created.setAudioEncodingBitRate(quality.bitRate)
             created.setOutputFile(output.absolutePath)
             created.prepare()
             created.start()
@@ -154,5 +167,17 @@ class VoiceRecorder(private val context: Context) {
         paused = false
         file?.delete()
         file = null
+    }
+
+    private class Quality(val sampleRate: Int, val bitRate: Int)
+
+    private companion object {
+        /**
+         * Speech, mono. 32 kbit/s at 24 kHz is about 240 KB a minute — half of what this
+         * recorder used to write (64 kbit/s at 44.1 kHz), with nothing a phone's speaker would
+         * give back lost: a voice has little above 8 kHz, and 24 kHz sampling carries up to 12.
+         * The old setting stays as the fallback for an encoder that refuses the new one.
+         */
+        val QUALITIES = listOf(Quality(24_000, 32_000), Quality(44_100, 64_000))
     }
 }

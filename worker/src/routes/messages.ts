@@ -3,7 +3,9 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { attachmentProofs, attachmentProofGuard, writeWithMediaReferences } from '../lib/media-access';
-import { exceedsTextLimits } from '../lib/input';
+import { decodeExact, exceedsTextLimits, DIRECT_MESSAGE_TYPES, SEALED_CONTENT_BYTES, SPKI_BYTES, TEXT_CONTENT_BYTES } from '../lib/input';
+import { mayMessage } from '../lib/contacts';
+import { registeredIdentityKey } from '../lib/keys';
 import { newId, nowIso } from '../lib/id';
 import { broadcastToUser } from '../lib/realtime';
 import { getPresenceMap, withPresence } from '../lib/presence';
@@ -11,6 +13,9 @@ import { applyPrivacyToList, getPrivacySettings } from '../lib/privacy';
 
 const messages = new Hono<{ Bindings: Env; Variables: Variables }>();
 messages.use('*', requireAuth);
+
+/** A sealed message or edit named an identity key the recipient does not (or no longer) have. */
+const IDENTITY_CHANGED = { error: 'The recipient has registered different keys', code: 'identity_changed' };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function messageJson(row: any) {
@@ -46,15 +51,6 @@ async function broadcastToParticipants(env: Env, userA: string, userB: string, p
 }
 
 /** Direct contact is allowed only for accepted friends without a block. */
-async function mayMessage(env: Env, userId: string, otherId: string): Promise<boolean> {
-  if (userId === otherId) return false;
-  const row = await env.DB.prepare(`SELECT 1 FROM friendships f
-    WHERE ((f.user1_id = ?1 AND f.user2_id = ?2) OR (f.user1_id = ?2 AND f.user2_id = ?1))
-    AND NOT EXISTS (SELECT 1 FROM blocked_users b WHERE (b.user_id = ?1 AND b.blocked_user_id = ?2)
-      OR (b.user_id = ?2 AND b.blocked_user_id = ?1)) LIMIT 1`).bind(userId, otherId).first();
-  return !!row;
-}
-
 // Use within a messages UPDATE so contact authorization is checked at the
 // write, not only before it. Local-only delete-for-me remains available.
 const messageContactGuard = `EXISTS (SELECT 1 FROM friendships f WHERE
@@ -164,8 +160,15 @@ messages.post('/', limitSend, async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => ({}));
   const { receiver_id, content = '', type = 'text', client_message_id } = body;
-  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content:65536, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
+  if ((body.content != null && typeof body.content !== 'string') || body.content === null || exceedsTextLimits(body, {receiver_id:512, content: type === 'e2ee' ? SEALED_CONTENT_BYTES : TEXT_CONTENT_BYTES, type:512, client_message_id:512, media_url:2048, thumbnail_url:65536, fileName:512, fileSize:512, duration:512, reply_to:512, recipient_identity_key:512})) return c.json({ error: 'Invalid or oversized message' }, 400);
   if (typeof receiver_id !== 'string' || !receiver_id) return c.json({ error: 'receiver_id is required' }, 400);
+  if (typeof type !== 'string' || !DIRECT_MESSAGE_TYPES.has(type)) return c.json({ error: 'Unknown message type' }, 400);
+  // A sealed message must say which identity key it was sealed for (public
+  // material only). It is compared below, never stored and never echoed.
+  const sealedFor = type === 'e2ee' ? body.recipient_identity_key : null;
+  if (type === 'e2ee' && !decodeExact(sealedFor, SPKI_BYTES)) return c.json({ error: 'Sealed messages must name the recipient identity key' }, 400);
+  // The envelope is bound to this id; without it the recipient cannot open it.
+  if (type === 'e2ee' && (typeof client_message_id !== 'string' || !client_message_id)) return c.json({ error: 'Sealed messages must carry a client_message_id' }, 400);
   if (receiver_id === userId) return c.json({ error: 'Cannot message yourself' }, 400);
   if (!(await mayMessage(c.env, userId, receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
   const mediaProofs = await attachmentProofs(c.env, userId, [body.media_url, body.thumbnail_url]);
@@ -178,6 +181,14 @@ messages.post('/', limitSend, async (c) => {
       .first();
     if (existing) return c.json({ message: messageJson(existing) });
   }
+
+  // Sealed for an identity key the recipient no longer has (reinstall, new
+  // phone) or never had: nobody could ever open it. Refuse instead of storing
+  // it, so the sender starts a new session and seals again. This runs after
+  // the contact check above — a stranger gets the 403 and learns nothing
+  // about key state — and after the idempotent replay, so a message already
+  // stored is still acknowledged.
+  if (type === 'e2ee' && (await registeredIdentityKey(c.env, receiver_id)) !== sealedFor) return c.json(IDENTITY_CHANGED, 409);
 
   const id = newId();
   const created_at = nowIso();
@@ -245,16 +256,36 @@ messages.post('/', limitSend, async (c) => {
 messages.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  const { content } = await c.req.json().catch(() => ({}));
-  if (typeof content !== 'string' || exceedsTextLimits({ content }, { content: 65536 })) return c.json({ error: 'Invalid or oversized content' }, 400);
+  const body = await c.req.json().catch(() => null);
+  const content = body?.content;
+  const sealedFor = body?.recipient_identity_key;
+  if (typeof content !== 'string' || exceedsTextLimits({ content }, { content: SEALED_CONTENT_BYTES })) return c.json({ error: 'Invalid or oversized content' }, 400);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').bind(id, userId).first<any>();
   if (!row) return c.json({ error: 'Message not found' }, 404);
-  if (row.type !== 'text') return c.json({ error: 'Only text messages can be edited' }, 400);
+  if (row.type !== 'text' && row.type !== 'e2ee') return c.json({ error: 'Only text messages can be edited' }, 400);
+  if (row.type === 'text' && exceedsTextLimits({ content }, { content: TEXT_CONTENT_BYTES })) return c.json({ error: 'Invalid or oversized content' }, 400);
+  // A sealed message stays sealed. Its envelope is replaced by another
+  // envelope, which — exactly as when sending — names the identity key it was
+  // sealed for. Readable text can never take the place of an envelope, nor an
+  // envelope the place of text.
+  const sealed = row.type === 'e2ee';
+  if (sealed && !decodeExact(sealedFor, SPKI_BYTES)) {
+    return c.json({ error: 'An encrypted message can only be replaced by an encrypted one' }, 400);
+  }
+  if (!sealed && sealedFor !== undefined) {
+    return c.json({ error: 'This message was sent unencrypted and cannot be replaced by an encrypted one' }, 400);
+  }
 
   const fifteenMinutes = 15 * 60 * 1000;
   if (Date.now() - new Date(row.created_at).getTime() > fifteenMinutes) {
     return c.json({ error: 'Messages can only be edited within 15 minutes' }, 400);
+  }
+  if (sealed) {
+    // Same order as sending: the contact check first, so somebody who may no
+    // longer message the recipient learns nothing about their keys.
+    if (!(await mayMessage(c.env, userId, row.receiver_id))) return c.json({ error: 'Direct messaging is unavailable for this user' }, 403);
+    if ((await registeredIdentityKey(c.env, row.receiver_id)) !== sealedFor) return c.json(IDENTITY_CHANGED, 409);
   }
 
   // `row` already has every column (it was a `SELECT *`), so the updated

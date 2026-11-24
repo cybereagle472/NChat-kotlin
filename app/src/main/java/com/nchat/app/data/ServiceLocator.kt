@@ -1,6 +1,7 @@
 package com.nchat.app.data
 
 import android.content.Context
+import android.os.SystemClock
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import kotlinx.serialization.json.contentOrNull
@@ -9,10 +10,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.core.graphics.drawable.toBitmap
 import coil.request.SuccessResult
 import coil.request.ImageRequest
 import android.graphics.Bitmap
+import com.nchat.app.data.backup.ChatBackup
 import com.nchat.app.data.local.ArchivedStore
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.DraftStore
@@ -30,6 +34,8 @@ import com.nchat.app.data.notifications.NcNotifications
 import com.nchat.app.data.push.BackgroundSyncService
 import com.nchat.app.data.push.BatteryExemption
 import com.nchat.app.data.model.UserProfile
+import com.nchat.app.feature.chats.announcesSecurityChange
+import com.nchat.app.feature.chats.securityNotification
 import com.nchat.app.data.repository.AuthRepository
 import com.nchat.app.data.repository.CallRepository
 import com.nchat.app.data.repository.ChatRepository
@@ -45,6 +51,13 @@ import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
+import com.nchat.app.network.ApiKeyDirectory
+import com.nchat.app.network.EndToEnd
+import com.nchat.app.network.LocalSeal
+import com.nchat.app.network.PeerSecurity
+import com.nchat.app.network.PrefsKeyring
+import com.nchat.app.network.SecurePrefs
+import com.nchat.app.network.fetchPeerBundle
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.MediaFiles
@@ -53,6 +66,7 @@ import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
 import com.nchat.app.core.util.CrashLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -60,6 +74,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.IOException
 
 /**
  * Composition root.
@@ -102,7 +118,10 @@ object ServiceLocator {
                 context = requireContext(),
                 rootUrl = serverUrl,
                 accessToken = { tokens.accessToken },
-                renewSession = { apiClient.renewAccessToken() }
+                renewSession = { apiClient.renewAccessToken() },
+                // The opened files of encrypted chats live with the account's keys, and are
+                // erased with them at sign-out.
+                sealedDirectory = { endToEnd.mediaDirectory() }
             )
         }
         startNetworkWatch()
@@ -112,6 +131,31 @@ object ServiceLocator {
         startSystemNotifications()
         // First launch after installing an update: ask Android to stop freezing us, once.
         runCatching { maybeAskBatteryOnce() }
+        startKeyWatch()
+    }
+
+    private var keyWatchStarted = false
+
+    /**
+     * Every time realtime connects is a moment the server can be reached: the moment to confirm
+     * this phone's encryption keys if that has not happened lately (see [syncE2eeKeys]). It is
+     * also how a phone that stays open for days learns that the account moved to another one.
+     */
+    private fun startKeyWatch() {
+        if (keyWatchStarted) return
+        keyWatchStarted = true
+        appScope.launch {
+            socket.state.collect { state ->
+                if (state == ConnectionState.Connected) runCatching { syncE2eeKeys(force = false) }
+            }
+        }
+        // The server says the account's keys changed: another phone has signed in. Asking now
+        // is what signs this phone out at once, instead of hours later at the next routine check.
+        appScope.launch {
+            socket.events.collect { event ->
+                if (event.type == KEYS_CHANGED_EVENT) runCatching { syncE2eeKeys() }
+            }
+        }
     }
 
     private fun requireContext(): Context =
@@ -227,23 +271,30 @@ object ServiceLocator {
 
     // --------------------------------------------------------- repositories
 
+    /**
+     * What seals everything below for the account that is signed in — see [EndToEnd.localSeal].
+     * Null with nobody signed in, or when the account's storage cannot be opened; a store then
+     * writes nothing rather than write it unsealed.
+     */
+    private val localSeal: () -> LocalSeal? = { endToEnd.localSeal() }
+
     /** Disk cache of the chat list; wiped on sign-out. */
-    private val chatCache by lazy { ChatListCache(requireContext()) }
+    private val chatCache by lazy { ChatListCache(requireContext(), localSeal) }
 
     /** Disk cache of the friend graph, so the Friends tab opens with content like Chats does. */
-    private val friendCache by lazy { FriendGraphCache(requireContext()) }
+    private val friendCache by lazy { FriendGraphCache(requireContext(), localSeal) }
 
     /** Device-side block list; blocking never touches the server's friendship rows. */
     private val blockedStore by lazy { BlockedContactsStore(requireContext()) }
 
     /** Messages that still have to reach the server; survives restarts and reconnects. */
-    private val outboxStore by lazy { OutboxStore(requireContext()) }
+    private val outboxStore by lazy { OutboxStore(requireContext(), localSeal) }
 
     /** Every conversation, per account, on disk — see [MessageStore]. */
-    private val messageStore by lazy { MessageStore(requireContext()) }
+    private val messageStore by lazy { MessageStore(requireContext(), localSeal) }
 
     /** Last known group list and rosters, so the Groups tab opens offline — see [GroupListCache]. */
-    private val groupCache by lazy { GroupListCache(requireContext()) }
+    private val groupCache by lazy { GroupListCache(requireContext(), localSeal) }
 
     /**
      * Voice clips waiting to be uploaded, so a recording made without a network is queued with
@@ -252,19 +303,19 @@ object ServiceLocator {
     private val voiceClips by lazy { VoiceClipStore(requireContext()) }
 
     /** Unfinished composer text per conversation, restored when the chat is reopened. */
-    val drafts: DraftStore by lazy { DraftStore(requireContext()) }
+    val drafts: DraftStore by lazy { DraftStore(requireContext(), localSeal) }
 
     /** The chat wallpaper choice (Settings ▸ Chats). Device-local, no account data. */
     val wallpapers: WallpaperStore by lazy { WallpaperStore(requireContext()) }
 
     /** Private, per-device starred messages behind "Starred messages". */
-    val stars: StarredStore by lazy { StarredStore(requireContext()) }
+    val stars: StarredStore by lazy { StarredStore(requireContext(), localSeal) }
 
     /** Archived conversations — a private filing decision, so it never leaves the device. */
-    val archived: ArchivedStore by lazy { ArchivedStore(requireContext()) }
+    val archived: ArchivedStore by lazy { ArchivedStore(requireContext(), localSeal) }
 
     /** One pinned message per conversation, shown as the banner under the header. */
-    val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext()) }
+    val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext(), localSeal) }
 
     /** System notifications: per-chat channels, MessagingStyle, inline reply. */
     val notifications: NcNotifications by lazy {
@@ -379,6 +430,31 @@ object ServiceLocator {
      * from an ordinary message — and therefore the only place a notification can say "you were
      * mentioned" instead of just showing the line.
      */
+    /**
+     * A contact's security code changed while the app ran. Inside the chat that is a banner and
+     * on the chat's row a notice; whoever is looking at neither is told here, once per change.
+     * When the change has been looked at, the announcement goes.
+     */
+    private fun announceSecurityChange(chat: com.nchat.app.data.model.Chat, before: PeerSecurity?, now: PeerSecurity?) {
+        val key = "security:${chat.id}"
+        val text = if (announcesSecurityChange(before, now)) securityNotification(chat.title, now) else null
+        when {
+            text != null -> if (notifications.activeChatId != chat.id) {
+                notifications.showEvent(
+                    key = key,
+                    title = chat.title,
+                    body = text,
+                    chatId = chat.id,
+                    chatTitle = chat.title,
+                    avatarUrl = chat.avatarUrl,
+                    // Messages to this person wait only when the old code had been verified.
+                    highPriority = now?.held == true
+                )
+            }
+            now == null || !(now.changed || now.held) -> notifications.cancelEvent(key)
+        }
+    }
+
     private fun mentionsMe(chat: com.nchat.app.data.model.Chat, message: com.nchat.app.data.model.Message): Boolean {
         if (!chat.isGroup || message.isMine) return false
         val text = message.text
@@ -518,8 +594,100 @@ object ServiceLocator {
                 archived.clearAll()
                 pinned.clearAll()
                 notifications.cancelAll()
-            }
+            },
+            endToEnd = endToEnd,
+            syncKeys = { syncE2eeKeys() }
         )
+    }
+
+    /**
+     * End-to-end encryption for the account signed in on this phone: its keys, and the content
+     * of every sealed message it has sent or received (see [EndToEnd]).
+     *
+     * Everything is under `files/e2ee`, sealed with a key that [SecurePrefs] keeps under the
+     * Android Keystore. A sign-out erases both; an expired session erases neither.
+     */
+    /**
+     * The other person's id, each time what is known about the encryption of the chat with
+     * them changes. A buffer rather than a call into the chat repository: the encryption layer
+     * must not need the repository to exist, and a notice that is dropped here is read again
+     * the next time that chat opens.
+     */
+    private val securityEvents = MutableSharedFlow<String>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    val endToEnd: EndToEnd by lazy {
+        val context = requireContext()
+        // Key material in the format of an early build, which was never registered anywhere.
+        runCatching { context.deleteSharedPreferences("e2ee_keys") }
+        EndToEnd(
+            root = File(context.filesDir, "e2ee"),
+            keyring = PrefsKeyring(SecurePrefs(context, "e2ee_storage")),
+            directory = ApiKeyDirectory(api),
+            fetchBundle = { peerId -> api.fetchPeerBundle(peerId) },
+            onReplaced = { movedToAnotherPhone() },
+            report = { what, error -> CrashLog.note(what, error) },
+            onSecurityChanged = { peerId -> securityEvents.tryEmit(peerId) }
+        ).also { created ->
+            if (!tokens.signedIn.value) return@also
+            val userId = tokens.userId
+            // Without the account there is nothing to open, and every sealed send would be
+            // refused: worth knowing about, since a session always comes with its user id.
+            if (userId.isNullOrBlank()) CrashLog.note("e2ee", IllegalStateException("signed in without a user id"))
+            created.resume(userId)
+        }
+    }
+
+    /** When the keys were last confirmed with the server (`elapsedRealtime`), 0 for "not yet". */
+    @Volatile
+    private var keysConfirmedAt = 0L
+
+    /** Between two confirmations; also bounds how long a replaced phone can go on unaware. */
+    private const val KEY_SYNC_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
+    /** Realtime event the server sends an account's phones when its encryption keys are replaced. */
+    private const val KEYS_CHANGED_EVENT = "keys:changed"
+
+    /**
+     * Registers this phone's public keys, or confirms that they are still the account's, and
+     * keeps the server supplied with one-time prekeys.
+     *
+     * Called on launch, after a sign-in and whenever realtime connects; between two successful
+     * runs it waits [KEY_SYNC_INTERVAL_MS], since nothing changes that quickly. A failure is not
+     * an error to show anyone: the next call tries again, and a message that needs the keys
+     * before then registers them itself.
+     */
+    fun syncE2eeKeys(force: Boolean = true) {
+        if (!tokens.signedIn.value) return
+        val confirmed = keysConfirmedAt
+        if (!force && confirmed != 0L && SystemClock.elapsedRealtime() - confirmed < KEY_SYNC_INTERVAL_MS) return
+        appScope.launch {
+            try {
+                if (endToEnd.sync() != null) keysConfirmedAt = SystemClock.elapsedRealtime()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: IOException) {
+                // No connection, or a server that is busy: expected, and tried again later.
+            } catch (error: Throwable) {
+                CrashLog.note("e2ee key sync", error)
+            }
+        }
+    }
+
+    /**
+     * Another phone signed in to this account and is now the one that can read its encrypted
+     * chats. This phone signs out and says why; what it holds stays, so signing in here again
+     * simply moves the account back.
+     */
+    private fun movedToAnotherPhone() {
+        val refresh = tokens.refreshToken
+        keysConfirmedAt = 0L
+        tokens.endForAnotherPhone()
+        // Best effort: end this phone's session on the server too. No keys are withdrawn —
+        // the ones registered now are the other phone's.
+        if (refresh != null) appScope.launch { runCatching { api.logout(refresh) } }
     }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)
@@ -539,9 +707,26 @@ object ServiceLocator {
             voiceClips = voiceClips,
             // A message from somebody else becomes a system notification, unless that chat is the
             // one currently on screen (`NcNotifications.activeChatId`).
-            onIncoming = { chat, message ->
-                notifications.show(chat, message, mentioned = mentionsMe(chat, message))
-            }
+            onIncoming = { chat, message, encryptedSince ->
+                notifications.show(
+                    chat,
+                    message,
+                    mentioned = mentionsMe(chat, message),
+                    encryptedSince = encryptedSince
+                )
+            },
+            onSecurityChanged = { chat, before, now -> announceSecurityChange(chat, before, now) },
+            encryption = { endToEnd.messaging() },
+            securityChanges = securityEvents,
+            mediaRoot = serverUrl
+        )
+    }
+    /** Settings ▸ Chat backup: the encrypted history as a file under a passphrase. */
+    val chatBackup: ChatBackup by lazy {
+        ChatBackup(
+            context = requireContext(),
+            endToEnd = { endToEnd },
+            onRestored = { chatRepository.historyRestored() }
         )
     }
     val friendRepository: FriendRepository by lazy {

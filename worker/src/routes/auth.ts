@@ -5,6 +5,8 @@ import { signJWT, verifyJWT } from '../lib/jwt';
 import { newId } from '../lib/id';
 import { requireAuth } from '../middleware/auth';
 import { clientAddressBucket, consumeLimit } from '../lib/rate-limit';
+import { decodeExact, SPKI_BYTES } from '../lib/input';
+import { withdrawIdentityKey } from '../lib/keys';
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -170,13 +172,24 @@ auth.post('/refresh', async (c) => {
 });
 
 auth.post('/logout', async (c) => {
-  const { refresh_token } = await c.req.json().catch(() => ({ refresh_token: null }));
-  if (refresh_token) {
+  const body = await c.req.json().catch(() => null);
+  const refresh_token = body?.refresh_token;
+  if (typeof refresh_token === 'string' && refresh_token) {
     const payload = await verifyJWT<{ sid: string }>(refresh_token, c.env.JWT_SECRET);
     if (payload?.sid) {
       // An explicit sign-out ends this session for good — delete its row
       // rather than leaving a revoked one behind forever.
-      await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(payload.sid).run();
+      const ended = await c.env.DB.prepare('DELETE FROM sessions WHERE id = ? RETURNING user_id')
+        .bind(payload.sid).first<{ user_id: string }>();
+      // Signing out erases the phone's private keys. Naming its identity key
+      // here withdraws the public half too, so senders are told instead of
+      // sealing messages nobody can open. Only a session that was still alive
+      // may do this, and only for the keys it names (see withdrawIdentityKey).
+      const identity = body.identity_public_key;
+      if (ended && typeof identity === 'string' && decodeExact(identity, SPKI_BYTES)) {
+        // Signing out has happened either way; it must not fail over this.
+        await withdrawIdentityKey(c.env, ended.user_id, identity).catch(() => false);
+      }
     }
   }
   return c.json({ success: true });

@@ -56,11 +56,19 @@ fun NChatApp() {
         val auth = ServiceLocator.authRepository
         val session by auth.session.collectAsStateWithLifecycle()
         val profileComplete by auth.profileComplete.collectAsStateWithLifecycle()
-        // The backend refused our refresh token: say so, then let the sign-in screen take over.
+        // The session ended without the user asking: say why, then let the sign-in screen take
+        // over. Either the backend refused our refresh token, or the account was signed in on
+        // another phone — encrypted chats live on one phone at a time, the one that signed in last.
         val sessionLost by ServiceLocator.tokens.sessionLost.collectAsStateWithLifecycle()
         LaunchedEffect(sessionLost) {
             if (sessionLost) {
-                NcToaster.show("Session expired — sign in again, nothing was deleted")
+                NcToaster.show(
+                    if (ServiceLocator.tokens.movedToAnotherPhone) {
+                        "This account was signed in on another phone. Sign in here to use it on this phone again."
+                    } else {
+                        "Session expired — sign in again, nothing was deleted"
+                    }
+                )
                 ServiceLocator.tokens.acknowledgeSessionLost()
             }
         }

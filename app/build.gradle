@@ -47,6 +47,10 @@ android {
         }
         buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\""
 
+        // The encryption tests also run on Android itself, on emulators in CI
+        // (.github/workflows/android-device-tests.yaml).
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
         // libwebrtc ships native code for four architectures (~15 MB each). Every Android
         // phone is arm64 or armv7; including the x86 emulator builds would double the APK
         // for nobody.
@@ -67,11 +71,39 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
+            // Code that nothing uses is left out of the release — and nothing else is done to
+            // it: see proguard-rules.pro. Resources are not shrunk: they are small, and one
+            // that is looked up by name would be at risk.
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         debug {
             applicationIdSuffix ".debug"
+            // CI's emulators are x86; no phone is. Added to the two above for this build
+            // type only, so the release APK stays as small as it was.
+            ndk {
+                abiFilters 'x86', 'x86_64'
+            }
         }
+        // The release as an emulator can run it: everything `release` sets — the same code,
+        // the same shrinking — signed with the debug key instead, and with the emulators' x86
+        // code added. CI installs and starts it (.github/workflows/android-device-tests.yaml);
+        // it is never published.
+        smoke {
+            initWith release
+            signingConfig signingConfigs.debug
+            applicationIdSuffix ".smoke"
+            ndk {
+                abiFilters 'x86', 'x86_64'
+            }
+        }
+    }
+
+    sourceSets {
+        // The end-to-end encryption tests are run twice from the same files: on the build
+        // machine's JVM (`test`), and against Android's own cryptography and Keystore on an
+        // emulator (`androidTest`). Everything else under `src/test` stays JVM-only.
+        androidTest.java.srcDirs += 'src/test/java/com/nchat/app/network'
     }
 
     compileOptions {
@@ -123,10 +155,21 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.5.0'
     // Reads the camera's EXIF orientation before a photo is re-encoded.
     implementation 'androidx.exifinterface:exifinterface:1.3.7'
+    // Re-encodes a picked video before it is uploaded (`VideoCompressor`): AndroidX's own
+    // wrapper around the phone's hardware decoder and encoder. Nothing native is bundled.
+    implementation 'androidx.media3:media3-transformer:1.3.1'
+    implementation 'androidx.media3:media3-effect:1.3.1'
+    implementation 'androidx.media3:media3-common:1.3.1'
     // Call media: `org.webrtc` itself (the maintained Maven Central build of libwebrtc).
     // Signalling was already real in 1.0.40; this is what carries the voice and video.
     implementation 'io.github.webrtc-sdk:android:150.7871.01'
+    // The security code as a QR code. ZXing draws the code and reads it; the second library
+    // is its camera screen. Neither needs Google Play services.
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }

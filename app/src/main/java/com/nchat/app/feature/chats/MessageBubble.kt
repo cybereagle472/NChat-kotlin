@@ -41,6 +41,8 @@ import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Reply
@@ -153,7 +155,12 @@ fun MessageBubble(
     /** Group roster names; `@Name` in the body lights up when it is one of them. */
     mentions: List<String> = emptyList(),
     /** Draw the author's name above the bubble — true only for the first of a run. */
-    showName: Boolean = true
+    showName: Boolean = true,
+    /**
+     * The conversation is end-to-end encrypted and this message was not: the server could read
+     * it, and could have written it. Said on the bubble — see `unsealedMessageIds`.
+     */
+    notEncrypted: Boolean = false
 ) {
     if (message.systemEvent) {
         DateSeparatorPill(label = message.text, modifier = modifier)
@@ -387,6 +394,32 @@ fun MessageBubble(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                if (message.encrypted) {
+                    // Opened on this phone with the conversation's keys: nobody in between
+                    // could read it or write it.
+                    Icon(
+                        imageVector = Icons.Rounded.Lock,
+                        contentDescription = "End-to-end encrypted",
+                        tint = if (mine) extra.bubbleMetaOnGradient else extra.bubbleMeta,
+                        modifier = Modifier.size(10.dp)
+                    )
+                } else if (notEncrypted) {
+                    // The exception is what gets words: a missing lock is not something
+                    // anybody notices.
+                    val warning = if (mine) Color(0xFFFDE68A) else Color(0xFFB45309)
+                    Icon(
+                        imageVector = Icons.Rounded.LockOpen,
+                        contentDescription = null,
+                        tint = warning,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = "Not encrypted",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = warning
+                    )
+                }
                 Text(
                     text = TimeFormat.clock(message.timestamp),
                     fontSize = 10.sp,

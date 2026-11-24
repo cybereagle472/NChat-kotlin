@@ -10,12 +10,14 @@ import com.nchat.app.data.model.MessageKind
 import com.nchat.app.core.util.PickedFile
 import com.nchat.app.data.local.DraftStore
 import com.nchat.app.data.repository.ChatRepository
+import com.nchat.app.network.PeerSecurity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
@@ -36,6 +38,27 @@ class ConversationViewModel(
     val chat: StateFlow<Chat?> = repository.chats
         .map { chats -> chats.firstOrNull { it.id == chatId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * What this phone knows about the end-to-end encryption of this chat: null for a group, and
+     * for a conversation nothing was ever encrypted in.
+     */
+    val security: StateFlow<PeerSecurity?> = repository.security
+        .map { known -> known[chatId] }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repository.security.value[chatId])
+
+    /**
+     * Since when this chat is end-to-end encrypted on this phone, by its own clock — with one
+     * person or in a group; null when nothing was ever sealed in it here. It is what decides
+     * which readable messages are marked "Not encrypted".
+     */
+    val encryptedSince: StateFlow<Long?> = combine(repository.security, repository.groupEncryptedSince) { people, groups ->
+        groups[chatId] ?: people[chatId]?.since
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        repository.groupEncryptedSince.value[chatId] ?: repository.security.value[chatId]?.since
+    )
 
     private val _composerText = MutableStateFlow("")
     val composerText: StateFlow<String> = _composerText.asStateFlow()
@@ -166,6 +189,19 @@ class ConversationViewModel(
         repository.retrySend(chatId, messageId)
     }
 
+    /** The sixty digits for [key], worked out when the user asks to see them. */
+    suspend fun securityCode(key: String): String? = repository.securityCode(chatId, key)
+
+    /** The user has seen the notice that the other person's security code changed. */
+    fun acceptSecurityChange(key: String) {
+        repository.acceptSecurityChange(chatId, key)
+    }
+
+    /** The user compared the code shown for [key] with the other person's, or takes that back. */
+    fun setVerified(key: String, verified: Boolean) {
+        repository.setVerified(chatId, key, verified)
+    }
+
     fun loadOlder() = repository.loadOlder(chatId)
 
     fun onDeleteMessage(messageId: String, forEveryone: Boolean) {
@@ -289,6 +325,11 @@ class ConversationViewModel(
             bytes = file.bytes,
             thumbnail = file.thumbnail
         )
+    }
+
+    /** A video goes out once it has been made ready (re-encoded); see `prepareVideo`. */
+    fun onSendVideo(prepare: suspend () -> PickedFile) {
+        repository.sendPreparedMedia(chatId = chatId, kind = MessageKind.Video, prepare = prepare)
     }
 
     /** React from the full-reactions sheet, where the target outlives the context menu. */

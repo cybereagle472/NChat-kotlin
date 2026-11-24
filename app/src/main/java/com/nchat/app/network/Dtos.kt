@@ -316,3 +316,52 @@ data class SettingsEnvelope(val settings: PrivacySettingsDto? = null)
 
 @Serializable
 data class SuccessEnvelope(val success: Boolean = false)
+
+// ---------------------------------------------------------------- e2ee keys
+// Public key material only, as base64 SubjectPublicKeyInfo.
+
+@Serializable
+data class OneTimePrekeyDto(@SerialName("public_key") val publicKey: String = "")
+
+/** `GET /keys/bundle/:userId` — what it takes to start a sealed conversation with that user. */
+@Serializable
+data class BundleDto(
+    @SerialName("identity_public_key") val identityPublicKey: String = "",
+    @SerialName("signed_prekey_public") val signedPrekeyPublic: String = "",
+    @SerialName("signed_prekey_signature") val signedPrekeySignature: String = "",
+    @SerialName("one_time_prekey") val oneTimePrekey: OneTimePrekeyDto? = null,
+)
+
+/** `GET /groups/:id/roster` — the other members, their keys, and who holds the chain that was asked about. */
+@Serializable
+data class GroupRosterDto(
+    val members: List<GroupRosterMemberDto> = emptyList(),
+    val stale: Boolean = false,
+)
+
+@Serializable
+data class GroupRosterMemberDto(
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("identity_key") val identityKey: String? = null,
+    @SerialName("has_key") val hasKey: Boolean = false,
+    /** They were handed the chain and said that envelope does not open on their phone. */
+    val again: Boolean = false,
+)
+
+/** `POST /groups/:id/keys/fetch` — the sealed envelopes that hand this phone the chains it asked for. */
+@Serializable
+data class GroupKeysDto(val keys: List<GroupKeyDto> = emptyList())
+
+@Serializable
+data class GroupKeyDto(
+    @SerialName("sender_id") val senderId: String = "",
+    @SerialName("chain_id") val chainId: String = "",
+    val envelope: String = "",
+)
+
+/** `GET /keys/prekeys` — the identity key this account has registered and the one-time prekeys it has left. */
+@Serializable
+data class KeyStatusDto(
+    val remaining: Int = 0,
+    @SerialName("identity_public_key") val identityPublicKey: String? = null,
+)

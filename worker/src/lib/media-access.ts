@@ -31,11 +31,27 @@ type Pair = { media_url: string | null; thumbnail_url: string | null; sender_id:
 type MediaProof = { key: string; source: string | null };
 
 /** Find one currently readable, precisely decoded reference for a file. The
- * source URL is a candidate, not an authorization that can outlive a write. */
-async function readableMediaProof(env: Env, userId: string, key: string): Promise<MediaProof | null> {
-  const attachment = await env.DB.prepare('SELECT uploader_id FROM media_attachments WHERE file_path = ?')
-    .bind(key).first<{ uploader_id: string }>();
+ * source URL is a candidate, not an authorization that can outlive a write.
+ *
+ * A sealed file (an attachment of an encrypted conversation) is read by the
+ * audience its uploader named and by nobody else, whatever message names its
+ * address. It is never a valid attachment of a readable message
+ * (`purpose === 'attach'`), not even for its uploader: there is nothing in
+ * it for the recipient of such a message to read. */
+async function readableMediaProof(env: Env, userId: string, key: string, purpose: 'read' | 'attach' = 'read'): Promise<MediaProof | null> {
+  // `*`, not a column list: the two audience columns exist only once
+  // migration 0009 has been applied, and reads must work before that too.
+  const attachment = await env.DB.prepare('SELECT * FROM media_attachments WHERE file_path = ?')
+    .bind(key).first<{ uploader_id: string; sealed_for_user?: string | null; sealed_for_group?: string | null }>();
   if (!attachment) return null;
+  if (attachment.sealed_for_user || attachment.sealed_for_group) {
+    if (purpose !== 'read') return null;
+    if (attachment.uploader_id === userId || attachment.sealed_for_user === userId) return { key, source: null };
+    if (!attachment.sealed_for_group) return null;
+    const member = await env.DB.prepare('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?')
+      .bind(attachment.sealed_for_group, userId).first();
+    return member ? { key, source: null } : null;
+  }
   if (attachment.uploader_id === userId) return { key, source: null };
 
   // instr is only a coarse candidate filter; it is NOT an authorization check.
@@ -97,7 +113,7 @@ export async function attachmentProofs(env: Env, userId: string, addresses: unkn
     if (!parsed.local) continue;
     if (!parsed.key) return null;
     if (seen.has(parsed.key)) continue;
-    const proof = await readableMediaProof(env, userId, parsed.key);
+    const proof = await readableMediaProof(env, userId, parsed.key, 'attach');
     if (!proof) return null;
     proofs.push(proof);
     seen.add(parsed.key);
