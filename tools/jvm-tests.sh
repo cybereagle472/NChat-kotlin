@@ -21,8 +21,8 @@ TOOLS="${NCHAT_JVM_TOOLS:-$HOME/.local/nchat-jvm-tools}"
 NETWORK="$ROOT/app/src/main/java/com/nchat/app/network"
 TESTS_DIR="$ROOT/app/src/test/java/com/nchat/app/network"
 
-MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeStore.kt E2eeArchive.kt E2eeClient.kt E2eeKeys.kt EndToEnd.kt)
-ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeStoreTest E2eeArchiveTest E2eeClientTest E2eeKeysTest EndToEndTest)
+MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeGroup.kt E2eeStore.kt E2eeArchive.kt E2eeClient.kt E2eeKeys.kt EndToEnd.kt)
+ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeGroupTest E2eeStoreTest E2eeArchiveTest E2eeClientTest E2eeKeysTest EndToEndTest)
 
 mkdir -p "$TOOLS"
 
