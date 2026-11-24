@@ -26,8 +26,11 @@ start_app() {
     cat "$OUT/install.txt"
     return 1
   fi
-  # Android 13 and later ask before an app may notify; the question would be the window in front.
+  # Two questions the app asks through the system on its first run are answered beforehand:
+  # they would be the window in front. Android 13 and later ask before an app may notify; and
+  # the app asks, once per version, to be left running in the background.
   adb shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
+  adb shell dumpsys deviceidle whitelist "+$PACKAGE" > /dev/null 2>&1 || true
   adb logcat -c > /dev/null 2>&1 || true
   adb shell am start -W -n "$PACKAGE/$ACTIVITY" > "$OUT/launch.txt" 2>&1 || true
 
@@ -57,7 +60,10 @@ start_app > /tmp/app-start.log 2>&1
 started=$?
 cat /tmp/app-start.log
 if [ "$started" -ne 0 ]; then
-  { echo "--- end of the log"; tail -n 150 "$OUT/logcat.txt" 2> /dev/null; } >> /tmp/app-start.log
+  {
+    echo "--- what the log says of the app"
+    grep -E "$PACKAGE|FATAL EXCEPTION|ANR in|Fatal signal|AndroidRuntime: (java|kotlin|Caused|	at )" "$OUT/logcat.txt" 2> /dev/null | tail -n 120
+  } >> /tmp/app-start.log
 fi
 
 [ "$tests" -eq 0 ] && [ "$started" -eq 0 ]
