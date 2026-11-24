@@ -139,6 +139,13 @@ object ServiceLocator {
                 if (state == ConnectionState.Connected) runCatching { syncE2eeKeys(force = false) }
             }
         }
+        // The server says the account's keys changed: another phone has signed in. Asking now
+        // is what signs this phone out at once, instead of hours later at the next routine check.
+        appScope.launch {
+            socket.events.collect { event ->
+                if (event.type == KEYS_CHANGED_EVENT) runCatching { syncE2eeKeys() }
+            }
+        }
     }
 
     private fun requireContext(): Context =
@@ -585,6 +592,9 @@ object ServiceLocator {
 
     /** Between two confirmations; also bounds how long a replaced phone can go on unaware. */
     private const val KEY_SYNC_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
+    /** Realtime event the server sends an account's phones when its encryption keys are replaced. */
+    private const val KEYS_CHANGED_EVENT = "keys:changed"
 
     /**
      * Registers this phone's public keys, or confirms that they are still the account's, and

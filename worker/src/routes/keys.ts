@@ -6,6 +6,7 @@ import { limitSend } from '../middleware/rate-limit';
 import { decodeExact, SPKI_BYTES } from '../lib/input';
 import { mayMessage } from '../lib/contacts';
 import { keyTablesExist, registeredIdentityKey } from '../lib/keys';
+import { broadcastToUser } from '../lib/realtime';
 
 /**
  * E2EE key infrastructure — public keys only.
@@ -106,7 +107,16 @@ keys.post('/register', requireAuth, limitSend, async (c) => {
        signed_prekey_signature = excluded.signed_prekey_signature,
        updated_at = datetime('now')`,
   ).bind(userId, body.identity_public_key, body.signed_prekey_public, body.signed_prekey_signature);
+  const previous = await registeredIdentityKey(c.env, userId);
   await c.env.DB.batch([discardStalePrekeys, upsert]);
+  // Another phone held this account until now. Its encrypted chats can be
+  // read on one phone only, so the account's connected phones are told at
+  // once: the one that was replaced checks with the server and signs out,
+  // instead of showing messages it cannot open until its next routine check.
+  // The notice says only that something changed — no key travels in it.
+  if (previous !== null && previous !== body.identity_public_key) {
+    await broadcastToUser(c.env, userId, { type: 'keys:changed' });
+  }
   return c.json({ ok: true });
 });
 
