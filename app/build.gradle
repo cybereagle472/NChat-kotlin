@@ -81,6 +81,18 @@ android {
                 abiFilters 'x86', 'x86_64'
             }
         }
+        // The release as an emulator can run it: everything `release` sets — the same code,
+        // the same shrinking — signed with the debug key instead, and with the emulators' x86
+        // code added. CI installs and starts it (.github/workflows/android-device-tests.yaml);
+        // it is never published.
+        smoke {
+            initWith release
+            signingConfig signingConfigs.debug
+            applicationIdSuffix ".smoke"
+            ndk {
+                abiFilters 'x86', 'x86_64'
+            }
+        }
     }
 
     sourceSets {

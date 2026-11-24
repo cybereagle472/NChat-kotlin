@@ -4,6 +4,12 @@ name: Encryption tests on Android
 # oldest system the app supports (API 24) and one of the system it targets
 # (API 34). The JVM run in "Build NChat APK" proves the logic; this proves it
 # against the cryptography, the Keystore and the file system a phone has.
+#
+# Then the app itself is started there — the build that is made the way the
+# release is made (the `smoke` build type: same code, same shrinking) — and
+# has to come up with its first screen and without a crash. It is the only
+# place where the app runs at all before it reaches a phone. It gets no
+# further than the sign-in screen: beyond it is the server, and there is one.
 
 on:
   push:
@@ -54,9 +60,12 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Build the app and its tests
+        env:
+          # An address that leads nowhere: the app shows its sign-in screen and reaches no server.
+          NCHAT_API_BASE: https://nchat-smoke.invalid
         run: |
           set -o pipefail
-          gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 | tee /tmp/device-build.log
+          gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleSmoke 2>&1 | tee /tmp/device-build.log
       - name: Run the tests on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -64,7 +73,7 @@ jobs:
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
           disable-animations: true
-          script: gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest > /tmp/device-run.log 2>&1
+          script: bash .github/scripts/on_emulator.sh ${{ matrix.api-level }}
       - name: Report what ran
         if: always()
         env:
@@ -76,7 +85,7 @@ jobs:
           API_LEVEL: ${{ matrix.api-level }}
         run: |
           mkdir -p .ci
-          cp /tmp/device-report.log ".ci/device-tests-api$API_LEVEL.log"
+          cat /tmp/device-report.log /tmp/app-start.log > ".ci/device-tests-api$API_LEVEL.log" 2> /dev/null || true
           git config user.name "nchat-ci"
           git config user.email "ci@nchat.local"
           git add -f ".ci/device-tests-api$API_LEVEL.log"
