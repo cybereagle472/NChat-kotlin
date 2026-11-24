@@ -13,6 +13,8 @@ import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 
@@ -104,17 +106,31 @@ class EndToEndTest {
         /** The directory answers for whoever is signed in on this phone. */
         var account = ""
 
-        /** A new app process on this phone. */
+        private val directory = object : KeyDirectory {
+            override suspend fun status() = server.directoryFor(account).status()
+            override suspend fun register(identityKey: String, signedPrekey: String, signature: String) =
+                server.directoryFor(account).register(identityKey, signedPrekey, signature)
+            override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>) =
+                server.directoryFor(account).upload(identityKey, oneTimePrekeys)
+        }
+
+        /** A new app process on this phone. Its backups take few rounds: these tests are not about how long a guess takes. */
         fun start(): EndToEnd = EndToEnd(
             root = root,
             keyring = keyring,
-            directory = object : KeyDirectory {
-                override suspend fun status() = server.directoryFor(account).status()
-                override suspend fun register(identityKey: String, signedPrekey: String, signature: String) =
-                    server.directoryFor(account).register(identityKey, signedPrekey, signature)
-                override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>) =
-                    server.directoryFor(account).upload(identityKey, oneTimePrekeys)
-            },
+            directory = directory,
+            fetchBundle = { server.bundle(it) },
+            onReplaced = { replaced++ },
+            report = { what, _ -> reports += what },
+            onSecurityChanged = { securityChanges += it },
+            backupRounds = 200,
+        )
+
+        /** The same, told nothing about backups — as the app starts it. */
+        fun startAsTheAppDoes(): EndToEnd = EndToEnd(
+            root = root,
+            keyring = keyring,
+            directory = directory,
             fetchBundle = { server.bundle(it) },
             onReplaced = { replaced++ },
             report = { what, _ -> reports += what },
@@ -521,6 +537,177 @@ class EndToEndTest {
         phone.keyring.unreadable = false
         val recovered = phone.start().also { it.resume("alice") }
         assertEquals("typed", String(recovered.localSeal()!!.open("drafts", stored)!!, Charsets.UTF_8))
+    }
+
+    // ------------------------------------------------------------- a backup
+
+    private fun holds(bytes: ByteArray, needle: String): Boolean = String(bytes, Charsets.ISO_8859_1).contains(needle)
+
+    @Test
+    fun aBackupBringsTheHistoryBackAfterSigningOutAndInAgain() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val passphrase = "correct horse battery"
+        val received = send(bob, "alice", "from bob, before")!!
+        assertEquals("from bob, before", read(alice, "bob", received))
+        val sent = send(alice, "bob", "from alice, before")!!
+        assertEquals("from alice, before", readOwn(alice, "bob", sent))
+
+        val file = ByteArrayOutputStream()
+        val written = alice.backUp(file, passphrase.toCharArray())!!
+        assertEquals("both messages", 2, written.messages)
+        assertEquals(1, written.chats)
+        assertEquals(0, written.unreadableChats)
+        assertFalse(holds(file.toByteArray(), "before"))
+
+        // Signing out erases everything. Signing in again starts with new keys and nothing kept.
+        alice.signOut()
+        val again = phone.signIn("alice", alice)
+        assertNull(read(again, "bob", received))
+        assertNull(readOwn(again, "bob", sent))
+
+        assertEquals(2, again.restore(ByteArrayInputStream(file.toByteArray()), passphrase.toCharArray()))
+        assertEquals("what was received", "from bob, before", read(again, "bob", received))
+        assertEquals("and what was sent", "from alice, before", readOwn(again, "bob", sent))
+        assertEquals("a second time adds nothing", 0, again.restore(ByteArrayInputStream(file.toByteArray()), passphrase.toCharArray()))
+        // It is kept like any other history from here on: a restart finds it, sealed for the new key.
+        val restarted = phone.start().also { it.resume("alice") }
+        assertEquals("from bob, before", read(restarted, "bob", received))
+        assertTrue(phone.files().none { holds(it.readBytes(), "before") })
+        // …and the next backup holds it again, with what came since.
+        val after = send(restarted, "bob", "after the restore")!!
+        assertEquals("after the restore", read(bob, "alice", after))
+        assertEquals(3, restarted.backUp(ByteArrayOutputStream(), passphrase.toCharArray())?.messages)
+    }
+
+    @Test
+    fun aBackupIsRestoredOnlyWithItsPassphraseAndOnlyIntoItsAccount() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val received = send(bob, "alice", "for alice")!!
+        assertEquals("for alice", read(alice, "bob", received))
+        val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
+        alice.signOut()
+        val again = phone.signIn("alice", alice)
+
+        fun problemOf(app: EndToEnd, passphrase: String): E2eeBackup.Problem? = try {
+            app.restore(ByteArrayInputStream(file), passphrase.toCharArray())
+            null
+        } catch (failure: E2eeBackup.Failure) {
+            failure.problem
+        }
+        assertEquals(E2eeBackup.Problem.WrongPassphrase, problemOf(again, "correct horse batterx"))
+        assertNull("and nothing was restored", read(again, "bob", received))
+
+        val carol = Phone(server).signIn("carol")
+        assertEquals(E2eeBackup.Problem.OtherAccount, problemOf(carol, "correct horse battery"))
+        assertNull(carol.messaging().reveal("bob", received.id, received.clientId, mine = false, envelope = received.envelope))
+
+        // A passphrase that is none is refused before anything is written.
+        val nothing = ByteArrayOutputStream()
+        try {
+            again.backUp(nothing, "short".toCharArray())
+            fail("a backup under a passphrase that is none")
+        } catch (expected: IllegalArgumentException) {
+            // intended
+        }
+        assertEquals(0, nothing.size())
+
+        // Nobody signed in: nothing to back up, and nothing to restore into.
+        val nobody = Phone(server).start()
+        assertNull(nobody.backUp(ByteArrayOutputStream(), "correct horse battery".toCharArray()))
+        assertNull(nobody.restore(ByteArrayInputStream(file), "correct horse battery".toCharArray()))
+
+        assertEquals(1, again.restore(ByteArrayInputStream(file), "correct horse battery".toCharArray()))
+        assertEquals("for alice", read(again, "bob", received))
+    }
+
+    @Test
+    fun theAppWritesItsBackupsTheSlowWay() {
+        val phone = Phone(Server())
+        val app = phone.signIn("alice", phone.startAsTheAppDoes())
+        val file = ByteArrayOutputStream().also { app.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
+        var rounds = 0
+        for (index in 8..11) rounds = (rounds shl 8) or (file[index].toInt() and 0xff)
+        assertEquals(E2eeBackup.ROUNDS, rounds)
+    }
+
+    @Test
+    fun aBackupCutOffBySigningOutIsNotABackup() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        assertEquals("kept", read(alice, "bob", send(bob, "alice", "kept")!!))
+
+        // The account leaves while the file is being written: here, between the heading and the rest.
+        val file = object : ByteArrayOutputStream() {
+            var left = false
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                super.write(bytes, offset, length)
+                if (!left) {
+                    left = true
+                    alice.signOut()
+                }
+            }
+        }
+        try {
+            alice.backUp(file, "correct horse battery".toCharArray())
+            fail("a backup of an account that left meanwhile")
+        } catch (expected: IOException) {
+            // intended
+        }
+        // What was written does not restore as an empty backup: it is no backup.
+        val again = phone.signIn("alice")
+        try {
+            again.restore(ByteArrayInputStream(file.toByteArray()), "correct horse battery".toCharArray())
+            fail("half a file restored as a backup")
+        } catch (failure: E2eeBackup.Failure) {
+            assertEquals(E2eeBackup.Problem.Damaged, failure.problem)
+            assertEquals(0, failure.restored)
+        }
+    }
+
+    @Test
+    fun aDamagedBackupGivesBackWhatCanStillBeRead() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        // Enough for more than one piece of the file.
+        val wires = (0 until 40).map { send(bob, "alice", "message $it " + "x".repeat(4_000))!! }
+        wires.forEachIndexed { index, wire -> assertTrue(read(alice, "bob", wire)!!.startsWith("message $index ")) }
+        val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
+        assertTrue(file.size > E2eeBackup.HEADING_BYTES + E2eeBackup.SEALED_PIECE_BYTES)
+        alice.signOut()
+        val again = phone.signIn("alice", alice)
+
+        // The end of the file is damaged; its first piece is whole.
+        val damaged = file.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
+        try {
+            again.restore(ByteArrayInputStream(damaged), "correct horse battery".toCharArray())
+            fail("a damaged file restored without a word")
+        } catch (failure: E2eeBackup.Failure) {
+            assertEquals(E2eeBackup.Problem.Damaged, failure.problem)
+            assertTrue("${failure.restored} restored", failure.restored in 1 until 40)
+            assertTrue(read(again, "bob", wires[0])!!.startsWith("message 0 "))
+            assertNull("what was in the damaged part is not back", read(again, "bob", wires[39]))
+        }
+        // The whole file afterwards brings the rest, and nothing twice.
+        val before = try {
+            again.restore(ByteArrayInputStream(damaged), "correct horse battery".toCharArray())
+            -1
+        } catch (failure: E2eeBackup.Failure) {
+            failure.restored
+        }
+        assertEquals("the same damaged file again adds nothing", 0, before)
+        val rest = again.restore(ByteArrayInputStream(file), "correct horse battery".toCharArray())!!
+        assertTrue("$rest more", rest in 1 until 40)
+        assertTrue(read(again, "bob", wires[39])!!.startsWith("message 39 "))
     }
 
     // ---------------------------------------------- a phone that changes hands

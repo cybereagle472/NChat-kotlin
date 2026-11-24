@@ -32,8 +32,8 @@ NETWORK="$APP/network"
 TESTS_ROOT="$ROOT/app/src/test/java/com/nchat/app"
 TESTS_DIR="$TESTS_ROOT/network"
 
-MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeGroup.kt E2eeStore.kt E2eeArchive.kt E2eeClient.kt E2eeKeys.kt LocalSeal.kt EndToEnd.kt)
-ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeGroupTest E2eeStoreTest E2eeArchiveTest E2eeClientTest E2eeGroupClientTest E2eeKeysTest LocalSealTest EndToEndTest)
+MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeGroup.kt E2eeStore.kt E2eeArchive.kt E2eeBackup.kt E2eeClient.kt E2eeKeys.kt LocalSeal.kt EndToEnd.kt)
+ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeGroupTest E2eeStoreTest E2eeArchiveTest E2eeBackupTest E2eeClientTest E2eeGroupClientTest E2eeKeysTest LocalSealTest EndToEndTest)
 
 # Paths below com/nchat/app, main and test.
 APP_MAIN=(

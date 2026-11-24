@@ -394,4 +394,171 @@ class E2eeArchiveTest {
         assertNull(archive.find("bob", "m:1"))
         assertArrayEquals("not a directory".toByteArray(), blocked.readBytes())
     }
+
+    // ------------------------------------------------------------ for a backup
+
+    @Test
+    fun theArchiveKnowsWhichChatsItKeeps() {
+        // The files are named by a hash, so that the directory names nobody. A backup needs the
+        // chats themselves: each file carries, sealed, the chat it is of.
+        val archive = archive()
+        assertEquals(emptyList<String>(), archive.chats().ids)
+        archive.put("user-bob-1234", "m:1#a", E2eePayload.text("one"))
+        archive.put("g:family-5678", "m:3:bob:2#b", E2eePayload.text("two"))
+        archive.put("user-bob-1234", "m:3#c", E2eePayload.text("three"))
+        assertEquals(listOf("g:family-5678", "user-bob-1234"), archive.chats().ids.sorted())
+        assertEquals("…and still does in a new run of the app", listOf("g:family-5678", "user-bob-1234"), archive().chats().ids.sorted())
+        assertEquals(0, archive().chats().unreadable)
+        archive().put("user-bob-1234", "m:4#d", E2eePayload.text("four"))
+        assertEquals("the name is in a file once, however much is written to it", 2 + 4, logs().sumOf { file -> file.readLines().count { it.isNotBlank() } })
+
+        for (file in logs()) {
+            for (name in listOf("user-bob-1234", "family-5678")) {
+                assertFalse("${file.name} names $name", file.readBytes().holds(name) || file.name.contains(name))
+            }
+        }
+        // Under another key nothing says whose the files are — and that is said, not passed over.
+        val foreign = E2eeArchive(directory(), otherKey).chats()
+        assertEquals(emptyList<String>(), foreign.ids)
+        assertEquals(2, foreign.unreadable)
+
+        // Deleting from a chat writes its file again: it still says which chat it is.
+        archive().remove("user-bob-1234", listOf("m:1#"))
+        assertEquals(listOf("g:family-5678", "user-bob-1234"), archive().chats().ids.sorted())
+        assertEquals("three", archive().find("user-bob-1234", "m:3#c")?.body)
+
+        archive().clear()
+        assertEquals(emptyList<String>(), archive().chats().ids)
+    }
+
+    @Test
+    fun aFileThatLostItsNameGetsItBackWithTheNextMessage() {
+        val archive = archive()
+        archive.put("user-bob-1234", "m:1#a", E2eePayload.text("one"))
+        archive.put("user-carol-9", "m:1#b", E2eePayload.text("carol's"))
+        val bob = logs().single { it.name == hashedName("user-bob-1234") + ".log" }
+        val carol = logs().single { it != bob }
+
+        // The line that names the chat is torn off: what is left cannot be put in a backup…
+        val entries = bob.readLines().filter { it.isNotBlank() }
+        bob.writeText(entries.drop(1).joinToString("\n", postfix = "\n"))
+        val broken = archive().chats()
+        assertEquals(listOf("user-carol-9"), broken.ids)
+        assertEquals("…and the archive says so instead of leaving it out quietly", 1, broken.unreadable)
+        assertEquals("the messages themselves are still read", "one", archive().find("user-bob-1234", "m:1#a")?.body)
+
+        // …until something is written to the chat again.
+        archive().put("user-bob-1234", "m:2#c", E2eePayload.text("two"))
+        val mended = archive().chats()
+        assertEquals(listOf("user-bob-1234", "user-carol-9"), mended.ids.sorted())
+        assertEquals(0, mended.unreadable)
+        assertEquals(listOf("m:1#a", "m:2#c"), archive().entries("user-bob-1234").map { it.first })
+
+        // The name of one chat's file does not name another's.
+        carol.appendText(bob.readLines().first { it.isNotBlank() && it !in entries } + "\n")
+        assertEquals(listOf("user-bob-1234", "user-carol-9"), archive().chats().ids.sorted())
+        val copied = folder.root.resolve("copy").also { it.mkdirs() }
+        bob.copyTo(copied.resolve(hashedName("somebody-else") + ".log"))
+        val elsewhere = E2eeArchive(copied, key).chats()
+        assertEquals(emptyList<String>(), elsewhere.ids)
+        assertEquals(1, elsewhere.unreadable)
+
+        // A file with nothing in it is not a chat that could not be read.
+        directory().resolve(hashedName("nobody") + ".log").writeText("\n")
+        assertEquals(0, archive().chats().unreadable)
+    }
+
+    @Test
+    fun everyEntryOfAChatIsHandedOutInTheOrderItWasWritten() {
+        val archive = archive(tailBytes = 256)
+        assertEquals(emptyList<Pair<String, E2eePayload>>(), archive.entries("bob"))
+        archive.put("bob", "m:c-1#a", E2eePayload.text("see you at seven"))
+        archive.put("bob", "c:c-2#b", E2eePayload.text("fine", replyTo = "s-1"))
+        for (index in 0 until 40) archive.put("bob", "m:c-1$index#x", E2eePayload.text("filler $index, to push the first ones out of the tail"))
+        archive.put("bob", "e:s-1#c", E2eePayload(E2eePayload.PHOTO, "the harbour", attachment = "v1:pointer"))
+        archive.put("carol", "m:c-9#z", E2eePayload.text("another chat"))
+        archive.flush()
+
+        val entries = archive().entries("bob")
+        assertEquals(43, entries.size)
+        assertEquals(listOf("m:c-1#a", "c:c-2#b"), entries.take(2).map { it.first })
+        assertEquals("e:s-1#c", entries.last().first)
+        assertEquals("see you at seven", entries[0].second.body)
+        assertEquals("s-1", entries[1].second.replyTo)
+        assertEquals(E2eePayload.PHOTO, entries.last().second.type)
+        assertEquals("v1:pointer", entries.last().second.attachment)
+        assertEquals(listOf("m:c-9#z"), archive().entries("carol").map { it.first })
+
+        // What was deleted is not handed out again.
+        archive().remove("bob", listOf("c:c-2#"))
+        assertFalse(archive().entries("bob").any { it.first == "c:c-2#b" })
+        assertEquals(42, archive().entries("bob").size)
+    }
+
+    @Test
+    fun restoringAddsWhatIsMissingAndNothingTwice() {
+        val source = archive()
+        source.put("bob", "m:c-1#a", E2eePayload.text("one"))
+        source.put("bob", "c:c-2#b", E2eePayload.text("two", replyTo = "s-1"))
+        source.put("bob", "e:s-1#c", E2eePayload.text("one, edited"))
+        val kept = source.entries("bob")
+
+        // Another installation: another directory, another key.
+        val other = folder.root.resolve("elsewhere")
+        fun target() = E2eeArchive(other, otherKey)
+        assertEquals(3, target().restore("bob", kept))
+        assertEquals("one", target().find("bob", "m:c-1#a")?.body)
+        assertEquals("s-1", target().find("bob", "c:c-2#b")?.replyTo)
+        assertEquals(listOf("bob"), target().chats().ids)
+        for (file in other.listFiles().orEmpty()) assertFalse(file.readBytes().holds("edited"))
+
+        assertEquals("a second time adds nothing", 0, target().restore("bob", kept))
+        assertEquals(3, target().entries("bob").size)
+
+        // What this phone kept itself is not replaced by what a backup says about the same message.
+        target().put("bob", "m:c-7#q", E2eePayload.text("kept here"))
+        assertEquals(0, target().restore("bob", listOf("m:c-7#q" to E2eePayload.text("from the backup"))))
+        assertEquals("kept here", target().find("bob", "m:c-7#q")?.body)
+        assertEquals(1, target().restore("bob", kept + listOf("m:c-8#r" to E2eePayload.text("only in the backup"))))
+        assertEquals("only in the backup", target().find("bob", "m:c-8#r")?.body)
+        assertEquals(0, target().restore("bob", emptyList()))
+        assertEquals("a restored file still says which chat it is", listOf("bob"), target().chats().ids)
+    }
+
+    @Test
+    fun whatThePhoneKeptSinceIsNewerThanAnythingABackupHolds() {
+        // Two forms of one message — as first sent, then edited — are two entries under one
+        // name, and the one written last is the newest. A backup is older than whatever the
+        // phone has kept by itself since, so what it brings back goes in before that.
+        val source = archive()
+        source.put("bob", "m:s-1#first", E2eePayload.text("as first sent"))
+        source.put("bob", "m:s-1#second", E2eePayload.text("edited once"))
+        source.put("bob", "m:s-2#only", E2eePayload.text("another message"))
+        val backup = source.entries("bob")
+
+        val other = folder.root.resolve("elsewhere")
+        fun target() = E2eeArchive(other, otherKey)
+        target().put("bob", "m:s-1#third", E2eePayload.text("edited again, after the backup"))
+        target().put("bob", "m:s-9#new", E2eePayload.text("arrived after the backup"))
+        assertEquals(3, target().restore("bob", backup))
+
+        assertEquals("edited again, after the backup", target().latest("bob", "m:s-1#")?.body)
+        assertEquals("as first sent", target().find("bob", "m:s-1#first")?.body)
+        assertEquals("edited once", target().find("bob", "m:s-1#second")?.body)
+        assertEquals(
+            listOf("m:s-1#first", "m:s-1#second", "m:s-2#only", "m:s-1#third", "m:s-9#new"),
+            target().entries("bob").map { it.first },
+        )
+        // Within the backup the order is the backup's: its last form of a message is its newest.
+        val fresh = folder.root.resolve("fresh")
+        assertEquals(3, E2eeArchive(fresh, otherKey).restore("bob", backup))
+        assertEquals("edited once", E2eeArchive(fresh, otherKey).latest("bob", "m:s-1#")?.body)
+        // An instance that was already reading the chat sees what was restored.
+        val running = E2eeArchive(folder.root.resolve("running"), otherKey)
+        running.put("bob", "m:s-9#new", E2eePayload.text("arrived after the backup"))
+        assertNull(running.find("bob", "m:s-2#only"))
+        assertEquals(3, running.restore("bob", backup))
+        assertEquals("another message", running.recent("bob", "m:s-2#only")?.body)
+        assertEquals("arrived after the backup", running.find("bob", "m:s-9#new")?.body)
+    }
 }
