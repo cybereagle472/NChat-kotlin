@@ -1,4 +1,4 @@
-run: 45367362706
+run: 45369949232
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -14,18 +14,18 @@ Warning: SDK processing. This version only understands SDK XML versions up to 3 
 > Task :app:checkDebugAarMetadata
 > Task :app:mapDebugSourceSetPaths
 > Task :app:generateDebugResources UP-TO-DATE
-> Task :app:mergeDebugResources FROM-CACHE
 > Task :app:packageDebugResources FROM-CACHE
 > Task :app:parseDebugLocalResources FROM-CACHE
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug FROM-CACHE
-> Task :app:processDebugMainManifest FROM-CACHE
+> Task :app:mergeDebugResources
+> Task :app:processDebugMainManifest
 > Task :app:processDebugManifest FROM-CACHE
 > Task :app:processDebugManifestForPackage FROM-CACHE
-> Task :app:processDebugResources FROM-CACHE
 > Task :app:javaPreCompileDebug FROM-CACHE
 > Task :app:preDebugUnitTestBuild UP-TO-DATE
 > Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :app:processDebugResources
 > Task :app:compileDebugKotlin
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/diagnostics/SyncCheck.kt:69:17 Name shadowed: rows
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/update/AutoUpdater.kt:216:27 'ACTION_INSTALL_PACKAGE: String' is deprecated. Deprecated in Java
@@ -34,15 +34,15 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:550:13 Variable 'current' is never used
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:919:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:923:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1482:39 Variable 'failure' initializer is redundant
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1988:44 The corresponding parameter in the supertype 'ChatRepository' is named 'pinned'. This may cause problems when calling this function with named arguments.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1523:39 Variable 'failure' initializer is redundant
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:2029:44 The corresponding parameter in the supertype 'ChatRepository' is named 'pinned'. This may cause problems when calling this function with named arguments.
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:70 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:98 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:125:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:461:9 Variable 'extra' is never used
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1775:45 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1884:40 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:2598:71 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1779:45 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1888:40 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:2602:71 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:66 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:94 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
 w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageActionsMenu.kt:185:54 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
@@ -80,27 +80,83 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 > Task :app:bundleDebugClassesToRuntimeJar
 
 > Task :app:compileDebugUnitTestKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:22:106 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:23:9 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:32:38 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:32:59 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:33:71 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:34:28 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:76:46 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:83:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:84:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:90:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:91:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:92:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:124:13 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:125:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:126:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:127:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:128:78 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:129:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:131:22 Unresolved reference: VideoPlan
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/core/util/VideoPlanTest.kt:133:23 Unresolved reference: VideoPlan
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795513263029.json
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:31 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:52 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:70 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:87 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:33:29 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:34:9 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:36:29 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:37:9 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:37:81 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:54:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:71:36 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:72:22 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:80:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:84:17 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:85:17 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:93:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:107:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:123:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:127:37 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:128:38 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:129:39 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:130:50 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:132:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:139:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:146:22 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:147:44 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:148:59 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:148:66 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:153:23 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:154:23 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:155:60 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:156:36 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:167:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:170:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:198:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:201:16 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:205:25 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:207:68 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:207:104 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:212:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:230:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:235:22 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:240:24 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:251:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:73 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:95 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:253:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:255:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:69 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:90 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:257:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:264:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:265:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:266:23 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:267:36 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:269:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:270:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:271:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:272:39 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:272:77 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:45 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:48 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:64 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:67 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:275:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:277:25 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:278:45 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:279:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:280:45 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:281:20 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:286:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:287:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:289:21 Unresolved reference: E2eeGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:293:34 Unresolved reference: E2eeGroup
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795514239173.json
 
 FAILURE: Build failed with an exception.
 
@@ -306,5 +362,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 1m 24s
-22 actionable tasks: 10 executed, 12 from cache
+BUILD FAILED in 1m 46s
+22 actionable tasks: 13 executed, 9 from cache
