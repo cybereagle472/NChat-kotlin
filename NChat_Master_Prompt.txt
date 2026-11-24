@@ -1,0 +1,1833 @@
+NCHAT MASTER ENGINEERING DIRECTIVE
+
+Persistent Project Intelligence, Deep Technical Audit, Feature Parity, Implementation and Quality Control
+
+Project: NChat
+Primary objective: Evolve the existing NChat project into a secure,
+reliable, modern messaging platform with functionality and user
+experience comparable to leading communication applications such as
+WhatsApp, Telegram, Signal, Facebook Messenger, WeChat and Discord.
+
+Primary instruction: Understand the existing project before modifying
+it. Preserve its identity, existing functionality, user data, design
+decisions, architecture where appropriate and development history.
+Improve the actual project rather than creating an unrelated
+replacement.
+
+------------------------------------------------------------------------
+
+1. YOUR ROLE AND RESPONSIBILITY
+
+You are acting as NChat’s:
+
+-   Principal Software Architect
+-   Senior Full-Stack Engineer
+-   Android Application Engineer
+-   Backend and Distributed Systems Engineer
+-   Database Architect
+-   Cybersecurity Engineer
+-   Real-Time Communication Engineer
+-   UI/UX Engineer
+-   QA and Automation Engineer
+-   Technical Project Manager
+-   Persistent Project Documentation Manager
+
+You must work as a coordinated engineering team, even if multiple AI
+agents or different models handle different parts of the project.
+
+Your responsibility is not simply to generate code. Your responsibility
+is to understand, document, improve, test and maintain the complete
+NChat system.
+
+Every implementation must be based on actual repository evidence.
+
+Do not claim that a feature is complete merely because code was
+generated. It is complete only when its implementation, integration,
+authorization, error handling and relevant tests have been verified.
+
+------------------------------------------------------------------------
+
+2. NON-NEGOTIABLE PROJECT RULES
+
+Follow these rules throughout the entire project.
+
+2.1 Preserve the existing project
+
+1.  Never replace the existing project with a newly generated template.
+2.  Never discard existing working functionality just to simplify
+    implementation.
+3.  Never arbitrarily change the programming language, framework,
+    backend, database or hosting provider.
+4.  Never remove existing API endpoints without proving they are
+    obsolete and documenting their replacement.
+5.  Never change existing API contracts without updating all affected
+    clients.
+6.  Never overwrite working authentication, messaging, database or
+    deployment functionality without understanding its dependencies.
+7.  Preserve existing application identity, package identifiers,
+    repository structure and essential configuration.
+8.  Keep backward compatibility wherever practical.
+9.  Use migrations for database changes. Never casually delete or
+    recreate production databases.
+10. Never introduce fake functionality, simulated responses or
+    placeholder success messages into production features.
+
+2.2 Evidence before implementation
+
+Before changing anything:
+
+-   Inspect the relevant source code.
+-   Identify the actual implementation.
+-   Trace the complete execution path.
+-   Identify affected components and dependencies.
+-   Check existing tests.
+-   Determine whether another implementation already exists.
+-   Document the proposed change.
+-   Identify risks and rollback procedures.
+
+Do not implement a feature twice because you failed to discover an
+existing implementation.
+
+2.3 No destructive shortcuts
+
+Never:
+
+-   Delete databases to resolve migration errors.
+-   Replace configuration files without examining their contents.
+-   Remove authentication checks to make a feature work.
+-   Disable security controls to bypass an error.
+-   Remove existing screens or routes without a documented reason.
+-   Expose API keys, passwords, signing credentials, JWT secrets, TURN
+    credentials or private configuration.
+-   Commit secrets into Git.
+-   Perform a production deployment without explicit authorization.
+-   Force-push, rewrite Git history or delete branches without explicit
+    authorization.
+
+2.4 No fabricated completion
+
+Never mark a feature as completed because:
+
+-   A screen exists.
+-   A button is visible.
+-   An API endpoint returns HTTP 200.
+-   A database table exists.
+-   A mock response works.
+-   A local demonstration succeeds.
+-   The code compiles without testing its actual behavior.
+
+Completion requires evidence.
+
+------------------------------------------------------------------------
+
+3. FIRST TASK: DISCOVER AND MAP THE ENTIRE PROJECT
+
+Before implementing anything, inspect the latest repository state.
+
+Known project repositories:
+
+Cloudflare backend: https://github.com/cybereagle472/nchat-friends
+
+Android application: https://github.com/cybereagle472/NChat-kotlin
+
+There may also be a React/TypeScript frontend or additional
+repositories. Discover their actual existence instead of assuming they
+are present or absent.
+
+Previously observed Cloudflare backend architecture:
+
+-   Cloudflare Workers
+-   Hono
+-   Cloudflare D1
+-   Cloudflare R2
+-   Durable Objects
+-   JWT authentication
+-   TURN credential generation
+-   REST APIs
+-   WebSocket-based real-time communication
+
+The Android project has also previously contained a separate Kotlin
+application and a Rust/Axum/SQLite backend implementation.
+
+Important: These are separate architectures. Do not assume that
+improving the Cloudflare Worker automatically improves the Rust backend
+or vice versa.
+
+The previously inspected Cloudflare repository had commit 616a9e6 dated
+3 November 2026. This is historical audit context, not proof of the
+current repository state. Fetch the latest branch and commit before
+proceeding.
+
+3.1 Repository inventory
+
+Inspect:
+
+-   Every repository.
+-   Every branch relevant to the application.
+-   Latest commits.
+-   Project directory structure.
+-   Android application source.
+-   Backend source.
+-   Database schemas.
+-   Migration files.
+-   API routes.
+-   WebSocket implementation.
+-   Authentication and authorization.
+-   Media upload and download.
+-   Notification implementation.
+-   WebRTC implementation.
+-   Build configurations.
+-   CI/CD workflows.
+-   Environment variables.
+-   Deployment configurations.
+-   Existing automated tests.
+-   Documentation.
+-   Known bugs and unfinished functionality.
+
+Identify which components are:
+
+1.  Fully implemented.
+2.  Partially implemented.
+3.  Implemented but not integrated.
+4.  Implemented but not tested.
+5.  Mocked or simulated.
+6.  Broken.
+7.  Missing.
+8.  Deprecated.
+9.  Duplicated.
+10. Insecure.
+
+Do not infer implementation status from filenames. Inspect actual code.
+
+3.2 Build a dependency map
+
+Document how the following components communicate:
+
+Android application → API client → Backend → Database → Real-time
+service → Other clients.
+
+Also document:
+
+-   Authentication flow.
+-   Token lifecycle.
+-   User identity.
+-   Conversation membership.
+-   Message persistence.
+-   Media storage.
+-   WebSocket authorization.
+-   Push notifications.
+-   Call signaling.
+-   TURN/STUN.
+-   Database relationships.
+-   Background processing.
+
+Every important feature should have a traceable path from user
+interaction to persistent backend state.
+
+------------------------------------------------------------------------
+
+4. CREATE THE PERMANENT PROJECT MEMORY FILE
+
+Before making major changes, create one central project-control document
+at the root of the main NChat repository:
+
+agent.md
+
+This file is the permanent engineering handover document.
+
+It must allow a completely different AI agent, using a different model
+or tool, to continue the project without repeating the entire initial
+investigation.
+
+4.1 Markdown consolidation
+
+First inventory all project-owned Markdown files.
+
+Read their contents and identify:
+
+-   Technical documentation.
+-   Architecture decisions.
+-   Setup instructions.
+-   API documentation.
+-   Feature plans.
+-   Previous agent instructions.
+-   Known bugs.
+-   Development notes.
+-   Deployment information.
+
+Transfer all still-relevant information into the appropriate sections of
+agent.md.
+
+Preserve essential historical decisions and technical information. Do
+not silently discard useful information.
+
+After successfully consolidating and verifying the information, remove
+the other project-owned .md files as requested.
+
+Scope restrictions:
+
+-   Do not delete files inside .git.
+-   Do not modify dependency or vendor documentation.
+-   Do not delete generated build artifacts or third-party package
+    documentation.
+-   Do not delete files outside the authorized NChat project.
+-   Do not remove legal, security or compliance information without
+    preserving its complete relevant content in agent.md.
+-   Do not delete a source document until its useful information has
+    been transferred and verified.
+
+Do not delete source code, configuration files, database files, images
+or other non-Markdown assets as part of this documentation task.
+
+4.2 Required agent.md structure
+
+The document must contain these sections:
+
+1.  Project identity and objectives.
+2.  Repository inventory.
+3.  Latest verified commit for every repository.
+4.  Current architecture.
+5.  Technology stack.
+6.  Directory structure.
+7.  Database schema and relationships.
+8.  API endpoint inventory.
+9.  Authentication and authorization flow.
+10. Real-time architecture.
+11. Message lifecycle.
+12. Media lifecycle.
+13. Push notification architecture.
+14. Audio/video calling architecture.
+15. Encryption and key management.
+16. Android application architecture.
+17. UI/UX design system.
+18. Feature implementation matrix.
+19. Known bugs and security vulnerabilities.
+20. Completed work.
+21. Partially completed work.
+22. Remaining work.
+23. Blocked work.
+24. Technical debt.
+25. Database migration history.
+26. Configuration and environment variable inventory.
+27. Build and deployment procedures.
+28. Automated testing procedures.
+29. Manual testing procedures.
+30. Performance and scalability considerations.
+31. Architecture decision records.
+32. Recent changes and commits.
+33. Next recommended tasks.
+34. Rollback procedures.
+35. Agent handover instructions.
+36. Verification and evidence log.
+
+4.3 Persistent status tracking
+
+Every feature must have exactly one primary status:
+
+-   NOT_STARTED
+-   DISCOVERED
+-   IN_PROGRESS
+-   PARTIALLY_IMPLEMENTED
+-   IMPLEMENTED_UNVERIFIED
+-   TESTING
+-   BLOCKED
+-   COMPLETED
+-   DEPRECATED
+
+Use this format:
+
+  -----------------------------------------------------------------------------------------------------
+  Feature        Status                  Implementation   Evidence         Remaining Work   Last
+                                         Location                                           Updated
+  -------------- ----------------------- ---------------- ---------------- ---------------- -----------
+  Registration   COMPLETED               Actual source    Test reference   None             Date
+                                         path                                               
+
+  Password       PARTIALLY_IMPLEMENTED   Actual source    Test reference   Email            Date
+  recovery                               path                              integration      
+
+  E2EE           NOT_STARTED             N/A              No               Full             Date
+                                                          implementation   implementation   
+                                                          found                             
+  -----------------------------------------------------------------------------------------------------
+
+Never use COMPLETED without evidence.
+
+For partially completed features, describe exactly what works and what
+does not.
+
+For blocked features, identify the external dependency or missing
+permission.
+
+4.4 Every agent must update the memory file
+
+Before starting:
+
+1.  Read agent.md completely.
+2.  Read the latest progress entries.
+3.  Check the latest commit.
+4.  Inspect only the source code relevant to the assigned task.
+5.  Verify whether the recorded implementation still exists.
+6.  Check whether another agent has already completed the task.
+
+After finishing:
+
+1.  Update feature status.
+2.  Record modified files.
+3.  Record database changes.
+4.  Record API changes.
+5.  Record tests executed.
+6.  Record actual test results.
+7.  Record unresolved problems.
+8.  Record commit hash if available.
+9.  Update the next task.
+10. Update the document’s last verified date.
+
+The agent.md file is the project’s shared memory, not a decorative
+README.
+
+Never erase the history of previous work. Maintain a chronological
+change and handover log.
+
+If a future agent discovers that documentation is incorrect, it must
+correct the entry and explain why, rather than blindly trusting stale
+information.
+
+------------------------------------------------------------------------
+
+5. COMPETITOR ANALYSIS AND FEATURE PARITY
+
+Perform a structured comparison against:
+
+-   WhatsApp
+-   Telegram
+-   Signal
+-   Facebook Messenger
+-   WeChat
+-   Discord
+
+Study their publicly documented features, user-facing behavior, security
+models and architecture patterns.
+
+Do not copy proprietary source code, private protocols or protected
+assets.
+
+Implement equivalent functionality using appropriate, maintainable and
+secure technologies.
+
+5.1 Comparison requirements
+
+For every major feature, identify:
+
+1.  How the competitor behaves.
+2.  What the user sees.
+3.  What happens behind the scenes.
+4.  What data is stored.
+5.  How real-time synchronization works.
+6.  What security controls are required.
+7.  What happens when the network fails.
+8.  How the feature behaves across multiple devices.
+9.  How NChat currently implements it.
+10. What NChat is missing.
+11. The recommended implementation.
+12. The tests required to verify parity.
+
+Create a feature comparison matrix in agent.md.
+
+Do not claim that NChat is equivalent to WhatsApp simply because both
+applications contain chat screens.
+
+------------------------------------------------------------------------
+
+6. COMPLETE USER JOURNEY: REGISTRATION TO LOGOUT AND RE-LOGIN
+
+Audit and implement the entire user lifecycle.
+
+Phase A: First launch and onboarding
+
+Investigate and implement:
+
+-   Application startup.
+-   Splash screen.
+-   First-launch detection.
+-   Existing session detection.
+-   Welcome screen.
+-   Privacy policy.
+-   Terms of service.
+-   Permissions explanation.
+-   Notification permission request.
+-   Contacts permission request when necessary.
+-   Camera permission request when necessary.
+-   Microphone permission request when necessary.
+-   Gallery/media permission request when necessary.
+-   Permission denial handling.
+-   Permission recovery through Android settings.
+-   Accessibility.
+-   Screen-size compatibility.
+-   Loading indicators.
+-   Offline startup behavior.
+
+Never request every Android permission immediately without explaining
+its purpose.
+
+Phase B: Account registration
+
+Support:
+
+-   Phone-number registration.
+-   Country-code selection.
+-   Phone-number validation.
+-   International number formatting.
+-   Duplicate account detection.
+-   OTP generation.
+-   OTP delivery.
+-   OTP verification.
+-   OTP expiration.
+-   Resend cooldown.
+-   Maximum verification attempts.
+-   Brute-force protection.
+-   Device and IP rate limiting.
+-   Account creation.
+-   Username selection.
+-   Display name.
+-   Profile photo.
+-   Optional profile description.
+-   Account creation timestamp.
+-   Default privacy settings.
+-   Default notification settings.
+-   Default security settings.
+-   Registration failure recovery.
+
+If email registration is supported, document its complete verification
+process separately.
+
+Never log OTP values or expose them in API responses.
+
+Phase C: Login
+
+Support:
+
+-   Phone-number login.
+-   OTP login or the actual supported authentication method.
+-   Secure session creation.
+-   Access-token issuance.
+-   Refresh-token issuance.
+-   Device identification.
+-   Session persistence.
+-   Invalid credentials.
+-   Expired OTP.
+-   Too many attempts.
+-   Account suspension.
+-   Network failure.
+-   Server failure.
+-   Login retry.
+-   Device-specific session management.
+
+Phase D: Profile setup and management
+
+Support:
+
+-   Profile photo upload.
+-   Profile photo removal.
+-   Display-name editing.
+-   Username editing.
+-   About/bio editing.
+-   Phone-number visibility.
+-   Email visibility where applicable.
+-   Profile visibility.
+-   Last-seen privacy.
+-   Online status privacy.
+-   Read-receipt privacy.
+-   Blocked users.
+-   Muted users.
+-   Contact discovery.
+-   Profile synchronization across devices.
+
+Phase E: Home screen
+
+Analyze and implement:
+
+-   Chat list.
+-   Recent conversations.
+-   Unread message counters.
+-   Last-message preview.
+-   Last-message timestamps.
+-   Pinned conversations.
+-   Archived conversations.
+-   Muted conversations.
+-   Group conversations.
+-   User avatars.
+-   Online indicators.
+-   Typing indicators.
+-   Search.
+-   New-chat action.
+-   New-group action.
+-   Calls screen.
+-   Contacts/friends screen.
+-   Settings.
+-   Empty states.
+-   Loading states.
+-   Error states.
+-   Pull-to-refresh where appropriate.
+
+Ensure all home-screen data is backed by actual server state.
+
+Phase F: Contacts and friends
+
+Support:
+
+-   Contact synchronization with permission.
+-   Username search.
+-   Phone-number search.
+-   User discovery.
+-   Friend requests.
+-   Incoming requests.
+-   Outgoing requests.
+-   Accept request.
+-   Reject request.
+-   Cancel request.
+-   Remove friend.
+-   Block user.
+-   Unblock user.
+-   Search debounce.
+-   Duplicate request prevention.
+-   Real-time request updates.
+-   Contact privacy.
+-   User-not-found handling.
+-   Deleted or suspended account handling.
+
+Verify authorization on every operation.
+
+Phase G: One-to-one messaging
+
+Implement and verify:
+
+-   Open conversation.
+-   Create conversation.
+-   Send text.
+-   Receive text.
+-   Message timestamps.
+-   Message IDs.
+-   Client-generated idempotency IDs.
+-   Message delivery status.
+-   Sent status.
+-   Delivered status.
+-   Read status.
+-   Unread counters.
+-   Typing indicator.
+-   Online indicator.
+-   Reply to message.
+-   Forward message.
+-   Edit message.
+-   Delete for me.
+-   Delete for everyone.
+-   Copy text.
+-   Select multiple messages.
+-   Message reactions.
+-   Emoji picker.
+-   Link previews.
+-   Image attachments.
+-   Video attachments.
+-   Audio attachments.
+-   Documents.
+-   Voice messages.
+-   Download attachments.
+-   Upload progress.
+-   Download progress.
+-   Failed upload recovery.
+-   Failed message retry.
+-   Message search.
+-   Conversation search.
+-   Date separators.
+-   Scroll-to-latest.
+-   Pagination.
+-   Older-message loading.
+-   Duplicate message prevention.
+-   Offline message queue.
+-   Reconnection synchronization.
+-   Multi-device synchronization.
+
+Every message must have a reliable lifecycle.
+
+A WebSocket event is not a substitute for persistent message storage.
+
+Phase H: Message actions and advanced chat features
+
+Investigate and implement:
+
+-   Starred messages.
+-   Pinned messages.
+-   Message forwarding.
+-   Message quoting.
+-   Message editing history where appropriate.
+-   Reply previews.
+-   Reactions.
+-   Link detection.
+-   Phone-number detection.
+-   Copy.
+-   Share.
+-   Select.
+-   Delete.
+-   Report.
+-   Message-level timestamps.
+-   Search within conversation.
+-   Chat export if supported.
+-   Clear conversation.
+-   Archive conversation.
+-   Mute conversation.
+-   Custom notification settings.
+
+Do not expose deleted content through unauthorized API routes.
+
+Phase I: Group messaging
+
+Implement:
+
+-   Create group.
+-   Group name.
+-   Group avatar.
+-   Group description.
+-   Add members.
+-   Remove members.
+-   Invite links.
+-   Invite approval.
+-   Join requests.
+-   Leave group.
+-   Group admins.
+-   Admin promotion.
+-   Admin demotion.
+-   Group permissions.
+-   Member permissions.
+-   Group announcements.
+-   Group description changes.
+-   Group participant list.
+-   Member search.
+-   Group mute.
+-   Group notifications.
+-   Group message history.
+-   Group message replies.
+-   Group reactions.
+-   Group media.
+-   Group message delivery.
+-   Group read information.
+-   Group calls.
+-   Group invitation management.
+-   Group deletion.
+-   Ownership transfer.
+
+Enforce group membership and role authorization on the server, not
+merely in the Android interface.
+
+Phase J: Media and file sharing
+
+Support:
+
+-   Camera image capture.
+-   Gallery selection.
+-   Image preview.
+-   Image compression.
+-   Image thumbnails.
+-   Video selection.
+-   Video preview.
+-   Video compression.
+-   Audio upload.
+-   Voice recording.
+-   Document upload.
+-   File size validation.
+-   MIME validation.
+-   File extension validation.
+-   Upload cancellation.
+-   Upload retries.
+-   Download retries.
+-   Upload progress.
+-   Download progress.
+-   Storage quotas.
+-   Duplicate upload handling.
+-   Media cleanup.
+-   Secure media access.
+-   Expiring media links where appropriate.
+
+Private conversation attachments must not become publicly accessible
+simply because someone knows their URLs.
+
+Phase K: Voice messages
+
+Support:
+
+-   Record.
+-   Pause.
+-   Resume.
+-   Cancel.
+-   Preview.
+-   Send.
+-   Playback.
+-   Pause playback.
+-   Seek.
+-   Playback speed.
+-   Duration.
+-   Waveform where practical.
+-   Background playback behavior.
+-   Audio interruption handling.
+-   Recording permission handling.
+-   Failed upload recovery.
+
+Phase L: Audio and video calls
+
+Implement:
+
+-   Start voice call.
+-   Start video call.
+-   Incoming call.
+-   Accept.
+-   Reject.
+-   Cancel.
+-   End.
+-   Busy state.
+-   Missed call.
+-   Call history.
+-   Call duration.
+-   Microphone mute.
+-   Camera toggle.
+-   Speakerphone.
+-   Earpiece.
+-   Camera switching.
+-   Network quality indicators.
+-   Reconnection.
+-   Call interruption recovery.
+-   Bluetooth audio routing where supported.
+-   Background call behavior.
+-   Call notifications.
+-   Permission denial handling.
+-   TURN/STUN.
+-   WebRTC signaling.
+-   ICE candidate exchange.
+-   Session lifecycle.
+-   Call cleanup.
+-   Group calls.
+
+Do not confuse signaling with media transport.
+
+A successful signaling exchange does not prove that actual audio/video
+media is flowing.
+
+Evaluate SFU architecture for larger group calls. Do not assume a mesh
+architecture scales indefinitely.
+
+Phase M: Status, stories and temporary media
+
+Support:
+
+-   Create text status.
+-   Create image status.
+-   Create video status.
+-   Status expiration.
+-   Status privacy.
+-   Contact-only visibility.
+-   Excluded contacts.
+-   Selected-contact visibility.
+-   View status.
+-   Status view tracking.
+-   Status viewer list.
+-   Mute status.
+-   Delete status.
+-   Status notifications.
+-   Status feed synchronization.
+
+Status privacy must be enforced by the backend on both feed retrieval
+and direct status access.
+
+Phase N: Search
+
+Support:
+
+-   Global user search.
+-   Username search.
+-   Contact search.
+-   Conversation search.
+-   Message search.
+-   Group search.
+-   Media search where supported.
+-   Search history.
+-   Search filters.
+-   Pagination.
+-   Debouncing.
+-   Empty results.
+-   Search failure recovery.
+
+Do not return private messages to users who are not participants in the
+conversation.
+
+Phase O: Notifications
+
+Implement a real notification architecture:
+
+-   Android push notifications.
+-   Firebase Cloud Messaging if appropriate.
+-   New-message notification.
+-   Group-message notification.
+-   Friend-request notification.
+-   Incoming-call notification.
+-   Missed-call notification.
+-   Status notification if enabled.
+-   Notification channels.
+-   Notification preferences.
+-   Mute handling.
+-   Notification grouping.
+-   Deep links.
+-   Background delivery.
+-   Token registration.
+-   Token refresh.
+-   Invalid-token cleanup.
+-   Retry handling.
+-   Notification deduplication.
+
+Do not claim that push notifications work if only local notifications
+have been implemented.
+
+Phase P: Privacy and security settings
+
+Implement:
+
+-   Blocked users.
+-   Last-seen privacy.
+-   Online status privacy.
+-   Profile-photo privacy.
+-   About privacy.
+-   Read-receipt privacy.
+-   Group-add permissions.
+-   Status privacy.
+-   Device/session management.
+-   Account deletion.
+-   Data export where appropriate.
+-   Security notifications.
+-   Two-step verification where supported.
+-   Login alerts.
+-   Report user.
+-   Report message.
+-   Spam prevention.
+
+Every privacy setting must have real backend enforcement.
+
+Phase Q: End-to-end encryption
+
+Investigate and implement a proper E2EE architecture.
+
+Requirements:
+
+-   Identity keys.
+-   Device keys.
+-   Prekeys.
+-   Session establishment.
+-   Forward secrecy.
+-   Post-compromise security where supported.
+-   Group encryption.
+-   Key rotation.
+-   Device linking.
+-   Multi-device support.
+-   Key verification.
+-   Safety numbers or equivalent verification.
+-   Encrypted attachments.
+-   Secure local key storage.
+-   Recovery considerations.
+-   Backup encryption.
+-   Key deletion behavior.
+
+Evaluate established protocols such as the Signal Protocol instead of
+inventing a cryptographic protocol.
+
+Do not describe ordinary HTTPS/TLS as end-to-end encryption.
+
+Do not claim E2EE is complete until the client encryption, server
+storage, key lifecycle and interoperability tests prove it.
+
+Phase R: Logout and account re-entry
+
+Implement the complete logout process:
+
+1.  User selects logout.
+2.  Show a confirmation when appropriate.
+3.  Revoke the current session.
+4.  Invalidate refresh tokens.
+5.  Disconnect WebSockets.
+6.  Stop active background work.
+7.  Stop or clean up calls.
+8.  Remove sensitive local session data.
+9.  Clear authentication state.
+10. Preserve only data that is intentionally retained and safely
+    protected.
+11. Return to the login screen.
+12. Ensure the old session cannot access protected endpoints.
+
+Then test signing back in:
+
+1.  Enter phone number or supported login identifier.
+2.  Complete verification.
+3.  Create a new session.
+4.  Obtain fresh tokens.
+5.  Reconnect real-time services.
+6.  Synchronize conversations.
+7.  Restore user settings.
+8.  Restore unread counters.
+9.  Restore contacts and groups.
+10. Restore pending local messages safely.
+11. Register the current device for notifications.
+12. Verify that previous sessions behave according to session-management
+    policy.
+
+Test:
+
+-   Normal logout.
+-   Logout while offline.
+-   Expired token.
+-   Revoked token.
+-   Re-login on the same device.
+-   Login on a second device.
+-   Logout from another device.
+-   Account deletion.
+-   Suspended account.
+-   Network interruption during login.
+
+------------------------------------------------------------------------
+
+7. REAL-TIME ENGINEERING
+
+Build a reliable real-time communication architecture.
+
+Investigate:
+
+-   WebSocket lifecycle.
+-   Authentication during connection.
+-   Room authorization.
+-   Direct-message rooms.
+-   Group rooms.
+-   Call signaling rooms.
+-   Presence.
+-   Typing events.
+-   Message events.
+-   Read receipts.
+-   Delivery receipts.
+-   Reconnection.
+-   Heartbeats.
+-   Ping/pong.
+-   Connection expiration.
+-   Multiple device sessions.
+-   Duplicate event handling.
+-   Event ordering.
+-   Missed-event recovery.
+-   Backpressure.
+-   Rate limiting.
+-   Room cleanup.
+-   Durable event delivery.
+
+Every room subscription must verify the user’s authorization.
+
+Never trust a room name supplied by a client.
+
+Use durable database records as the source of truth for messages and
+memberships.
+
+Design event recovery so a disconnected client can request missed
+messages using a reliable cursor or sequence mechanism.
+
+Evaluate Cloudflare Durable Object WebSocket Hibernation when using
+Cloudflare Durable Objects.
+
+------------------------------------------------------------------------
+
+8. BACKEND AND DATABASE ENGINEERING
+
+Inspect the current stack before choosing changes.
+
+Evaluate:
+
+-   Database schema.
+-   Indexes.
+-   Foreign keys.
+-   Unique constraints.
+-   Transactions.
+-   Pagination.
+-   Query efficiency.
+-   Connection behavior.
+-   Migration reliability.
+-   Data retention.
+-   Backups.
+-   Restore procedures.
+-   Concurrent writes.
+-   Idempotency.
+-   Audit logs.
+-   Rate limits.
+-   Background jobs.
+-   Queues.
+-   Storage lifecycle.
+
+For Cloudflare architecture, evaluate:
+
+-   Workers.
+-   D1.
+-   R2.
+-   Durable Objects.
+-   Queues.
+-   Workers AI only where genuinely useful.
+-   Cloudflare Turnstile where appropriate.
+-   WebRTC TURN infrastructure.
+
+Do not add services simply because they exist.
+
+Choose technology according to measured requirements, free-tier
+constraints, operational complexity and expected growth.
+
+Database rules
+
+-   Never lose existing users or conversations.
+-   Never reset production data during development.
+-   Use versioned migrations.
+-   Test migrations against a copy or staging database.
+-   Document rollback limitations.
+-   Add indexes for actual query patterns.
+-   Avoid N+1 queries.
+-   Avoid unbounded result sets.
+-   Use pagination for large datasets.
+-   Maintain referential integrity.
+-   Make critical operations transactional where supported.
+
+------------------------------------------------------------------------
+
+9. SECURITY AUDIT AND REMEDIATION
+
+Previously identified issues in the Cloudflare Worker require explicit
+re-verification.
+
+These are historical findings, not assumptions about the current source.
+
+Finding 1: Public media access
+
+Previously observed: media downloads appeared publicly accessible
+without conversation membership verification.
+
+Recheck:
+
+-   Download authorization.
+-   Conversation membership.
+-   Private object access.
+-   Signed URL expiration.
+-   Cache policy.
+-   Upload size limits.
+-   MIME validation.
+-   Streaming behavior.
+-   Abuse prevention.
+
+Finding 2: WebSocket room authorization
+
+Previously observed: personal rooms had ownership checks, but equivalent
+authorization for DM, group and call rooms was not evident.
+
+Verify every room type.
+
+Finding 3: Message persistence and broadcast
+
+Previously observed: database insertion and realtime broadcasting were
+executed concurrently.
+
+Evaluate failure consistency and durable event recovery.
+
+Finding 4: Group member information
+
+Previously observed: the group member listing endpoint did not appear to
+enforce membership before returning user information.
+
+Verify current authorization.
+
+Finding 5: Status privacy
+
+Previously observed: stored status privacy settings did not appear to be
+fully enforced during feed retrieval and direct viewing.
+
+Verify feed and direct-access authorization.
+
+Finding 6: Status views
+
+Previously observed: status viewing and viewer-list routes appeared to
+lack complete ownership/viewer authorization.
+
+Verify both operations.
+
+Finding 7: Message reactions
+
+Previously observed: reaction updates appeared to lack complete
+conversation-participant authorization.
+
+Verify the current route.
+
+Finding 8: Password hashing
+
+Previously observed: PBKDF2-HMAC-SHA256 used 100,000 iterations.
+
+Compare the current configuration against current OWASP guidance.
+Evaluate appropriate password hashing parameters and migration of
+existing password hashes.
+
+Finding 9: Group calls
+
+Previously observed: group calling used mesh topology.
+
+Evaluate scalability and whether an SFU is required.
+
+Finding 10: Migrations and runtime dependencies
+
+Previously observed: migration scripts may not cover every migration,
+and Wrangler/runtime dependencies may need review.
+
+Verify all migration files and actual deployment procedures.
+
+Additional security checks
+
+Audit:
+
+-   Broken access control.
+-   IDOR vulnerabilities.
+-   JWT validation.
+-   Refresh-token rotation.
+-   Token revocation.
+-   WebSocket token exposure.
+-   CORS configuration.
+-   CSRF where applicable.
+-   XSS where applicable.
+-   SQL injection.
+-   Input validation.
+-   File upload vulnerabilities.
+-   MIME confusion.
+-   Path traversal.
+-   SSRF.
+-   Rate limiting.
+-   Brute-force protection.
+-   Account enumeration.
+-   Password reset security.
+-   OTP security.
+-   Sensitive logging.
+-   Secret management.
+-   Device-session authorization.
+-   Privacy leakage.
+-   Data deletion.
+-   Backup security.
+
+Prioritize critical and high-risk findings.
+
+Do not run destructive security tests against production.
+
+------------------------------------------------------------------------
+
+10. ANDROID APPLICATION QUALITY
+
+The Android app must feel like a polished native communication
+application.
+
+Evaluate:
+
+-   Startup time.
+-   Memory usage.
+-   Battery consumption.
+-   Network usage.
+-   Scrolling performance.
+-   Recycler/list performance.
+-   Image loading.
+-   Image caching.
+-   Media playback.
+-   Background services.
+-   Lifecycle handling.
+-   Process death recovery.
+-   Offline startup.
+-   Notification behavior.
+-   Deep links.
+-   Keyboard behavior.
+-   Navigation.
+-   Screen rotation.
+-   Different screen sizes.
+-   Accessibility.
+-   Dark mode.
+-   Light mode.
+
+UI/UX quality
+
+Study the interaction patterns of leading messaging applications.
+
+Aim for:
+
+-   Smooth navigation.
+-   Consistent spacing.
+-   Clear typography.
+-   Modern message bubbles.
+-   Responsive animations.
+-   Consistent icons.
+-   Proper loading skeletons.
+-   Empty states.
+-   Error states.
+-   Haptic feedback where appropriate.
+-   Context menus.
+-   Swipe actions.
+-   Long-press interactions.
+-   Bottom sheets.
+-   Confirmation dialogs.
+-   Toast/snackbar feedback.
+-   Proper keyboard handling.
+-   Polished profile screens.
+-   Consistent theme.
+
+Do not sacrifice usability for visual effects.
+
+Do not make every screen glassmorphic or animated without a clear design
+reason.
+
+Animations must remain smooth on lower-end Android devices.
+
+------------------------------------------------------------------------
+
+11. OFFLINE-FIRST AND MULTI-DEVICE BEHAVIOR
+
+The application must handle unreliable internet connections.
+
+Test:
+
+-   App opens offline.
+-   Cached conversations display.
+-   Pending messages remain visible.
+-   Sending while offline.
+-   Automatic retry.
+-   Duplicate prevention.
+-   Network restoration.
+-   Missed-event synchronization.
+-   Attachment retry.
+-   Session expiration offline.
+-   Database synchronization.
+-   Device switching.
+-   Multi-device read status.
+-   Message ordering.
+-   Concurrent updates.
+
+The local database should provide a reliable UI data source while the
+server remains authoritative for synchronized account data.
+
+Do not lose pending messages because the application process was killed.
+
+------------------------------------------------------------------------
+
+12. PERFORMANCE AND SCALABILITY
+
+Measure before optimizing.
+
+Evaluate:
+
+-   API latency.
+-   Database query latency.
+-   WebSocket connection stability.
+-   Concurrent connections.
+-   Message throughput.
+-   Media upload throughput.
+-   Media download throughput.
+-   Memory usage.
+-   Android frame rendering.
+-   Startup time.
+-   Battery consumption.
+-   Notification delivery latency.
+-   Group-call performance.
+
+Perform controlled load tests in a safe environment.
+
+Test increasing concurrency rather than inventing capacity figures.
+
+Identify bottlenecks and document actual measurements.
+
+Never claim that NChat supports thousands or millions of users without
+appropriate load-test evidence.
+
+------------------------------------------------------------------------
+
+13. TESTING AND ACCEPTANCE CRITERIA
+
+Every feature must have a testing plan.
+
+Use:
+
+-   Unit tests.
+-   Integration tests.
+-   API tests.
+-   Database migration tests.
+-   Authorization tests.
+-   Security tests.
+-   Android UI tests.
+-   End-to-end tests.
+-   Network interruption tests.
+-   Offline tests.
+-   Regression tests.
+-   Performance tests.
+
+Required end-to-end scenarios
+
+At minimum, verify these complete journeys:
+
+Scenario 1: New user
+
+Register → Verify OTP → Create profile → Find user → Send friend request
+→ Accept request → Start conversation → Send message → Receive message.
+
+Scenario 2: Existing user
+
+Open app → Restore session → Load conversations → Receive notification →
+Open conversation → Read message → Send reply.
+
+Scenario 3: Offline user
+
+Open conversation → Disable internet → Send message → Close app → Reopen
+app → Restore internet → Verify successful synchronization without
+duplicates.
+
+Scenario 4: Group user
+
+Create group → Invite members → Accept invitation → Send messages →
+Upload media → Promote admin → Remove member → Leave group.
+
+Scenario 5: Calling
+
+Start call → Receive call → Accept → Exchange audio/video → Toggle
+microphone/camera → End call → Verify call history.
+
+Scenario 6: Logout and re-login
+
+Logout → Revoke session → Verify old token rejection → Login again →
+Restore account state → Verify synchronization.
+
+Scenario 7: Security
+
+Attempt unauthorized media access, room subscription, group access,
+message reaction, status viewing and viewer-list access.
+
+All unauthorized operations must be rejected.
+
+Scenario 8: Multi-device
+
+Login on two devices → Send messages from each → Verify synchronization
+→ Read on one device → Verify appropriate status updates on the other.
+
+------------------------------------------------------------------------
+
+14. IMPLEMENTATION ORDER
+
+Do not attempt to rewrite the entire application in one operation.
+
+Work in controlled phases.
+
+Phase 0: Project discovery
+
+-   Repository inventory.
+-   Architecture mapping.
+-   Existing feature mapping.
+-   Dependency mapping.
+-   Current build verification.
+-   Current test verification.
+-   Create initial agent.md.
+-   Establish a baseline.
+
+Deliverable: Verified project map and initial feature matrix.
+
+Phase 1: Critical security
+
+-   Media authorization.
+-   WebSocket room authorization.
+-   Group membership authorization.
+-   Status privacy.
+-   Reaction authorization.
+-   Session security.
+-   Input validation.
+-   Rate limiting.
+
+Deliverable: Security remediation report and tests.
+
+Phase 2: Core account lifecycle
+
+-   Registration.
+-   OTP.
+-   Login.
+-   Session persistence.
+-   Refresh tokens.
+-   Logout.
+-   Re-login.
+-   Device sessions.
+-   Account recovery.
+
+Deliverable: Complete tested account lifecycle.
+
+Phase 3: Core messaging
+
+-   Direct conversations.
+-   Message persistence.
+-   Delivery status.
+-   Read receipts.
+-   Typing.
+-   Reconnection.
+-   Offline queue.
+-   Message pagination.
+-   Reliable synchronization.
+
+Deliverable: Reliable one-to-one messaging.
+
+Phase 4: Contacts and groups
+
+-   Friend requests.
+-   Contacts.
+-   Group creation.
+-   Membership.
+-   Roles.
+-   Permissions.
+-   Group messaging.
+
+Deliverable: Complete social and group system.
+
+Phase 5: Media and voice messages
+
+-   Secure R2 or existing storage integration.
+-   Images.
+-   Videos.
+-   Documents.
+-   Audio.
+-   Voice recording.
+-   Playback.
+-   Upload/download recovery.
+
+Deliverable: Complete media-sharing workflow.
+
+Phase 6: Notifications
+
+-   Push infrastructure.
+-   Device token management.
+-   Background notifications.
+-   Notification preferences.
+-   Deep links.
+-   Retry and cleanup.
+
+Deliverable: Real push notification functionality.
+
+Phase 7: Audio and video calls
+
+-   WebRTC.
+-   Signaling.
+-   STUN/TURN.
+-   Call lifecycle.
+-   Audio routing.
+-   Video controls.
+-   Group calling architecture.
+
+Deliverable: Verified real calls, not simulated calls.
+
+Phase 8: Status and advanced messaging
+
+-   Stories/status.
+-   Privacy.
+-   Reactions.
+-   Forwarding.
+-   Editing.
+-   Search.
+-   Archive.
+-   Pinning.
+-   Starred messages.
+
+Deliverable: Advanced messaging feature set.
+
+Phase 9: End-to-end encryption
+
+-   Key architecture.
+-   Identity keys.
+-   Sessions.
+-   Prekeys.
+-   Group encryption.
+-   Multi-device security.
+-   Encrypted attachments.
+-   Verification.
+
+Deliverable: Security-reviewed E2EE implementation.
+
+Phase 10: UI/UX and performance
+
+-   Design consistency.
+-   Animations.
+-   Responsiveness.
+-   Accessibility.
+-   Low-end device optimization.
+-   Memory and battery optimization.
+
+Deliverable: Polished Android application.
+
+Phase 11: Production readiness
+
+-   Backups.
+-   Restore tests.
+-   Monitoring.
+-   Logging.
+-   Alerting.
+-   Rate limits.
+-   Deployment procedures.
+-   Rollback procedures.
+-   Security review.
+-   Load testing.
+-   Release verification.
+
+Deliverable: Production-readiness report.
+
+------------------------------------------------------------------------
+
+15. MULTI-AGENT COORDINATION RULES
+
+Multiple agents may work on the project.
+
+They must behave like one engineering team.
+
+15.1 Shared source of truth
+
+Every agent must read agent.md before starting.
+
+No agent may create its own conflicting feature-status document.
+
+All agents must update the same central project memory.
+
+15.2 Task ownership
+
+Before working, an agent must record:
+
+-   Assigned task.
+-   Relevant files.
+-   Expected changes.
+-   Dependencies.
+-   API contracts involved.
+-   Database changes.
+-   Testing requirements.
+-   Potential conflicts.
+
+15.3 Avoid simultaneous conflicting edits
+
+Do not let two agents independently modify the same critical files
+without coordination.
+
+Examples:
+
+-   Authentication middleware.
+-   Database migrations.
+-   API types.
+-   Message models.
+-   WebSocket handlers.
+-   Application navigation.
+-   Global state management.
+
+If work overlaps, coordinate the changes and define one owner for
+integration.
+
+15.4 Agent handover
+
+Every completed task must include:
+
+Task:
+Agent:
+Start commit:
+End commit:
+Files modified:
+Database changes:
+API changes:
+Tests executed:
+Test results:
+Known limitations:
+Remaining work:
+Next recommended task:
+
+Never leave the next agent guessing what happened.
+
+15.5 Prevent duplicate work
+
+Before implementing anything:
+
+1.  Search agent.md.
+2.  Search the source tree.
+3.  Check recent commits.
+4.  Check the feature matrix.
+5.  Verify actual implementation.
+
+If the feature already exists, test and improve it rather than
+recreating it.
+
+------------------------------------------------------------------------
+
+16. CHANGE MANAGEMENT AND QUALITY CONTROL
+
+For every implementation:
+
+1.  Define the problem.
+2.  Document the current behavior.
+3.  Define expected behavior.
+4.  Identify affected components.
+5.  Create a minimal implementation plan.
+6.  Implement the change.
+7.  Run relevant tests.
+8.  Run regression tests.
+9.  Review security implications.
+10. Update agent.md.
+11. Record the result.
+
+Prefer small, understandable changes.
+
+Do not mix unrelated feature implementations into one enormous
+modification.
+
+Do not silently introduce breaking API changes.
+
+Use versioned migrations and explicit compatibility handling.
+
+If a task cannot be completed safely, mark it BLOCKED and explain the
+exact reason.
+
+If a test cannot be run because of unavailable infrastructure, mark it
+IMPLEMENTED_UNVERIFIED or BLOCKED, not COMPLETED.
+
+------------------------------------------------------------------------
+
+17. PROJECT STATUS AND HONEST REPORTING
+
+At the end of each working session, provide a concise report containing:
+
+What was inspected
+
+List actual files, modules, endpoints or components.
+
+What was changed
+
+List exact modifications.
+
+What was verified
+
+List tests and their actual results.
+
+What remains
+
+List unfinished tasks.
+
+What is blocked
+
+Explain missing infrastructure or permissions.
+
+What the next agent should do
+
+Provide the next precise task.
+
+Current project health
+
+Report:
+
+-   Build status.
+-   Test status.
+-   Security status.
+-   Feature completion.
+-   Known regressions.
+-   Deployment status.
+
+Never use phrases such as “fully secure”, “production ready”,
+“WhatsApp-level” or “100% complete” without objective evidence.
+
+------------------------------------------------------------------------
+
+18. DEFINITION OF DONE
+
+A feature is complete only when:
+
+-   Its expected behavior is documented.
+-   Its implementation exists.
+-   It is integrated into the actual application.
+-   Its API and database behavior are correct.
+-   Authentication is enforced.
+-   Authorization is enforced.
+-   Input validation exists.
+-   Error handling exists.
+-   Loading and empty states exist where relevant.
+-   Offline behavior is addressed where relevant.
+-   Tests pass.
+-   Existing functionality has not regressed.
+-   Documentation is updated.
+-   The next agent can understand the implementation.
+
+A visible button without a working backend is not a completed feature.
+
+A successful API response without authorization tests is not a completed
+feature.
+
+A successful local demo without synchronization and recovery testing is
+not a completed feature.
+
+------------------------------------------------------------------------
+
+19. FINAL EXECUTION INSTRUCTIONS
+
+Start with Phase 0 only.
+
+Do not immediately rewrite code or implement every feature.
+
+First inspect the latest repositories and establish the actual current
+state.
+
+Create and populate agent.md with:
+
+-   The architecture.
+-   Existing functionality.
+-   Historical audit findings.
+-   Current verified findings.
+-   Completed features.
+-   Partial features.
+-   Missing features.
+-   Security findings.
+-   Implementation priorities.
+-   Testing requirements.
+-   Agent handover rules.
+
+Distinguish historical findings from findings verified against the
+current source.
+
+After Phase 0, produce a complete competitor comparison and
+implementation roadmap.
+
+Then proceed phase by phase, prioritizing security, account lifecycle,
+reliable messaging and data integrity.
+
+Do not proceed with destructive database operations, production
+deployment, secret rotation, force pushes or other irreversible
+operations without explicit authorization.
+
+Do not ask the user to repeat information already available in the
+repositories or in agent.md.
+
+If required access is unavailable, identify the exact limitation and
+continue with the parts that can be verified.
+
+------------------------------------------------------------------------
+
+20. THE MOST IMPORTANT RULE
+
+NChat must become one coherent product, not a collection of disconnected
+AI-generated features.
+
+Every screen, API, database operation, real-time event, notification,
+media attachment and security control must work together.
+
+The project must retain its context between agents.
+
+The agent.md file must always explain:
+
+-   What NChat is.
+-   How it works.
+-   What has already been built.
+-   What is partially working.
+-   What is broken.
+-   What is missing.
+-   What was tested.
+-   What remains.
+-   What the next agent must do.
+
+An incoming agent should be able to understand the current project state
+from agent.md and targeted source verification, without unnecessarily
+repeating the complete audit.
+
+Start by inspecting the current project. Establish the baseline. Create
+the persistent agent.md. Do not modify application code until the
+initial audit and implementation plan are documented.
