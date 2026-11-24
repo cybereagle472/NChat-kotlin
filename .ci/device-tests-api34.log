@@ -1,0 +1,423 @@
+285 tests, 1 failed, 0 skipped on Android API 34
+slowest: E2eeClientTest.aWeekOfUnreadMessagesOpensFromTheNewestPageBackwards 11.9 s, E2eeProtocolTest.forgedCountersCostBoundedWork 10.7 s, E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 8.7 s
+
+FAILED com.nchat.app.network.E2eeStoreTest.peerRecordRoundTripsOrderRetirementAndHandshakes
+java.lang.AssertionError
+at org.junit.Assert.fail(Assert.java:87)
+at org.junit.Assert.assertTrue(Assert.java:42)
+at org.junit.Assert.assertFalse(Assert.java:65)
+at org.junit.Assert.assertFalse(Assert.java:75)
+at com.nchat.app.network.E2eeStoreTest.peerRecordRoundTripsOrderRetirementAndHandshakes(E2eeStoreTest.kt:209)
+
+--- device-build.log
+…
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/profile/ProfileViewScreen.kt:113:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsPanes.kt:125:57 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:274:71 'HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.HelpOutline
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:322:57 'Logout: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Logout
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:509:49 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsViewModel.kt:31:25 Parameter 'context' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:254:49 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:326:49 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:366:64 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:366:93 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/ApiClient.kt:36:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.serialization.ExperimentalSerializationApi' or '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/ApiClient.kt:194:39 Unnecessary safe call on a non-null receiver of type JsonObject?
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/LenientString.kt:46:36 This declaration needs opt-in. Its usage should be marked with '@kotlinx.serialization.ExperimentalSerializationApi' or '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'
+
+> Task :app:compileSmokeKotlin
+> Task :app:mergeExtDexSmoke
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:mergeSmokeArtProfile
+> Task :app:mergeSmokeShaders FROM-CACHE
+> Task :app:compileSmokeShaders NO-SOURCE
+> Task :app:generateSmokeAssets UP-TO-DATE
+> Task :app:mergeSmokeAssets FROM-CACHE
+> Task :app:compressSmokeAssets
+> Task :app:optimizeSmokeResources
+> Task :app:collectSmokeDependencies
+> Task :app:sdkSmokeDependencyData
+> Task :app:validateSigningSmoke
+> Task :app:writeSmokeAppMetadata
+> Task :app:writeSmokeSigningConfigVersions
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+> Task :app:compileDebugAndroidTestKotlin
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:738:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:754:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:832:13 Unsafe use of a nullable receiver of type File?
+
+> Task :app:compileDebugAndroidTestJavaWithJavac
+> Task :app:dexBuilderDebugAndroidTest
+> Task :app:mergeDebugAndroidTestGlobalSynthetics FROM-CACHE
+> Task :app:processDebugAndroidTestJavaRes
+> Task :app:mergeDebugAndroidTestJavaResource
+> Task :app:mergeProjectDexDebugAndroidTest
+> Task :app:packageDebugAndroidTest
+> Task :app:createDebugAndroidTestApkListingFileRedirect
+> Task :app:assembleDebugAndroidTest
+
+> Task :app:compileSmokeKotlin
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/diagnostics/SyncCheck.kt:69:17 Name shadowed: rows
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/core/update/AutoUpdater.kt:216:27 'ACTION_INSTALL_PACKAGE: String' is deprecated. Deprecated in Java
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/calls/WebRtcEngine.kt:381:49 No cast needed
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:502:9 Parameter 'video' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:550:13 Variable 'current' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:919:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/CallRepository.kt:923:25 'setter for isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:1723:39 Variable 'failure' initializer is redundant
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/data/repository/RemoteChatRepository.kt:2239:44 The corresponding parameter in the supertype 'ChatRepository' is named 'pinned'. This may cause problems when calling this function with named arguments.
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:70 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/CallOverlay.kt:322:98 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:125:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ChatSearchOverlay.kt:461:9 Variable 'extra' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1778:45 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:1887:40 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/ConversationScreen.kt:2601:71 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:66 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/GroupCallOverlay.kt:188:94 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageActionsMenu.kt:185:54 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageActionsMenu.kt:187:50 'Forward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Forward
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:253:49 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:625:53 Parameter 'mine' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/MessageBubble.kt:761:5 Parameter 'mediaUrl' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/chats/VoiceRecorder.kt:203:61 'Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Send
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/discover/DiscoverScreen.kt:803:5 Parameter 'onUnfriendClick' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/discover/DiscoverScreen.kt:839:38 'Chat: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Chat
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/groups/GroupInfoScreen.kt:123:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/groups/GroupInfoScreen.kt:347:57 'Logout: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Logout
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/history/HistoryScreen.kt:454:34 'PhoneMissed: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.PhoneMissed
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/history/HistoryScreen.kt:455:38 'CallMade: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.CallMade
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/history/HistoryScreen.kt:456:27 'CallReceived: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.CallReceived
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/profile/ImageCropperScreen.kt:317:57 'RotateRight: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.RotateRight
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/profile/ProfileScreen.kt:130:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/profile/ProfileViewScreen.kt:113:53 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsPanes.kt:125:57 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:274:71 'HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.HelpOutline
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:322:57 'Logout: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Logout
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsScreen.kt:509:49 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/settings/SettingsViewModel.kt:31:25 Parameter 'context' is never used
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:254:49 'Reply: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.Reply
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:326:49 'ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:366:64 'VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeOff
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/feature/status/StatusViewer.kt:366:93 'VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.VolumeUp
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/ApiClient.kt:36:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.serialization.ExperimentalSerializationApi' or '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/ApiClient.kt:194:39 Unnecessary safe call on a non-null receiver of type JsonObject?
+w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/nchat/app/network/LenientString.kt:46:36 This declaration needs opt-in. Its usage should be marked with '@kotlinx.serialization.ExperimentalSerializationApi' or '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'
+
+> Task :app:compileSmokeJavaWithJavac
+> Task :app:generateSmokeLintVitalReportModel
+> Task :app:dexBuilderSmoke
+> Task :app:mergeSmokeGlobalSynthetics FROM-CACHE
+> Task :app:processSmokeJavaRes
+> Task :app:mergeSmokeJavaResource
+> Task :app:mergeDexSmoke
+> Task :app:compileSmokeArtProfile
+> Task :app:packageSmoke
+> Task :app:createSmokeApkListingFileRedirect
+> Task :app:lintVitalAnalyzeSmoke
+> Task :app:lintVitalReportSmoke
+> Task :app:lintVitalSmoke
+> Task :app:assembleSmoke
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795537900625.json
+
+BUILD SUCCESSFUL in 5m 16s
+112 actionable tasks: 87 executed, 25 from cache
+
+--- device-run.log
+com.nchat.app.network.E2eeStoreTest > peerRecordRoundTripsOrderRetirementAndHandshakes[emulator-5554 - 14] [31mFAILED [0m
+> Task :app:connectedDebugAndroidTest FAILED
+FAILURE: Build failed with an exception.
+* What went wrong:
+BUILD FAILED in 2m 31s
+…
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.doExecute(StandardTaskAction.java:58)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:248)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:29)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:26)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultBuildOperationRunner.java:47)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.run(DefaultBuildOperationExecutor.java:68)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(TaskExecution.java:233)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(TaskExecution.java:216)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPreviousOutputFiles(TaskExecution.java:199)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecution.java:166)
+	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(ExecuteStep.java:105)
+	at org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
+	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
+	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
+	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
+	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:67)
+	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:37)
+	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelExecutionStep.java:41)
+	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(TimeoutStep.java:74)
+	at org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
+	at org.gradle.internal.execution.steps.CreateOutputsStep.execute(CreateOutputsStep.java:50)
+	at org.gradle.internal.execution.steps.CreateOutputsStep.execute(CreateOutputsStep.java:28)
+	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.executeDelegateBroadcastingChanges(CaptureStateAfterExecutionStep.java:100)
+	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.execute(CaptureStateAfterExecutionStep.java:72)
+	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.execute(CaptureStateAfterExecutionStep.java:50)
+	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:40)
+	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:29)
+	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(BuildCacheStep.java:179)
+	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(BuildCacheStep.java:70)
+	at org.gradle.internal.Either$Right.fold(Either.java:175)
+	at org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:59)
+	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:68)
+	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:46)
+	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:36)
+	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:25)
+	at org.gradle.internal.execution.steps.RecordOutputsStep.execute(RecordOutputsStep.java:36)
+	at org.gradle.internal.execution.steps.RecordOutputsStep.execute(RecordOutputsStep.java:22)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(SkipUpToDateStep.java:91)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(SkipUpToDateStep.java:55)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:55)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:37)
+	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:65)
+	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:36)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
+	at org.gradle.internal.execution.steps.ResolveCachingStateStep.execute(ResolveCachingStateStep.java:77)
+	at org.gradle.internal.execution.steps.ResolveCachingStateStep.execute(ResolveCachingStateStep.java:38)
+	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:94)
+	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:49)
+	at org.gradle.internal.execution.steps.CaptureStateBeforeExecutionStep.execute(CaptureStateBeforeExecutionStep.java:71)
+	at org.gradle.internal.execution.steps.CaptureStateBeforeExecutionStep.execute(CaptureStateBeforeExecutionStep.java:45)
+	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.executeWithNonEmptySources(SkipEmptyWorkStep.java:177)
+	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.execute(SkipEmptyWorkStep.java:81)
+	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.execute(SkipEmptyWorkStep.java:53)
+	at org.gradle.internal.execution.steps.RemoveUntrackedExecutionStateStep.execute(RemoveUntrackedExecutionStateStep.java:32)
+	at org.gradle.internal.execution.steps.RemoveUntrackedExecutionStateStep.execute(RemoveUntrackedExecutionStateStep.java:21)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStartedStep.execute(MarkSnapshottingInputsStartedStep.java:38)
+	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:36)
+	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:23)
+	at org.gradle.internal.execution.steps.CleanupStaleOutputsStep.execute(CleanupStaleOutputsStep.java:75)
+	at org.gradle.internal.execution.steps.CleanupStaleOutputsStep.execute(CleanupStaleOutputsStep.java:41)
+	at org.gradle.internal.execution.steps.AssignWorkspaceStep.lambda$execute$0(AssignWorkspaceStep.java:32)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$4.withWorkspace(TaskExecution.java:293)
+	at org.gradle.internal.execution.steps.AssignWorkspaceStep.execute(AssignWorkspaceStep.java:30)
+	at org.gradle.internal.execution.steps.AssignWorkspaceStep.execute(AssignWorkspaceStep.java:21)
+	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:37)
+	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:27)
+	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:47)
+	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:34)
+	at org.gradle.internal.execution.impl.DefaultExecutionEngine$1.execute(DefaultExecutionEngine.java:64)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:146)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:135)
+	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:337)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:324)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:317)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
+
+
+BUILD FAILED in 2m 31s
+66 actionable tasks: 14 executed, 1 from cache, 51 up-to-date
+
+::error title=App start on Android API 34::the window in front belongs to com.android.settings
+App start on Android API 34: the window in front belongs to com.android.settings
+--- on screen
+com.android.settings: Let app always run in background?
+com.android.settings: Allowing NChat to always run in the background may reduce battery life. 
+
+You can change this later from Settings > Apps.
+com.android.settings: Deny
+com.android.settings: Allow
+
+--- end of the log
+11-24 16:43:41.517  6779  6779 I app_process: Core platform API reporting enabled, enforcing=false
+11-24 16:43:41.517  6779  6779 I app_process: Using CollectorTypeCC GC.
+11-24 16:43:41.564  6779  6779 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so
+11-24 16:43:41.572  6779  6779 D app_process: Time zone APEX ICU file found: /apex/com.android.tzdata/etc/icu/icu_tzdata.dat
+11-24 16:43:41.572  6779  6779 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt72l.dat
+11-24 16:43:41.577  6779  6779 W app_process: Unexpected CPU variant for x86: x86_64.
+11-24 16:43:41.577  6779  6779 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, tremont, kabylake, default
+11-24 16:43:41.578  6779  6779 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*836642756]#PCL[/system/framework/android.test.mock.jar*3186112116]} | PCL[])
+11-24 16:43:41.578  6779  6779 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*4168958247]{PCL[/system/framework/android.test.base.jar*836642756]#PCL[/system/framework/android.test.mock.jar*3186112116]}#PCL[/system/framework/android.test.base.jar*836642756]} | PCL[/system/framework/android.test.runner.jar*4168958247])
+11-24 16:43:41.589  6779  6779 W libc    : Access denied finding property "ro.product.name_for_attestation"
+11-24 16:43:41.589  6779  6779 W libc    : Access denied finding property "ro.product.brand_for_attestation"
+11-24 16:43:41.589  6779  6779 W libc    : Access denied finding property "ro.product.model_for_attestation"
+11-24 16:43:41.590  6779  6779 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-24 16:43:41.592  6779  6779 D UiAutomationConnection: Created on user UserHandle{0}
+11-24 16:43:41.592  6779  6779 I UiAutomation: Initialized for user 0 on display 0
+11-24 16:43:41.592  6779  6779 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-24 16:43:41.585  6779  6779 W main    : type=1400 audit(0.0:125): avc:  denied  { read } for  name="u:object_r:build_attestation_prop:s0" dev="tmpfs" ino=86 scontext=u:r:shell:s0 tcontext=u:object_r:build_attestation_prop:s0 tclass=file permissive=0
+11-24 16:43:41.593   520   751 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-24 16:43:41.593   520   751 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation) when called by user 0
+11-24 16:43:41.594   520   751 W WindowMagnificationMgr: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-24 16:43:41.585  6779  6779 W main    : type=1400 audit(0.0:126): avc:  denied  { read } for  name="u:object_r:build_attestation_prop:s0" dev="tmpfs" ino=86 scontext=u:r:shell:s0 tcontext=u:object_r:build_attestation_prop:s0 tclass=file permissive=0
+11-24 16:43:41.597  1605  5810 I AiAiEcho: Settings changed for uri: content://settings/secure/accessibility_enabled
+11-24 16:43:41.597  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:41.597  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:41.597  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:41.597  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:41.597  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:41.598  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:41.598  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:41.598  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:41.598  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])
+11-24 16:43:41.598  6779  6793 V UiAutomation: Init UiAutomation@dc46e9c[id=24, displayId=0, flags=0]
+11-24 16:43:41.598  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])
+11-24 16:43:41.585  6779  6779 W main    : type=1400 audit(0.0:127): avc:  denied  { read } for  name="u:object_r:build_attestation_prop:s0" dev="tmpfs" ino=86 scontext=u:r:shell:s0 tcontext=u:object_r:build_attestation_prop:s0 tclass=file permissive=0
+11-24 16:43:41.599   835   835 W PageIndicator: Total number of pages invalid: 0. Assuming 1 page.
+11-24 16:43:41.600   520  1854 W WindowMagnificationMgr: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-24 16:43:41.601  1605  5810 I AiAiEcho: Settings changed for uri: content://settings/secure/accessibility_enabled
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:41.601  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])
+11-24 16:43:41.601   835   835 W PageIndicator: Total number of pages invalid: 0. Assuming 1 page.
+11-24 16:43:41.601  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])
+11-24 16:43:41.602   520   520 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-24 16:43:41.603  1671  2270 I A       : NGA disabled since it's running Panthera and at least one a11y feature is on.
+11-24 16:43:41.604  1671  2270 I A       : Nga state changed to NgaStateDetails{state=DISABLED, isSpecialExperience=false}
+11-24 16:43:41.604  1627  6635 I A       : APA or Classic session decision: SessionDecision(sessionVariance=CLASSIC, platformVariance=CLASSIC, justification=CURRENT_PLATFORM_VARIANCE).
+11-24 16:43:41.605  1627  6635 I A       : [Memory] eligibility: StashEligibility{4}
+11-24 16:43:41.605  1627  2119 I A       : Unsubscribed to apa or classic variant change.
+11-24 16:43:42.604  6779  6779 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-24 16:43:42.605   520  1775 W WindowMagnificationMgr: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-24 16:43:42.605   520  1775 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-24 16:43:42.605  1605  5810 I AiAiEcho: Settings changed for uri: content://settings/secure/accessibility_enabled
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:42.606  6779  6779 D AndroidRuntime: Shutting down VM
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Predicting[0]: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: EchoTargets: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Filtered by AiAi flag check: 
+11-24 16:43:42.606  1605  1878 I AiAiEcho: Ranked targets strategy: SORT, count: 0, ranking metadata: 
+11-24 16:43:42.607  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])
+11-24 16:43:42.609  1605  1878 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])
+11-24 16:43:42.610  1671  2264 I A       : NGA enabled in interactor.
+11-24 16:43:42.610  1671  2264 I A       : Nga state changed to NgaStateDetails{state=ENABLED, isSpecialExperience=false}
+11-24 16:43:42.611   835   835 W PageIndicator: Total number of pages invalid: 0. Assuming 1 page.
+11-24 16:43:42.616   520   520 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-24 16:43:42.616  1627  6635 I A       : Initializing all components
+11-24 16:43:42.617  1627  6635 I A       : APA or Classic session decision: SessionDecision(sessionVariance=CLASSIC, platformVariance=CLASSIC, justification=CURRENT_PLATFORM_VARIANCE).
+11-24 16:43:42.617  1627  6635 I A       : [Memory] eligibility: StashEligibility{6}
+11-24 16:43:42.618  1627  2110 I A       : on opa visibility changed false
+11-24 16:43:42.618  1627  2110 I A       : on opa visibility changed false
+11-24 16:43:42.618  1627  2110 I A       : onIsEnabledChanged, isEnabled: false
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 I A       : onOpaVisibilityChanged: false
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.618  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2119 I A       : State changed: IDLE => IDLE by NGA_STATE_CHANGED and N/A with Optional.empty
+11-24 16:43:42.619  1627  2119 I A       : Recognizer choice: (recognizer_type: 1, recognizer_mode: 1, choice_reason: 4)
+11-24 16:43:42.619  1627  2119 I A       : onActiveStateChangeEvent: IDLE => IDLE
+11-24 16:43:42.619  1627  2119 I A       : #onActiveStateChangeEvent, newState: IDLE, previousState: IDLE.
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 I A       : Setting session to type: NO_SESSION
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 I A       : setNavBarVisible: GestureNavBarVisible{navbarVisible=true}
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.619  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.620  1627  2110 W A       : Disposing empty manager. Did you forgot to subscribe observables?
+11-24 16:43:42.620  1627  2110 I A       : onDisabled. Registered: false
+11-24 16:43:42.620  1627  2119 I NgaEntryPointEventSendr: setupConnection
+11-24 16:43:42.622   520  1797 D OomAdjuster: Not killing cached processes
+11-24 16:43:42.622   520  1797 W ProcessStats: Tracking association SourceState{374c1e7 com.google.android.googlequicksearchbox:interactor/10132 BFgs #13915} whose proc state 4 is better than process ProcessState{fb8961b com.google.android.googlequicksearchbox:search/10132 pkg=com.google.android.googlequicksearchbox} proc state 14 (32 skipped)
+11-24 16:43:42.623  1671  1671 I A       : Creating pss binder().
+11-24 16:43:42.623  1627  2119 I NgaEntryPointEventSendr: State changed: Disconnected => Connecting
+11-24 16:43:42.623  1627  2119 I A       : stopListening(NGA_PAUSED_UNKNOWN_REASON, NGA_CREATE), idleOverride=NOT_LISTENING
+11-24 16:43:42.624  1627  2110 I A       : Initialize
+11-24 16:43:42.624  1627  2119 I NgaEntryPointEventSendr: onServiceConnected
+11-24 16:43:42.624  1671  2416 I A       : Calling beginBinderSession().
+11-24 16:43:42.624  1671  2416 I A       : beginBinderSession(): calling binder
+11-24 16:43:42.625  1627  2119 I NgaEntryPointEventSendr: State changed: Connecting => Ready
+11-24 16:43:42.626   520  1775 W ActivityManager: Unable to start service Intent { cmp=com.google.android.apps.tachyon/.clientapi.ClientApiService } U=0: not found
+11-24 16:43:42.634  1671  2564 W A       : UiCallbackStub-onGenericEvent[ServiceEvent = 241] task was not run. Callback from Service received after client was disposed.
+11-24 16:43:42.634  1671  2564 W A       : UiCallbackStub-onGenericEvent[ServiceEvent = 241] task was not run. Callback from Service received after client was disposed.
+11-24 16:43:42.635  1671  2564 I PBSessionCacheImpl: Deleted sessionId[7350931258351742] from persistence.
+11-24 16:43:42.636  1671  2564 W A       : UiCallbackStub-onGenericEvent[ServiceEvent = 60] task was not run. Callback from Service received after client was disposed.
+11-24 16:43:42.637  1671  2564 W SearchServiceCore: Abort, client detached.
+11-24 16:43:42.638  1627  2119 I NgaEntryPointEventSendr: State changed: Ready => Disconnected (onOpaDisconnected)
+11-24 16:43:42.639  1627  2119 I A       : Successfully initialized all components
+11-24 16:43:43.656     0     0 I logd    : logdr: UID=2000 GID=2000 PID=6796 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+11-24 16:43:44.940   520   764 D ConnectivityService: releasing NetworkRequest [ REQUEST id=150, [ Transports: CELLULAR Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VPN&NOT_VCN_MANAGED Uid: 10132 RequestorUid: 10132 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-24 16:43:44.940   520   764 I ConnectivityService: Update capabilities for net 101 : -FOREGROUND
+11-24 16:43:44.942   336   363 I netd    : networkSetPermissionForNetwork(101, 1) <1.68ms>
+11-24 16:43:46.183   835   835 D StatusBarIconController: ignoring old pipeline callback because the new wifi icon is enabled
+11-24 16:43:46.368   835   835 D StatusBarIconController: ignoring old pipeline callbacks, because the new mobile icons are enabled
+11-24 16:43:48.499     0     0 W healthd : battery l=100 v=5000 t=25.0 h=2 st=2 c=900000 fc=3000000 cc=10 chg=a
+11-24 16:43:53.610   520   921 D CompatibilityChangeReporter: Compat change id reported: 184838306; UID 1000; state: DISABLED
+11-24 16:43:53.610   520   921 D CompatibilityChangeReporter: Compat change id reported: 185004937; UID 1000; state: DISABLED
+11-24 16:43:53.611   520   921 D CompatibilityChangeReporter: Compat change id reported: 168419799; UID 10194; state: DISABLED
+11-24 16:43:53.611   520   921 D CompatibilityChangeReporter: Compat change id reported: 273564678; UID 10194; state: DISABLED
+11-24 16:43:53.611   520   921 D CompatibilityChangeReporter: Compat change id reported: 184838306; UID 10194; state: DISABLED
+11-24 16:43:53.611   520   921 D CompatibilityChangeReporter: Compat change id reported: 185004937; UID 10194; state: DISABLED
+11-24 16:43:53.826     0     0 I logd    : logdr: UID=2000 GID=2000 PID=6807 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
