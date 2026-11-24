@@ -219,13 +219,26 @@ class E2eeProtocolTest {
 
         // The largest jump that IS allowed, forged twenty times over (a page of history from a
         // hostile server): each costs the full derivation and still changes nothing.
+        //
+        // What that derivation may cost is known — one chain step for every message passed
+        // over — and is measured here, on the machine the test runs on, instead of being
+        // written down in seconds. A number of seconds says how fast the machine is: 8 s held
+        // on a desktop and on an Android 14 emulator, and an Android 7 emulator, which needs
+        // about 28 µs for a step, took 11 s for exactly the same, bounded, work.
+        val steps = 40 * 10_000
+        val stepping = System.nanoTime()
+        E2eeProtocol.advance(ByteArray(32) { 7 }, steps)
+        val steppingMillis = (System.nanoTime() - stepping) / 1_000_000
         val allowed = System.nanoTime()
         repeat(20) {
             assertNull(E2eeProtocol.open(alice, genuine.copy(n = genuine.n + 10_000), messageId))
             assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 10_000, pn = 0), messageId))
         }
         val allowedMillis = (System.nanoTime() - allowed) / 1_000_000
-        assertTrue("forty forged jumps of the largest allowed size cost $allowedMillis ms", allowedMillis < 8_000)
+        assertTrue(
+            "forty forged jumps of the largest allowed size cost $allowedMillis ms; the $steps chain steps they may take cost $steppingMillis ms here",
+            allowedMillis < 2 * steppingMillis + 2_000
+        )
         assertArrayEquals(before, alice.serialize())
         assertEquals("genuine", hear(alice, genuine))
     }

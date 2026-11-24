@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 #
-# Runs the plain-JVM unit tests of the end-to-end encryption code without
-# Gradle or the Android SDK — minutes of CI become seconds on any machine
-# that has Python's pip.
+# Runs plain-JVM unit tests of the app without Gradle or the Android SDK —
+# minutes of CI become seconds on any machine that has Python's pip.
 #
-#   tools/jvm-tests.sh                 compile and run every E2EE test
+#   tools/jvm-tests.sh                 compile and run every test listed below
 #   tools/jvm-tests.sh SomeTest ...    run only the named test classes
 #
 # It is a development aid, not the gate: CI (`:app:testDebugUnitTest`) builds
-# with the project's own Kotlin version against android.jar. This script uses
-# kotlinc 1.9.10 on a desktop JRE 17 and compiles only the files listed in
-# MAIN below, which must stay free of `android.*` imports.
+# with the project's own Kotlin version against android.jar, and the emulator
+# workflow runs the encryption tests on Android itself. This script uses
+# kotlinc 1.9.10 on a desktop JRE 17 and compiles only the files listed here.
+#
+# Two groups:
+#   MAIN / ALL_TESTS      the encryption core, which must stay free of
+#                         `android.*` imports altogether.
+#   APP_MAIN / APP_TESTS  app code around it — the models and the on-phone
+#                         stores. It is free of Android but for three names
+#                         (a Context that is only asked for its files
+#                         directory, the crash log, Compose's @Immutable);
+#                         stand-ins for those are generated below and exist
+#                         nowhere but in this script's work directory.
 #
 # First run downloads a JRE and a Kotlin compiler from PyPI (about 120 MB)
 # into $NCHAT_JVM_TOOLS (default ~/.local/nchat-jvm-tools).
@@ -18,11 +27,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="${NCHAT_JVM_TOOLS:-$HOME/.local/nchat-jvm-tools}"
-NETWORK="$ROOT/app/src/main/java/com/nchat/app/network"
-TESTS_DIR="$ROOT/app/src/test/java/com/nchat/app/network"
+APP="$ROOT/app/src/main/java/com/nchat/app"
+NETWORK="$APP/network"
+TESTS_ROOT="$ROOT/app/src/test/java/com/nchat/app"
+TESTS_DIR="$TESTS_ROOT/network"
 
-MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeGroup.kt E2eeStore.kt E2eeArchive.kt E2eeClient.kt E2eeKeys.kt EndToEnd.kt)
-ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeGroupTest E2eeStoreTest E2eeArchiveTest E2eeClientTest E2eeGroupClientTest E2eeKeysTest EndToEndTest)
+MAIN=(E2eeProtocol.kt SecurityCode.kt E2eeAttachment.kt SealedMedia.kt E2eeGroup.kt E2eeStore.kt E2eeArchive.kt E2eeClient.kt E2eeKeys.kt LocalSeal.kt EndToEnd.kt)
+ALL_TESTS=(E2eeProtocolTest SecurityCodeTest E2eeAttachmentTest SealedMediaTest E2eeGroupTest E2eeStoreTest E2eeArchiveTest E2eeClientTest E2eeGroupClientTest E2eeKeysTest LocalSealTest EndToEndTest)
+
+# Paths below com/nchat/app, main and test.
+APP_MAIN=(
+  data/model/Models.kt data/model/MessageDelivery.kt
+  data/local/LocalFiles.kt data/local/MessageStore.kt data/local/OutboxStore.kt
+  data/local/ChatListCache.kt data/local/GroupListCache.kt data/local/FriendGraphCache.kt
+  data/local/DraftStore.kt data/local/StarredStore.kt data/local/PinnedMessageStore.kt data/local/ArchivedStore.kt
+  feature/chats/EncryptionMarks.kt feature/chats/ChatPreview.kt core/util/VideoPlan.kt
+)
+APP_TESTS=(
+  data/local/LocalStoresTest data/local/MessageStoreTest data/local/OutboxStoreTest
+  feature/chats/EncryptionMarksTest feature/chats/ChatPreviewTest core/util/VideoPlanTest
+)
 
 mkdir -p "$TOOLS"
 
@@ -45,12 +69,60 @@ fi
 JAVA="$TOOLS/java"
 JAR="$TOOLS/kotlin-all.jar"
 
+# kotlinx-serialization as jars of their own, ahead of the big one: the compiler
+# plugin reads the library's version from the jar it finds the classes in.
+SERIALIZATION="$(find "$TOOLS/kernel" -name 'kotlinx-serialization-core-jvm-*.jar' | head -1):$(find "$TOOLS/kernel" -name 'kotlinx-serialization-json-jvm-*.jar' | head -1)"
+LIBS="$SERIALIZATION:$JAR"
+
+# The serialization compiler plugin is inside the big jar, registered next to
+# others that must not be loaded a second time. A jar that holds nothing but
+# its registration makes kotlinc load that one alone.
+PLUGIN="$TOOLS/serialization-plugin.jar"
+if [ ! -f "$PLUGIN" ]; then
+  python3 -c '
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as jar:
+    jar.writestr(
+        "META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar",
+        "org.jetbrains.kotlinx.serialization.compiler.extensions.SerializationComponentRegistrar\n",
+    )
+' "$PLUGIN"
+fi
+
 kotlinc() { # kotlinc <out-dir> <sources...>
   local out="$1"; shift
   "$JAVA" -Xmx1500m -cp "$JAR" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-    -no-stdlib -no-reflect -jvm-target 17 -cp "$JAR:$out" -d "$out" "$@" 2>&1 \
+    -no-stdlib -no-reflect -jvm-target 17 "-Xplugin=$PLUGIN" -cp "$LIBS:$out" -d "$out" "$@" 2>&1 \
     | grep -v "^WARNING\|unable to find kotlin" || true
 }
+
+# ------------------------- stand-ins for the three Android names of APP_MAIN
+STUBS="$TOOLS/stubs"
+if [ ! -f "$STUBS/CrashLog.kt" ]; then
+  mkdir -p "$STUBS"
+  cat > "$STUBS/Context.kt" <<'EOF'
+package android.content
+
+import java.io.File
+
+abstract class Context {
+    abstract val applicationContext: Context
+    abstract val filesDir: File
+}
+EOF
+  cat > "$STUBS/Immutable.kt" <<'EOF'
+package androidx.compose.runtime
+
+@Target(AnnotationTarget.CLASS) @Retention(AnnotationRetention.BINARY) annotation class Immutable
+EOF
+  cat > "$STUBS/CrashLog.kt" <<'EOF'
+package com.nchat.app.core.util
+
+object CrashLog {
+    @Suppress("UNUSED_PARAMETER") fun note(where: String, error: Throwable) = Unit
+}
+EOF
+fi
 
 # ------------------------------------------- a stand-in for JUnit 4 (no jar)
 SHIM="$TOOLS/shim"
@@ -153,17 +225,42 @@ fi
 # ------------------------------------------------------------ compile + run
 OUT="${NCHAT_JVM_OUT:-$TOOLS/out}"
 SOURCE_ROOT="${NCHAT_JVM_MAIN:-$NETWORK}"
+APP_ROOT="${NCHAT_JVM_APP:-$APP}"
 rm -rf "$OUT" && cp -r "$TOOLS/shim-classes" "$OUT"
 
-if [ "$#" -gt 0 ]; then SELECTED=("$@"); else SELECTED=("${ALL_TESTS[@]}"); fi
+if [ "$#" -gt 0 ]; then
+  SELECTED=("$@")
+else
+  SELECTED=("${ALL_TESTS[@]}")
+  for test in "${APP_TESTS[@]}"; do SELECTED+=("$(basename "$test")"); done
+fi
+
 SOURCES=()
 for file in "${MAIN[@]}"; do [ -f "$SOURCE_ROOT/$file" ] && SOURCES+=("$SOURCE_ROOT/$file"); done
 CLASSES=()
-for test in "${SELECTED[@]}"; do
-  [ -f "$TESTS_DIR/$test.kt" ] || continue
-  SOURCES+=("$TESTS_DIR/$test.kt")
-  CLASSES+=("com.nchat.app.network.$test")
+NEEDS_APP=0
+for name in "${SELECTED[@]}"; do
+  if [ -f "$TESTS_DIR/$name.kt" ]; then
+    SOURCES+=("$TESTS_DIR/$name.kt")
+    CLASSES+=("com.nchat.app.network.$name")
+    continue
+  fi
+  for test in "${APP_TESTS[@]}"; do
+    [ "$(basename "$test")" = "$name" ] || continue
+    [ -f "$TESTS_ROOT/$test.kt" ] || continue
+    SOURCES+=("$TESTS_ROOT/$test.kt")
+    CLASSES+=("com.nchat.app.$(dirname "$test" | tr / .).$name")
+    NEEDS_APP=1
+  done
 done
+if [ "$NEEDS_APP" = 1 ]; then
+  SOURCES+=("$STUBS/Context.kt" "$STUBS/Immutable.kt" "$STUBS/CrashLog.kt")
+  for file in "${APP_MAIN[@]}"; do [ -f "$APP_ROOT/$file" ] && SOURCES+=("$APP_ROOT/$file"); done
+fi
+if [ "${#CLASSES[@]}" -eq 0 ]; then
+  echo "no such test: ${SELECTED[*]}"
+  exit 2
+fi
 
 COMPILE_LOG="$(kotlinc "$OUT" "${SOURCES[@]}")"
 if echo "$COMPILE_LOG" | grep -q "error:"; then
@@ -171,4 +268,4 @@ if echo "$COMPILE_LOG" | grep -q "error:"; then
   echo "COMPILATION FAILED"
   exit 2
 fi
-"$JAVA" -cp "$OUT:$JAR" runner.RunnerKt "${CLASSES[@]}"
+"$JAVA" -cp "$OUT:$LIBS" runner.RunnerKt "${CLASSES[@]}"

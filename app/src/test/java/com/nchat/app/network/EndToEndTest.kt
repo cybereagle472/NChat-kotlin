@@ -459,6 +459,68 @@ class EndToEndTest {
         assertEquals("and after", read(later, "bob", next))
     }
 
+    // ------------------------------------ the rest of what is kept on the phone
+
+    @Test
+    fun whatElseThePhoneKeepsIsSealedForTheAccountAndGoesWithIt() {
+        // Cached conversations, previews, the outbox, drafts: sealed with what `localSeal` hands out.
+        val server = Server()
+        val phone = Phone(server)
+        val words = "kept on the phone".toByteArray(Charsets.UTF_8)
+
+        assertNull("nobody signed in: nothing to seal with, nothing to open", phone.start().localSeal())
+
+        val alice = phone.signIn("alice")
+        val stored = alice.localSeal()!!.seal("outbox", words)
+        assertArrayEquals(words, alice.localSeal()!!.open("outbox", stored))
+        assertFalse("not the storage key itself", stored.toList().windowed(32).any { it == phone.keyring.entry!!.key.toList() })
+
+        // A restart, and a session that expired: the same account opens what it sealed.
+        assertArrayEquals(words, phone.start().also { it.resume("alice") }.localSeal()!!.open("outbox", stored))
+        val later = phone.start()
+        assertNull("started signed out", later.localSeal())
+        phone.signIn("alice", later)
+        assertArrayEquals(words, later.localSeal()!!.open("outbox", stored))
+
+        // It is not the key of the encrypted history: neither opens the other's files.
+        val box = SealedBox(phone.keyring.entry!!.key)
+        assertNull(box.open("outbox", stored))
+        assertNull(later.localSeal()!!.open("outbox", box.seal("outbox", words)))
+
+        // Signing out: nothing to seal with any more, and signing in again does not bring the old key back.
+        runBlocking { later.signOut()() }
+        assertNull(later.localSeal())
+        val again = phone.signIn("alice", later)
+        assertNull("sealed before the sign-out", again.localSeal()!!.open("outbox", stored))
+        assertFalse("and it can tell: not sealed with the key it has now", again.localSeal()!!.sealedHere(stored))
+
+        // Somebody else on this phone cannot open it either.
+        val mine = again.localSeal()!!.seal("outbox", words)
+        val carol = phone.signIn("carol", phone.start())
+        assertNull(carol.localSeal()!!.open("outbox", mine))
+        assertFalse(carol.localSeal()!!.sealedHere(mine))
+    }
+
+    @Test
+    fun withStorageThatCannotBeReadThereIsNothingToSealWith() {
+        val server = Server()
+        val phone = Phone(server)
+        val alice = phone.signIn("alice")
+        val stored = alice.localSeal()!!.seal("drafts", "typed".toByteArray(Charsets.UTF_8))
+
+        // The keystore does not answer in this run: no seal — and above all no new key.
+        phone.keyring.unreadable = true
+        val broken = phone.start().also { it.resume("alice") }
+        assertNull(broken.localSeal())
+        assertNull(broken.localSeal())
+        assertEquals("asked once", 1, phone.reports.size)
+        assertEquals(1, phone.keyring.stores)
+
+        phone.keyring.unreadable = false
+        val recovered = phone.start().also { it.resume("alice") }
+        assertEquals("typed", String(recovered.localSeal()!!.open("drafts", stored)!!, Charsets.UTF_8))
+    }
+
     // ---------------------------------------------- a phone that changes hands
 
     @Test

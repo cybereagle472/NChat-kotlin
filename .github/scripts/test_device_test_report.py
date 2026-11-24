@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from device_test_report import report, summarise
+from device_test_report import report, slowest, slowest_line, summarise
 
 PASSING = """<?xml version='1.0' encoding='UTF-8' ?>
 <testsuite name="com.nchat.app.network" tests="3" failures="0" errors="0" skipped="1">
@@ -58,6 +58,28 @@ class DeviceTestReportTest(unittest.TestCase):
         tests, skipped, failures = summarise(self.results("<testsuite><testcase"))
         self.assertEqual((0, 0), (tests, skipped))
         self.assertEqual(1, len(failures))
+
+    def test_the_slowest_tests_are_named_with_their_time(self):
+        # A time bound that holds on a desktop can fail on an old phone: how long the
+        # slow ones took belongs in the report of every run, not only of a failed one.
+        slow = PASSING.replace('name="seals" classname="com.nchat.app.network.E2eeProtocolTest" time="0.1"',
+                               'name="seals" classname="com.nchat.app.network.E2eeProtocolTest" time="11.136"')
+        results = self.results(slow, FAILING)
+        self.assertEqual(
+            [("E2eeProtocolTest.seals", 11.136), ("KeystoreStorageDeviceTest.keystore", 0.2)],
+            slowest(results, 2),
+        )
+        self.assertEqual(
+            "slowest: E2eeProtocolTest.seals 11.1 s, KeystoreStorageDeviceTest.keystore 0.2 s",
+            slowest_line(results, 2),
+        )
+
+    def test_a_time_that_cannot_be_read_counts_as_none(self):
+        odd = PASSING.replace('name="opens" classname="com.nchat.app.network.E2eeProtocolTest" time="0.1"',
+                              'name="opens" classname="com.nchat.app.network.E2eeProtocolTest" time="soon"')
+        self.assertEqual([("E2eeProtocolTest.seals", 0.1)], slowest(self.results(odd), 1))
+        self.assertEqual("", slowest_line(self.results(), 3))
+        self.assertEqual("", slowest_line(self.results("<testsuite><testcase"), 3))
 
 
 if __name__ == "__main__":

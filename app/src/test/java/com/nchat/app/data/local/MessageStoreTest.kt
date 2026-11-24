@@ -1,6 +1,7 @@
 package com.nchat.app.data.local
 
 import com.nchat.app.data.model.Message
+import com.nchat.app.network.LocalSeal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -11,6 +12,9 @@ import org.junit.rules.TemporaryFolder
 class MessageStoreTest {
     @get:Rule val folder = TemporaryFolder()
 
+    private val sealing = LocalSeal(ByteArray(32) { 1 })
+    private val seal: () -> LocalSeal? = { sealing }
+
     private val message = Message(
         id = "server-id", chatId = "peer", authorId = "me", authorName = "Me",
         text = "hello", timestamp = 1000L, isMine = true
@@ -19,26 +23,26 @@ class MessageStoreTest {
     @Test
     fun emptyConversationReplacesPreviousCache() {
         val root = folder.root.resolve("messages")
-        val store = MessageStore(root)
+        val store = MessageStore(root, seal)
         assertTrue(store.save("me", "peer", listOf(message)))
-        assertEquals(listOf(message), MessageStore(root).load("me", "peer"))
+        assertEquals(listOf(message), MessageStore(root, seal).load("me", "peer"))
         assertTrue(store.save("me", "peer", emptyList()))
-        assertTrue(MessageStore(root).load("me", "peer").isEmpty())
+        assertTrue(MessageStore(root, seal).load("me", "peer").isEmpty())
     }
 
     @Test
     fun failedReplacePreservesPreviouslyCommittedCache() {
         val root = folder.root.resolve("messages")
-        assertTrue(MessageStore(root).save("me", "peer", listOf(message)))
-        val failing = MessageStore(root) { _, _ -> false }
+        assertTrue(MessageStore(root, seal).save("me", "peer", listOf(message)))
+        val failing = MessageStore(root, seal) { _, _ -> false }
         assertFalse(failing.save("me", "peer", emptyList()))
-        assertEquals(listOf(message), MessageStore(root).load("me", "peer"))
+        assertEquals(listOf(message), MessageStore(root, seal).load("me", "peer"))
         assertTrue(root.resolve("me").listFiles().orEmpty().none { it.name.endsWith(".tmp") })
     }
 
     @Test
     fun emptyChatAndInvalidIdsDoNotAffectOtherAccounts() {
-        val store = MessageStore(folder.root.resolve("messages"))
+        val store = MessageStore(folder.root.resolve("messages"), seal)
         assertTrue(store.save("one", "peer", listOf(message)))
         assertTrue(store.save("two", "peer", listOf(message)))
         assertTrue(store.save("one", "peer", emptyList()))

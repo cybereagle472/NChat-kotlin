@@ -1,6 +1,7 @@
 package com.nchat.app.data.local
 
 import com.nchat.app.data.model.OutboxEntry
+import com.nchat.app.network.LocalSeal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,9 +15,12 @@ import org.junit.rules.TemporaryFolder
 class OutboxStoreTest {
     @get:Rule val folder = TemporaryFolder()
 
+    private val sealing = LocalSeal(ByteArray(32) { 1 })
+    private val seal: () -> LocalSeal? = { sealing }
+
     @Test
     fun deletedEntryCannotBeResurrectedByAnUploadCompletion() {
-        val store = OutboxStore(folder.root.resolve("outbox.json"))
+        val store = OutboxStore(folder.root.resolve("outbox.json"), seal)
         val original = OutboxEntry(clientId = "one", chatId = "peer", ownerId = "user", text = "hello")
         store.add(original)
         assertTrue(store.replaceIfPresent(original.copy(mediaUrl = "https://example.test/file")))
@@ -29,7 +33,7 @@ class OutboxStoreTest {
 
     @Test
     fun updatingOneEntryPreservesOthers() {
-        val store = OutboxStore(folder.root.resolve("outbox.json"))
+        val store = OutboxStore(folder.root.resolve("outbox.json"), seal)
         val first = OutboxEntry(clientId = "one", chatId = "peer", text = "first")
         val second = OutboxEntry(clientId = "two", chatId = "peer", text = "second")
         store.add(first)
@@ -42,9 +46,9 @@ class OutboxStoreTest {
     fun committedEntriesSurviveReopeningAndIgnoreAnInterruptedTemporaryFile() {
         val file = folder.root.resolve("outbox.json")
         val original = OutboxEntry(clientId = "one", chatId = "peer", text = "hello")
-        assertTrue(OutboxStore(file).add(original))
+        assertTrue(OutboxStore(file, seal).add(original))
         folder.root.resolve("outbox-interrupted.tmp").writeText("incomplete")
-        assertEquals(original, OutboxStore(file).find("one"))
+        assertEquals(original, OutboxStore(file, seal).find("one"))
     }
 
     @Test
@@ -52,12 +56,12 @@ class OutboxStoreTest {
         val file = folder.root.resolve("outbox.json")
         val first = OutboxEntry(clientId = "one", chatId = "peer", text = "first")
         val second = OutboxEntry(clientId = "two", chatId = "peer", text = "second")
-        assertTrue(OutboxStore(file).add(first))
-        val failing = OutboxStore(file) { _, _ -> false }
+        assertTrue(OutboxStore(file, seal).add(first))
+        val failing = OutboxStore(file, seal) { _, _ -> false }
         assertFalse(failing.add(second))
         assertFalse(failing.remove("one"))
         assertFalse(failing.replaceIfPresent(first.copy(text = "changed")))
-        assertEquals(listOf(first), OutboxStore(file).all())
+        assertEquals(listOf(first), OutboxStore(file, seal).all())
         assertTrue(folder.root.listFiles().orEmpty().none { it.name.startsWith("outbox-") })
     }
 
@@ -66,7 +70,7 @@ class OutboxStoreTest {
         val file = folder.root.resolve("outbox.json")
         val corrupt = "{this is not valid JSON"
         file.writeText(corrupt)
-        val store = OutboxStore(file)
+        val store = OutboxStore(file, seal)
         assertFalse(store.add(OutboxEntry(clientId = "one", chatId = "peer", text = "hello")))
         assertFalse(store.remove("one"))
         assertEquals(corrupt, file.readText())
@@ -74,7 +78,7 @@ class OutboxStoreTest {
 
     @Test
     fun concurrentAddsDoNotOverwriteEachOther() {
-        val store = OutboxStore(folder.root.resolve("outbox.json"))
+        val store = OutboxStore(folder.root.resolve("outbox.json"), seal)
         val executor = Executors.newFixedThreadPool(4)
         try {
             val futures = (1..20).map { id ->
@@ -92,7 +96,7 @@ class OutboxStoreTest {
 
     @Test
     fun removingConversationOnlyRemovesThatAccountsQueuedSends() {
-        val store = OutboxStore(folder.root.resolve("outbox.json"))
+        val store = OutboxStore(folder.root.resolve("outbox.json"), seal)
         val target = OutboxEntry(clientId = "target", chatId = "peer", ownerId = "user", text = "pending")
         val otherChat = OutboxEntry(clientId = "other-chat", chatId = "group", ownerId = "user", text = "keep")
         val otherAccount = OutboxEntry(clientId = "other-account", chatId = "peer", ownerId = "other", text = "keep")
@@ -105,7 +109,7 @@ class OutboxStoreTest {
     @Test
     fun clearRemovesInterruptedTemporaryCopies() {
         val file = folder.root.resolve("outbox.json")
-        val store = OutboxStore(file)
+        val store = OutboxStore(file, seal)
         assertTrue(store.add(OutboxEntry(clientId = "one", chatId = "peer", text = "private")))
         val leftover = folder.root.resolve("outbox-interrupted.tmp")
         leftover.writeText("partial private data")
