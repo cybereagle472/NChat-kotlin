@@ -1,6 +1,9 @@
 package com.nchat.app.network
 
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.SecureRandom
 
 /**
@@ -91,6 +94,8 @@ class EndToEnd(
     private val report: (what: String, error: Throwable) -> Unit = { _, _ -> },
     /** What [SealedMessaging.security] answers for this peer has changed; see [E2eeClient]. */
     private val onSecurityChanged: (peerId: String) -> Unit = {},
+    /** How hard a backup's key is to make from its passphrase; see [E2eeBackup.ROUNDS]. */
+    private val backupRounds: Int = E2eeBackup.ROUNDS,
 ) {
     private class Account(val userId: String, val keys: E2eeKeys, val client: E2eeClient, val localSeal: LocalSeal) {
         fun close() {
@@ -226,6 +231,81 @@ class EndToEnd(
     suspend fun sync(): E2eeKeys.Outcome? {
         val keys = synchronized(lock) { account()?.keys } ?: return null
         return keys.sync()
+    }
+
+    /**
+     * Writes to [out] a backup of everything this phone keeps of the
+     * signed-in account's sealed messages, sealed under [passphrase]; see
+     * [E2eeBackup]. Null — with nothing written — when nobody is signed in
+     * or the account's storage cannot be opened.
+     *
+     * Takes about a second before the first byte: that is the price of every
+     * guess at the passphrase. Throws [IllegalArgumentException], before
+     * anything is written, for a passphrase [E2eeBackup.passphraseProblem]
+     * turns down; [IOException] when the account signed out meanwhile — what
+     * was written is then not a backup, and does not restore; and whatever
+     * [out] throws.
+     */
+    fun backUp(out: OutputStream, passphrase: CharArray): E2eeBackup.Written? {
+        val (userId, client) = signedInClient() ?: return null
+        val writer = E2eeBackup.Writer(out, userId, passphrase, backupRounds)
+        val kept = client.keptChats() ?: throw IOException(E2eeText.SIGNED_OUT)
+        var chats = 0
+        for (chat in kept.ids) {
+            val entries = client.keptOf(chat) ?: throw IOException(E2eeText.SIGNED_OUT)
+            if (entries.isEmpty()) continue
+            writer.chat(chat)
+            chats++
+            for ((key, payload) in entries) writer.entry(key, payload)
+        }
+        // The last piece is what makes the file a backup: not written for an account that left meanwhile.
+        if (client.keptChats() == null) throw IOException(E2eeText.SIGNED_OUT)
+        writer.finish()
+        return E2eeBackup.Written(writer.entries, chats, kept.unreadable)
+    }
+
+    /**
+     * Reads a backup of the signed-in account from [input] and puts back
+     * what this phone does not keep; returns how many messages that was.
+     * Null — with nothing read — when nobody is signed in or the account's
+     * storage cannot be opened.
+     *
+     * What the phone keeps already is never replaced. Throws
+     * [E2eeBackup.Failure] with what is wrong with the file; it says how
+     * many messages were put back before that — everything read before the
+     * damage was sealed under the passphrase, and is kept. Throws whatever
+     * [input] throws.
+     */
+    fun restore(input: InputStream, passphrase: CharArray): Int? {
+        val (userId, client) = signedInClient() ?: return null
+        var restored = 0
+        var chat: String? = null
+        val waiting = ArrayList<Pair<String, E2eePayload>>()
+        // A chat at a time: its entries go into the archive together, in the order of the backup.
+        fun settle() {
+            val name = chat
+            if (name != null && waiting.isNotEmpty()) restored += client.restoreKept(name, waiting) ?: 0
+            waiting.clear()
+        }
+        try {
+            E2eeBackup.read(input, userId, passphrase) { name, key, payload ->
+                if (name != chat) {
+                    settle()
+                    chat = name
+                }
+                waiting += key to payload
+            }
+        } catch (failure: E2eeBackup.Failure) {
+            settle()
+            throw E2eeBackup.Failure(failure.problem, restored)
+        }
+        settle()
+        return restored
+    }
+
+    private fun signedInClient(): Pair<String, E2eeClient>? = synchronized(lock) {
+        val userId = current ?: return@synchronized null
+        account()?.let { userId to it.client }
     }
 
     /**

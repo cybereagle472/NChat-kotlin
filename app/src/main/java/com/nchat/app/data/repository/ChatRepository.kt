@@ -54,6 +54,12 @@ interface ChatRepository {
 
     /** Reloads chats + groups now (used by the retry button). */
     fun refresh()
+
+    /**
+     * A backup of the encrypted history was restored: messages this phone could not show may be
+     * readable now. Everything that was kept as "can't be shown" is fetched and opened again.
+     */
+    fun historyRestored()
     fun conversation(chatId: String, chatTitle: String): StateFlow<List<Message>>
 
     /**

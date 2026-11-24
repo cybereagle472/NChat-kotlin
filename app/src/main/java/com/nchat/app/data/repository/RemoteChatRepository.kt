@@ -372,6 +372,31 @@ class RemoteChatRepository(
         scope.launch { runCatching { reload() } }
     }
 
+    /**
+     * A restored backup makes messages readable that were opened — and kept — as "can't be
+     * shown": in the conversations in memory, in the copies on the phone, in the previews of
+     * the lists. A row is only opened when the server sends it, so all of that is let go and
+     * fetched again.
+     *
+     * Everything goes, not just the rows that could not be read: paging picks up below the
+     * oldest row a conversation still holds, so rows taken out of the middle would never be
+     * asked for again. Only what has not reached the server yet stays — nobody else has it.
+     */
+    override fun historyRestored() {
+        scope.launch {
+            val me = myId
+            val open = synchronized(requested) { requested.toList() }
+            open.forEach { chatId ->
+                olderCursor.remove(chatId)
+                olderAvailable.remove(chatId)
+                updateMessages(chatId) { local -> local.filter { it.isMine && (it.failed || it.state == DeliveryState.Sending) } }
+            }
+            if (me.isNotEmpty()) withContext(Dispatchers.IO) { runCatching { messages?.clearOwner(me) } }
+            runCatching { reload() }
+            open.forEach { chatId -> runCatching { loadConversation(chatId) } }
+        }
+    }
+
     // ------------------------------------------------------------- loading
 
     private suspend fun reload() {

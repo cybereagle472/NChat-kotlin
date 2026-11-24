@@ -126,6 +126,11 @@ class E2eePayload(val type: Int, val body: String, replyTo: String? = null, atta
  *
  * Every entry is sealed under the caller's key with the chat as context, so
  * an entry copied into another chat's file does not open there.
+ *
+ * A file is named by a hash of its chat, so the directory names nobody —
+ * and so nothing but the chat itself leads to its file. For a backup, which
+ * needs every chat there is, each file also carries one sealed line that
+ * says which chat it is of ([chats]).
  */
 class E2eeArchive internal constructor(
     private val directory: File,
@@ -152,6 +157,12 @@ class E2eeArchive internal constructor(
 
     /** Chats with appended entries that have not been synced yet. */
     private val unsynced = LinkedHashSet<String>()
+
+    /** Chats whose file is known, in this run of the app, to carry the line that names it. */
+    private val named = HashSet<String>()
+
+    /** The chats this archive keeps. [unreadable]: files that hold something and do not say whose it is. */
+    class Chats(val ids: List<String>, val unreadable: Int)
 
     /** Looks among the newest entries of the chat only — cheap, and where a fresh message would be. */
     fun recent(chatId: String, key: String): E2eePayload? = synchronized(lock) { indexFor(chatId).entries[key] }
@@ -208,20 +219,82 @@ class E2eeArchive internal constructor(
                 if (references.any { key.startsWith(it) }) removed++ else kept += text
             }
             if (removed == 0) return 0
-            val rewritten = File(directory, file.name + ".tmp")
-            try {
-                FileOutputStream(rewritten).use { out ->
-                    for (line in kept) out.write((line + "\n").toByteArray(Charsets.US_ASCII))
-                    out.fd.sync()
-                }
-                if (!rewritten.renameTo(file)) throw IOException("could not replace the archive file")
-            } finally {
-                rewritten.delete()
-            }
-            unsynced.remove(chatId)
-            // What is in memory was read from the old file: read again when it is next asked for.
-            loaded.remove(chatId)?.let { loadedEntries -= it.entries.size }
+            rewrite(chatId, kept)
             return removed
+        }
+    }
+
+    /**
+     * Every chat that has a file here, for a backup. A file that holds
+     * something and has lost the line that names its chat is counted, not
+     * passed over: what is in it cannot be read without knowing whose it is.
+     */
+    fun chats(): Chats = synchronized(lock) {
+        val ids = ArrayList<String>()
+        var unreadable = 0
+        val files = directory.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(LOG) }.sortedBy { it.name }
+        for (file in files) {
+            val name = nameIn(file)
+            when {
+                name != null -> ids += name.also { named += it }
+                holdsSomething(file) -> unreadable++
+            }
+        }
+        Chats(ids, unreadable)
+    }
+
+    /**
+     * Everything kept of a chat, in the order it was written — which is what
+     * makes the last form of a message its newest. Lines that cannot be read
+     * are not among them. Reads the whole file.
+     */
+    fun entries(chatId: String): List<Pair<String, E2eePayload>> = synchronized(lock) {
+        val file = fileFor(chatId)
+        if (!file.isFile) return@synchronized emptyList()
+        val found = LinkedHashMap<String, E2eePayload>()
+        file.forEachLine(Charsets.US_ASCII) { line ->
+            val entry = entryIn(chatId, line) ?: return@forEachLine
+            // Written twice under one key: the later one counts, where it stands.
+            found.remove(entry.first)
+            found[entry.first] = entry.second
+        }
+        found.map { it.key to it.value }
+    }
+
+    /**
+     * Puts back what a backup holds of a chat and this archive does not;
+     * returns how many entries that was. What is kept here already is left
+     * as it is — an entry under the same key is not replaced.
+     *
+     * The restored entries go in before everything kept here: a backup is
+     * older than what the phone has kept by itself since, and the entry of a
+     * message written last is its newest form. On stable storage before this
+     * returns. Throws when the file cannot be written; it is then unchanged.
+     */
+    fun restore(chatId: String, entries: List<Pair<String, E2eePayload>>): Int {
+        if (entries.isEmpty()) return 0
+        synchronized(lock) {
+            if (!directory.isDirectory && !directory.mkdirs()) throw IOException("could not create the archive directory")
+            val file = fileFor(chatId)
+            val kept = ArrayList<String>()
+            val have = HashSet<String>()
+            if (file.isFile) {
+                file.forEachLine(Charsets.US_ASCII) { line ->
+                    val text = line.trim()
+                    val key = (if (text.isEmpty()) null else keyOf(chatId, text)) ?: return@forEachLine
+                    kept += text
+                    have += key
+                }
+            }
+            val missing = LinkedHashMap<String, E2eePayload>()
+            for ((key, payload) in entries) {
+                if (key in have) continue
+                missing.remove(key)
+                missing[key] = payload
+            }
+            if (missing.isEmpty()) return 0
+            rewrite(chatId, missing.map { seal(chatId, it.key, it.value) } + kept)
+            return missing.size
         }
     }
 
@@ -229,16 +302,12 @@ class E2eeArchive internal constructor(
     fun put(chatId: String, key: String, payload: E2eePayload) {
         synchronized(lock) {
             if (!directory.isDirectory && !directory.mkdirs()) throw IOException("could not create the archive directory")
-            val entry = buildJsonObject {
-                put("k", key)
-                put("y", payload.type)
-                put("t", payload.body)
-                payload.replyTo?.let { put("r", it) }
-                payload.attachment?.let { put("a", it) }
-            }.toString()
-            val line = encodeBase64(box.seal(CONTEXT + chatId, entry.toByteArray(Charsets.UTF_8)))
+            val file = fileFor(chatId)
+            // A new file says first which chat it is of; so does one that has lost that line.
+            val naming = if (chatId in named || nameIn(file) == chatId) "" else "\n" + nameLine(chatId)
             // The leading newline closes a line that a crash left unfinished.
-            FileOutputStream(fileFor(chatId), true).use { it.write(("\n" + line + "\n").toByteArray(Charsets.US_ASCII)) }
+            FileOutputStream(file, true).use { it.write((naming + "\n" + seal(chatId, key, payload) + "\n").toByteArray(Charsets.US_ASCII)) }
+            named += chatId
             unsynced += chatId
             val index = loaded[chatId] ?: return
             if (index.entries.put(key, payload) == null) loadedEntries++
@@ -265,6 +334,7 @@ class E2eeArchive internal constructor(
             loaded.clear()
             loadedEntries = 0
             unsynced.clear()
+            named.clear()
             directory.deleteRecursively()
         }
     }
@@ -304,19 +374,92 @@ class E2eeArchive internal constructor(
     }
 
     private fun parse(chatId: String, line: String, into: Index) {
-        if (line.isBlank()) return
-        try {
-            val sealed = decodeBase64(line.trim()) ?: return
-            val opened = box.open(CONTEXT + chatId, sealed) ?: return
+        val (key, payload) = entryIn(chatId, line) ?: return
+        into.entries[key] = payload
+        into.newest[referenceOf(key)] = key
+    }
+
+    /** The entry [line] holds — its key and what was kept under it — or null when the line is not one that can be read. */
+    private fun entryIn(chatId: String, line: String): Pair<String, E2eePayload>? {
+        if (line.isBlank()) return null
+        return try {
+            val opened = decodeBase64(line.trim())?.let { box.open(CONTEXT + chatId, it) } ?: return null
             val entry = Json.parseToJsonElement(String(opened, Charsets.UTF_8)).jsonObject
-            val key = (entry["k"] as? JsonPrimitive)?.content ?: return
-            val type = (entry["y"] as? JsonPrimitive)?.content?.toIntOrNull() ?: return
-            val body = (entry["t"] as? JsonPrimitive)?.content ?: return
-            into.entries[key] = E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content, (entry["a"] as? JsonPrimitive)?.content)
-            into.newest[referenceOf(key)] = key
+            val key = (entry["k"] as? JsonPrimitive)?.content ?: return null
+            val type = (entry["y"] as? JsonPrimitive)?.content?.toIntOrNull() ?: return null
+            val body = (entry["t"] as? JsonPrimitive)?.content ?: return null
+            key to E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content, (entry["a"] as? JsonPrimitive)?.content)
         } catch (_: Exception) {
             // A torn or damaged line costs exactly one entry.
+            null
         }
+    }
+
+    /** An entry as the line of a chat's file. */
+    private fun seal(chatId: String, key: String, payload: E2eePayload): String {
+        val entry = buildJsonObject {
+            put("k", key)
+            put("y", payload.type)
+            put("t", payload.body)
+            payload.replyTo?.let { put("r", it) }
+            payload.attachment?.let { put("a", it) }
+        }.toString()
+        return encodeBase64(box.seal(CONTEXT + chatId, entry.toByteArray(Charsets.UTF_8)))
+    }
+
+    /** The line that says which chat a file is of. */
+    private fun nameLine(chatId: String): String = encodeBase64(box.seal(NAME_CONTEXT, chatId.toByteArray(Charsets.UTF_8)))
+
+    /**
+     * The chat [file] says it is of, or null when no line of it says so. The
+     * line is the first of a file as this class writes one, and this reads
+     * no further than the line it finds; only a file without one is read to
+     * its end. A name that is not the one the file is called by — a line
+     * taken from another chat's file — does not count.
+     */
+    private fun nameIn(file: File): String? {
+        if (!file.isFile) return null
+        return try {
+            file.useLines(Charsets.US_ASCII) { lines ->
+                lines.mapNotNull { line ->
+                    val text = line.trim()
+                    val opened = if (text.isEmpty()) null else decodeBase64(text)?.let { box.open(NAME_CONTEXT, it) }
+                    opened?.let { String(it, Charsets.UTF_8) }?.takeIf { hashedName(it) + LOG == file.name }
+                }.firstOrNull()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun holdsSomething(file: File): Boolean = try {
+        file.useLines(Charsets.US_ASCII) { lines -> lines.any { it.isNotBlank() } }
+    } catch (_: Exception) {
+        true
+    }
+
+    /**
+     * Writes the file of [chatId] anew: the line that names the chat, then
+     * [lines]. On stable storage before this returns. Throws when the file
+     * cannot be replaced; it is then unchanged.
+     */
+    private fun rewrite(chatId: String, lines: List<String>) {
+        val file = fileFor(chatId)
+        val rewritten = File(directory, file.name + ".tmp")
+        try {
+            FileOutputStream(rewritten).use { out ->
+                out.write((nameLine(chatId) + "\n").toByteArray(Charsets.US_ASCII))
+                for (line in lines) out.write((line + "\n").toByteArray(Charsets.US_ASCII))
+                out.fd.sync()
+            }
+            if (!rewritten.renameTo(file)) throw IOException("could not replace the archive file")
+        } finally {
+            rewritten.delete()
+        }
+        named += chatId
+        unsynced.remove(chatId)
+        // What is in memory was read from the old file: read again when it is next asked for.
+        loaded.remove(chatId)?.let { loadedEntries -= it.entries.size }
     }
 
     /** The key of the entry in [line], or null when the line cannot be read. */
@@ -341,10 +484,14 @@ class E2eeArchive internal constructor(
         }
     }
 
-    private fun fileFor(chatId: String): File = File(directory, hashedName(chatId) + ".log")
+    private fun fileFor(chatId: String): File = File(directory, hashedName(chatId) + LOG)
 
     private companion object {
         const val CONTEXT = "nchat-archive:"
+
+        /** What the line that names a chat is sealed for. No chat's entries are: theirs begin with [CONTEXT]. */
+        const val NAME_CONTEXT = "nchat-archive-chat"
+        const val LOG = ".log"
 
         /** A couple of hundred recent messages — what previews and new arrivals ask for. */
         const val TAIL_BYTES = 64L * 1024L

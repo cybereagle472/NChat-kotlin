@@ -131,6 +131,10 @@ fun SettingsScreen(
             StoragePane(onBack = { section = SettingsPane.Main })
             return
         }
+        SettingsPane.Backup -> {
+            BackupPane(onBack = { section = SettingsPane.Main })
+            return
+        }
         SettingsPane.Notifications -> {
             NotificationsPane(
                 settings = notifications,
@@ -252,6 +256,13 @@ fun SettingsScreen(
                             title = "Chats",
                             subtitle = "Wallpaper for every conversation",
                             onClick = { section = SettingsPane.Chats }
+                        )
+                        SettingsMenuItem(
+                            tone = MenuTone.Green,
+                            icon = Icons.Rounded.Lock,
+                            title = "Chat backup",
+                            subtitle = "Keep encrypted messages when you sign in again",
+                            onClick = { section = SettingsPane.Backup }
                         )
                         SettingsMenuItem(MenuTone.Teal, Icons.Rounded.Palette, "Appearance", "Theme, dark mode")
                         SettingsMenuItem(MenuTone.Indigo, Icons.Rounded.Language, "Language", "English", last = true)
@@ -682,7 +693,7 @@ private enum class MenuTone(val background: Color, val foreground: Color) {
 }
 
 /** Which pane of Settings is showing. */
-private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Chats, Storage, Sync }
+private enum class SettingsPane { Main, Profile, Privacy, Notifications, Blocked, Chats, Storage, Backup, Sync }
 
 
 /**

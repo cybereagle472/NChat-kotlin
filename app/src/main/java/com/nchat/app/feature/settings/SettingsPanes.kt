@@ -65,6 +65,19 @@ import com.nchat.app.data.local.StorageEntry
 import com.nchat.app.data.model.BlockedContact
 import androidx.compose.foundation.lazy.items
 import com.nchat.app.network.ApiLog
+import com.nchat.app.network.E2eeBackup
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.nchat.app.data.repository.NotificationSettings
 import com.nchat.app.data.repository.PrivacySettings
@@ -1125,4 +1138,244 @@ private fun WallpaperTile(
             modifier = Modifier.padding(top = 3.dp)
         )
     }
+}
+
+/**
+ * Settings ▸ Chat backup.
+ *
+ * Signing out erases the keys encrypted messages were opened with, and with them everything
+ * they opened. This page is how that is kept: one file, sealed under a passphrase, written and
+ * read through the system's file picker — so the app asks for no storage permission and never
+ * learns where the file went.
+ *
+ * What was typed lives in this page only, is never saved with it, and is cleared once it has
+ * done its work. Leaving the page waits for a backup or a restore that is under way.
+ */
+@Composable
+fun BackupPane(onBack: () -> Unit) {
+    val backup = ServiceLocator.chatBackup
+    val scope = rememberCoroutineScope()
+    var passphrase by remember { mutableStateOf("") }
+    var repeated by remember { mutableStateOf("") }
+    var restorePassphrase by remember { mutableStateOf("") }
+    var shown by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    var saveNotice by remember { mutableStateOf<String?>(null) }
+    var restoreNotice by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = busy != null) { }
+
+    val saveTo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { target ->
+        if (target == null) return@rememberLauncherForActivityResult
+        val secret = passphrase
+        if (BackupText.passphraseProblem(secret, repeated) != null) {
+            // The app was restarted behind the file picker, and what was typed went with it.
+            saveNotice = BackupText.TYPE_AGAIN
+            scope.launch { backup.discard(target) }
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            busy = "Saving the backup…"
+            saveNotice = try {
+                BackupText.written(backup.save(target, secret.toCharArray())).also {
+                    passphrase = ""
+                    repeated = ""
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                BackupText.NOT_SAVED
+            }
+            busy = null
+        }
+    }
+
+    val restoreFrom = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source == null) return@rememberLauncherForActivityResult
+        val secret = restorePassphrase
+        if (secret.isBlank()) {
+            restoreNotice = BackupText.NO_PASSPHRASE
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            busy = "Restoring…"
+            restoreNotice = try {
+                BackupText.restored(backup.restore(source, secret.toCharArray())).also { restorePassphrase = "" }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: E2eeBackup.Failure) {
+                BackupText.failed(failure)
+            } catch (_: Throwable) {
+                BackupText.NOT_READ
+            }
+            busy = null
+        }
+    }
+
+    SettingsPaneScaffold(
+        title = "Chat backup",
+        subtitle = "Keep encrypted messages when you sign in again",
+        onBack = { if (busy == null) onBack() }
+    ) {
+        item(key = "about") {
+            PaneSection {
+                Text(
+                    text = BackupText.ABOUT,
+                    color = PaneBody,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+        }
+
+        item(key = "save") {
+            PaneSection(title = "Back up") {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    PassphraseField("Passphrase", passphrase, shown, busy == null) { passphrase = it }
+                    PassphraseField("The same passphrase again", repeated, shown, busy == null) { repeated = it }
+                    BackupNote(BackupText.PASSPHRASE_ADVICE)
+                    PaneButton(
+                        label = "Save backup file…",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                    ) {
+                        if (busy != null) return@PaneButton
+                        val problem = BackupText.passphraseProblem(passphrase, repeated)
+                        saveNotice = problem
+                        if (problem == null) {
+                            val today = java.util.Calendar.getInstance()
+                            saveTo.launch(
+                                BackupText.fileName(
+                                    today.get(java.util.Calendar.YEAR),
+                                    today.get(java.util.Calendar.MONTH) + 1,
+                                    today.get(java.util.Calendar.DAY_OF_MONTH)
+                                )
+                            )
+                        }
+                    }
+                    saveNotice?.let { BackupNotice(it) }
+                }
+            }
+        }
+
+        item(key = "restore") {
+            PaneSection(title = "Restore") {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    PassphraseField("Passphrase of the backup", restorePassphrase, shown, busy == null) { restorePassphrase = it }
+                    BackupNote(BackupText.RESTORE_ADVICE)
+                    PaneButton(
+                        label = "Choose backup file…",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                    ) {
+                        if (busy != null) return@PaneButton
+                        if (restorePassphrase.isBlank()) {
+                            restoreNotice = BackupText.NO_PASSPHRASE
+                        } else {
+                            restoreNotice = null
+                            restoreFrom.launch(arrayOf("*/*"))
+                        }
+                    }
+                    restoreNotice?.let { BackupNotice(it) }
+                }
+            }
+        }
+
+        item(key = "state") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = NcSpace.xs, vertical = NcSpace.xs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val working = busy
+                if (working != null) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PaneValue)
+                    Text(
+                        text = working,
+                        color = PaneBody,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = NcSpace.sm)
+                    )
+                } else {
+                    Text(
+                        text = if (shown) "Hide what I type" else "Show what I type",
+                        color = PaneValue,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { shown = !shown }
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One line for a passphrase: no suggestions, nothing learned by the keyboard, hidden unless asked for. */
+@Composable
+private fun PassphraseField(label: String, value: String, shown: Boolean, enabled: Boolean, onValueChange: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    ) {
+        Text(
+            text = label,
+            color = PaneBody,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 2.dp, bottom = 4.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFFF9FAFB))
+                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 14.sp, color = PaneTitle),
+                cursorBrush = SolidColor(PaneValue),
+                visualTransformation = if (shown) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackupNote(text: String) {
+    Text(text = text, color = PaneBody, fontSize = 11.sp, lineHeight = 15.sp)
+}
+
+/** What the last backup or restore came to. */
+@Composable
+private fun BackupNotice(text: String) {
+    Text(
+        text = text,
+        color = PaneTitle,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFFF3E8FF))
+            .padding(10.dp)
+    )
 }

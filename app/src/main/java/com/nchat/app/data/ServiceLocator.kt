@@ -16,6 +16,7 @@ import androidx.core.graphics.drawable.toBitmap
 import coil.request.SuccessResult
 import coil.request.ImageRequest
 import android.graphics.Bitmap
+import com.nchat.app.data.backup.ChatBackup
 import com.nchat.app.data.local.ArchivedStore
 import com.nchat.app.data.local.BlockedContactsStore
 import com.nchat.app.data.local.DraftStore
@@ -718,6 +719,14 @@ object ServiceLocator {
             encryption = { endToEnd.messaging() },
             securityChanges = securityEvents,
             mediaRoot = serverUrl
+        )
+    }
+    /** Settings ▸ Chat backup: the encrypted history as a file under a passphrase. */
+    val chatBackup: ChatBackup by lazy {
+        ChatBackup(
+            context = requireContext(),
+            endToEnd = { endToEnd },
+            onRestored = { chatRepository.historyRestored() }
         )
     }
     val friendRepository: FriendRepository by lazy {

@@ -1397,6 +1397,31 @@ class E2eeClient(
         }
     }
 
+    // ----------------------------------------------------------- for a backup
+
+    /**
+     * What a backup is made of: every chat this phone keeps opened messages
+     * of ([keptChats]) and everything kept of one ([keptOf]), in the order
+     * it was kept. Null once the client is closed — the account has left this
+     * phone, and what is being read is being erased.
+     */
+    fun keptChats(): E2eeArchive.Chats? = batch { if (closed) null else archive.chats() }
+
+    fun keptOf(chat: String): List<Pair<String, E2eePayload>>? = batch { if (closed) null else archive.entries(chat) }
+
+    /**
+     * Puts back what a backup holds of [chat] and this phone does not; see
+     * [E2eeArchive.restore]. Messages of the chat that could not be shown are
+     * tried again from here on. Null, with nothing written, once the client
+     * is closed.
+     */
+    fun restoreKept(chat: String, entries: List<Pair<String, E2eePayload>>): Int? = batch {
+        if (closed) return@batch null
+        val added = archive.restore(chat, entries)
+        if (added > 0) unreadable.remove(chat)
+        added
+    }
+
     /**
      * Ends this client's life: from here on it reads nothing and writes
      * nothing. Sign-out calls it before erasing the account's keys and
