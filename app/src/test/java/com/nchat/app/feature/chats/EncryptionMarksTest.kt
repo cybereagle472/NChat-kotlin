@@ -173,6 +173,7 @@ class EncryptionMarksTest {
         assertTrue(chatListMark(row(500, unsealed = true, group = true), null, 300L).unsealedPreview)
         assertFalse(chatListMark(row(200, unsealed = true, group = true), null, 300L).unsealedPreview)
         assertFalse(chatListMark(row(500, unsealed = true, group = true), since, null).unsealedPreview)
+        assertFalse("a group's date says nothing about a chat with one person", chatListMark(row(500, unsealed = true), null, 300L).unsealedPreview)
         // While the notice is there it has the line; the mark returns with the preview.
         val both = chatListMark(row(500, unsealed = true), since.copy(changed = true), null)
         assertEquals("Security code changed", both.notice)
