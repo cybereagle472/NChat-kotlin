@@ -61,6 +61,62 @@ class E2eeArchiveTest {
         assertEquals("", E2eePayload.decode(byteArrayOf(1)).body)
     }
 
+    @Test
+    fun payloadCarriesTheMessageItRepliesTo() {
+        val reply = E2eePayload.decode(E2eePayload.text("so do I", replyTo = "m-41").encode())
+        assertEquals("so do I", reply.body)
+        assertEquals("m-41", reply.replyTo)
+        assertNull(E2eePayload.decode(E2eePayload.text("not a reply").encode()).replyTo)
+        assertNull("an empty id is no reply", E2eePayload.text("x", replyTo = "").replyTo)
+        // A reply can be a reply with nothing else to say (a shared position, say).
+        val bare = E2eePayload.decode(E2eePayload(E2eePayload.LOCATION, "", "m-7").encode())
+        assertEquals("", bare.body)
+        assertEquals("m-7", bare.replyTo)
+    }
+
+    @Test
+    fun payloadSizeIsItsContentPlusAFewBytes() {
+        // Sealed messages must fit where the same text fits unsealed, whatever characters it is made of.
+        for (body in listOf("x".repeat(60_000), "\u0000\"\\".repeat(20_000), "😀".repeat(15_000))) {
+            val overhead = E2eePayload.text(body, replyTo = "m-1").encode().size - body.toByteArray(Charsets.UTF_8).size
+            assertTrue("overhead was $overhead bytes", overhead in 1..32)
+        }
+    }
+
+    @Test
+    fun payloadFromANewerBuildKeepsWhatThisBuildUnderstands() {
+        fun field(tag: Int, value: ByteArray) =
+            byteArrayOf(tag.toByte(), 0, 0, (value.size ushr 8).toByte(), value.size.toByte()) + value
+        val known = E2eePayload.text("hello", replyTo = "m-9").encode()
+        // A field this build has never heard of — in front, between, behind — is skipped.
+        val extended = byteArrayOf(E2eePayload.TEXT.toByte()) +
+            field(77, ByteArray(300) { 9 }) + known.copyOfRange(1, known.size) + field(78, ByteArray(0))
+        val decoded = E2eePayload.decode(extended)
+        assertEquals(E2eePayload.TEXT, decoded.type)
+        assertEquals("hello", decoded.body)
+        assertEquals("m-9", decoded.replyTo)
+    }
+
+    @Test
+    fun payloadThatDoesNotParseIsUnreadableNotMisread() {
+        val good = E2eePayload.text("hello", replyTo = "m-9").encode()
+        // Cut anywhere inside a field: never a shortened body passed off as the message.
+        for (length in 2 until good.size) {
+            val cut = E2eePayload.decode(good.copyOf(length))
+            if (cut.type != E2eePayload.UNREADABLE) {
+                // Only a cut exactly between two fields is still well-formed.
+                assertEquals("hello", cut.body)
+                assertNull(cut.replyTo)
+            }
+        }
+        // A length that points past the end, or is negative.
+        for (length in listOf(byteArrayOf(0, 0, 0, 99), byteArrayOf(0x7f, -1, -1, -1), byteArrayOf(-1, -1, -1, -1))) {
+            val hostile = E2eePayload.decode(byteArrayOf(E2eePayload.TEXT.toByte(), 1) + length + "abc".toByteArray())
+            assertEquals(E2eePayload.UNREADABLE, hostile.type)
+            assertEquals("", hostile.body)
+        }
+    }
+
     // -------------------------------------------------------------- archive
 
     @Test
@@ -69,7 +125,7 @@ class E2eeArchiveTest {
         assertNull(first.recent("bob", "m:1"))
         assertNull(first.find("bob", "m:1"))
         first.put("bob", "m:1", E2eePayload.text("one"))
-        first.put("bob", "m:2", E2eePayload(7, "two ✓"))
+        first.put("bob", "m:2", E2eePayload(7, "two ✓", replyTo = "m:1"))
         first.put("carol", "m:1", E2eePayload.text("carol's"))
         first.flush()
         assertEquals("one", first.recent("bob", "m:1")?.body)
@@ -78,6 +134,8 @@ class E2eeArchiveTest {
         assertEquals("one", second.recent("bob", "m:1")?.body)
         assertEquals("two ✓", second.find("bob", "m:2")?.body)
         assertEquals(7, second.find("bob", "m:2")?.type)
+        assertEquals("what a message replies to is kept with it", "m:1", second.find("bob", "m:2")?.replyTo)
+        assertNull(second.recent("bob", "m:1")?.replyTo)
         assertEquals("carol's", second.recent("carol", "m:1")?.body)
         assertNull(second.find("bob", "m:3"))
         assertNull(second.find("dave", "m:1"))

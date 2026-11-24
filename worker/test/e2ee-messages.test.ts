@@ -150,7 +150,7 @@ describe('message type hardening (fail closed)', () => {
     expect((await send(alice.token, { receiver_id: bob.id, content: 'x', type: 'text; DROP TABLE' })).status).toBe(400);
     // The known set still passes.
     expect((await send(alice.token, { receiver_id: bob.id, content: 'hi', type: 'text' })).status).toBe(201);
-    expect((await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', recipient_identity_key: bobIdentity })).status).toBe(201);
+    expect((await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: crypto.randomUUID(), recipient_identity_key: bobIdentity })).status).toBe(201);
   }, 30000);
 
   it('rejects sealed group messages until group E2EE ships', async () => {

@@ -54,17 +54,20 @@ class E2eeProtocolTest {
 
     private fun bytes(value: String) = value.toByteArray(Charsets.UTF_8)
 
+    /** The message id an envelope is bound to; most tests do not care which. */
+    private val messageId = bytes("c-message")
+
     private fun text(value: ByteArray?) = value?.let { String(it, Charsets.UTF_8) }
 
-    private fun say(session: Session, value: String): Envelope = E2eeProtocol.seal(session, bytes(value))
+    private fun say(session: Session, value: String): Envelope = E2eeProtocol.seal(session, bytes(value), messageId)
 
-    private fun hear(session: Session, envelope: Envelope): String? = text(E2eeProtocol.open(session, envelope))
+    private fun hear(session: Session, envelope: Envelope): String? = text(E2eeProtocol.open(session, envelope, messageId))
 
     /** Alice initiates towards Bob and Bob accepts her first message. */
     private fun established(alice: Party = Party("alice"), bob: Party = Party("bob")): Pair<Session, Session> {
         val aliceSession = E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id)
         val first = say(aliceSession, "hello")
-        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id)
+        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, messageId)
         assertNotNull(accepted)
         assertEquals("hello", text(accepted!!.plaintext))
         return aliceSession to accepted.session
@@ -94,7 +97,7 @@ class E2eeProtocolTest {
             assertArrayEquals(alice.identity.identityPublic, envelope.ik)
         }
 
-        val bobSession = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id)!!.session
+        val bobSession = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, messageId)!!.session
         assertEquals("reply", hear(session, say(bobSession, "reply")))
 
         val third = say(session, "three")
@@ -116,7 +119,7 @@ class E2eeProtocolTest {
         val session = E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id)
         val flight = (0 until 4).map { say(session, "m$it") }
 
-        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, flight[2], bob.id, alice.id)
+        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, flight[2], bob.id, alice.id, messageId)
         assertNotNull(accepted)
         assertEquals("m2", text(accepted!!.plaintext))
         val bobSession = accepted.session
@@ -162,10 +165,39 @@ class E2eeProtocolTest {
             genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public),
         )
         for (forged in forgeries) {
-            assertNull(E2eeProtocol.open(alice, forged))
+            assertNull(E2eeProtocol.open(alice, forged, messageId))
             assertArrayEquals("a rejected envelope must not change session state", before, alice.serialize())
         }
         assertEquals("genuine", hear(alice, genuine))
+    }
+
+    @Test
+    fun envelopeOpensOnlyUnderTheMessageIdItWasSealedFor() {
+        // The server stores envelopes in rows it controls. Moving one into
+        // another row, or presenting an old one as the edit of another
+        // message, must fail — and must not spend the key, so the envelope
+        // still opens in the row it belongs to.
+        val alice = Party("alice")
+        val bob = Party("bob")
+        val session = E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id)
+        val first = E2eeProtocol.seal(session, bytes("first"), bytes("c-1"))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, bytes("c-2")))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, ByteArray(0)))
+        val bobSession = E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, bytes("c-1"))!!.session
+
+        val second = E2eeProtocol.seal(session, bytes("second"), bytes("c-2"))
+        val third = E2eeProtocol.seal(session, bytes("third"), bytes("c-3"))
+        val before = bobSession.serialize()
+        for (wrong in listOf("c-3", "c-1", "", "c-2 ", "C-2")) {
+            assertNull(E2eeProtocol.open(bobSession, second, bytes(wrong)))
+            assertArrayEquals("a mis-slotted envelope must not change session state", before, bobSession.serialize())
+        }
+        // Out of order: the third message opens first, so the second is opened from a stored key.
+        assertEquals("third", text(E2eeProtocol.open(bobSession, third, bytes("c-3"))))
+        val stashed = bobSession.serialize()
+        assertNull(E2eeProtocol.open(bobSession, second, bytes("c-3")))
+        assertArrayEquals("…and a wrong id must not use that stored key up", stashed, bobSession.serialize())
+        assertEquals("second", text(E2eeProtocol.open(bobSession, second, bytes("c-2"))))
     }
 
     @Test
@@ -176,13 +208,24 @@ class E2eeProtocolTest {
         val genuine = say(bob, "genuine")
         val before = alice.serialize()
         val started = System.nanoTime()
-        assertNull(E2eeProtocol.open(alice, genuine.copy(n = Int.MAX_VALUE)))
-        assertNull(E2eeProtocol.open(alice, genuine.copy(n = 5_000_000)))
-        assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 0, pn = Int.MAX_VALUE)))
-        assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 5_000_000, pn = 0)))
+        assertNull(E2eeProtocol.open(alice, genuine.copy(n = Int.MAX_VALUE), messageId))
+        assertNull(E2eeProtocol.open(alice, genuine.copy(n = 5_000_000), messageId))
+        assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 0, pn = Int.MAX_VALUE), messageId))
+        assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 5_000_000, pn = 0), messageId))
         val millis = (System.nanoTime() - started) / 1_000_000
         // Unbounded, the 5,000,000 case alone is seconds of HMAC and Int.MAX_VALUE is most of an hour.
         assertTrue("forged counters cost $millis ms of key derivation", millis < 3_000)
+        assertArrayEquals(before, alice.serialize())
+
+        // The largest jump that IS allowed, forged twenty times over (a page of history from a
+        // hostile server): each costs the full derivation and still changes nothing.
+        val allowed = System.nanoTime()
+        repeat(20) {
+            assertNull(E2eeProtocol.open(alice, genuine.copy(n = genuine.n + 10_000), messageId))
+            assertNull(E2eeProtocol.open(alice, genuine.copy(dh = E2eeProtocol.generatePrekeyPair().public, n = 10_000, pn = 0), messageId))
+        }
+        val allowedMillis = (System.nanoTime() - allowed) / 1_000_000
+        assertTrue("forty forged jumps of the largest allowed size cost $allowedMillis ms", allowedMillis < 8_000)
         assertArrayEquals(before, alice.serialize())
         assertEquals("genuine", hear(alice, genuine))
     }
@@ -197,6 +240,101 @@ class E2eeProtocolTest {
     }
 
     @Test
+    fun aLongAbsenceIsReadNewestFirstAPageAtATime() {
+        // How the app meets history: the chat list shows the newest message,
+        // opening the chat loads the newest page, scrolling back loads older
+        // pages. Nothing arrives in order and most of it arrives late.
+        val (alice, bob) = established()
+        assertEquals("before", hear(alice, say(bob, "before")))
+        val sent = (0 until 3_500).map { say(bob, "m$it") }
+        var session = alice
+
+        assertEquals("the preview in the chat list", "m3499", hear(session, sent[3499]))
+        // What is remembered about 3,499 messages that have not arrived is a few bytes, not a key each.
+        assertTrue("the session grew to ${session.serialize().size} bytes", session.serialize().size < 1_500)
+
+        // Alice answers: Bob's next messages are a new chain, and the old one stays readable.
+        val reply = say(session, "back")
+        assertEquals("back", hear(bob, reply))
+        val later = (0 until 150).map { say(bob, "later$it") }
+        assertEquals("later149", hear(session, later[149]))
+
+        val opened = HashSet<Int>()
+        for (page in 34 downTo 0) {
+            // The app may be restarted between any two pages.
+            if (page % 7 == 0) session = E2eeProtocol.deserialize(session.serialize())!!
+            for (index in page * 100 until minOf(page * 100 + 100, 3_499)) {
+                assertEquals("m$index", hear(session, sent[index]))
+                opened += index
+            }
+            assertTrue("the session grew to ${session.serialize().size} bytes", session.serialize().size < 1_500)
+        }
+        assertEquals(3_499, opened.size)
+        for (index in 148 downTo 0) assertEquals("later$index", hear(session, later[index]))
+
+        // Each of them opened exactly once.
+        for (index in listOf(0, 1, 99, 100, 1_750, 3_498, 3_499)) assertNull("replay of m$index", hear(session, sent[index]))
+        for (index in listOf(0, 75, 149)) assertNull("replay of later$index", hear(session, later[index]))
+        // …and the conversation simply goes on.
+        assertEquals("caught up", hear(bob, say(session, "caught up")))
+        assertEquals("good", hear(session, say(bob, "good")))
+    }
+
+    @Test
+    fun aMessagePassedOverOpensOnceAndOnlyAsItself() {
+        val (alice, bob) = established()
+        val sent = (0 until 12).map { E2eeProtocol.seal(bob, bytes("m$it"), bytes("id-$it")) }
+        assertEquals("m11", text(E2eeProtocol.open(alice, sent[11], bytes("id-11"))))
+        val before = alice.serialize()
+
+        // Inside the gap, nothing but the genuine envelope under its own id opens — and a failed try uses nothing up.
+        val genuine = sent[5]
+        val flipped = genuine.ciphertext.copyOf().also { it[0] = (it[0] + 1).toByte() }
+        for (forged in listOf(genuine.copy(ciphertext = flipped), genuine.copy(n = 6), genuine.copy(n = 4), genuine.copy(pn = genuine.pn + 1))) {
+            assertNull(E2eeProtocol.open(alice, forged, bytes("id-5")))
+            assertArrayEquals(before, alice.serialize())
+        }
+        assertNull(E2eeProtocol.open(alice, genuine, bytes("id-6")))
+        assertArrayEquals(before, alice.serialize())
+
+        assertEquals("m5", text(E2eeProtocol.open(alice, genuine, bytes("id-5"))))
+        assertNull("its key is gone with it", E2eeProtocol.open(alice, genuine, bytes("id-5")))
+        // Its neighbours are untouched, on both sides, after a restart too.
+        val restored = E2eeProtocol.deserialize(alice.serialize())!!
+        for (index in listOf(4, 6, 0, 10)) assertEquals("m$index", text(E2eeProtocol.open(restored, sent[index], bytes("id-$index"))))
+        for (index in listOf(4, 6, 0, 10, 5, 11)) assertNull(E2eeProtocol.open(restored, sent[index], bytes("id-$index")))
+    }
+
+    @Test
+    fun theLongestJumpIsTenThousandMessages() {
+        val (alice, bob) = established()
+        assertEquals("first", hear(alice, say(bob, "first")))
+        val sent = (0..10_001).map { say(bob, "m$it") }
+        val before = alice.serialize()
+        assertNull("10,001 messages ahead is refused", hear(alice, sent[10_001]))
+        assertArrayEquals(before, alice.serialize())
+        assertEquals("m10000", hear(alice, sent[10_000]))
+        assertEquals("m10001", hear(alice, sent[10_001]))
+        assertEquals("m0", hear(alice, sent[0]))
+        assertEquals("m9999", hear(alice, sent[9_999]))
+        assertEquals("m5000", hear(alice, sent[5_000]))
+    }
+
+    @Test
+    fun gapsAreBoundedAndTheOldestGoFirst() {
+        // Reading every other message leaves a gap per message: the worst pattern there is.
+        val (alice, bob) = established()
+        val sent = (0 until 700).map { say(bob, "m$it") }
+        for (index in 1 until 700 step 2) assertEquals("m$index", hear(alice, sent[index]))
+        assertTrue("the session grew to ${alice.serialize().size} bytes", alice.serialize().size < 45_000)
+
+        val restored = E2eeProtocol.deserialize(alice.serialize())!!
+        val stillOpen = (0 until 700 step 2).filter { hear(restored, sent[it]) != null }
+        assertEquals("the newest 256 gaps are kept", 256, stillOpen.size)
+        assertEquals((188 until 700 step 2).toList(), stillOpen)
+    }
+
+    @Test
     fun attackerControlledKeysNeverThrow() {
         val alice = Party("alice")
         val bob = Party("bob")
@@ -206,21 +344,21 @@ class E2eeProtocolTest {
         val before = aliceSession.serialize()
 
         for (hostile in listOf(garbage, ByteArray(3), offCurve)) {
-            assertNull(E2eeProtocol.open(aliceSession, genuine.copy(dh = hostile)))
+            assertNull(E2eeProtocol.open(aliceSession, genuine.copy(dh = hostile), messageId))
         }
         assertArrayEquals(before, aliceSession.serialize())
 
         val first = say(E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id), "hi")
         for (hostile in listOf(garbage, offCurve)) {
-            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(ik = hostile), bob.id, alice.id))
-            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(ek = hostile), bob.id, alice.id))
-            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(dh = hostile), bob.id, alice.id))
+            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(ik = hostile), bob.id, alice.id, messageId))
+            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(ek = hostile), bob.id, alice.id, messageId))
+            assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first.copy(dh = hostile), bob.id, alice.id, messageId))
         }
-        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, garbage, first, bob.id, alice.id))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, garbage, first, bob.id, alice.id, messageId))
         // The genuine envelope still opens after all of that.
-        assertNotNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id))
+        assertNotNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, messageId))
         // A handshake-less envelope can never establish a session.
-        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, null, genuine, bob.id, alice.id))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, null, genuine, bob.id, alice.id, messageId))
     }
 
     @Test
@@ -231,13 +369,13 @@ class E2eeProtocolTest {
         val alice = Party("alice")
         val bob = Party("bob")
         val toMallory = say(E2eeProtocol.initiate(bob.identity, alice.bundle(), bob.id, "mallory"), "for mallory")
-        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toMallory, alice.id, bob.id))
+        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toMallory, alice.id, bob.id, messageId))
         // Relayed under Mallory's account it still does not open.
-        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toMallory, alice.id, "mallory"))
+        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toMallory, alice.id, "mallory", messageId))
 
         val toAlice = say(E2eeProtocol.initiate(bob.identity, alice.bundle(), bob.id, alice.id), "for alice")
-        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toAlice, alice.id, "mallory"))
-        assertNotNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toAlice, alice.id, bob.id))
+        assertNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toAlice, alice.id, "mallory", messageId))
+        assertNotNull(E2eeProtocol.openFirst(alice.identity, alice.prekey, alice.otk.private, toAlice, alice.id, bob.id, messageId))
     }
 
     @Test
@@ -246,15 +384,15 @@ class E2eeProtocolTest {
         val bob = Party("bob")
         val withOtk = say(E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id), "hi")
         val other = E2eeProtocol.generateOneTimePrekey()
-        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, other.private, withOtk, bob.id, alice.id))
-        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, null, withOtk, bob.id, alice.id))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, other.private, withOtk, bob.id, alice.id, messageId))
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, null, withOtk, bob.id, alice.id, messageId))
 
         // A bundle without one-time prekeys still works (three agreements).
         val without = say(E2eeProtocol.initiate(alice.identity, bob.bundle(withOneTimeKey = false), alice.id, bob.id), "no otk")
         assertNull(without.otk)
         assertTrue(without.carriesHandshake)
-        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, without, bob.id, alice.id))
-        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, null, without, bob.id, alice.id)
+        assertNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, without, bob.id, alice.id, messageId))
+        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, null, without, bob.id, alice.id, messageId)
         assertEquals("no otk", text(accepted?.plaintext))
     }
 
@@ -266,14 +404,14 @@ class E2eeProtocolTest {
         val bob = Party("bob")
         val first = say(E2eeProtocol.initiate(alice.identity, bob.bundle(), alice.id, bob.id), "hi")
         val rotated = E2eeProtocol.generatePrekeyPair()
-        assertNull(E2eeProtocol.openFirst(bob.identity, rotated, bob.otk.private, first, bob.id, alice.id))
+        assertNull(E2eeProtocol.openFirst(bob.identity, rotated, bob.otk.private, first, bob.id, alice.id, messageId))
         assertNull(
             E2eeProtocol.openFirst(
                 bob.identity, bob.prekey, bob.otk.private,
-                first.copy(spk = E2eeProtocol.keyReference(rotated.public)), bob.id, alice.id,
+                first.copy(spk = E2eeProtocol.keyReference(rotated.public)), bob.id, alice.id, messageId,
             ),
         )
-        assertNotNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id))
+        assertNotNull(E2eeProtocol.openFirst(bob.identity, bob.prekey, bob.otk.private, first, bob.id, alice.id, messageId))
     }
 
     @Test
@@ -445,11 +583,11 @@ class E2eeProtocolTest {
         // Boundaries: empty, exactly one block, one byte over.
         for (size in listOf(0, 1, 127, 128, 129, 5000)) {
             val payload = ByteArray(size) { (it % 251).toByte() }
-            assertArrayEquals(payload, E2eeProtocol.open(alice, E2eeProtocol.seal(bob, payload)))
+            assertArrayEquals(payload, E2eeProtocol.open(alice, E2eeProtocol.seal(bob, payload, messageId), messageId))
         }
         // Trailing zero bytes are content, not padding.
         val zeros = ByteArray(40)
-        assertArrayEquals(zeros, E2eeProtocol.open(alice, E2eeProtocol.seal(bob, zeros)))
+        assertArrayEquals(zeros, E2eeProtocol.open(alice, E2eeProtocol.seal(bob, zeros, messageId), messageId))
     }
 
     @Test

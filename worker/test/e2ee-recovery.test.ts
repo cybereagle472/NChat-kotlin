@@ -84,17 +84,21 @@ function get(path: string, token: string) {
   return SELF.fetch(`https://example.test${path}`, { headers: headers(token) });
 }
 
+/** The identity key each account registered last — the installation that uploads its prekeys. */
+const registered = new Map<string, string>();
+
 async function register(user: User, identity?: CryptoKeyPair) {
   const keys = await registration(identity);
   const response = await post('/keys/register', user.token, keys.body);
   expect(response.status).toBe(200);
+  registered.set(user.id, keys.identityPub);
   return keys;
 }
 
 async function uploadPrekeys(user: User, count: number) {
   const keys: string[] = [];
   for (let i = 0; i < count; i++) keys.push(await publicKey(await newKeyPair()));
-  const response = await post('/keys/prekeys', user.token, { public_keys: keys });
+  const response = await post('/keys/prekeys', user.token, { identity_public_key: registered.get(user.id), public_keys: keys });
   expect(response.status).toBe(201);
   return keys;
 }
@@ -165,11 +169,13 @@ describe('a new identity key discards stale one-time prekeys', () => {
     expect(await remaining(alice)).toBe(3);
   }, 60000);
 
-  it('keeps prekeys uploaded before the very first registration', async () => {
+  it('keeps them when the same installation registers again between two uploads', async () => {
     const alice = await signup('alice');
+    const first = await register(alice);
     await uploadPrekeys(alice, 2);
-    await register(alice);
-    expect(await remaining(alice)).toBe(2);
+    expect((await post('/keys/register', alice.token, first.body)).status).toBe(200);
+    await uploadPrekeys(alice, 1);
+    expect(await remaining(alice)).toBe(3);
   }, 60000);
 
   it('never touches another account', async () => {

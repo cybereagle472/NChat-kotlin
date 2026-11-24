@@ -87,7 +87,7 @@ class E2eeClientTest {
         val identityKey: String get() = encodeBase64(identity!!.identityPublic)
 
         /** A fresh client over this device's storage — what an app restart produces. */
-        fun client(server: Server, archiveAt: File = archiveDirectory) = E2eeClient(
+        fun client(server: Server, archiveAt: File = archiveDirectory, prepare: suspend () -> Unit = {}) = E2eeClient(
             localId = id,
             store = store,
             archive = E2eeArchive(archiveAt, archiveKey),
@@ -97,6 +97,7 @@ class E2eeClientTest {
             },
             signedPrekey = { prekey },
             fetchBundle = { server.bundle(it) },
+            prepare = prepare,
         )
     }
 
@@ -162,7 +163,7 @@ class E2eeClientTest {
         val sealed = runBlocking { a.seal("bob", "c-first", E2eePayload.text("hello bob")) }!!
         assertFalse(sealed.envelope.contains("hello bob"))
         assertEquals("the envelope says whose keys it was sealed for", bob.identityKey, sealed.recipientIdentity)
-        assertEquals("hello bob", b.reveal("alice", "s-first", null, mine = false, envelope = sealed.envelope)?.body)
+        assertEquals("hello bob", b.reveal("alice", "s-first", "c-first", mine = false, envelope = sealed.envelope)?.body)
 
         for (round in 0 until 5) {
             assertEquals("b$round", read(a, send(b, "bob", "alice", "b$round")))
@@ -187,14 +188,51 @@ class E2eeClientTest {
     }
 
     @Test
-    fun withoutAnIdentityNothingIsFetchedAndNothingIsSent() {
+    fun aDeviceWithoutRegisteredKeysSendsPlaintextOnlyWhereNothingWasEverEncrypted() {
+        // Until this device's own keys are registered nobody can seal for it,
+        // so it does not seal either — the app keeps working exactly as it
+        // did before encryption existed. A chat that HAS been encrypted is
+        // different: it never goes back.
         val server = Server()
         val alice = server.install("alice")
         val bob = server.install("bob")
+        server.install("carol")
+        send(alice.client(server), "alice", "bob", "sealed")
+
         alice.identity = null
-        sealFails(alice.client(server), "bob", "a device without an identity key cannot seal")
-        assertEquals("a bundle we cannot use must not be fetched", 0, server.fetches.get())
-        assertEquals(5, bob.published.size)
+        val a = alice.client(server)
+        val fetches = server.fetches.get()
+        assertNull(runBlocking { a.seal("carol", "c-plain", E2eePayload.text("hi carol")) })
+        assertEquals("a bundle this device cannot use must not cost the peer a one-time prekey", fetches, server.fetches.get())
+        assertNull(alice.store.loadPeer("carol"))
+
+        // An established session needs no identity key: it keeps sealing.
+        assertEquals("still sealed", read(bob.client(server), send(a, "alice", "bob", "still sealed")))
+        // Without a usable session, and without keys to start one: an error, never plaintext.
+        a.retireSessions("bob")
+        sealFails(a, "bob", "a chat that was encrypted must not fall back to plaintext")
+        assertEquals(fetches, server.fetches.get())
+    }
+
+    @Test
+    fun registrationGetsItsChanceBeforeTheFirstSeal() {
+        // Right after sign-in the keys may still be on their way to the server.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val keys = alice.identity
+        alice.identity = null
+        var prepared = 0
+        val a = alice.client(server, prepare = {
+            prepared++
+            alice.identity = keys
+        })
+        val first = send(a, "alice", "bob", "sealed from the first message")
+        assertEquals(1, prepared)
+        assertEquals("sealed from the first message", read(bob.client(server), first))
+        // Sealing on an existing session is local work: no waiting, no registration check.
+        send(a, "alice", "bob", "again")
+        assertEquals(1, prepared)
     }
 
     @Test
@@ -218,10 +256,18 @@ class E2eeClientTest {
         val a = server.install("alice").client(server)
         val b = server.install("bob").client(server)
         val sealed = runBlocking { a.seal("bob", "c-1", E2eePayload(42, "{\"future\":true}")) }!!
-        val opened = b.reveal("alice", "s-1", null, mine = false, envelope = sealed.envelope)
+        val opened = b.reveal("alice", "s-1", "c-1", mine = false, envelope = sealed.envelope)
         assertEquals(42, opened?.type)
         assertEquals("{\"future\":true}", opened?.body)
         assertEquals(42, a.reveal("bob", "s-1", "c-1", mine = true, envelope = sealed.envelope)?.type)
+
+        // A shared position travels as a sealed payload of its own type.
+        val position = runBlocking { a.seal("bob", "c-2", E2eePayload(E2eePayload.LOCATION, "24.860700,67.001100")) }!!
+        val seen = b.reveal("alice", "s-2", "c-2", mine = false, envelope = position.envelope)
+        assertEquals(E2eePayload.LOCATION, seen?.type)
+        assertEquals("24.860700,67.001100", seen?.body)
+        assertFalse(position.envelope.contains("24.86"))
+        assertNotEquals(E2eePayload.TEXT, E2eePayload.LOCATION)
     }
 
     // ---------------------------------------------------------- no downgrade
@@ -379,12 +425,12 @@ class E2eeClientTest {
         assertEquals("second", read(b, second))
 
         // The server (or anyone who can inject rows) presents old envelopes as new messages.
-        assertNull(b.reveal("alice", "s-replay-1", null, mine = false, envelope = second.envelope))
-        assertNull(b.reveal("alice", "s-replay-2", null, mine = false, envelope = first.envelope))
-        assertNull(bob.client(server).reveal("alice", "s-replay-3", null, mine = false, envelope = first.envelope))
+        assertNull(b.reveal("alice", "s-replay-1", second.clientId, mine = false, envelope = second.envelope))
+        assertNull(b.reveal("alice", "s-replay-2", first.clientId, mine = false, envelope = first.envelope))
+        assertNull(bob.client(server).reveal("alice", "s-replay-3", first.clientId, mine = false, envelope = first.envelope))
         // …and as messages from somebody else.
         server.install("carol")
-        assertNull(b.reveal("carol", first.id, null, mine = false, envelope = first.envelope))
+        assertNull(b.reveal("carol", first.id, first.clientId, mine = false, envelope = first.envelope))
         // The originals are untouched.
         assertEquals("first", read(b, first))
         assertEquals("second", read(b, second))
@@ -399,13 +445,13 @@ class E2eeClientTest {
         val first = send(a, "alice", "bob", "first")
         assertFalse("this handshake has no one-time prekey to burn", first.envelope.contains("\"otk\""))
         assertEquals("first", read(bob.client(server), first))
-        assertNull(bob.client(server).reveal("alice", "s-replay-1", null, mine = false, envelope = first.envelope))
+        assertNull(bob.client(server).reveal("alice", "s-replay-1", first.clientId, mine = false, envelope = first.envelope))
 
         // Even when the session it created is long gone, the handshake is remembered.
         val record = bob.store.loadPeer("alice")!!
         record.sessions.clear()
         bob.store.savePeer("alice", record, durable = true)
-        assertNull(bob.client(server).reveal("alice", "s-replay-2", null, mine = false, envelope = first.envelope))
+        assertNull(bob.client(server).reveal("alice", "s-replay-2", first.clientId, mine = false, envelope = first.envelope))
         assertTrue(bob.store.loadPeer("alice")!!.sessions.isEmpty())
     }
 
@@ -430,7 +476,7 @@ class E2eeClientTest {
             "x".repeat(200_000),
         )
         for ((index, envelope) in hostile.withIndex()) {
-            assertNull("hostile envelope #$index must not open", b.reveal("alice", "s-h$index", null, mine = false, envelope = envelope))
+            assertNull("hostile envelope #$index must not open", b.reveal("alice", "s-h$index", genuine.clientId, mine = false, envelope = envelope))
         }
         assertEquals("junk must not spend a one-time prekey", 5, bob.store.oneTimeKeyCount())
         assertNull("junk must not create state", bob.store.loadPeer("alice"))
@@ -512,6 +558,439 @@ class E2eeClientTest {
         assertEquals("after", read(a, send(bob.client(server), "bob", "alice", "after")))
     }
 
+    // ------------------------------------------- bound to its own message
+
+    @Test
+    fun envelopeMovedToAnotherMessageDoesNotOpen() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val one = send(a, "alice", "bob", "one")
+        val two = send(a, "alice", "bob", "two")
+        assertEquals("one", read(b, one))
+
+        // The server serves message two's envelope in a row it made up, in a
+        // row without a client id, and as an "edit" of message one.
+        val writes = bob.vault.sessionWrites
+        assertNull(b.reveal("alice", "s-made-up", "c-made-up", mine = false, envelope = two.envelope))
+        assertNull(b.reveal("alice", "s-no-client-id", null, mine = false, envelope = two.envelope))
+        assertNull(b.reveal("alice", one.id, one.clientId, mine = false, envelope = two.envelope))
+        assertEquals("a mis-slotted envelope must not spend its key", writes, bob.vault.sessionWrites)
+
+        assertEquals("two", read(b, two))
+        assertEquals("one", read(b, one))
+    }
+
+    @Test
+    fun anEditOpensOnlyAsTheContentOfTheMessageItReplaces() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val original = send(a, "alice", "bob", "see you at nien")
+        assertEquals("see you at nien", read(b, original))
+
+        // The row keeps its ids; only its envelope is replaced.
+        val edit = runBlocking { a.seal("bob", original.clientId, E2eePayload.text("see you at nine"), editOf = original.id) }!!
+        assertNotEquals(original.envelope, edit.envelope)
+        // Served as a message of its own — with or without the original's client id — it is nothing.
+        assertNull(b.reveal("alice", "s-another", original.clientId, mine = false, envelope = edit.envelope))
+        assertNull(b.reveal("alice", "s-another", null, mine = false, envelope = edit.envelope))
+        assertEquals("see you at nine", b.reveal("alice", original.id, original.clientId, mine = false, envelope = edit.envelope)?.body)
+        assertEquals("see you at nine", a.reveal("bob", original.id, original.clientId, mine = true, envelope = edit.envelope)?.body)
+
+        // A new message cannot pass for an edit, even when its client id is chosen to look like a server id.
+        val lookalike = runBlocking { a.seal("bob", original.id, E2eePayload.text("not an edit")) }!!
+        assertNull(b.reveal("alice", original.id, original.clientId, mine = false, envelope = lookalike.envelope))
+
+        // Edits go through the same send step as new messages.
+        val again = runBlocking {
+            a.sendSealed("bob", original.clientId, E2eePayload.text("see you at nine sharp"), { false }, editOf = original.id) { it }
+        }!!
+        assertEquals("see you at nine sharp", b.reveal("alice", original.id, original.clientId, mine = false, envelope = again.envelope)?.body)
+
+        // Every version stays readable after a restart, each under its own envelope.
+        val restartedB = bob.client(server)
+        val restartedA = alice.client(server)
+        assertEquals("see you at nine", restartedB.reveal("alice", original.id, original.clientId, mine = false, envelope = edit.envelope)?.body)
+        assertEquals("see you at nien", read(restartedB, original))
+        assertEquals("see you at nine", restartedA.reveal("bob", original.id, original.clientId, mine = true, envelope = edit.envelope)?.body)
+        assertEquals("see you at nien", readOwn(restartedA, original))
+    }
+
+    @Test
+    fun whatAMessageRepliesToTravelsInsideTheEnvelope() {
+        // The server stores no reply link for a sealed message: it can neither read nor rewrite it.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val question = send(a, "alice", "bob", "nine or ten?")
+        assertEquals("nine or ten?", read(b, question))
+
+        val sealed = runBlocking { b.seal("alice", "c-answer", E2eePayload.text("nine", replyTo = question.id)) }!!
+        assertFalse("the id of the quoted message must not be readable on the wire", sealed.envelope.contains(question.id))
+        val answer = Wire("s-answer", "c-answer", "bob", "alice", sealed.envelope)
+        for (reader in listOf(a, alice.client(server))) {
+            val shown = reader.reveal("bob", answer.id, answer.clientId, mine = false, envelope = answer.envelope)!!
+            assertEquals("nine", shown.body)
+            assertEquals(question.id, shown.replyTo)
+        }
+        for (author in listOf(b, bob.client(server))) {
+            assertEquals(question.id, author.reveal("alice", answer.id, answer.clientId, mine = true, envelope = answer.envelope)?.replyTo)
+        }
+        assertNull(a.reveal("bob", question.id, question.clientId, mine = true, envelope = question.envelope)?.replyTo)
+    }
+
+    // ------------------------------------------------------- seal and send
+
+    private class KeysChanged : Exception("the recipient has registered different keys")
+
+    @Test
+    fun sendSealedDoesNotSendWhenThePeerHasNoKeys() {
+        val server = Server()
+        val a = server.install("alice").client(server)
+        var calls = 0
+        val result = runBlocking {
+            a.sendSealed("old-client", "c-1", E2eePayload.text("hi"), { it is KeysChanged }) {
+                calls++
+                "stored"
+            }
+        }
+        assertNull("null tells the caller to send plaintext", result)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun sendSealedStartsANewSessionWhenThePeersKeysHaveChanged() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        val newBob = server.install("bob", installation = "2")
+
+        val attempts = ArrayList<E2eeClient.Sealed>()
+        val result = runBlocking {
+            a.sendSealed("bob", "c-after", E2eePayload.text("after the reinstall"), { it is KeysChanged }) { sealed ->
+                attempts += sealed
+                // What the server does: refuse an envelope sealed for keys the recipient no longer has.
+                if (sealed.recipientIdentity != newBob.identityKey) throw KeysChanged()
+                "stored"
+            }
+        }
+        assertEquals("stored", result)
+        assertEquals(2, attempts.size)
+        assertEquals(oldBob.identityKey, attempts[0].recipientIdentity)
+        assertEquals(newBob.identityKey, attempts[1].recipientIdentity)
+        val stored = attempts[1].envelope
+        assertEquals("after the reinstall", newBob.client(server).reveal("alice", "s-after", "c-after", mine = false, envelope = stored)?.body)
+        assertEquals("after the reinstall", a.reveal("bob", "s-after", "c-after", mine = true, envelope = stored)?.body)
+
+        // From here on it is an ordinary session: one attempt per message.
+        attempts.clear()
+        runBlocking { a.sendSealed("bob", "c-next", E2eePayload.text("next"), { it is KeysChanged }) { attempts += it } }
+        assertEquals(1, attempts.size)
+    }
+
+    @Test
+    fun sendSealedTriesAgainOnceAndOnlyForChangedKeys() {
+        val server = Server()
+        val alice = server.install("alice")
+        server.install("bob")
+        val a = alice.client(server)
+        send(a, "alice", "bob", "first")
+
+        // A server that keeps refusing: two attempts, then the failure is the caller's.
+        var attempts = 0
+        try {
+            runBlocking {
+                a.sendSealed("bob", "c-1", E2eePayload.text("x"), { it is KeysChanged }) {
+                    attempts++
+                    throw KeysChanged()
+                }
+            }
+            fail("a second refusal must reach the caller")
+        } catch (expected: KeysChanged) {
+            // intended
+        }
+        assertEquals(2, attempts)
+
+        // Any other failure is not a reason to throw sessions away or to try again.
+        val fetches = server.fetches.get()
+        attempts = 0
+        try {
+            runBlocking {
+                a.sendSealed("bob", "c-2", E2eePayload.text("x"), { it is KeysChanged }) {
+                    attempts++
+                    throw IOException("no connection")
+                }
+            }
+            fail("a transport failure must reach the caller")
+        } catch (expected: IOException) {
+            // intended
+        }
+        assertEquals(1, attempts)
+        send(a, "alice", "bob", "the session is still in use")
+        assertEquals("no new session was started", fetches, server.fetches.get())
+    }
+
+    // -------------------------------------------------------------- closing
+
+    // ------------------------------------------- history as the app meets it
+
+    @Test
+    fun aWeekOfUnreadMessagesOpensFromTheNewestPageBackwards() {
+        // The chat list shows the newest message; opening the chat loads the newest
+        // page; scrolling back loads older ones. The app may restart at any point.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val sent = (0 until 650).map { send(a, "alice", "bob", "message $it") }
+
+        var b = bob.client(server)
+        assertEquals("message 649", read(b, sent[649]))
+        for (page in 6 downTo 0) {
+            if (page % 2 == 0) b = bob.client(server)
+            val rows = sent.subList(page * 100, minOf(page * 100 + 100, 650))
+            val shown = b.batch { rows.map { read(b, it) } }
+            assertEquals(rows.indices.map { "message ${page * 100 + it}" }, shown)
+        }
+        // From now on everything is answered from the phone's own copy, in any order, without the ratchet.
+        val later = bob.client(server)
+        val writes = bob.vault.sessionWrites
+        for (index in listOf(649, 0, 333, 100, 99)) assertEquals("message $index", read(later, sent[index]))
+        assertEquals(writes, bob.vault.sessionWrites)
+        // And the conversation continues in both directions.
+        val reply = send(later, "bob", "alice", "read them all")
+        assertEquals("read them all", read(a, reply))
+        assertEquals("good", read(later, send(a, "alice", "bob", "good")))
+    }
+
+    @Test
+    fun theLongestTextStillFitsOnceItIsSealed() {
+        // The server takes 65,536 bytes of text and 131,072 bytes of envelope
+        // (worker/src/lib/input.ts): whatever may be sent in the clear must fit sealed.
+        val server = Server()
+        val longest = listOf("x".repeat(65_536), "😀".repeat(16_384), "\u0000\"\\".repeat(21_845) + "x")
+        for ((index, text) in longest.withIndex()) {
+            assertEquals(65_536, text.toByteArray(Charsets.UTF_8).size)
+            val alice = server.install("alice-$index")
+            val bob = server.install("bob-$index")
+            // The first message of a conversation carries the handshake: the largest envelope there is.
+            val sealed = runBlocking {
+                alice.client(server).seal("bob-$index", "c".repeat(64), E2eePayload.text(text, replyTo = "m".repeat(64)))
+            }!!
+            val size = sealed.envelope.toByteArray(Charsets.UTF_8).size
+            assertTrue("the envelope is $size bytes", size <= 131_072)
+            val opened = bob.client(server).reveal("alice-$index", "s-1", "c".repeat(64), mine = false, envelope = sealed.envelope)
+            assertEquals(text, opened?.body)
+        }
+    }
+
+    // --------------------------------------------------------- sealed once
+
+    private fun number(envelope: String): Int = Regex("\"n\":(\\d+)").find(envelope)!!.groupValues[1].toInt()
+
+    /** One attempt to send: [arrives] says whether the request reaches the server. */
+    private fun attempt(client: E2eeClient, to: String, clientId: String, text: String, arrives: Boolean, editOf: String? = null): String {
+        var sent = ""
+        try {
+            runBlocking {
+                client.sendSealed(to, clientId, E2eePayload.text(text), { false }, editOf) { sealed ->
+                    sent = sealed.envelope
+                    if (!arrives) throw IOException("connection lost")
+                    "stored"
+                }
+            }
+        } catch (expected: IOException) {
+            assertFalse(arrives)
+        }
+        return sent
+    }
+
+    @Test
+    fun aRetrySendsTheSameEnvelopeInsteadOfSealingAgain() {
+        // Every sealing uses up a message number, and a peer refuses a message
+        // that is too many numbers ahead: retries must not eat numbers.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val hello = send(a, "alice", "bob", "hello")
+        assertEquals("hello", read(b, hello))
+
+        val first = attempt(a, "bob", "c-flaky", "are you there?", arrives = false)
+        repeat(5) { assertEquals(first, attempt(a, "bob", "c-flaky", "are you there?", arrives = false)) }
+        // The app is killed and started again: still the same envelope.
+        val restarted = alice.client(server)
+        assertEquals(first, attempt(restarted, "bob", "c-flaky", "are you there?", arrives = false))
+        assertEquals(first, attempt(restarted, "bob", "c-flaky", "are you there?", arrives = true))
+        assertEquals("are you there?", b.reveal("alice", "s-flaky", "c-flaky", mine = false, envelope = first)?.body)
+        assertEquals("are you there?", restarted.reveal("bob", "s-flaky", "c-flaky", mine = true, envelope = first)?.body)
+
+        // Eight attempts cost one number: the next message is the very next one.
+        val next = attempt(restarted, "bob", "c-next", "good", arrives = true)
+        assertEquals(number(first) + 1, number(next))
+        assertEquals("good", b.reveal("alice", "s-next", "c-next", mine = false, envelope = next)?.body)
+    }
+
+    @Test
+    fun aKeptEnvelopeIsOnlyUsedForTheSameContentOfTheSameMessage() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val original = send(a, "alice", "bob", "see you at nien")
+        assertEquals("see you at nien", read(b, original))
+
+        // An edit that did not get through, then a different correction of the same message.
+        val lost = attempt(a, "bob", original.clientId, "see you at nine", arrives = false, editOf = original.id)
+        val second = attempt(a, "bob", original.clientId, "see you at 9", arrives = true, editOf = original.id)
+        assertNotEquals(lost, second)
+        assertEquals("see you at 9", b.reveal("alice", original.id, original.clientId, mine = false, envelope = second)?.body)
+
+        // Another message with the same words is another message.
+        val one = attempt(a, "bob", "c-one", "ok", arrives = false)
+        val two = attempt(a, "bob", "c-two", "ok", arrives = false)
+        assertNotEquals(one, two)
+        // …and a reply is not the same content as the bare text.
+        val bare = runBlocking { a.seal("bob", "c-three", E2eePayload.text("ok")) }!!.envelope
+        val reply = runBlocking { a.seal("bob", "c-three", E2eePayload.text("ok", replyTo = original.id)) }!!.envelope
+        assertNotEquals(bare, reply)
+
+        // Once the server has an envelope it is not kept: nothing would ever ask for it again.
+        val delivered = attempt(a, "bob", "c-four", "done", arrives = true)
+        assertNotEquals(delivered, attempt(a, "bob", "c-four", "done", arrives = true))
+    }
+
+    @Test
+    fun aKeptEnvelopeIsNotSentToKeysThePeerNoLongerHas() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val hello = send(a, "alice", "bob", "hello")
+        assertEquals("hello", read(bob.client(server), hello))
+        val waiting = attempt(a, "bob", "c-waiting", "still there?", arrives = false)
+
+        // Bob reinstalls; the server refuses what was sealed for his old keys.
+        val reinstalled = server.install("bob", installation = "2")
+        val current = reinstalled.identityKey
+        val offered = ArrayList<E2eeClient.Sealed>()
+        runBlocking {
+            a.sendSealed("bob", "c-waiting", E2eePayload.text("still there?"), { it is KeysChanged }) { sealed ->
+                offered += sealed
+                if (sealed.recipientIdentity != current) throw KeysChanged()
+                "stored"
+            }
+        }
+        assertEquals(listOf(waiting, offered[1].envelope), offered.map { it.envelope })
+        assertNotEquals(waiting, offered[1].envelope)
+        assertEquals(current, offered[1].recipientIdentity)
+        assertEquals(
+            "still there?",
+            reinstalled.client(server).reveal("alice", "s-waiting", "c-waiting", mine = false, envelope = offered[1].envelope)?.body,
+        )
+
+        // The other way round: the peer's new installation writes first. What was
+        // waiting for the old keys is sealed again for the new ones, unprompted.
+        val carol = server.install("carol")
+        val c = carol.client(server)
+        val dave = server.install("dave")
+        val toDave = send(c, "carol", "dave", "hi dave")
+        assertEquals("hi dave", read(dave.client(server), toDave))
+        val stale = attempt(c, "dave", "c-stale", "lunch?", arrives = false)
+        val newDave = server.install("dave", installation = "2")
+        val fromNewDave = send(newDave.client(server), "dave", "carol", "new phone")
+        assertEquals("new phone", read(c, fromNewDave))
+        val fresh = attempt(c, "dave", "c-stale", "lunch?", arrives = true)
+        assertNotEquals(stale, fresh)
+        assertEquals("lunch?", newDave.client(server).reveal("carol", "s-stale", "c-stale", mine = false, envelope = fresh)?.body)
+    }
+
+    @Test
+    fun keptEnvelopesAreBounded() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("hello", read(bob.client(server), send(a, "alice", "bob", "hello")))
+
+        val envelopes = (1..20).map { attempt(a, "bob", "c-queued-$it", "message $it", arrives = false) }
+        // The newest are still there after a restart …
+        val restarted = alice.client(server)
+        for (index in 5..20) {
+            assertEquals(envelopes[index - 1], attempt(restarted, "bob", "c-queued-$index", "message $index", arrives = false))
+        }
+        // … the oldest were let go, and are simply sealed again.
+        assertNotEquals(envelopes[0], attempt(restarted, "bob", "c-queued-1", "message 1", arrives = false))
+
+        // Size counts too: one very long message does not push the record past its limit.
+        val long = "x".repeat(60_000)
+        repeat(6) { attempt(restarted, "bob", "c-long-$it", long, arrives = false) }
+        val stored = alice.vault.entries.filterKeys { it.startsWith("e2ee.session.") }.values.sumOf { it.length }
+        assertTrue("the session record grew to $stored characters", stored < 400_000)
+    }
+
+    @Test
+    fun aKeptEnvelopeStillComesWithTheSendersOwnCopy() {
+        // The archive is the only place the sender can read its own message from.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("hello", read(bob.client(server), send(a, "alice", "bob", "hello")))
+        val first = attempt(a, "bob", "c-flaky", "kept", arrives = false)
+
+        // The archive is lost between the attempts (a restore, a cleaner app).
+        val elsewhere = alice.client(server, archiveAt = folder.newFolder())
+        assertEquals(first, attempt(elsewhere, "bob", "c-flaky", "kept", arrives = true))
+        assertEquals("kept", elsewhere.reveal("bob", "s-flaky", "c-flaky", mine = true, envelope = first)?.body)
+    }
+
+    @Test
+    fun aClosedClientReadsNothingAndWritesNothing() {
+        // Signing out wipes the account's keys and history; a client that is
+        // still referenced somewhere must not write any of it back.
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val opened = send(a, "alice", "bob", "opened")
+        assertEquals("opened", read(b, opened))
+        val unopened = send(a, "alice", "bob", "unopened")
+
+        b.close()
+        val entries = LinkedHashMap(bob.vault.entries)
+        val files = bob.archiveDirectory.listFiles().orEmpty().associate { it.name to it.length() }
+        assertNull(read(b, opened))
+        assertNull(read(b, unopened))
+        try {
+            runBlocking { b.seal("alice", "c-closed", E2eePayload.text("x")) }
+            fail("a closed client must not seal")
+        } catch (expected: IllegalStateException) {
+            // intended
+        }
+        b.retireSessions("alice")
+        assertEquals("x", b.batch { "x" })
+        assertEquals(entries, bob.vault.entries)
+        assertEquals(files, bob.archiveDirectory.listFiles().orEmpty().associate { it.name to it.length() })
+
+        // Closing is about the object, not the data: a new client over the same storage carries on.
+        val reopened = bob.client(server)
+        assertEquals("opened", read(reopened, opened))
+        assertEquals("unopened", read(reopened, unopened))
+    }
+
     // ----------------------------------------------------- delivery disorder
 
     @Test
@@ -587,7 +1066,7 @@ class E2eeClientTest {
 
         val welcome = runBlocking { a.seal("bob", "c-welcome", E2eePayload.text("welcome back")) }!!
         assertEquals("alice now seals for the new installation", newBob.identityKey, welcome.recipientIdentity)
-        assertEquals("welcome back", newB.reveal("alice", "s-welcome", null, mine = false, envelope = welcome.envelope)?.body)
+        assertEquals("welcome back", newB.reveal("alice", "s-welcome", "c-welcome", mine = false, envelope = welcome.envelope)?.body)
 
         // Nothing alice had is lost; nothing the old phone had is readable on the new one.
         assertEquals("first", readOwn(a, first))
@@ -610,13 +1089,13 @@ class E2eeClientTest {
         val stale = runBlocking { a.seal("bob", "c-retry", E2eePayload.text("are you there?")) }!!
         assertEquals(oldBob.identityKey, stale.recipientIdentity)
         assertNotEquals(newBob.identityKey, stale.recipientIdentity)
-        assertNull(newBob.client(server).reveal("alice", "s-stale", null, mine = false, envelope = stale.envelope))
+        assertNull(newBob.client(server).reveal("alice", "s-stale", "c-retry", mine = false, envelope = stale.envelope))
 
         a.retireSessions("bob")
         val fresh = runBlocking { a.seal("bob", "c-retry", E2eePayload.text("are you there?")) }!!
         assertEquals(newBob.identityKey, fresh.recipientIdentity)
         val newB = newBob.client(server)
-        assertEquals("are you there?", newB.reveal("alice", "s-fresh", null, mine = false, envelope = fresh.envelope)?.body)
+        assertEquals("are you there?", newB.reveal("alice", "s-fresh", "c-retry", mine = false, envelope = fresh.envelope)?.body)
         assertEquals("yes", read(a, send(newB, "bob", "alice", "yes")))
 
         // Her own message is found under the envelope the server actually stored, and history is intact.

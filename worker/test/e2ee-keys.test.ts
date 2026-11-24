@@ -82,7 +82,7 @@ describe('register + bundle round-trip', () => {
 
     const otk1 = await makeKeys();
     const otk2 = await makeKeys();
-    const refill = await post('/keys/prekeys', alice.token, { public_keys: [otk1.identityPub, otk2.identityPub] });
+    const refill = await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [otk1.identityPub, otk2.identityPub] });
     expect(refill.status).toBe(201);
     expect(await refill.json()).toEqual({ ok: true, stored: 2, ids: [expect.any(Number), expect.any(Number)] });
 
@@ -162,23 +162,23 @@ describe('one-time prekey refill', () => {
       signed_prekey_signature: keys.signature,
     });
 
-    expect((await post('/keys/prekeys', alice.token, { public_keys: [] })).status).toBe(400);
-    expect((await post('/keys/prekeys', alice.token, { public_keys: 'nope' })).status).toBe(400);
-    expect((await post('/keys/prekeys', alice.token, { public_keys: [b64(new Uint8Array(5))] })).status).toBe(400);
+    expect((await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [] })).status).toBe(400);
+    expect((await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: 'nope' })).status).toBe(400);
+    expect((await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [b64(new Uint8Array(5))] })).status).toBe(400);
     const tooMany = Array.from({ length: 101 }, () => keys.identityPub);
-    expect((await post('/keys/prekeys', alice.token, { public_keys: tooMany })).status).toBe(400);
-    expect((await post('/keys/prekeys', null, { public_keys: [keys.identityPub] })).status).toBe(401);
+    expect((await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: tooMany })).status).toBe(400);
+    expect((await post('/keys/prekeys', null, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub] })).status).toBe(401);
 
     // Seed the cap directly:100 stored → one more must be refused...
     for (let i = 0; i < 100; i++) {
       await env.DB.prepare('INSERT INTO one_time_prekeys (user_id, public_key) VALUES (?, ?)')
         .bind(alice.id, keys.identityPub).run();
     }
-    expect((await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] })).status).toBe(400);
+    expect((await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub] })).status).toBe(400);
 
     // ...and after one is consumed, room exists again.
     await get(`/keys/bundle/${alice.id}`, alice.token);
-    const after = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] });
+    const after = await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub] });
     expect(after.status).toBe(201);
     expect(await after.json()).toEqual({ ok: true, stored: 1, ids: [expect.any(Number)] });
   }, 60000);
@@ -207,8 +207,8 @@ describe('bundle edge cases', () => {
     }
 
     const [a, b] = await Promise.all([
-      post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] }),
-      post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub] }),
+      post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub] }),
+      post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub] }),
     ]);
     expect([a.status, b.status].sort()).toEqual([201, 400]);
     const count = (await env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
@@ -229,7 +229,7 @@ describe('bundle edge cases', () => {
     const expected = new Set<string>();
     for (let i = 0; i < 5; i++) {
       const k = await makeKeys();
-      await post('/keys/prekeys', alice.token, { public_keys: [k.identityPub] });
+      await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [k.identityPub] });
       expected.add(k.identityPub);
     }
 
@@ -263,9 +263,9 @@ describe('prekey status and refill ids', () => {
 
     const empty = await get('/keys/prekeys', alice.token);
     expect(empty.status).toBe(200);
-    expect(await empty.json()).toEqual({ remaining: 0 });
+    expect(await empty.json()).toEqual({ remaining: 0, identity_public_key: keys.identityPub });
 
-    const refill = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub, keys.prekeyPub] });
+    const refill = await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub, keys.prekeyPub] });
     expect(refill.status).toBe(201);
     const refillBody = await refill.json() as { ok: boolean; stored: number; ids: number[] };
     expect(refillBody.ok).toBe(true);
@@ -273,13 +273,13 @@ describe('prekey status and refill ids', () => {
     expect(refillBody.ids).toHaveLength(2);
     expect(refillBody.ids[1]).toBe(refillBody.ids[0] + 1);
 
-    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 2 });
+    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 2, identity_public_key: keys.identityPub });
 
     // The bundle pop consumes exactly the oldest id.
     const bundle = await get(`/keys/bundle/${alice.id}`, bob.token);
     const bundleBody = await bundle.json() as { one_time_prekey: { id: number } | null };
     expect(bundleBody.one_time_prekey!.id).toBe(refillBody.ids[0]);
-    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 1 });
+    expect(await (await get('/keys/prekeys', alice.token)).json()).toEqual({ remaining: 1, identity_public_key: keys.identityPub });
 
     expect((await get('/keys/prekeys', null as unknown as string)).status).toBe(401);
   }, 30000);
@@ -287,11 +287,16 @@ describe('prekey status and refill ids', () => {
   it('ids stay aligned with accepted keys when the cap truncates a batch', async () => {
     const alice = await signup('alice');
     const keys = await makeKeys();
+    await post('/keys/register', alice.token, {
+      identity_public_key: keys.identityPub,
+      signed_prekey_public: keys.prekeyPub,
+      signed_prekey_signature: keys.signature,
+    });
     for (let i = 0; i < 99; i++) {
       await env.DB.prepare('INSERT INTO one_time_prekeys (user_id, public_key) VALUES (?, ?)')
         .bind(alice.id, keys.identityPub).run();
     }
-    const refill = await post('/keys/prekeys', alice.token, { public_keys: [keys.identityPub, keys.prekeyPub] });
+    const refill = await post('/keys/prekeys', alice.token, { identity_public_key: keys.identityPub, public_keys: [keys.identityPub, keys.prekeyPub] });
     expect(refill.status).toBe(201);
     const body = await refill.json() as { stored: number; ids: number[] };
     expect(body.stored).toBe(1);
