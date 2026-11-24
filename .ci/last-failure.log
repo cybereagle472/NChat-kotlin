@@ -1,4 +1,4 @@
-run: 45354870011
+run: 45361569521
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -79,38 +79,118 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 > Task :app:bundleDebugClassesToRuntimeJar
 > Task :app:bundleDebugClassesToCompileJar
 
-> Task :app:compileDebugUnitTestKotlin
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:738:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeClientTest.kt:754:19 Returning type parameter has been inferred to Nothing implicitly. Please specify type arguments explicitly to hide this warning. Nothing can produce an exception at runtime.
-w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:417:13 Unsafe use of a nullable receiver of type File?
-
-> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
-> Task :app:processDebugUnitTestJavaRes
-
-> Task :app:testDebugUnitTest
-
-com.nchat.app.feature.chats.EncryptionMarksTest > everyKindIsMarkedSoThatACaptionIsNoWayAroundIt FAILED
-    java.lang.AssertionError at EncryptionMarksTest.kt:100
-
-com.nchat.app.feature.chats.EncryptionMarksTest > sealedHistoryThisPhoneHoldsNoKeysForStillSetsTheMeasure FAILED
-    java.lang.AssertionError at EncryptionMarksTest.kt:84
-
-231 tests completed, 2 failed
-
-> Task :app:testDebugUnitTest FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795508320232.json
+> Task :app:compileDebugUnitTestKotlin FAILED
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:80:64 Unresolved reference: PHOTO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:80:93 Cannot find a parameter with this name: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:81:34 Unresolved reference: PHOTO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:84:37 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:86:64 Unresolved reference: VOICE
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:86:75 Cannot find a parameter with this name: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:87:34 Unresolved reference: VOICE
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:90:37 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:92:75 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:44 Unresolved reference: PHOTO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:55 Cannot find a parameter with this name: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:93:72 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:31 Unresolved reference: PHOTO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:50 Unresolved reference: VIDEO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:69 Unresolved reference: VOICE
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:97:88 Unresolved reference: DOCUMENT
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:44 Unresolved reference: DOCUMENT
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:58 Cannot find a parameter with this name: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:100:80 Unresolved reference: isAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:101:44 Unresolved reference: VIDEO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:101:55 Unresolved reference: isAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:102:43 Unresolved reference: isAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:103:62 Unresolved reference: isAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:104:99 Unresolved reference: isAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:156:57 Unresolved reference: VIDEO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:156:79 Cannot find a parameter with this name: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:159:60 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:163:34 Unresolved reference: VIDEO
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:166:37 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeArchiveTest.kt:167:47 Unresolved reference: attachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:49:13 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:52:49 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:63:85 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:68:26 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:75:66 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:85:26 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:86:26 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:87:52 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:107:9 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:109:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:116:13 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:122:9 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:123:40 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:132:21 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:133:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:135:34 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:136:83 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:137:37 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:150:17 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:151:17 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:156:17 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:160:24 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:160:51 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:168:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:169:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:175:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:180:42 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:182:34 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:188:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:190:39 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:192:38 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:193:43 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:195:59 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:196:44 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:197:35 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:198:40 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:199:31 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:200:33 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:206:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:211:42 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:212:37 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:213:40 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:215:21 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:217:47 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:218:34 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:224:22 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:225:62 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:225:95 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:226:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:228:45 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:230:21 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:235:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:236:55 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:236:81 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:238:13 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:238:74 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:248:23 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:258:23 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:268:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:268:50 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:278:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:279:20 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:294:61 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:296:48 Unresolved reference: E2eeAttachment
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeAttachmentTest.kt:298:21 Unresolved reference: E2eeAttachment
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795511054948.json
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:testDebugUnitTest'.
-> There were failing tests. See the report at: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/build/reports/tests/testDebugUnitTest/index.html
+Execution failed for task ':app:compileDebugUnitTestKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
 
 * Try:
+> Run with --info or --debug option to get more log output.
 > Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
 
 * Exception is:
-org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:testDebugUnitTest'.
+org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileDebugUnitTestKotlin'.
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:149)
 	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:282)
 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:147)
@@ -141,20 +221,18 @@ org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:tes
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
-Caused by: org.gradle.api.internal.exceptions.MarkedVerificationException: There were failing tests. See the report at: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/build/reports/tests/testDebugUnitTest/index.html
-	at org.gradle.api.tasks.testing.AbstractTestTask.handleTestFailures(AbstractTestTask.java:621)
-	at org.gradle.api.tasks.testing.AbstractTestTask.handleCollectedResults(AbstractTestTask.java:483)
-	at org.gradle.api.tasks.testing.AbstractTestTask.executeTests(AbstractTestTask.java:478)
-	at org.gradle.api.tasks.testing.Test.executeTests(Test.java:690)
-	at com.android.build.gradle.tasks.factory.AndroidUnitTest.executeTests(AndroidUnitTest.java:119)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
-	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.doExecute(StandardTaskAction.java:58)
-	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
-	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
-	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:248)
+Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:283)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
+	at org.gradle.internal.Factories$1.create(Factories.java:31)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:321)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:304)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLock(DefaultWorkerLeaseService.java:309)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:126)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:92)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForAll(DefaultAsyncWorkTracker.java:78)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForCompletion(DefaultAsyncWorkTracker.java:66)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:256)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:29)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:26)
 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
@@ -269,7 +347,39 @@ Caused by: org.gradle.api.internal.exceptions.MarkedVerificationException: There
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
+Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
+	at org.jetbrains.kotlin.gradle.tasks.TasksUtilsKt.throwExceptionIfCompilationFailed(tasksUtils.kt:20)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotlinCompilerWork.kt:141)
+	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction.execute(GradleCompilerRunnerWithWorkers.kt:73)
+	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
+	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(AbstractWorker.java:41)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationWorkerFactory.java:59)
+	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(DefaultWorkerExecutor.java:170)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runExecution(DefaultConditionalExecutionQueue.java:187)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.access$700(DefaultConditionalExecutionQueue.java:120)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1.run(DefaultConditionalExecutionQueue.java:162)
+	at org.gradle.internal.Factories$1.create(Factories.java:31)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:114)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runBatch(DefaultConditionalExecutionQueue.java:157)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.run(DefaultConditionalExecutionQueue.java:126)
+	... 2 more
 
 
-BUILD FAILED in 1m 58s
-24 actionable tasks: 12 executed, 12 from cache
+BUILD FAILED in 1m 18s
+22 actionable tasks: 10 executed, 12 from cache
