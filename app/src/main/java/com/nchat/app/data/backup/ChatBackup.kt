@@ -8,6 +8,7 @@ import com.nchat.app.network.EndToEnd
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.io.OutputStream
 
 /**
  * A backup of the encrypted history as a document the user chooses: where it
@@ -23,20 +24,29 @@ class ChatBackup(
 ) {
     /**
      * Writes the backup to [target]. Null when there is nothing to write it
-     * from (see [EndToEnd.backUp]). Whenever it does not end well, what was
-     * written so far is taken away again: half a file must not be left lying
-     * about looking like a backup.
+     * from (see [EndToEnd.backUp]). A file is left behind only when it is a
+     * backup of something: whenever this does not end well, and when there
+     * was not one message to put in it, what was written is taken away again
+     * — half a file, or an empty one, must not lie about looking like a
+     * backup.
      */
     suspend fun save(target: Uri, passphrase: CharArray): E2eeBackup.Written? = withContext(Dispatchers.IO) {
         try {
-            val out = context.contentResolver.openOutputStream(target, "wt") ?: throw IOException("the file could not be opened")
-            val written = out.buffered().use { endToEnd().backUp(it, passphrase) }
-            if (written == null) remove(target)
+            val written = open(target).buffered().use { endToEnd().backUp(it, passphrase) }
+            if (written == null || written.messages == 0) remove(target)
             written
         } catch (failure: Throwable) {
             remove(target)
             throw failure
         }
+    }
+
+    /** Emptied as it is opened, where the place it is kept in can do that; it was made a moment ago and is empty anyway. */
+    private fun open(target: Uri): OutputStream {
+        val resolver = context.contentResolver
+        return runCatching { resolver.openOutputStream(target, "wt") }.getOrNull()
+            ?: resolver.openOutputStream(target, "w")
+            ?: throw IOException("the file could not be opened")
     }
 
     /**
@@ -58,7 +68,7 @@ class ChatBackup(
 
     /** Emptied first — that works wherever writing did — then deleted, where the place it is kept in allows that. */
     private fun remove(target: Uri) {
-        runCatching { context.contentResolver.openOutputStream(target, "wt")?.close() }
+        runCatching { open(target).close() }
         runCatching { DocumentsContract.deleteDocument(context.contentResolver, target) }
     }
 }
