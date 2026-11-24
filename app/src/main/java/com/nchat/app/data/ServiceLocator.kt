@@ -50,6 +50,7 @@ import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ApiKeyDirectory
 import com.nchat.app.network.EndToEnd
+import com.nchat.app.network.LocalSeal
 import com.nchat.app.network.PrefsKeyring
 import com.nchat.app.network.SecurePrefs
 import com.nchat.app.network.fetchPeerBundle
@@ -266,23 +267,30 @@ object ServiceLocator {
 
     // --------------------------------------------------------- repositories
 
+    /**
+     * What seals everything below for the account that is signed in — see [EndToEnd.localSeal].
+     * Null with nobody signed in, or when the account's storage cannot be opened; a store then
+     * writes nothing rather than write it unsealed.
+     */
+    private val localSeal: () -> LocalSeal? = { endToEnd.localSeal() }
+
     /** Disk cache of the chat list; wiped on sign-out. */
-    private val chatCache by lazy { ChatListCache(requireContext()) }
+    private val chatCache by lazy { ChatListCache(requireContext(), localSeal) }
 
     /** Disk cache of the friend graph, so the Friends tab opens with content like Chats does. */
-    private val friendCache by lazy { FriendGraphCache(requireContext()) }
+    private val friendCache by lazy { FriendGraphCache(requireContext(), localSeal) }
 
     /** Device-side block list; blocking never touches the server's friendship rows. */
     private val blockedStore by lazy { BlockedContactsStore(requireContext()) }
 
     /** Messages that still have to reach the server; survives restarts and reconnects. */
-    private val outboxStore by lazy { OutboxStore(requireContext()) }
+    private val outboxStore by lazy { OutboxStore(requireContext(), localSeal) }
 
     /** Every conversation, per account, on disk — see [MessageStore]. */
-    private val messageStore by lazy { MessageStore(requireContext()) }
+    private val messageStore by lazy { MessageStore(requireContext(), localSeal) }
 
     /** Last known group list and rosters, so the Groups tab opens offline — see [GroupListCache]. */
-    private val groupCache by lazy { GroupListCache(requireContext()) }
+    private val groupCache by lazy { GroupListCache(requireContext(), localSeal) }
 
     /**
      * Voice clips waiting to be uploaded, so a recording made without a network is queued with
@@ -291,19 +299,19 @@ object ServiceLocator {
     private val voiceClips by lazy { VoiceClipStore(requireContext()) }
 
     /** Unfinished composer text per conversation, restored when the chat is reopened. */
-    val drafts: DraftStore by lazy { DraftStore(requireContext()) }
+    val drafts: DraftStore by lazy { DraftStore(requireContext(), localSeal) }
 
     /** The chat wallpaper choice (Settings ▸ Chats). Device-local, no account data. */
     val wallpapers: WallpaperStore by lazy { WallpaperStore(requireContext()) }
 
     /** Private, per-device starred messages behind "Starred messages". */
-    val stars: StarredStore by lazy { StarredStore(requireContext()) }
+    val stars: StarredStore by lazy { StarredStore(requireContext(), localSeal) }
 
     /** Archived conversations — a private filing decision, so it never leaves the device. */
-    val archived: ArchivedStore by lazy { ArchivedStore(requireContext()) }
+    val archived: ArchivedStore by lazy { ArchivedStore(requireContext(), localSeal) }
 
     /** One pinned message per conversation, shown as the banner under the header. */
-    val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext()) }
+    val pinned: PinnedMessageStore by lazy { PinnedMessageStore(requireContext(), localSeal) }
 
     /** System notifications: per-chat channels, MessagingStyle, inline reply. */
     val notifications: NcNotifications by lazy {

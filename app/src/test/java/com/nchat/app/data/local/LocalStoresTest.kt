@@ -58,7 +58,9 @@ class LocalStoresTest {
     private fun assertNothingReadable(vararg words: String) {
         val files = everyFile()
         assertTrue("something was written", files.isNotEmpty())
-        for (file in files) for (word in words + secret) assertFalse("${file.name} contains '$word'", readable(file).contains(word))
+        for (file in files) {
+            for (word in listOf(*words, secret)) assertFalse("${file.name} contains '$word'", readable(file).contains(word))
+        }
     }
 
     // ------------------------------------------------------------ conversations
@@ -105,9 +107,12 @@ class LocalStoresTest {
         assertFalse("read once, it is sealed", readable(old).contains(secret))
         assertEquals(listOf(message), MessageStore(root, mine).load("alice", "bob"))
 
-        // The ones nobody opened are sealed in one pass, and read as before afterwards.
+        // The ones nobody opened are sealed in one pass, and read as before afterwards. A write
+        // of that earlier build that died half-way was not sealed either: it goes.
+        val interrupted = File(root, "alice/message-1234.tmp").also { it.writeText("""[{"text":"$secret"}]""") }
         assertTrue(readable(untouched).contains(secret))
         assertEquals(1, store.sealPlainFiles())
+        assertFalse(interrupted.exists())
         assertNothingReadable("Carol")
         assertEquals("m2", MessageStore(root, mine).load("alice", "carol").single().id)
         assertEquals("a second pass finds nothing to do", 0, store.sealPlainFiles())
@@ -350,6 +355,49 @@ class LocalStoresTest {
         // The same objects go on serving whoever signs in next.
         drafts.set("carol", "hello")
         assertEquals("hello", DraftStore(folder.root.resolve("drafts.json"), mine).get("carol"))
+    }
+
+    @Test
+    fun aFileFromBeforeSealingThatMakesNoSenseIsNotLeftLyingThere() {
+        // Half a draft is still somebody's words. Nothing can be read from the file any more,
+        // so it is of no use — and it is not sealed: it goes.
+        val drafts = folder.root.resolve("drafts.json").also { it.writeText("""{"bob":"$secret""") }
+        assertEquals("", DraftStore(drafts, mine).get("bob"))
+        assertFalse(drafts.exists())
+
+        // A conversation in that state is sealed by the pass over the cache, as it is.
+        val root = folder.root.resolve("messages")
+        val broken = File(root, "alice/bob.json").also { it.parentFile.mkdirs() }
+        broken.writeText("""[{"id":"m1","text":"$secret""")
+        val store = MessageStore(root, mine)
+        assertEquals(emptyList<Message>(), store.load("alice", "bob"))
+        assertEquals(1, store.sealPlainFiles())
+        assertNothingReadable()
+        assertEquals(emptyList<Message>(), store.load("alice", "bob"))
+    }
+
+    @Test
+    fun aStoreThatCouldNotOpenItsFileYetReadsItOnceItCan() {
+        val file = folder.root.resolve("drafts.json")
+        DraftStore(file, mine).set("bob", secret)
+        var available: LocalSeal? = null
+        val store = DraftStore(file) { available }
+        assertEquals("", store.get("bob"))
+        // Kept for as long as the app runs, and not written over what is on disk.
+        store.set("carol", "typed meanwhile")
+        assertEquals("typed meanwhile", store.get("carol"))
+        store.clear("carol")
+        assertTrue("clearing the only draft it knows of must not remove the file it could not read", file.exists())
+        store.set("carol", "typed meanwhile")
+
+        available = seal
+        // Now the file is read. It is what was written down, and it was not replaced by less.
+        assertEquals(secret, store.get("bob"))
+        assertEquals(mapOf("bob" to secret), store.drafts.value)
+        assertEquals(mapOf("bob" to secret), DraftStore(file, mine).drafts.value)
+        // From here on changes are written again.
+        store.set("dave", "later")
+        assertEquals(mapOf("bob" to secret, "dave" to "later"), DraftStore(file, mine).drafts.value)
     }
 
     @Test

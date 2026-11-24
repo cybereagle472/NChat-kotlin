@@ -92,7 +92,7 @@ class EndToEnd(
     /** What [SealedMessaging.security] answers for this peer has changed; see [E2eeClient]. */
     private val onSecurityChanged: (peerId: String) -> Unit = {},
 ) {
-    private class Account(val userId: String, val keys: E2eeKeys, val client: E2eeClient) {
+    private class Account(val userId: String, val keys: E2eeKeys, val client: E2eeClient, val localSeal: LocalSeal) {
         fun close() {
             client.close()
             keys.close()
@@ -204,6 +204,21 @@ class EndToEnd(
     }
 
     /**
+     * What seals the rest of what this account keeps on this phone — cached
+     * conversations, the lists with their previews, messages waiting to be
+     * sent, drafts (see [LocalSeal]). It is made from the account's storage
+     * key, so signing out, and another account signing in, leave everything
+     * sealed with it unopenable.
+     *
+     * Null when nobody is signed in or the account's storage cannot be
+     * opened. Then there is nothing to seal with, and whoever asked writes
+     * nothing rather than write it unsealed.
+     */
+    fun localSeal(): LocalSeal? = synchronized(lock) {
+        if (current == null) null else account()?.localSeal
+    }
+
+    /**
      * Brings the server's key directory and this phone into agreement; see
      * [E2eeKeys.sync]. Null when there is nothing to do it for. Throws what
      * the directory throws.
@@ -278,7 +293,7 @@ class EndToEnd(
             prepare = keys::ensureRegistered,
             onSecurityChanged = onSecurityChanged,
         )
-        return Account(userId, keys, client)
+        return Account(userId, keys, client, LocalSeal(key))
     }
 
     /** The key first: once it is gone, whatever survives on disk is noise. */

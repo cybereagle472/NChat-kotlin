@@ -1,10 +1,8 @@
 package com.nchat.app.data.local
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.nchat.app.network.LocalSeal
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -19,53 +17,44 @@ import java.io.File
  *
  * Archiving hides a chat from the main list but keeps every message, the pin, the mute and the
  * drafts exactly as they were — opening the archive and unarchiving puts the row back untouched.
+ *
+ * It names the conversations of the account, so the file is sealed for the account that is
+ * signed in (see [SealedState]).
  */
-class ArchivedStore(context: Context) {
+class ArchivedStore internal constructor(file: File, seal: () -> LocalSeal?) {
 
-    private val file = File(context.applicationContext.filesDir, "archived.json")
+    constructor(context: Context, seal: () -> LocalSeal?) :
+        this(File(context.applicationContext.filesDir, "archived.json"), seal)
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private val _ids = MutableStateFlow(load())
-    val ids: StateFlow<Set<String>> = _ids.asStateFlow()
+    private val state = SealedState(
+        file = file,
+        place = "archived",
+        seal = seal,
+        empty = emptySet<String>(),
+        isEmpty = { it.isEmpty() },
+        decode = { json.decodeFromString(LIST_SERIALIZER, it).toSet() },
+        encode = { json.encodeToString(LIST_SERIALIZER, it.toList()) },
+    )
 
-    fun isArchived(chatId: String): Boolean = chatId in _ids.value
+    val ids: StateFlow<Set<String>> get() = state.value
+
+    fun isArchived(chatId: String): Boolean = chatId in state.current()
 
     fun archive(chatId: String) {
-        if (chatId in _ids.value) return
-        _ids.update { it + chatId }
-        persist()
+        state.update { it + chatId }
     }
 
     fun unarchive(chatId: String) {
-        if (chatId !in _ids.value) return
-        _ids.update { it - chatId }
-        persist()
+        state.update { it - chatId }
     }
 
     fun toggle(chatId: String) {
-        if (chatId in _ids.value) unarchive(chatId) else archive(chatId)
+        if (isArchived(chatId)) unarchive(chatId) else archive(chatId)
     }
 
-    fun clearAll() {
-        _ids.value = emptySet()
-        runCatching { file.delete() }
-    }
-
-    private fun load(): Set<String> = runCatching {
-        if (!file.exists()) return emptySet()
-        json.decodeFromString(LIST_SERIALIZER, file.readText()).toSet()
-    }.getOrDefault(emptySet())
-
-    private fun persist() = runCatching {
-        val ids = _ids.value
-        if (ids.isEmpty()) {
-            file.delete()
-            return@runCatching
-        }
-        file.parentFile?.mkdirs()
-        file.writeText(json.encodeToString(LIST_SERIALIZER, ids.toList()))
-    }
+    fun clearAll() = state.clear()
 
     private companion object {
         val LIST_SERIALIZER = ListSerializer(String.serializer())

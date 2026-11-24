@@ -3,6 +3,7 @@ package com.nchat.app.data.local
 import android.content.Context
 import com.nchat.app.data.model.Friend
 import com.nchat.app.data.model.FriendRelation
+import com.nchat.app.network.LocalSeal
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -24,10 +25,16 @@ import java.io.File
  * It is a *cache*, never a source of truth: the next successful `/friends` replaces it
  * wholesale, a corrupt file is ignored, and every entry carries the account it belongs to so a
  * second sign-in can never read somebody else's friends.
+ *
+ * Who somebody knows is theirs to say, so the file is sealed for the account that is signed in
+ * (see [LocalFiles]); with nothing to seal with it is neither read nor written.
  */
-class FriendGraphCache(context: Context) {
+class FriendGraphCache internal constructor(private val file: File, seal: () -> LocalSeal?) {
 
-    private val file = File(context.applicationContext.filesDir, "cache/friends.json")
+    constructor(context: Context, seal: () -> LocalSeal?) :
+        this(File(context.applicationContext.filesDir, "cache/friends.json"), seal)
+
+    private val files = LocalFiles(seal)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -42,8 +49,11 @@ class FriendGraphCache(context: Context) {
      * unreadable. A blank [ownerId] means "not signed in yet" and reads nothing on purpose.
      */
     fun load(ownerId: String): List<Friend> = runCatching {
-        if (ownerId.isBlank() || !file.exists()) return emptyList()
-        val snapshot = json.decodeFromString(SNAPSHOT_SERIALIZER, file.readText())
+        if (ownerId.isBlank()) return emptyList()
+        val stored = files.read(file, PLACE) as? Stored.Readable ?: return emptyList()
+        val snapshot = json.decodeFromString(SNAPSHOT_SERIALIZER, stored.text)
+        // Written by a build before sealing: read once, sealed from then on.
+        if (stored.plain) files.write(file, PLACE, stored.text)
         if (snapshot.owner != ownerId) return emptyList()
         snapshot.friends.filter { it.id.isNotBlank() }
     }.getOrDefault(emptyList())
@@ -59,10 +69,7 @@ class FriendGraphCache(context: Context) {
         if (ownerId.isBlank()) return
         val worthKeeping = friends.filter { it.id.isNotBlank() && it.relation != FriendRelation.None }
         if (worthKeeping.isEmpty()) return
-        runCatching {
-            file.parentFile?.mkdirs()
-            file.writeText(json.encodeToString(SNAPSHOT_SERIALIZER, Snapshot(ownerId, worthKeeping)))
-        }
+        runCatching { files.write(file, PLACE, json.encodeToString(SNAPSHOT_SERIALIZER, Snapshot(ownerId, worthKeeping))) }
     }
 
     fun clear() {
@@ -71,5 +78,6 @@ class FriendGraphCache(context: Context) {
 
     private companion object {
         val SNAPSHOT_SERIALIZER = Snapshot.serializer()
+        const val PLACE = "friends"
     }
 }

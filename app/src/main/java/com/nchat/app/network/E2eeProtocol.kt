@@ -104,7 +104,13 @@ object E2eeProtocol {
     /**
      * Largest forward jump one envelope may ask for, and so the longest run
      * of messages that can be passed over at once. It bounds the work a
-     * forged counter can cost: this many chain steps, a fraction of a second.
+     * forged counter can cost: this many chain steps. Measured on emulators,
+     * that is about 0.3 s on Android 7 (28 µs a step) and well under 0.2 s
+     * on Android 14; an old phone will be slower than either.
+     *
+     * Smaller would be cheaper and would also be the point past which a
+     * contact's newest messages cannot be opened by a phone that was away
+     * for that many of them in a row.
      */
     private const val MAX_SKIP = 10_000
 

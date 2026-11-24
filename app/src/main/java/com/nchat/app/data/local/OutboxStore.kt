@@ -3,28 +3,39 @@ package com.nchat.app.data.local
 import android.content.Context
 import com.nchat.app.core.util.CrashLog
 import com.nchat.app.data.model.OutboxEntry
+import com.nchat.app.network.LocalSeal
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 
 /**
  * The outgoing-message queue, on disk. All mutations are serialized in this instance and use a
  * same-directory temporary file, so an interrupted write does not truncate the committed queue.
  * Each entry carries its owning account; the caller filters before delivery.
+ *
+ * The queue is sealed for the account that is signed in (see [LocalFiles]): an entry holds the
+ * text of a message that has not been encrypted for its recipient yet, and the address of a
+ * sealed file together with its key. With nothing to seal with, nothing is queued — [add]
+ * answers false and the message is shown as not sent, never written down unsealed.
  */
 class OutboxStore internal constructor(
     private val file: File,
-    private val replace: (File, File) -> Boolean = { source, target -> source.renameTo(target) }
+    seal: () -> LocalSeal?,
+    private val replace: (File, File) -> Boolean = LocalFiles.RENAME
 ) {
-    constructor(context: Context) : this(File(context.applicationContext.filesDir, "outbox.json"))
+    constructor(context: Context, seal: () -> LocalSeal?) :
+        this(File(context.applicationContext.filesDir, "outbox.json"), seal)
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
     private val lock = Any()
+    private val files = LocalFiles(seal)
+
+    /** Guarded by [lock]: a damaged queue is reported once, not at every look. */
+    private var damageReported = false
 
     fun all(): List<OutboxEntry> = synchronized(lock) { read() ?: emptyList() }
 
@@ -79,7 +90,7 @@ class OutboxStore internal constructor(
             val committedRemoved = !file.exists() || file.delete()
             // A process death during a write can leave an uncommitted copy behind.
             val leftovers = file.absoluteFile.parentFile?.listFiles().orEmpty()
-                .filter { it.name.startsWith("outbox-") && it.name.endsWith(".tmp") }
+                .filter { it.name.startsWith(TEMPORARY_PREFIX) && it.name.endsWith(LocalFiles.TEMPORARY_SUFFIX) }
             val leftoversRemoved = leftovers.map { it.delete() }.all { it }
             committedRemoved && leftoversRemoved
         }.getOrDefault(false)
@@ -90,39 +101,49 @@ class OutboxStore internal constructor(
         write(rows.filter { it.ownerId == ownerId })
     }
 
-    /** Null is an unreadable/corrupt queue, never an empty queue to overwrite. */
+    /**
+     * Null is a queue that cannot be read — never an empty queue to overwrite. That is a file
+     * that is damaged, and one that is sealed while there is nothing to open it with.
+     *
+     * A queue sealed with another key is a different matter: it was another account's, or this
+     * one's before it signed out. It is nobody's to send any more and will never open here, so
+     * it counts as empty and the next write replaces it. Otherwise whoever signs in next
+     * could not queue a message until they signed out again.
+     */
     private fun read(): List<OutboxEntry>? = runCatching {
-        if (!file.exists()) return emptyList()
-        json.decodeFromString(SERIALIZER, file.readText())
-            .filterNot { LEGACY_ID.matches(it.clientId) }
+        when (val stored = files.read(file, PLACE)) {
+            Stored.Absent, Stored.Foreign -> emptyList()
+            Stored.Locked -> null
+            Stored.Damaged -> {
+                if (!damageReported) {
+                    damageReported = true
+                    CrashLog.note("outbox read failed", IOException("the sealed queue does not open"))
+                }
+                null
+            }
+            is Stored.Readable -> {
+                val rows = json.decodeFromString(SERIALIZER, stored.text)
+                    .filterNot { LEGACY_ID.matches(it.clientId) }
+                // Written by a build before sealing: read once, sealed from then on.
+                if (stored.plain) write(rows)
+                rows
+            }
+        }
     }.onFailure { CrashLog.note("outbox read failed", it) }.getOrNull()
 
-    private fun write(rows: List<OutboxEntry>): Boolean {
-        var temporary: File? = null
-        return try {
-            val parent = file.absoluteFile.parentFile ?: throw IOException("Outbox has no parent directory")
-            if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Could not create outbox directory")
-            val temp = File.createTempFile("outbox-", ".tmp", parent)
-            temporary = temp
-            FileOutputStream(temp).use { stream ->
-                stream.write(json.encodeToString(SERIALIZER, rows).toByteArray(Charsets.UTF_8))
-                stream.flush()
-                stream.fd.sync()
-            }
-            // On Android's internal filesystem this is a same-directory atomic rename.
-            // Never delete the committed file as a fallback if replacement fails.
-            if (!replace(temp, file.absoluteFile)) throw IOException("Could not replace outbox file")
-            true
-        } catch (error: Exception) {
-            CrashLog.note("outbox write failed", error)
-            false
-        } finally {
-            runCatching { temporary?.delete() }
-        }
+    /** False also when there is nothing to seal with: the queue is never put on disk unsealed. */
+    private fun write(rows: List<OutboxEntry>): Boolean = try {
+        // Durable: an entry that is reported as queued must survive the phone losing power.
+        files.write(file, PLACE, json.encodeToString(SERIALIZER, rows), TEMPORARY_PREFIX, durable = true, replace = replace)
+    } catch (error: Exception) {
+        CrashLog.note("outbox write failed", error)
+        false
     }
 
     private companion object {
         val SERIALIZER = ListSerializer(OutboxEntry.serializer())
         val LEGACY_ID = Regex("^local-.*")
+        const val PLACE = "outbox"
+        const val TEMPORARY_PREFIX = "outbox-"
     }
 }

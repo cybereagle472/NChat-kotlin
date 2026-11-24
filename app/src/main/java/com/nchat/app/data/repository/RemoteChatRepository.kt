@@ -260,6 +260,9 @@ class RemoteChatRepository(
             groupIds += cachedGroups.map { it.id }
         }
         mirrorLists()
+        // Conversations a build before sealing left on this phone are sealed when they are
+        // opened; this takes care of the ones nobody opens.
+        messages?.let { store -> scope.launch(Dispatchers.IO) { runCatching { store.sealPlainFiles() } } }
         // Do not sweep voice files from an outbox snapshot: a corrupt queue, a failed
         // message, or a concurrent recording can leave a needed clip outside that snapshot.
         scope.launch { socket.events.collect { event -> handleEvent(event) } }
