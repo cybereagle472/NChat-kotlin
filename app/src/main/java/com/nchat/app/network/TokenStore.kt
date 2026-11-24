@@ -33,8 +33,29 @@ class TokenStore(context: Context) {
     private val _sessionLost = MutableStateFlow(false)
     val sessionLost: StateFlow<Boolean> = _sessionLost.asStateFlow()
 
+    /**
+     * True when the session was ended here because the account was signed in on another phone
+     * (see [endForAnotherPhone]) rather than refused by the server. Read together with
+     * [sessionLost], it tells the sign-in screen which of the two to say.
+     */
+    @Volatile
+    var movedToAnotherPhone: Boolean = false
+        private set
+
     fun acknowledgeSessionLost() {
         _sessionLost.value = false
+        movedToAnotherPhone = false
+    }
+
+    /**
+     * Ends the session on this phone because the account now lives on another one: an account's
+     * encrypted chats can be read on a single phone, the one that signed in last. Nothing on
+     * this phone is erased — signing in here again moves the account back.
+     */
+    fun endForAnotherPhone() {
+        // Before the flow changes: whoever reacts to `sessionLost` reads this to know why.
+        movedToAnotherPhone = true
+        saveTokens(null, null)
     }
 
     var accessToken: String?
@@ -123,6 +144,7 @@ class TokenStore(context: Context) {
         )
         _signedIn.value = false
         _sessionLost.value = false
+        movedToAnotherPhone = false
     }
 
     private companion object {

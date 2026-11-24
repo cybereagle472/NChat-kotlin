@@ -72,6 +72,18 @@ data class Message(
     /** Deleted for everyone: the bubble keeps its slot with a tombstone label. */
     val deleted: Boolean = false,
     /**
+     * End-to-end encrypted: the message arrived as a sealed envelope and was opened on this
+     * phone with the conversation's keys, so nobody in between could read or write it. False
+     * for everything the server could read — group messages, attachments, and messages from or
+     * to an app without encryption keys.
+     */
+    val encrypted: Boolean = false,
+    /**
+     * A sealed message this phone has no key for — it was sent to, or from, another
+     * installation. [text] is then a notice in its place, not something anybody wrote.
+     */
+    val unreadable: Boolean = false,
+    /**
      * How much of this message's file has reached the server, 0f…1f — null when nothing is
      * uploading.
      *

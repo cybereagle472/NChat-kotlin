@@ -25,8 +25,9 @@ class NChatApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         CrashLog.install(this)
         ServiceLocator.init(this)
-        // Phase A self-heal: existing users register their public key material on
-        // first launch after this update; sign-in covers new sessions. Idempotent.
+        // End-to-end encryption: confirm this phone's public keys with the server. Somebody
+        // who was already signed in when this version arrived registers here for the first
+        // time; a sign-in does the same for a new session.
         ServiceLocator.syncE2eeKeys()
     }
 

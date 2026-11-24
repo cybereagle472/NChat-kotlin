@@ -3,7 +3,7 @@ package com.nchat.app.data.repository
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.AuthResponse
 import com.nchat.app.data.local.ChatListCache
-import com.nchat.app.network.E2eeKeys
+import com.nchat.app.network.EndToEnd
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
@@ -32,8 +32,14 @@ class RemoteAuthRepository(
      * starred messages. The next person to sign in on this phone must not find them.
      */
     private val clearLocalState: () -> Unit = {},
-    /** Phase A: registers this device's public key material right after sign-in (idempotent). */
-    private val e2eeKeys: E2eeKeys? = null
+    /**
+     * End-to-end encryption on this phone. It is told about a sign-in (which makes this the
+     * phone the account's encrypted chats live on) and about a sign-out (which erases its keys
+     * and everything they opened). A session that merely expires is neither.
+     */
+    private val endToEnd: EndToEnd? = null,
+    /** Registers this phone's public keys with the server; started after every sign-in. */
+    private val syncKeys: () -> Unit = {}
 ) : AuthRepository {
 
     private val _session = MutableStateFlow(tokens.email)
@@ -109,13 +115,17 @@ class RemoteAuthRepository(
         val refresh = tokens.refreshToken
         // Forget the session immediately: signing out must never depend on the network.
         tokens.clear()
+        // The encryption keys and every message they opened leave this phone with the session,
+        // here and now. What comes back names the public key the server should stop handing out.
+        val withdrawnKey = runCatching { endToEnd?.signOut() }.getOrNull()
         cache?.clear()
         clearLocalState()
         _session.value = null
         _profileComplete.value = false
         if (refresh != null) {
-            // Best effort: revoke the refresh token server-side (`DELETE FROM sessions`).
-            scope.launch { runCatching { api.logout(refresh) } }
+            // Best effort: revoke the refresh token server-side (`DELETE FROM sessions`), and
+            // withdraw this phone's public keys with it.
+            scope.launch { runCatching { api.logout(refresh, withdrawnKey?.invoke()) } }
         }
     }
 
@@ -136,9 +146,10 @@ class RemoteAuthRepository(
         }
         _session.value = email
         _profileComplete.value = tokens.profileComplete
-        // Fire-and-forget: sync() never throws and re-uploads the same material,
-        // so a failed attempt simply retries on the next launch or sign-in.
-        scope.launch { e2eeKeys?.sync() }
+        // Signing in is what makes this the account's phone for encrypted chats; the
+        // registration itself may fail and is retried (see `ServiceLocator.syncE2eeKeys`).
+        user?.id?.takeIf { it.isNotBlank() }?.let { id -> runCatching { endToEnd?.signedIn(id) } }
+        syncKeys()
     }
 
     private companion object {

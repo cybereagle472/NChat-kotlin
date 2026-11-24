@@ -17,6 +17,16 @@ export const DIRECT_MESSAGE_TYPES = new Set(['text', 'e2ee', 'image', 'video', '
  */
 export const GROUP_MESSAGE_TYPES = new Set(['text', 'image', 'video', 'voice', 'document', 'location']);
 
+/** The longest message text, in bytes. */
+export const TEXT_CONTENT_BYTES = 65536;
+
+/**
+ * The longest sealed envelope. A text of TEXT_CONTENT_BYTES grows by about a
+ * third when it is sealed and base64-encoded (roughly 88,000 bytes with its
+ * header), so anything that may be sent in the clear also fits sealed.
+ */
+export const SEALED_CONTENT_BYTES = 131072;
+
 /** A P-256 public key as SubjectPublicKeyInfo DER — the only key encoding the E2EE routes accept. */
 export const SPKI_BYTES = 91;
 

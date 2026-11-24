@@ -189,8 +189,19 @@ class E2eeStore(private val vault: SecretVault) {
          */
         val seenHandshakes: LinkedHashSet<String> = LinkedHashSet()
 
+        /**
+         * Envelopes sealed but not known to have reached the server, oldest
+         * first, by what each was sealed for. A retry sends the same envelope
+         * again: sealing the content a second time would use up another
+         * message number, and a peer can only skip so many that never arrive.
+         */
+        val unsent: LinkedHashMap<String, Unsent> = LinkedHashMap()
+
         fun sendable(): StoredSession? = sessions.firstOrNull { !it.retired }
     }
+
+    /** [content] identifies what was sealed (a digest); [recipientIdentity] is the key it was sealed for. */
+    class Unsent(val content: String, val envelope: String, val recipientIdentity: String)
 
     // --------------------------------------------------------------- sessions
 
@@ -211,6 +222,14 @@ class E2eeStore(private val vault: SecretVault) {
             for (element in root["h"] as? JsonArray ?: JsonArray(emptyList())) {
                 (element as? JsonPrimitive)?.content?.let { record.seenHandshakes += it }
             }
+            for (element in root["u"] as? JsonArray ?: JsonArray(emptyList())) {
+                val item = element as? JsonObject ?: continue
+                val target = (item["k"] as? JsonPrimitive)?.content ?: continue
+                val content = (item["c"] as? JsonPrimitive)?.content ?: continue
+                val envelope = (item["e"] as? JsonPrimitive)?.content ?: continue
+                val identity = (item["i"] as? JsonPrimitive)?.content ?: continue
+                record.unsent[target] = Unsent(content, envelope, identity)
+            }
         } catch (_: Exception) {
             // A damaged record still means "encrypted before": the caller
             // starts a new session, it never falls back to plaintext.
@@ -225,6 +244,12 @@ class E2eeStore(private val vault: SecretVault) {
         while (record.seenHandshakes.size > MAX_SEEN_HANDSHAKES && handshakes.hasNext()) {
             handshakes.next()
             handshakes.remove()
+        }
+        val unsent = record.unsent.values.iterator()
+        var unsentBytes = record.unsent.values.sumOf { it.envelope.length }
+        while ((record.unsent.size > MAX_UNSENT_PER_PEER || unsentBytes > MAX_UNSENT_BYTES_PER_PEER) && unsent.hasNext()) {
+            unsentBytes -= unsent.next().envelope.length
+            unsent.remove()
         }
         val encoded = buildJsonObject {
             put(
@@ -241,6 +266,21 @@ class E2eeStore(private val vault: SecretVault) {
                 },
             )
             put("h", buildJsonArray { for (reference in record.seenHandshakes) add(JsonPrimitive(reference)) })
+            put(
+                "u",
+                buildJsonArray {
+                    for ((target, kept) in record.unsent) {
+                        add(
+                            buildJsonObject {
+                                put("k", target)
+                                put("c", kept.content)
+                                put("e", kept.envelope)
+                                put("i", kept.recipientIdentity)
+                            },
+                        )
+                    }
+                },
+            )
         }
         vault.write(SESSION_PREFIX + peerId, encoded.toString(), durable)
     }
@@ -305,6 +345,10 @@ class E2eeStore(private val vault: SecretVault) {
         const val MAX_SESSIONS_PER_PEER = 4
 
         const val MAX_SEEN_HANDSHAKES = 64
+
+        /** Unsent envelopes kept per peer; beyond either limit the oldest is sealed anew if it is ever retried. */
+        const val MAX_UNSENT_PER_PEER = 16
+        const val MAX_UNSENT_BYTES_PER_PEER = 256 * 1024
 
         /** The server keeps at most 100 unconsumed; the rest is room for keys spent while this device was away. */
         const val MAX_LOCAL_ONE_TIME_KEYS = 400

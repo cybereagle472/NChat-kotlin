@@ -17,14 +17,18 @@ import com.nchat.app.data.model.hasUnconfirmedDelivery
 import com.nchat.app.data.model.Reaction
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.ChatDto
+import com.nchat.app.network.E2eePayload
+import com.nchat.app.network.E2eeText
 import com.nchat.app.network.GroupDto
 import com.nchat.app.network.MediaDto
 import com.nchat.app.network.MessageDto
+import com.nchat.app.network.MessageEnvelope
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NcJson
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.RealtimeEvent
+import com.nchat.app.network.SealedMessaging
 import com.nchat.app.network.TokenStore
 import com.nchat.app.network.UserDto
 import kotlinx.coroutines.CancellationException
@@ -100,7 +104,15 @@ class RemoteChatRepository(
      * A message from somebody else has just landed (socket event). The platform layer turns this
      * into a system notification; the repository stays free of Android notification code.
      */
-    private val onIncoming: ((Chat, Message) -> Unit)? = null
+    private val onIncoming: ((Chat, Message) -> Unit)? = null,
+    /**
+     * End-to-end encryption for one-to-one texts and locations (see [SealedMessaging]).
+     *
+     * Required, and asked for every time instead of being held: there is always an answer —
+     * when sealing is not possible it is one that refuses — so nothing here can fall back to
+     * sending in the clear by finding "no encryption" where it expected some.
+     */
+    private val encryption: () -> SealedMessaging
 ) : ChatRepository {
 
 
@@ -434,7 +446,7 @@ class RemoteChatRepository(
                 isOnline = profile.isOnline,
                 lastMessage = previewOf(dto, profile.id, isGroup = false),
                 lastMessageAt = isoMillis(dto.createdAt),
-                lastMessageKind = dto.kind(),
+                lastMessageKind = dto.shownKind(profile.id),
                 lastMessageMine = dto.senderId == me,
                 lastMessageState = if (dto.senderId == me) {
                     if (dto.isRead) DeliveryState.Read else DeliveryState.Sent
@@ -467,6 +479,7 @@ class RemoteChatRepository(
          */
         val me = myId
         val visibleRows = rows.filterNot { me.isNotEmpty() && me in it.deletedFor }
+        openSealed(chatId, visibleRows)
         val server = visibleRows.map { it.toModel(chatId) }
         if (rows.size >= CONVERSATION_PAGE && rows.isNotEmpty()) {
             val serverCursor = rows.first().createdAt
@@ -664,6 +677,7 @@ class RemoteChatRepository(
                 }
                 val previousCursor = cursor
                 val nextCursor = page.first().createdAt
+                openSealed(chatId, page)
                 updateMessages(chatId) { local ->
                     mergeMessages(local, page.map { it.toModel(chatId) })
                 }
@@ -729,7 +743,7 @@ class RemoteChatRepository(
             if (isGroup(chatId)) {
                 api.sendGroupMessage(chatId, body, clientMessageId = clientId, replyTo = replyToId)
             } else {
-                api.sendMessage(chatId, body, clientMessageId = clientId, replyTo = replyToId)
+                sendDirect(chatId, clientId, type = "text", content = body, replyTo = replyToId)
             }
         }
     }
@@ -755,10 +769,42 @@ class RemoteChatRepository(
             if (isGroup(chatId)) {
                 api.sendGroupMessage(chatId, coords, type = "location", clientMessageId = clientId)
             } else {
-                api.sendMessage(chatId, coords, type = "location", clientMessageId = clientId)
+                sendDirect(chatId, clientId, type = "location", content = coords, replyTo = null)
             }
         }
     }
+
+    /**
+     * A text or a position for one person: sealed when both ends have encryption keys, sent as
+     * before when one of them has none (an older app).
+     *
+     * Sealed, the server gets an envelope and nothing else — the kind of message and what it
+     * replies to are inside it. Whether to seal is not decided here: [SealedMessaging] answers
+     * "unsealed is fine" only for a conversation that was never encrypted, and every failure
+     * to seal comes back as an error. An error is a message that was not sent; it is never a
+     * reason to send it in the clear.
+     */
+    private suspend fun sendDirect(
+        peerId: String,
+        clientId: String,
+        type: String,
+        content: String,
+        replyTo: String?
+    ): MessageEnvelope {
+        val payload = E2eePayload(if (type == "location") E2eePayload.LOCATION else E2eePayload.TEXT, content, replyTo)
+        return encryption().sendSealed(peerId, clientId, payload, ::keysChanged) { message ->
+            api.sendMessage(
+                peerId,
+                message.envelope,
+                type = SEALED_TYPE,
+                clientMessageId = clientId,
+                recipientIdentityKey = message.recipientIdentity
+            )
+        } ?: api.sendMessage(peerId, content, type = type, clientMessageId = clientId, replyTo = replyTo)
+    }
+
+    /** The server's answer to an envelope sealed for keys the recipient no longer has. */
+    private fun keysChanged(error: Throwable): Boolean = error is ApiException && error.status == 409
 
     /**
      * A recorded voice note: on disk first, then uploaded, then posted.
@@ -962,7 +1008,8 @@ class RemoteChatRepository(
     override fun forwardMessage(targetChatId: String, source: Message) {
         // A tombstone has nothing to forward — it would arrive as the words "This message was
         // deleted", which is the one thing forwarding must never do.
-        if (source.deleted) return
+        // Nor has a message this phone could not open: its text is a notice, not a message.
+        if (source.deleted || source.unreadable) return
         val media = source.mediaUrl.shareableMediaUrl()
         if (source.kind !in setOf(MessageKind.Text, MessageKind.Location) && media == null) {
             NcToaster.show("Send the attachment before forwarding it")
@@ -1158,6 +1205,9 @@ class RemoteChatRepository(
                         thumbnailUrl = row.thumbnailUrl,
                         duration = row.duration
                     )
+                } else if (row.isSealable()) {
+                    // The queue keeps what was written; it is sealed on the way out.
+                    sendDirect(row.chatId, row.clientId, row.type, row.text, row.replyTo)
                 } else {
                     api.sendMessage(
                         row.chatId,
@@ -1412,6 +1462,11 @@ class RemoteChatRepository(
         if (body.isEmpty()) return
         val original = stream(chatId).value.firstOrNull { it.id == messageId } ?: return
         if (!original.isMine || original.deleted || original.kind != MessageKind.Text) return
+        if (original.unreadable) {
+            // Sent from another installation: what is on screen is a notice, not the message.
+            NcToaster.show("This message can't be edited on this phone")
+            return
+        }
 
         if (original.clientMessageId == original.id) {
             // A lost acknowledgement means even a queued message may already be on the server.
@@ -1430,7 +1485,7 @@ class RemoteChatRepository(
         }
         previewFromLast(chatId)
         scope.launch {
-            val response = runCatching { api.editMessage(messageId, body) }
+            val response = runCatching { editDirect(chatId, original, body) }
             val error = response.exceptionOrNull()
             if (error is CancellationException) throw error
             val updated = response.getOrNull()?.message
@@ -1453,6 +1508,27 @@ class RemoteChatRepository(
             previewFromLast(chatId)
             NcToaster.show("Message edited")
         }
+    }
+
+    /**
+     * The new text of a message to one person, under the rule of [sendDirect]: sealed whenever
+     * this conversation is encrypted, and in the clear only where nothing ever was.
+     *
+     * Whether to seal is decided by what this phone knows about the conversation, never by
+     * what the server says the stored message is. A server that passed an encrypted message
+     * off as an ordinary one would otherwise be handed its new text in the clear. The other
+     * way round costs an edit: a message sent minutes before the chat became encrypted is
+     * stored unencrypted, the server will not put an envelope in its place, and the edit fails.
+     */
+    private suspend fun editDirect(chatId: String, original: Message, text: String): MessageEnvelope {
+        // Our own copy of a sealed message is kept under its client id; rows from before
+        // client ids existed were never sealed, and the server's id stands in for them.
+        val reference = original.clientMessageId?.takeIf { it.isNotBlank() } ?: original.id
+        // What a message replies to is part of the sealed content, so it is sealed again.
+        val payload = E2eePayload.text(text, original.replyToId)
+        return encryption().sendSealed(chatId, reference, payload, ::keysChanged, editOf = original.id) { message ->
+            api.editMessage(original.id, message.envelope, recipientIdentityKey = message.recipientIdentity)
+        } ?: api.editMessage(original.id, text)
     }
 
     override fun toggleReaction(chatId: String, messageId: String, emoji: String) {
@@ -2233,7 +2309,7 @@ class RemoteChatRepository(
                     lastMessageSender = sender,
                     lastMessageAt = isoMillis(dto.createdAt),
                     lastMessageMine = false,
-                    lastMessageKind = dto.kind(),
+                    lastMessageKind = dto.shownKind(chatId),
                     unreadCount = 1
                 )
             } else {
@@ -2245,7 +2321,7 @@ class RemoteChatRepository(
                         lastMessageAt = isoMillis(dto.createdAt),
                         lastMessageMine = false,
                         lastMessageState = null,
-                        lastMessageKind = dto.kind(),
+                        lastMessageKind = dto.shownKind(chatId),
                         unreadCount = chat.unreadCount + 1,
                         isTyping = false,
                         isRecording = false
@@ -2341,7 +2417,7 @@ class RemoteChatRepository(
             lastMessage = last?.let { previewOf(it, userId, isGroup = false) }.orEmpty(),
             lastMessageSender = null,
             lastMessageAt = isoMillis(last?.createdAt),
-            lastMessageKind = last?.kind() ?: MessageKind.Text,
+            lastMessageKind = last?.shownKind(userId) ?: MessageKind.Text,
             lastMessageMine = last?.senderId == myId,
             lastMessageState = when {
                 last == null || last.senderId != myId -> null
@@ -2400,9 +2476,73 @@ class RemoteChatRepository(
         )
     }
 
+    /**
+     * What a sealed row says, once opened — or the notice that stands in for it.
+     *
+     * [readable] is false for the notice: an envelope this phone has no key for, because it was
+     * sealed for (or sent from) another installation of the app.
+     */
+    private class Opened(val kind: MessageKind, val text: String, val replyTo: String?, val readable: Boolean)
+
+    private fun MessageDto.isSealed(): Boolean = type.equals(SEALED_TYPE, ignoreCase = true)
+
+    /** A sealed message between this account ([me]) and [peerId] — the only kind there is a session for. */
+    private fun MessageDto.isSealedWith(peerId: String, me: String = myId): Boolean {
+        if (!isSealed() || isDeleted || groupId != null || peerId.isBlank() || me.isBlank()) return false
+        return (senderId == me && receiverId == peerId) || (senderId == peerId && receiverId == me)
+    }
+
+    /**
+     * Opens a sealed row. Whatever happens, the envelope itself is never what gets shown: a row
+     * that cannot be opened — or that is sealed where nothing should be, as in a group — is
+     * answered with the notice.
+     */
+    private fun MessageDto.unseal(chatId: String): Opened {
+        val me = myId
+        val payload = (if (isSealedWith(chatId, me)) {
+            runCatching { encryption().reveal(chatId, id, clientMessageId, senderId == me, content) }.getOrNull()
+        } else {
+            null
+        }) ?: return Opened(MessageKind.Text, E2eeText.CANNOT_SHOW, null, readable = false)
+        return when (payload.type) {
+            E2eePayload.TEXT -> Opened(MessageKind.Text, payload.body, payload.replyTo, readable = true)
+            E2eePayload.LOCATION -> Opened(MessageKind.Location, payload.body, payload.replyTo, readable = true)
+            // Content of a kind a later version introduced.
+            else -> Opened(MessageKind.Text, E2eeText.NEEDS_UPDATE, null, readable = false)
+        }
+    }
+
+    /**
+     * Opens the sealed rows of a page as one unit of work, oldest first, before they are mapped.
+     *
+     * Opening a message writes to the phone (its content, and the key state that moved on).
+     * Done row by row that is a hundred synced writes for a page of history; done here it is
+     * one, and [toModel] then finds every row already opened.
+     */
+    private fun openSealed(chatId: String, rows: List<MessageDto>) {
+        val me = myId
+        val envelopes = rows.filter { it.isSealedWith(chatId, me) }
+        if (envelopes.isEmpty()) return
+        runCatching {
+            val messaging = encryption()
+            messaging.batch {
+                for (row in envelopes) messaging.reveal(chatId, row.id, row.clientMessageId, row.senderId == me, row.content)
+            }
+        }
+    }
+
+    /** The kind to show for a row: a sealed one says what it is only once it is opened. */
+    private fun MessageDto.shownKind(chatId: String): MessageKind = if (isSealed()) toModel(chatId).kind else kind()
+
+    /** A queued row that goes out sealed when both ends have keys: a text or a position for one person. */
+    private fun OutboxEntry.isSealable(): Boolean =
+        !isGroup && mediaUrl.isNullOrBlank() && localFile.isNullOrBlank() && (type == "text" || type == "location")
+
     private fun MessageDto.toModel(chatId: String): Message {
         val mine = senderId == myId
-        val kind = kind()
+        // A sealed message keeps its kind, its text and what it replies to inside the envelope.
+        val opened = if (isSealed() && !isDeleted) unseal(chatId) else null
+        val kind = opened?.kind ?: kind()
         /*
          * Where the file lives.
          *
@@ -2417,10 +2557,11 @@ class RemoteChatRepository(
          * tile for their photos, a poster-less video and a voice note with nothing to play.
          */
         val media = mediaUrl?.takeIf { it.isNotBlank() }
-            ?: content.trim().takeIf { kind != MessageKind.Text && it.isPlayableUrl() }
+            ?: content.trim().takeIf { opened == null && kind != MessageKind.Text && it.isPlayableUrl() }
         // When `content` *is* the URL there is no caption to print under the bubble.
         val caption = when {
             isDeleted -> "This message was deleted"
+            opened != null -> opened.text
             media != null && content.trim() == media -> ""
             else -> content
         }
@@ -2446,11 +2587,14 @@ class RemoteChatRepository(
             // `reply_to` used to be decoded and thrown away, which is why a reply sent from the
             // web arrived here as a bare message. It is kept and resolved against the
             // conversation (`linkQuotes`), so the quote renders on every device.
-            replyToId = replyTo,
+            // For a sealed message the link is whatever the envelope says, never the row.
+            replyToId = if (opened != null) opened.replyTo else replyTo,
             replyText = null,
             isEdited = isEdited,
             clientMessageId = clientMessageId,
-            deleted = isDeleted
+            deleted = isDeleted,
+            encrypted = opened != null && opened.readable,
+            unreadable = opened != null && !opened.readable
         )
     }
 
@@ -2629,6 +2773,8 @@ class RemoteChatRepository(
         const val SEND_ATTEMPTS = 3
         /** The reference gives up on a queued message after five tries. */
         const val MAX_OUTBOX_ATTEMPTS = 5
+        /** `type` of a row whose `content` is a sealed envelope. */
+        const val SEALED_TYPE = "e2ee"
 
         val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")

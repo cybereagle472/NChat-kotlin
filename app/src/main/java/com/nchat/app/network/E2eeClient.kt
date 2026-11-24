@@ -3,17 +3,51 @@ package com.nchat.app.network
 import java.security.MessageDigest
 
 /**
+ * End-to-end encryption as the rest of the app uses it. There is always one
+ * of these: where sealing is not possible it fails, it is never absent — an
+ * absent encryption layer would read as "send it in the clear".
+ */
+interface SealedMessaging {
+    /** Runs [block] as one unit of work; wrap whole pages of history in it. */
+    fun <T> batch(block: () -> T): T
+
+    /** The content of a sealed message, or null when it cannot be read on this phone. Never throws. */
+    fun reveal(peerId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload?
+
+    /**
+     * Seals [payload] and hands it to [send]. Null — without [send] being
+     * called — means the message may go out unsealed; every failure is
+     * thrown, and then the message must not be sent in any other form.
+     */
+    suspend fun <T : Any> sendSealed(
+        peerId: String,
+        clientId: String,
+        payload: E2eePayload,
+        keysChanged: (Throwable) -> Boolean,
+        editOf: String? = null,
+        send: suspend (E2eeClient.Sealed) -> T,
+    ): T?
+}
+
+/**
  * Seal/open orchestration for direct messages.
  *
- * **Capability.** A peer is E2EE-capable when their key bundle can be
- * fetched; old clients have none and keep receiving plaintext. The bundle is
- * fetched only when no usable session exists (each fetch spends one of the
- * peer's one-time prekeys), so steady-state sends are local ratchet work.
+ * **Capability.** A message is sealed when both ends have registered keys:
+ * the peer's bundle can be fetched and this device has its own. Old clients
+ * have no keys and keep exchanging plaintext. The bundle is fetched only when
+ * no usable session exists (each fetch spends one of the peer's one-time
+ * prekeys), so steady-state sends are local ratchet work.
  *
  * **No downgrade.** Once any session with a peer has existed, this client
  * never answers "send it in the clear" for that peer again — a server that
  * suddenly claims the peer has no keys gets an error, not plaintext. A bundle
  * that does not verify throws for the same reason.
+ *
+ * **One envelope, one place.** A new message is sealed for its
+ * `client_message_id`; an edit is sealed for the server id of the message it
+ * replaces. An envelope opens nowhere else, so the server — which stores the
+ * rows and swaps a row's envelope when a message is edited — cannot move
+ * content between messages or turn an edit into a message of its own.
  *
  * **Sessions.** Several sessions per peer are kept, so messages sealed under
  * an older one still open when both sides started a session at the same
@@ -26,6 +60,11 @@ import java.security.MessageDigest
  * left with its key spent and nothing to show for it. A sealed message's
  * content and the advanced state are on stable storage before the envelope
  * is handed to the caller.
+ *
+ * **Sealed once.** An envelope is kept until the server has it, and a retry
+ * sends that same envelope. Sealing the content again on every attempt would
+ * use up a message number each time, and a peer refuses a message that is
+ * too many numbers ahead of the last one it saw.
  *
  * **What this does not do yet.** The first identity key a peer presents is
  * accepted, and so is a later change of it: there is no key verification
@@ -43,7 +82,13 @@ class E2eeClient(
     private val identity: () -> E2eeProtocol.IdentityKeyPair?,
     private val signedPrekey: () -> E2eeProtocol.PrekeyPair?,
     private val fetchBundle: suspend (peerId: String) -> E2eeProtocol.PeerBundle?,
-) {
+    /**
+     * Called when a session has to be started and [identity] is still empty:
+     * the moment to wait for key registration that is under way (right after
+     * sign-in). It reports nothing — [identity] is simply asked again.
+     */
+    private val prepare: suspend () -> Unit = {},
+) : SealedMessaging {
 
     /**
      * A sealed message ready to send. [recipientIdentity] is the identity key
@@ -54,7 +99,10 @@ class E2eeClient(
 
     private val lock = Any()
 
-    // Unit of work — everything below is guarded by [lock].
+    // Everything below is guarded by [lock].
+    private var closed = false
+
+    // Unit of work.
     private var depth = 0
     private val records = HashMap<String, E2eeStore.PeerRecord?>()
     private val changedPeers = LinkedHashSet<String>()
@@ -73,7 +121,7 @@ class E2eeClient(
      * archive sync and one write per peer. Wrap whole pages of history in it —
      * opening a hundred new messages then costs one sync instead of a hundred.
      */
-    fun <T> batch(block: () -> T): T = synchronized(lock) {
+    override fun <T> batch(block: () -> T): T = synchronized(lock) {
         depth++
         try {
             block()
@@ -84,60 +132,148 @@ class E2eeClient(
     }
 
     /**
-     * Seals [payload] for [peerId], or returns null when the peer has never
-     * had key material (the caller then sends plaintext). [clientId] is the
-     * message's `client_message_id`: our own sealed messages are found again
-     * under it, since only the recipient can open the envelope itself.
+     * Seals [payload] for [peerId], or returns null when the message may go
+     * out unsealed: nothing was ever encrypted with this peer AND one of the
+     * two ends has no registered keys. Null is never returned for a peer a
+     * session has existed with.
+     *
+     * [clientId] is the message's `client_message_id`: our own sealed
+     * messages are found again under it, since only the recipient can open
+     * the envelope itself. [editOf] is the server id of the message this
+     * content replaces, or null for a new message.
      *
      * Throws when sealing is required but not possible; the caller must not
      * send the message in any other form.
      */
-    suspend fun seal(peerId: String, clientId: String, payload: E2eePayload): Sealed? {
-        require(peerId.isNotBlank() && clientId.isNotBlank()) { "peer and client message id are required" }
-        batch { sealOnCurrent(peerId, clientId, payload) }?.let { return it }
+    suspend fun seal(peerId: String, clientId: String, payload: E2eePayload, editOf: String? = null): Sealed? {
+        require(peerId.isNotBlank() && clientId.isNotBlank() && editOf?.isBlank() != true) {
+            "peer and message ids are required"
+        }
+        val target = targetOf(clientId, editOf)
+        batch { sealOnCurrent(peerId, clientId, payload, target) }?.let { return it }
 
-        // Checked before the fetch: a bundle we cannot use must not cost the peer a one-time prekey.
-        val keys = identity() ?: error("this device has no identity key")
+        // A session has to be started, which takes this device's own keys.
+        // Settled before the fetch: a bundle we cannot use must not cost the peer a one-time prekey.
+        val keys = identity() ?: run {
+            prepare()
+            identity()
+        }
+        if (keys == null) {
+            if (batch { recordFor(peerId) } == null) return null
+            error(E2eeText.NOT_READY)
+        }
         val bundle = fetchBundle(peerId)
         return batch {
             // Another send, or a handshake from the peer, may have got here first.
-            sealOnCurrent(peerId, clientId, payload) ?: run {
+            sealOnCurrent(peerId, clientId, payload, target) ?: run {
                 val existing = recordFor(peerId)
                 when {
                     bundle != null -> {
-                        val session = E2eeProtocol.initiate(keys, bundle, localId, peerId)
+                        val session = try {
+                            E2eeProtocol.initiate(keys, bundle, localId, peerId)
+                        } catch (unverified: IllegalStateException) {
+                            throw IllegalStateException(E2eeText.PEER_KEYS_UNVERIFIED, unverified)
+                        }
                         val record = existing ?: E2eeStore.PeerRecord()
                         record.sessions.add(0, E2eeStore.StoredSession(session, retired = false))
                         records[peerId] = record
-                        sealOn(peerId, record, clientId, payload)
+                        sealOn(peerId, record, clientId, payload, target)
                     }
-                    existing != null -> error("the peer's key material is unavailable; refusing to send unencrypted")
+                    existing != null -> error(E2eeText.PEER_HAS_NO_KEYS)
                     else -> null
                 }
             }
         }
     }
 
-    private fun sealOnCurrent(peerId: String, clientId: String, payload: E2eePayload): Sealed? {
-        val record = recordFor(peerId) ?: return null
-        if (record.sendable() == null) return null
-        return sealOn(peerId, record, clientId, payload)
+    /**
+     * [seal] and [send] as one step, for the caller that posts to the server.
+     * Returns null without calling [send] when the message may go out
+     * unsealed. When [send] fails with what [keysChanged] recognises as "the
+     * recipient has registered different keys" (a reinstall, a new phone),
+     * the sessions with that peer are retired and the message is sealed once
+     * more for the keys the peer has now; any other failure, and a second
+     * refusal, are the caller's. Until [send] has returned, calling this
+     * again for the same message and content sends the same envelope.
+     */
+    override suspend fun <T : Any> sendSealed(
+        peerId: String,
+        clientId: String,
+        payload: E2eePayload,
+        keysChanged: (Throwable) -> Boolean,
+        editOf: String?,
+        send: suspend (Sealed) -> T,
+    ): T? {
+        val sealed = seal(peerId, clientId, payload, editOf) ?: return null
+        val result = try {
+            send(sealed)
+        } catch (failure: Throwable) {
+            if (!keysChanged(failure)) throw failure
+            retireSessions(peerId)
+            // Never null here: a peer with sessions, retired or not, is sealed for or not sent to.
+            send(seal(peerId, clientId, payload, editOf) ?: error(E2eeText.PEER_HAS_NO_KEYS))
+        }
+        delivered(peerId, targetOf(clientId, editOf))
+        return result
     }
 
-    private fun sealOn(peerId: String, record: E2eeStore.PeerRecord, clientId: String, payload: E2eePayload): Sealed {
+    /** What an envelope is sealed for: a new message, or the edit of a stored one. */
+    private fun targetOf(clientId: String, editOf: String?): String = if (editOf == null) ORIGINAL + clientId else EDIT + editOf
+
+    private fun sealOnCurrent(peerId: String, clientId: String, payload: E2eePayload, target: String): Sealed? {
+        check(!closed) { E2eeText.SIGNED_OUT }
+        val record = recordFor(peerId) ?: return null
+        if (record.sendable() == null) return null
+        return sealOn(peerId, record, clientId, payload, target)
+    }
+
+    private fun sealOn(
+        peerId: String,
+        record: E2eeStore.PeerRecord,
+        clientId: String,
+        payload: E2eePayload,
+        target: String,
+    ): Sealed {
         val session = record.sendable()?.session ?: error("no sending session")
+        val recipient = encodeBase64(session.remoteIdentityKey())
+        val plaintext = payload.encode()
+        val content = encodeBase64(MessageDigest.getInstance("SHA-256").digest(plaintext))
+
+        // The same content for the same message, not yet known to have arrived: the same envelope.
+        val kept = record.unsent[target]
+        if (kept != null && kept.content == content && kept.recipientIdentity == recipient) {
+            val key = archiveKey(SENT, clientId, kept.envelope)
+            if ((archive.recent(peerId, key) ?: archive.find(peerId, key)) == null) {
+                // Our own copy went missing; without it this phone could not show what it sent.
+                archive.put(peerId, key, payload)
+                archive.flush()
+            }
+            return Sealed(kept.envelope, recipient)
+        }
         try {
-            val envelope = E2eeProtocol.seal(session, payload.encode()).toJson()
+            val envelope = E2eeProtocol.seal(session, plaintext, target.toByteArray(Charsets.UTF_8)).toJson()
             archive.put(peerId, archiveKey(SENT, clientId, envelope), payload)
             archive.flush()
+            record.unsent.remove(target)
+            record.unsent[target] = E2eeStore.Unsent(content, envelope, recipient)
             store.savePeer(peerId, record, durable = true)
             changedPeers.remove(peerId)
-            return Sealed(envelope, encodeBase64(session.remoteIdentityKey()))
+            return Sealed(envelope, recipient)
         } catch (failure: Throwable) {
             // The in-memory session advanced but was not stored: drop it so the stored state stays the truth.
             records.remove(peerId)
             changedPeers.remove(peerId)
             throw failure
+        }
+    }
+
+    /** The server has this envelope; it need not be kept for a retry any longer. */
+    private fun delivered(peerId: String, target: String) {
+        batch {
+            if (closed) return@batch
+            val record = recordFor(peerId) ?: return@batch
+            // Not synced: losing this write only keeps an envelope nobody will ask for.
+            if (record.unsent.remove(target) != null) changedPeers += peerId
         }
     }
 
@@ -149,28 +285,40 @@ class E2eeClient(
      * The archive entry is bound to the message (`messageId`, or our own
      * `clientId`) AND to the exact envelope: an old envelope presented as a
      * new message finds nothing there and is refused by the ratchet as a
-     * replay.
+     * replay. [messageId] and [clientId] are the row's ids as the server
+     * reports them; an envelope sealed for another row does not open.
      */
-    fun reveal(peerId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload? {
+    override fun reveal(peerId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload? {
         val reference = if (mine) clientId else messageId
-        if (peerId.isBlank() || reference.isNullOrBlank()) return null
+        if (peerId.isBlank() || messageId.isBlank() || reference.isNullOrBlank()) return null
         return try {
             batch {
+                if (closed) return@batch null
                 val key = archiveKey(if (mine) SENT else RECEIVED, reference, envelope)
                 archive.recent(peerId, key)
                     ?: if (unreadable[peerId]?.contains(key) == true) null
-                    else (openOrFind(peerId, key, mine, envelope) ?: giveUp(peerId, key))
+                    else (openOrFind(peerId, key, messageId, clientId, mine, envelope) ?: giveUp(peerId, key))
             }
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun openOrFind(peerId: String, key: String, mine: Boolean, envelope: String): E2eePayload? {
+    private fun openOrFind(
+        peerId: String,
+        key: String,
+        messageId: String,
+        clientId: String?,
+        mine: Boolean,
+        envelope: String,
+    ): E2eePayload? {
         // Our own envelope is sealed for the peer: only the archive has its content.
         if (mine) return archive.find(peerId, key)
+        // What this row may hold: the message as first sent, or an edit of it.
+        val bindings = listOfNotNull(clientId?.takeIf { it.isNotBlank() }?.let { ORIGINAL + it }, EDIT + messageId)
+            .map { it.toByteArray(Charsets.UTF_8) }
         // A new message is the common case, and the ratchet settles it without reading old history.
-        return open(peerId, key, envelope) ?: archive.find(peerId, key)
+        return open(peerId, key, envelope, bindings) ?: archive.find(peerId, key)
     }
 
     private fun giveUp(peerId: String, key: String): E2eePayload? {
@@ -184,13 +332,13 @@ class E2eeClient(
         return null
     }
 
-    private fun open(peerId: String, key: String, envelopeJson: String): E2eePayload? {
+    private fun open(peerId: String, key: String, envelopeJson: String, bindings: List<ByteArray>): E2eePayload? {
         val envelope = E2eeProtocol.Envelope.fromJson(envelopeJson) ?: return null
         val record = recordFor(peerId) ?: E2eeStore.PeerRecord()
 
         for (index in record.sessions.indices) {
             val stored = record.sessions[index]
-            val plaintext = E2eeProtocol.open(stored.session, envelope) ?: continue
+            val plaintext = bindings.firstNotNullOfOrNull { E2eeProtocol.open(stored.session, envelope, it) } ?: continue
             if (index > 0 && !stored.retired) {
                 // The peer is using this session: make it ours for sending too.
                 record.sessions.removeAt(index)
@@ -215,7 +363,9 @@ class E2eeClient(
         val oneTimeReference = envelope.otk
         val oneTimePrivate = if (oneTimeReference != null) store.oneTimeKey(oneTimeReference) ?: return null else null
         // A handshake that does not authenticate changes nothing — junk cannot spend a one-time prekey.
-        val opened = E2eeProtocol.openFirst(keys, prekey, oneTimePrivate, envelope, localId, peerId) ?: return null
+        val opened = bindings.firstNotNullOfOrNull {
+            E2eeProtocol.openFirst(keys, prekey, oneTimePrivate, envelope, localId, peerId, it)
+        } ?: return null
 
         val peerIdentity = opened.session.remoteIdentityKey()
         for (stored in record.sessions) {
@@ -278,14 +428,32 @@ class E2eeClient(
      * The server refused a sealed send because the peer registered different
      * keys (reinstall, new phone). Existing sessions keep opening late
      * messages but are never sealed with again; the next [seal] starts a
-     * fresh session against the peer's current bundle.
+     * fresh session against the peer's current bundle. Envelopes waiting for
+     * a retry were sealed for the old keys and are dropped.
      */
     fun retireSessions(peerId: String) {
         batch {
+            if (closed) return@batch
             val record = recordFor(peerId) ?: return@batch
             record.sessions.forEach { it.retired = true }
+            record.unsent.clear()
             store.savePeer(peerId, record, durable = true)
             unreadable.remove(peerId)
+        }
+    }
+
+    /**
+     * Ends this client's life: from here on it reads nothing and writes
+     * nothing. Sign-out calls it before erasing the account's keys and
+     * history, so work that was still in flight cannot write them back.
+     */
+    fun close() {
+        synchronized(lock) {
+            closed = true
+            records.clear()
+            changedPeers.clear()
+            spentOneTimeKeys.clear()
+            unreadable.clear()
         }
     }
 
@@ -302,6 +470,10 @@ class E2eeClient(
     private companion object {
         const val SENT = "c:"
         const val RECEIVED = "m:"
+
+        /** What an envelope is sealed for: a new message (by client id) or the edit of a stored one (by server id). */
+        const val ORIGINAL = "m:"
+        const val EDIT = "e:"
         const val ENVELOPE_DIGEST_BYTES = 16
         const val MAX_REMEMBERED_FAILURES = 1024
     }

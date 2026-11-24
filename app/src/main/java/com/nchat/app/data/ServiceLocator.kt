@@ -1,6 +1,7 @@
 package com.nchat.app.data
 
 import android.content.Context
+import android.os.SystemClock
 import coil.ImageLoader
 import com.nchat.app.BuildConfig
 import kotlinx.serialization.json.contentOrNull
@@ -45,7 +46,11 @@ import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
-import com.nchat.app.network.E2eeKeys
+import com.nchat.app.network.ApiKeyDirectory
+import com.nchat.app.network.EndToEnd
+import com.nchat.app.network.PrefsKeyring
+import com.nchat.app.network.SecurePrefs
+import com.nchat.app.network.fetchPeerBundle
 import com.nchat.app.network.RealtimeEvent
 import com.nchat.app.network.ConnectionState
 import com.nchat.app.network.MediaFiles
@@ -54,6 +59,7 @@ import com.nchat.app.network.NChatApi
 import com.nchat.app.network.NChatSocket
 import com.nchat.app.network.TokenStore
 import com.nchat.app.core.util.CrashLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +67,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.IOException
 
 /**
  * Composition root.
@@ -113,6 +121,24 @@ object ServiceLocator {
         startSystemNotifications()
         // First launch after installing an update: ask Android to stop freezing us, once.
         runCatching { maybeAskBatteryOnce() }
+        startKeyWatch()
+    }
+
+    private var keyWatchStarted = false
+
+    /**
+     * Every time realtime connects is a moment the server can be reached: the moment to confirm
+     * this phone's encryption keys if that has not happened lately (see [syncE2eeKeys]). It is
+     * also how a phone that stays open for days learns that the account moved to another one.
+     */
+    private fun startKeyWatch() {
+        if (keyWatchStarted) return
+        keyWatchStarted = true
+        appScope.launch {
+            socket.state.collect { state ->
+                if (state == ConnectionState.Connected) runCatching { syncE2eeKeys(force = false) }
+            }
+        }
     }
 
     private fun requireContext(): Context =
@@ -520,15 +546,84 @@ object ServiceLocator {
                 pinned.clearAll()
                 notifications.cancelAll()
             },
-            e2eeKeys = e2eeKeys
+            endToEnd = endToEnd,
+            syncKeys = { syncE2eeKeys() }
         )
     }
 
-    /** Phase A: public-key registration; sign-in and launch both call this (idempotent). */
-    val e2eeKeys: E2eeKeys by lazy { E2eeKeys(requireContext(), api, tokens) }
+    /**
+     * End-to-end encryption for the account signed in on this phone: its keys, and the content
+     * of every sealed message it has sent or received (see [EndToEnd]).
+     *
+     * Everything is under `files/e2ee`, sealed with a key that [SecurePrefs] keeps under the
+     * Android Keystore. A sign-out erases both; an expired session erases neither.
+     */
+    val endToEnd: EndToEnd by lazy {
+        val context = requireContext()
+        // Key material in the format of an early build, which was never registered anywhere.
+        runCatching { context.deleteSharedPreferences("e2ee_keys") }
+        EndToEnd(
+            root = File(context.filesDir, "e2ee"),
+            keyring = PrefsKeyring(SecurePrefs(context, "e2ee_storage")),
+            directory = ApiKeyDirectory(api),
+            fetchBundle = { peerId -> api.fetchPeerBundle(peerId) },
+            onReplaced = { movedToAnotherPhone() },
+            report = { what, error -> CrashLog.note(what, error) }
+        ).also { created ->
+            if (!tokens.signedIn.value) return@also
+            val userId = tokens.userId
+            // Without the account there is nothing to open, and every sealed send would be
+            // refused: worth knowing about, since a session always comes with its user id.
+            if (userId.isNullOrBlank()) CrashLog.note("e2ee", IllegalStateException("signed in without a user id"))
+            created.resume(userId)
+        }
+    }
 
-    fun syncE2eeKeys() {
-        appScope.launch { e2eeKeys.sync() }
+    /** When the keys were last confirmed with the server (`elapsedRealtime`), 0 for "not yet". */
+    @Volatile
+    private var keysConfirmedAt = 0L
+
+    /** Between two confirmations; also bounds how long a replaced phone can go on unaware. */
+    private const val KEY_SYNC_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
+    /**
+     * Registers this phone's public keys, or confirms that they are still the account's, and
+     * keeps the server supplied with one-time prekeys.
+     *
+     * Called on launch, after a sign-in and whenever realtime connects; between two successful
+     * runs it waits [KEY_SYNC_INTERVAL_MS], since nothing changes that quickly. A failure is not
+     * an error to show anyone: the next call tries again, and a message that needs the keys
+     * before then registers them itself.
+     */
+    fun syncE2eeKeys(force: Boolean = true) {
+        if (!tokens.signedIn.value) return
+        val confirmed = keysConfirmedAt
+        if (!force && confirmed != 0L && SystemClock.elapsedRealtime() - confirmed < KEY_SYNC_INTERVAL_MS) return
+        appScope.launch {
+            try {
+                if (endToEnd.sync() != null) keysConfirmedAt = SystemClock.elapsedRealtime()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: IOException) {
+                // No connection, or a server that is busy: expected, and tried again later.
+            } catch (error: Throwable) {
+                CrashLog.note("e2ee key sync", error)
+            }
+        }
+    }
+
+    /**
+     * Another phone signed in to this account and is now the one that can read its encrypted
+     * chats. This phone signs out and says why; what it holds stays, so signing in here again
+     * simply moves the account back.
+     */
+    private fun movedToAnotherPhone() {
+        val refresh = tokens.refreshToken
+        keysConfirmedAt = 0L
+        tokens.endForAnotherPhone()
+        // Best effort: end this phone's session on the server too. No keys are withdrawn —
+        // the ones registered now are the other phone's.
+        if (refresh != null) appScope.launch { runCatching { api.logout(refresh) } }
     }
     val profileRepository: ProfileRepository by lazy {
         RemoteProfileRepository(api, tokens, appScope)
@@ -550,7 +645,8 @@ object ServiceLocator {
             // one currently on screen (`NcNotifications.activeChatId`).
             onIncoming = { chat, message ->
                 notifications.show(chat, message, mentioned = mentionsMe(chat, message))
-            }
+            },
+            encryption = { endToEnd.messaging() }
         )
     }
     val friendRepository: FriendRepository by lazy {

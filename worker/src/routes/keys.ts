@@ -5,14 +5,19 @@ import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { decodeExact, SPKI_BYTES } from '../lib/input';
 import { mayMessage } from '../lib/contacts';
+import { keyTablesExist, registeredIdentityKey } from '../lib/keys';
 
 /**
  * E2EE key infrastructure — public keys only.
  *
  * POST /keys/register  upsert identity + signed prekey (signature verified);
  *                      a NEW identity discards the old one-time prekeys
- * POST /keys/prekeys   refill one-time prekeys (1..100,100-unconsumed cap)
- * GET  /keys/prekeys   the caller's own unconsumed count
+ * POST /keys/prekeys   refill one-time prekeys (1..100,100-unconsumed cap),
+ *                      only under the identity key that is registered
+ * GET  /keys/prekeys   the caller's own unconsumed count and registered
+ *                      identity key
+ *
+ * Keys are withdrawn by POST /auth/logout — signing out is what ends them.
  * GET  /keys/bundle/:userId  identity + signed prekey + one popped OTK,
  *                      only for callers who may message that user
  *
@@ -23,9 +28,25 @@ import { mayMessage } from '../lib/contacts';
 
 const keys = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// The key tables come with migration 0008. A server that was deployed before
+// that migration ran cannot serve these routes — and must not look like one
+// that is merely busy: an app that reads "try again later" holds messages
+// back waiting for keys, while one that reads "not set up" carries on exactly
+// as it did before end-to-end encryption existed. So a failure here is
+// answered with 501 when, and only when, the tables are in fact missing.
+keys.use('*', async (c, next) => {
+  await next();
+  if (c.error && !(await keyTablesExist(c.env))) {
+    c.res = c.json({ error: 'End-to-end encryption is not set up on this server', code: 'e2ee_unavailable' }, 501);
+  }
+});
+
 const SIGNATURE_BYTES = 64;
 const MAX_PREKEYS_PER_CALL = 100;
 const MAX_UNCONSUMED_PREKEYS = 100;
+const IDENTITY_KEY_ERROR = 'identity_public_key must be P-256 SPKI (91 bytes)';
+/** Another installation has registered since: this one's keys are not the account's any more. */
+const REPLACED = { error: 'A different installation is registered for this account', code: 'identity_changed' };
 
 /** Verify the signed-prekey signature with the uploader's identity key. */
 async function signatureMatches(identitySpki: Uint8Array, prekeySpki: Uint8Array, signature: Uint8Array): Promise<boolean> {
@@ -100,8 +121,15 @@ keys.post('/prekeys', requireAuth, limitSend, async (c) => {
   if (publicKeys.some((value) => decodeExact(value, SPKI_BYTES) === null)) {
     return c.json({ error: 'Each prekey must be P-256 SPKI (91 bytes)' }, 400);
   }
+  // A one-time prekey is only usable by the installation that holds its
+  // private half. Mixed into the pool of another installation it is handed
+  // out with that one's identity key, and the first message sealed against
+  // it can never be opened — so every upload names the identity it is for.
+  const identity = body?.identity_public_key;
+  if (!decodeExact(identity, SPKI_BYTES)) return c.json({ error: IDENTITY_KEY_ERROR }, 400);
 
   const userId = c.get('userId');
+  if ((await registeredIdentityKey(c.env, userId)) !== identity) return c.json(REPLACED, 409);
   // Fast path only when the pool is already full — partial fills are the
   // conditional insert's job (it fits as many as the cap allows).
   const stored = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
@@ -114,24 +142,31 @@ keys.post('/prekeys', requireAuth, limitSend, async (c) => {
   // statement, so parallel refills can never push the pool past the cap
   // (a plain check-then-insert would race). RETURNING yields the row ids
   // so the client can pair each public key with the private half it keeps.
+  // The identity is checked again in the same statement: a registration that
+  // lands between the check above and this write must win.
   const insert = c.env.DB.prepare(
     `INSERT INTO one_time_prekeys (user_id, public_key)
-      SELECT ?, ? WHERE (SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = ?) < ${MAX_UNCONSUMED_PREKEYS}
+      SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = ?1) < ${MAX_UNCONSUMED_PREKEYS}
+        AND EXISTS (SELECT 1 FROM user_crypto_keys WHERE user_id = ?1 AND identity_public_key = ?3)
       RETURNING id`,
   );
-  const results = await c.env.DB.batch(publicKeys.map((value) => insert.bind(userId, value, userId)));
+  const results = await c.env.DB.batch(publicKeys.map((value) => insert.bind(userId, value, identity)));
   const ids = (results.flatMap((result) => result.results ?? []) as { id: number }[]).map((row) => row.id);
   if (ids.length === 0) {
+    if ((await registeredIdentityKey(c.env, userId)) !== identity) return c.json(REPLACED, 409);
     return c.json({ error: `One-time prekey pool full (${MAX_UNCONSUMED_PREKEYS} unconsumed)` }, 400);
   }
   return c.json({ ok: true, stored: ids.length, ids }, 201);
 });
 
-// GET /keys/prekeys — the caller's own unconsumed count, for refill planning.
+// GET /keys/prekeys — the caller's own unconsumed count, for refill planning,
+// and the identity key the account has registered: an installation sees from
+// it whether it is still the one in use or was replaced by a sign-in elsewhere.
 keys.get('/prekeys', requireAuth, limitSend, async (c) => {
+  const userId = c.get('userId');
   const stored = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM one_time_prekeys WHERE user_id = ?')
-    .bind(c.get('userId')).first<{ n: number }>())?.n ?? 0;
-  return c.json({ remaining: stored });
+    .bind(userId).first<{ n: number }>())?.n ?? 0;
+  return c.json({ remaining: stored, identity_public_key: await registeredIdentityKey(c.env, userId) });
 });
 
 // GET /keys/bundle/:userId — serve public material; pop exactly one one-time

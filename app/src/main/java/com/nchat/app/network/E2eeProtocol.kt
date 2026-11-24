@@ -29,9 +29,10 @@ import kotlinx.serialization.json.put
 /**
  * X3DH + Double Ratchet over P-256 / AES-256-GCM — wire version 1.
  *
- * The state machine is the Signal Double Ratchet algorithm, step for step
- * (initialisation, `RatchetEncrypt`, `RatchetDecrypt`, `SkipMessageKeys`,
- * `DHRatchet`); only the primitives differ:
+ * The state machine is the Signal Double Ratchet algorithm (initialisation,
+ * `RatchetEncrypt`, `RatchetDecrypt`, `DHRatchet`) with one deliberate
+ * difference, described under "Messages that are not there yet" below. The
+ * primitives differ as well:
  *  - P-256 everywhere: platform-native from minSdk 24 to current Android.
  *    X25519 would need bundled crypto below API 33 (agent.md rule 11).
  *  - KDFs are domain-separated HMAC-SHA256; HKDF follows RFC 5869 exactly
@@ -49,6 +50,24 @@ import kotlinx.serialization.json.put
  * never by a server-assigned id: the private half can be stored before the
  * public half is uploaded, and a prekey rotation needs no wire change.
  *
+ * Messages that are not there yet. Signal's servers hand a device every
+ * message in order; NChat's server keeps the history and the app fetches what
+ * the screen needs — the newest message for the chat list, the newest page
+ * when a chat opens, older pages as the user scrolls back. After a week away
+ * the first message this device sees may be thousands ahead of the last one,
+ * and the ones in between arrive later, a page at a time, or never.
+ * `SkipMessageKeys` would derive and store one key for each of them (which is
+ * why it has to be capped at a few hundred). Here a run of messages passed
+ * over is remembered as a [Gap]: the chain key at its first message and the
+ * range of numbers. That is a few bytes however long the run, each message
+ * in it still opens exactly once, in any order, and nothing has to be thrown
+ * away because a limit was reached. The price: while a gap is open, the keys
+ * of the messages that came after it in the same chain can be derived again
+ * from the gap's chain key, so those messages lose forward secrecy until the
+ * gap is read or dropped. This device keeps their content anyway (the sealed
+ * archive is what the app shows history from), so nothing is exposed that was
+ * not already on the device.
+ *
  * Guarantees the callers rely on:
  *  - [open] and [openFirst] never throw and never mutate a session unless the
  *    envelope authenticates — a forged, replayed or malformed envelope costs
@@ -56,6 +75,10 @@ import kotlinx.serialization.json.put
  *  - The handshake binds both identity keys AND both account ids into the
  *    session secret, so a key bundle replayed under another account
  *    (unknown-key-share) can never produce a working session.
+ *  - Every envelope is bound to the id of the message it was sealed for. The
+ *    server keeps envelopes in rows it controls and may replace a row's
+ *    envelope (an edit); it cannot move one into another row or pass one
+ *    message off as the edit of another.
  *  - Every public key that did not originate on this device is checked to be
  *    a canonical P-256 point ON the curve before any provider touches it
  *    ([isValidPublicKey]) — invalid-curve inputs are refused by construction.
@@ -78,11 +101,15 @@ object E2eeProtocol {
     private const val PAD_BLOCK = 128
     private const val KEY_REFERENCE_BYTES = 9
 
-    /** Largest forward jump one envelope may force — bounds the work a forged counter can cost. */
-    private const val MAX_SKIP = 2000
+    /**
+     * Largest forward jump one envelope may ask for, and so the longest run
+     * of messages that can be passed over at once. It bounds the work a
+     * forged counter can cost: this many chain steps, a fraction of a second.
+     */
+    private const val MAX_SKIP = 10_000
 
-    /** Message keys kept for late arrivals; the oldest fall out first. */
-    private const val MAX_SKIPPED_KEYS = 2000
+    /** Gaps kept per session; the oldest fall out first. */
+    private const val MAX_GAPS = 256
 
     private val random = SecureRandom()
 
@@ -225,6 +252,13 @@ object E2eeProtocol {
 
     internal class Chain(var ck: ByteArray, var n: Int)
 
+    /**
+     * Messages [from] until [until] of the receiving chain under [ratchetKey]
+     * that were passed over. [ck] is the chain key at [from]: every key in
+     * the range can still be derived from it.
+     */
+    internal class Gap(val ratchetKey: ByteArray, val from: Int, val until: Int, val ck: ByteArray)
+
     class Session internal constructor(
         /** Our identity (SPKI) — stamped on handshake envelopes. */
         internal var localIdentity: ByteArray,
@@ -243,7 +277,8 @@ object E2eeProtocol {
         internal var pendingSignedPrekey: String?,
         internal var pendingOneTimeKey: String?,
     ) {
-        internal val skipped = LinkedHashMap<String, ByteArray>()
+        /** Oldest first. */
+        internal val gaps = ArrayList<Gap>()
 
         /** The peer identity key (SPKI) this session is pinned to — input to safety numbers. */
         fun remoteIdentityKey(): ByteArray = remoteIdentity.copyOf()
@@ -264,7 +299,7 @@ object E2eeProtocol {
                 pendingSignedPrekey = pendingSignedPrekey,
                 pendingOneTimeKey = pendingOneTimeKey,
             )
-            for ((key, messageKey) in skipped) twin.skipped[key] = messageKey.copyOf()
+            for (gap in gaps) twin.gaps += Gap(gap.ratchetKey.copyOf(), gap.from, gap.until, gap.ck.copyOf())
             return twin
         }
 
@@ -281,8 +316,8 @@ object E2eeProtocol {
             pendingEphemeral = other.pendingEphemeral
             pendingSignedPrekey = other.pendingSignedPrekey
             pendingOneTimeKey = other.pendingOneTimeKey
-            skipped.clear()
-            skipped.putAll(other.skipped)
+            gaps.clear()
+            gaps.addAll(other.gaps)
         }
 
         fun serialize(): ByteArray {
@@ -300,13 +335,12 @@ object E2eeProtocol {
                     writeNullableBytes(pendingEphemeral)
                     writeNullableBytes(pendingSignedPrekey?.toByteArray(Charsets.US_ASCII))
                     writeNullableBytes(pendingOneTimeKey?.toByteArray(Charsets.US_ASCII))
-                    writeInt(skipped.size)
-                    for ((key, messageKey) in skipped) {
-                        val separator = key.lastIndexOf('#')
-                        val ratchetKey = decodeBase64(key.substring(0, separator)) ?: error("corrupt skipped-key id")
-                        writeLengthPrefixed(ratchetKey)
-                        writeInt(key.substring(separator + 1).toInt())
-                        write(messageKey)
+                    writeInt(gaps.size)
+                    for (gap in gaps) {
+                        writeLengthPrefixed(gap.ratchetKey)
+                        writeInt(gap.from)
+                        writeInt(gap.until)
+                        write(gap.ck)
                     }
                     flush()
                 }
@@ -396,7 +430,7 @@ object E2eeProtocol {
      * Responder side: any handshake-carrying envelope plus the private halves
      * it was sealed against. The envelope must name [signedPrekey], and
      * [oneTimePrekeyPrivate] must be present exactly when the envelope names
-     * a one-time prekey. Null on any failure.
+     * a one-time prekey. [messageId] as for [open]. Null on any failure.
      */
     fun openFirst(
         identity: IdentityKeyPair,
@@ -405,6 +439,7 @@ object E2eeProtocol {
         envelope: Envelope,
         localId: String,
         remoteId: String,
+        messageId: ByteArray,
     ): Opened? {
         return try {
             val senderIdentity = envelope.ik ?: return null
@@ -437,7 +472,7 @@ object E2eeProtocol {
                 pendingSignedPrekey = null,
                 pendingOneTimeKey = null,
             )
-            val plaintext = receive(session, envelope) ?: return null
+            val plaintext = receive(session, envelope, messageId) ?: return null
             Opened(session, plaintext)
         } catch (_: Throwable) {
             null
@@ -446,14 +481,20 @@ object E2eeProtocol {
 
     // --------------------------------------------------------------- ratchet
 
-    /** Seal one plaintext. The chain advances only once the ciphertext exists. */
-    fun seal(session: Session, plaintext: ByteArray): Envelope {
+    /**
+     * Seal one plaintext for the message called [messageId] — the id the
+     * sender chose for it, which the server stores next to the envelope. The
+     * id is authenticated, not transmitted: the envelope opens only when the
+     * same id is supplied again. The chain advances only once the ciphertext
+     * exists.
+     */
+    fun seal(session: Session, plaintext: ByteArray, messageId: ByteArray): Envelope {
         val chain = session.sendChain ?: error("session has no sending chain")
         val (messageKey, nextChainKey) = chainKdf(chain.ck)
         val counter = chain.n
         val previous = session.sendPrevCount
         val ratchetPublic = session.ourRatchetPublic
-        val ciphertext = gcmEncrypt(messageKey, headerBytes(ratchetPublic, counter, previous), pad(plaintext))
+        val ciphertext = gcmEncrypt(messageKey, headerBytes(ratchetPublic, counter, previous) + messageId, pad(plaintext))
         wipe(messageKey)
         chain.ck = nextChainKey
         chain.n = counter + 1
@@ -473,13 +514,15 @@ object E2eeProtocol {
 
     /**
      * Decrypt an inbound envelope against an established session. Works on a
-     * copy and adopts it only when the envelope authenticates; returns null
-     * (session untouched) for anything else. Never throws.
+     * copy and adopts it only when the envelope authenticates as the message
+     * called [messageId]; returns null (session untouched, no key spent) for
+     * anything else — including a genuine envelope presented under another
+     * message's id. Never throws.
      */
-    fun open(session: Session, envelope: Envelope): ByteArray? {
+    fun open(session: Session, envelope: Envelope, messageId: ByteArray): ByteArray? {
         return try {
             val trial = session.copy()
-            val plaintext = receive(trial, envelope) ?: return null
+            val plaintext = receive(trial, envelope, messageId) ?: return null
             session.adopt(trial)
             plaintext
         } catch (_: Throwable) {
@@ -488,26 +531,36 @@ object E2eeProtocol {
     }
 
     /** `RatchetDecrypt`. Mutates [state]; callers pass a disposable copy. */
-    private fun receive(state: Session, envelope: Envelope): ByteArray? {
-        val header = headerBytes(envelope.dh, envelope.n, envelope.pn)
+    private fun receive(state: Session, envelope: Envelope, messageId: ByteArray): ByteArray? {
+        // The header has a fixed length, so appending the id is unambiguous.
+        val header = headerBytes(envelope.dh, envelope.n, envelope.pn) + messageId
 
-        // 1. A message that was skipped over earlier (any chain).
-        val skipId = skipKey(envelope.dh, envelope.n)
-        val stashed = state.skipped[skipId]
-        if (stashed != null) {
-            val padded = gcmDecrypt(stashed, header, envelope.ciphertext) ?: return null
-            state.skipped.remove(skipId)
-            wipe(stashed)
+        // 1. A message that was passed over earlier (any chain).
+        val index = state.gaps.indexOfFirst {
+            envelope.n >= it.from && envelope.n < it.until && it.ratchetKey contentEquals envelope.dh
+        }
+        if (index >= 0) {
+            val gap = state.gaps[index]
+            val (messageKey, after) = chainKdf(advance(gap.ck, envelope.n - gap.from))
+            val padded = gcmDecrypt(messageKey, header, envelope.ciphertext)
+            wipe(messageKey)
+            if (padded == null) return null
+            // The message leaves the gap; what remains of it lies before and after.
+            state.gaps.removeAt(index)
+            var at = index
+            if (envelope.n > gap.from) state.gaps.add(at++, Gap(gap.ratchetKey, gap.from, envelope.n, gap.ck))
+            if (envelope.n + 1 < gap.until) state.gaps.add(at, Gap(gap.ratchetKey, envelope.n + 1, gap.until, after))
+            dropOldestGaps(state)
             return unpad(padded)?.also { confirmHandshake(state) }
         }
 
         // 2. A new remote ratchet key: close the current receiving chain
-        //    (keeping the keys of messages still in flight), then turn.
+        //    (what has not arrived of it becomes a gap), then turn.
         val turned = !(envelope.dh contentEquals state.theirRatchet)
         if (turned) {
             val closing = state.recvChain
             val closingKey = state.theirRatchet
-            if (closing != null && closingKey != null && !skipTo(state, closing, closingKey, envelope.pn)) return null
+            if (closing != null && closingKey != null && !leaveGap(state, closingKey, closing, envelope.pn)) return null
             val shared = dh(state.ourRatchetPrivate, envelope.dh)
             val (rootKey, chainKey) = kdfRootKey(state.rootKey, shared)
             wipe(shared)
@@ -516,10 +569,12 @@ object E2eeProtocol {
             state.theirRatchet = envelope.dh
         }
 
-        // 3. The receiving chain, skipping ahead when messages are missing.
+        // 3. The receiving chain, passing over what is missing before this message.
         val chain = state.recvChain ?: return null
         if (envelope.n < chain.n) return null // already consumed — a replay
-        if (!skipTo(state, chain, envelope.dh, envelope.n)) return null
+        if (!leaveGap(state, envelope.dh, chain, envelope.n)) return null
+        chain.ck = advance(chain.ck, envelope.n - chain.n)
+        chain.n = envelope.n
         val (messageKey, nextChainKey) = chainKdf(chain.ck)
         val padded = gcmDecrypt(messageKey, header, envelope.ciphertext)
         wipe(messageKey)
@@ -550,24 +605,33 @@ object E2eeProtocol {
         state.pendingOneTimeKey = null
     }
 
-    /** `SkipMessageKeys`: stash the keys of [chain] up to (excluding) [until]. False = jump too large. */
-    private fun skipTo(state: Session, chain: Chain, ratchetKey: ByteArray, until: Int): Boolean {
+    /**
+     * Remembers the messages of [chain] before [until] as a gap. The chain
+     * itself is left where it is. False = the jump is too large.
+     */
+    private fun leaveGap(state: Session, ratchetKey: ByteArray, chain: Chain, until: Int): Boolean {
         if (until <= chain.n) return true
         if (until - chain.n > MAX_SKIP) return false
-        while (chain.n < until) {
-            val (messageKey, nextChainKey) = chainKdf(chain.ck)
-            if (state.skipped.size >= MAX_SKIPPED_KEYS) {
-                val oldest = state.skipped.keys.first()
-                state.skipped.remove(oldest)?.let { wipe(it) }
-            }
-            state.skipped[skipKey(ratchetKey, chain.n)] = messageKey
-            chain.ck = nextChainKey
-            chain.n += 1
-        }
+        state.gaps += Gap(ratchetKey.copyOf(), chain.n, until, chain.ck.copyOf())
+        dropOldestGaps(state)
         return true
     }
 
-    private fun skipKey(ratchetKey: ByteArray, n: Int): String = encodeBase64(ratchetKey) + "#" + n
+    private fun dropOldestGaps(state: Session) {
+        while (state.gaps.size > MAX_GAPS) wipe(state.gaps.removeAt(0).ck)
+    }
+
+    /** The chain key [steps] messages further on. */
+    private fun advance(chainKey: ByteArray, steps: Int): ByteArray {
+        if (steps <= 0) return chainKey
+        val mac = Mac.getInstance(MAC)
+        var key = chainKey
+        repeat(steps) {
+            mac.init(SecretKeySpec(key, MAC))
+            key = mac.doFinal(CHAIN_STEP)
+        }
+        return key
+    }
 
     // ----------------------------------------------------------------- crypto
 
@@ -636,9 +700,11 @@ object E2eeProtocol {
     /** Signal-style chain KDF: message key and next chain key from one step. */
     private fun chainKdf(chainKey: ByteArray): Pair<ByteArray, ByteArray> {
         val messageKey = hmac(chainKey, byteArrayOf(0x01))
-        val next = hmac(chainKey, byteArrayOf(0x02))
+        val next = hmac(chainKey, CHAIN_STEP)
         return messageKey to next
     }
+
+    private val CHAIN_STEP = byteArrayOf(0x02)
 
     /**
      * ECDH over P-256. JCA's KeyAgreement lives in `javax.crypto` (there is
@@ -809,8 +875,8 @@ object E2eeProtocol {
                 val pendingEphemeral = input.readNullableBytes()
                 val pendingSignedPrekey = input.readNullableBytes()?.let { String(it, Charsets.US_ASCII) }
                 val pendingOneTimeKey = input.readNullableBytes()?.let { String(it, Charsets.US_ASCII) }
-                val skippedCount = input.readInt()
-                if (sendPrevCount < 0 || skippedCount < 0 || skippedCount > MAX_SKIPPED_KEYS) return null
+                val gapCount = input.readInt()
+                if (sendPrevCount < 0 || gapCount < 0 || gapCount > MAX_GAPS) return null
                 val session = Session(
                     localIdentity = localIdentity,
                     remoteIdentity = remoteIdentity,
@@ -825,11 +891,12 @@ object E2eeProtocol {
                     pendingSignedPrekey = pendingSignedPrekey,
                     pendingOneTimeKey = pendingOneTimeKey,
                 )
-                repeat(skippedCount) {
+                repeat(gapCount) {
                     val ratchetKey = input.readLengthPrefixed()
-                    val n = input.readInt()
-                    if (n < 0) return null
-                    session.skipped[skipKey(ratchetKey, n)] = input.readExactly(KEY_BYTES)
+                    val from = input.readInt()
+                    val until = input.readInt()
+                    if (from < 0 || until <= from || until - from > MAX_SKIP) return null
+                    session.gaps += Gap(ratchetKey, from, until, input.readExactly(KEY_BYTES))
                 }
                 if (input.available() != 0) return null
                 session

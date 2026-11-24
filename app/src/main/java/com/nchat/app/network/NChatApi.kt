@@ -46,10 +46,17 @@ class NChatApi(private val client: ApiClient) {
             )
         )
 
-    suspend fun logout(refreshToken: String?) {
+    /**
+     * Ends the session on the server. [identityPublicKey] names the end-to-end encryption
+     * identity this phone is erasing with it, so the server stops handing those keys out.
+     */
+    suspend fun logout(refreshToken: String?, identityPublicKey: String? = null) {
         client.post(
             "/auth/logout",
-            body { if (refreshToken != null) put("refresh_token", refreshToken) }
+            body {
+                if (refreshToken != null) put("refresh_token", refreshToken)
+                if (identityPublicKey != null) put("identity_public_key", identityPublicKey)
+            }
         )
     }
 
@@ -72,6 +79,39 @@ class NChatApi(private val client: ApiClient) {
             }
         )
     }
+
+    /**
+     * What it takes to start a sealed conversation with [userId]. A 404 means
+     * that account has no keys (an older app), a 501 that the server has no
+     * key directory at all; both read as null. Any other failure propagates:
+     * a timeout must never look like "no keys".
+     */
+    suspend fun keyBundle(userId: String): BundleDto? = try {
+        decode(client.get("/keys/bundle/$userId"))
+    } catch (error: ApiException) {
+        if (error.status == 404 || error.status == KEYS_NOT_SET_UP) null else throw error
+    }
+
+    suspend fun keyStatus(): KeyStatusDto = decode(client.get("/keys/prekeys"))
+
+    /**
+     * Adds one-time prekeys under [identityPublicKey]. False when the server
+     * holds a different identity key for the account (409): another
+     * installation has registered since.
+     */
+    suspend fun uploadPrekeys(identityPublicKey: String, publicKeys: List<String>): Boolean = try {
+        client.post(
+            "/keys/prekeys",
+            body {
+                put("identity_public_key", identityPublicKey)
+                putJsonArray("public_keys") { publicKeys.forEach { add(it) } }
+            },
+        )
+        true
+    } catch (error: ApiException) {
+        if (error.status == 409) false else throw error
+    }
+
 
     // ----------------------------------------------------------------- users
 
@@ -176,6 +216,8 @@ class NChatApi(private val client: ApiClient) {
         duration: String? = null,
         fileName: String? = null,
         fileSize: String? = null,
+        /** For a sealed message (`type = "e2ee"`): the identity key its envelope was sealed for. */
+        recipientIdentityKey: String? = null,
     ): MessageEnvelope = decode(
         client.post(
             "/messages",
@@ -183,6 +225,7 @@ class NChatApi(private val client: ApiClient) {
                 put("receiver_id", receiverId)
                 put("content", content)
                 put("type", type)
+                if (recipientIdentityKey != null) put("recipient_identity_key", recipientIdentityKey)
                 if (clientMessageId != null) put("client_message_id", clientMessageId)
                 if (replyTo != null) put("reply_to", replyTo)
                 if (mediaUrl != null) put("media_url", mediaUrl)
@@ -194,8 +237,17 @@ class NChatApi(private val client: ApiClient) {
         )
     )
 
-    suspend fun editMessage(id: String, content: String): MessageEnvelope =
-        decode(client.patch("/messages/$id", body { put("content", content) }))
+    /** [recipientIdentityKey] accompanies the new envelope of a sealed message, and only that. */
+    suspend fun editMessage(id: String, content: String, recipientIdentityKey: String? = null): MessageEnvelope =
+        decode(
+            client.patch(
+                "/messages/$id",
+                body {
+                    put("content", content)
+                    if (recipientIdentityKey != null) put("recipient_identity_key", recipientIdentityKey)
+                },
+            )
+        )
 
     suspend fun deleteMessage(id: String) {
         client.delete("/messages/$id")
@@ -534,6 +586,15 @@ class NChatApi(private val client: ApiClient) {
     )
 
     // ------------------------------------------------------------- internals
+
+    companion object {
+        /**
+         * `/keys/…` on a server that has not been given its key tables yet. Unlike every
+         * other 5xx this is not "try again later": until somebody sets the server up, there
+         * is no end-to-end encryption to wait for.
+         */
+        const val KEYS_NOT_SET_UP = 501
+    }
 
     private fun body(block: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject(block)
 
