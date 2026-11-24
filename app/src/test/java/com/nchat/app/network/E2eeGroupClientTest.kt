@@ -575,6 +575,38 @@ class E2eeGroupClientTest {
         assertNull(bob.client(hub).revealGroup(group, "alice", "s-served-again", rows[2].clientId, mine = false, envelope = rows[2].envelope))
     }
 
+    // ------------------------------------------------- deleted, and replaced
+
+    @Test
+    fun aGroupMessageThatWasDeletedOrReplacedIsHandledLikeAnyOther() {
+        val (hub, phones) = family()
+        val (alice, bob) = phones
+        val a = alice.client(hub)
+        val kept = send(hub, alice, "keep", a)!!
+        val dropped = send(hub, alice, "delete me", a)!!
+        assertEquals("keep", read(hub, bob, kept))
+        assertEquals("delete me", read(hub, bob, dropped))
+
+        val b = bob.client(hub)
+        // What the phone opened under that id, by the member who wrote it — and by nobody else.
+        assertEquals("keep", b.keptInGroup(group, "alice", kept.id, kept.clientId, mine = false)?.body)
+        assertNull("not as carol's", b.keptInGroup(group, "carol", kept.id, kept.clientId, mine = false))
+        assertNull(b.keptInGroup("g-other", "alice", kept.id, kept.clientId, mine = false))
+        assertEquals("keep", alice.client(hub).keptInGroup(group, "alice", kept.id, kept.clientId, mine = true)?.body)
+
+        b.forgetInGroup(group, "alice", dropped.id, dropped.clientId)
+        assertNull(bob.client(hub).keptInGroup(group, "alice", dropped.id, dropped.clientId, mine = false))
+        assertNull("its place in the chain is spent", read(hub, bob, dropped))
+        assertEquals("keep", read(hub, bob, kept))
+        // The sender's own copy goes the same way.
+        a.forgetInGroup(group, "alice", dropped.id, dropped.clientId)
+        assertNull(read(hub, alice, dropped))
+        assertEquals("keep", read(hub, alice, kept))
+        // Forgetting under another member's name removes nothing of alice's.
+        bob.client(hub).forgetInGroup(group, "carol", kept.id, kept.clientId)
+        assertEquals("keep", bob.client(hub).keptInGroup(group, "alice", kept.id, kept.clientId, mine = false)?.body)
+    }
+
     // ----------------------------------------------------- asking for chains
 
     @Test
@@ -664,7 +696,13 @@ class E2eeGroupClientTest {
         }
         assertTrue(hub.handOvers.isEmpty())
         assertTrue(hub.rows.isEmpty())
+        // And nothing was built on the keys that were not asked for: no session, and no record
+        // that would later make bob's real keys look like a change.
+        assertNull(alice.client(hub).security("bob"))
         hub.bundleLies = null
+        val row = send(hub, alice, "to the real bob")!!
+        assertEquals("to the real bob", read(hub, phones[1], row))
+        assertFalse(alice.client(hub).security("bob")!!.changed)
     }
 
     @Test

@@ -173,6 +173,74 @@ class E2eeArchiveTest {
     }
 
     @Test
+    fun aDeletedMessageIsTakenOutOfTheFileNotMerelyHidden() {
+        val first = archive()
+        first.put("bob", "m:1#aaaa", E2eePayload.text("keep me"))
+        first.put("bob", "m:2#bbbb", E2eePayload.text("delete me ".repeat(200)))
+        first.put("bob", "m:2#cccc", E2eePayload.text("delete me, edited ".repeat(200)))
+        first.put("bob", "c:9#dddd", E2eePayload.text("my own, delete me too ".repeat(200)))
+        first.put("bob", "m:20#eeee", E2eePayload.text("not the same message as m:2"))
+        first.put("carol", "m:2#ffff", E2eePayload.text("carol's m:2 is another message"))
+        first.flush()
+        val file = logs().single { it.length() > 4_000 }
+        val before = file.length()
+
+        assertEquals("the message, its edit, and the copy kept of one's own", 3, first.remove("bob", listOf("m:2#", "c:9#")))
+        assertTrue("the bytes are gone from the file: ${file.length()} of $before", file.length() < before / 10)
+        assertNull(first.find("bob", "m:2#bbbb"))
+        assertNull(first.recent("bob", "m:2#cccc"))
+        assertNull(first.find("bob", "c:9#dddd"))
+        assertEquals("keep me", first.find("bob", "m:1#aaaa")?.body)
+        assertEquals("a longer id that begins the same is another message", "not the same message as m:2", first.find("bob", "m:20#eeee")?.body)
+        assertEquals("carol's m:2 is another message", first.find("carol", "m:2#ffff")?.body)
+
+        // The same for a process that starts later, and what is written afterwards is kept.
+        val again = archive()
+        assertNull(again.find("bob", "m:2#bbbb"))
+        assertEquals("keep me", again.find("bob", "m:1#aaaa")?.body)
+        again.put("bob", "m:3#gggg", E2eePayload.text("after"))
+        again.flush()
+        assertEquals("after", archive().find("bob", "m:3#gggg")?.body)
+        // Nothing to remove is not an error, and rewrites nothing.
+        val untouched = file.lastModified()
+        assertEquals(0, again.remove("bob", listOf("m:999#")))
+        assertEquals(0, again.remove("nobody", listOf("m:1#")))
+        assertEquals(0, again.remove("bob", emptyList()))
+        assertEquals(untouched, file.lastModified())
+        for (log in logs()) assertFalse(log.name.endsWith(".tmp"))
+    }
+
+    @Test
+    fun theNewestVersionOfAMessageIsFoundByTheMessageAlone() {
+        val first = archive()
+        assertNull(first.latest("bob", "m:1#"))
+        first.put("bob", "m:1#aaaa", E2eePayload.text("as first sent"))
+        first.put("bob", "m:2#bbbb", E2eePayload.text("another message"))
+        first.put("bob", "m:1#cccc", E2eePayload.text("as edited"))
+        first.flush()
+        // Without the envelope: what the phone kept of message 1, in its newest form.
+        assertEquals("as edited", first.latest("bob", "m:1#")?.body)
+        assertEquals("another message", first.latest("bob", "m:2#")?.body)
+        assertNull(first.latest("bob", "m:3#"))
+        assertNull("a longer id that begins the same is another message", first.latest("bob", "m:#"))
+        assertNull(first.latest("carol", "m:1#"))
+
+        val again = archive()
+        assertEquals("as edited", again.latest("bob", "m:1#")?.body)
+        // Also from far back in a long history, which is read only when it is asked for.
+        val long = archive(tailBytes = 512)
+        for (index in 0 until 60) long.put("dave", "m:$index#x$index", E2eePayload.text("message $index"))
+        long.flush()
+        val reader = archive(tailBytes = 512)
+        assertEquals("message 59", reader.latest("dave", "m:59#")?.body)
+        assertEquals("message 0", reader.latest("dave", "m:0#")?.body)
+        // Removed is removed for this lookup too.
+        assertEquals(1, reader.remove("dave", listOf("m:0#")))
+        assertNull(reader.latest("dave", "m:0#"))
+        assertNull(archive(tailBytes = 512).latest("dave", "m:0#"))
+    }
+
+    @Test
     fun entriesSurviveANewInstanceAndTheLatestWins() {
         val first = archive()
         assertNull(first.recent("bob", "m:1"))

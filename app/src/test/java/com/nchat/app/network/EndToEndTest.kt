@@ -343,6 +343,11 @@ class EndToEndTest {
         assertFalse(idle.acceptGroupKey("g", "bob", "chain", "{}"))
         idle.noGroupKey("g", "bob", "chain")
         assertNull(idle.groupSecurity("g"))
+        // Nothing was kept for nobody, and there is nothing to forget.
+        assertNull(idle.kept("bob", "s-1", "c-1", mine = false))
+        assertNull(idle.keptInGroup("g", "bob", "s-1", "c-1", mine = false))
+        idle.forget("bob", "s-1", "c-1")
+        idle.forgetInGroup("g", "bob", "s-1", "c-1")
     }
 
     // ------------------------------------------------------------- sign-out

@@ -368,6 +368,31 @@ class SealedMediaTest {
     }
 
     @Test
+    fun aDeletedMessageTakesItsOpenedFileAndItsSmallPictureWithIt() {
+        val shelf = Shelf()
+        val plain = contentOf(8_000)
+        shelf.files[url] = E2eeAttachment.seal(key, plain)
+        shelf.files["$url-other"] = E2eeAttachment.seal(key, plain)
+        val store = SealedMediaStore({ directory() })
+        val address = SealedMedia.address(url, key, plain.size.toLong(), "jpg")
+        val other = SealedMedia.address("$url-other", key, plain.size.toLong(), "jpg")
+        val file = store.local(address, shelf::fetch)
+        val picture = store.thumbnail(address, byteArrayOf(1, 2, 3))!!
+        val untouched = store.local(other, shelf::fetch)
+
+        store.forget(address)
+        assertFalse(file.exists())
+        assertFalse(picture.exists())
+        assertNull(store.cached(address))
+        assertTrue("another message's file stays", untouched.exists())
+        // Nothing to forget is not an error.
+        store.forget(address)
+        store.forget(url)
+        store.forget(null)
+        SealedMediaStore({ null }).forget(address)
+    }
+
+    @Test
     fun twoAsksForOneFileFetchItOnce() {
         val plain = contentOf(20_000)
         val sealed = E2eeAttachment.seal(key, plain)

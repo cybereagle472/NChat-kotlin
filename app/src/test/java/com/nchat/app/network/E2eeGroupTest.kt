@@ -84,6 +84,11 @@ class E2eeGroupTest {
         val a = E2eeGroup.newChain(0L)
         val b = E2eeGroup.newChain(0L)
         assertNotEquals(a.idText, b.idText)
+        // Every chain has a key of its own, made at random: what is handed over for one says nothing about another.
+        val keyOfA = E2eeGroup.distribution(a).copyOfRange(21, 53)
+        val keyOfB = E2eeGroup.distribution(b).copyOfRange(21, 53)
+        assertFalse(keyOfA.contentEquals(keyOfB))
+        assertFalse(keyOfA.all { it == 0.toByte() })
         assertNotEquals(field(send(a, "c1", "same"), "ct"), field(send(b, "c1", "same"), "ct"))
         assertFalse(a.signingPublic.contentEquals(b.signingPublic))
     }

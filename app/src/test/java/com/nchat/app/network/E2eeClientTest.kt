@@ -868,6 +868,70 @@ class E2eeClientTest {
         }
     }
 
+    // ------------------------------------------------- deleted, and replaced
+
+    @Test
+    fun aDeletedMessageIsForgottenOnThePhoneToo() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val keep = send(a, "alice", "bob", "keep this one")
+        val drop = send(a, "alice", "bob", "delete this one, please ".repeat(100))
+        assertEquals("keep this one", read(b, keep))
+        assertTrue(read(b, drop)!!.startsWith("delete this one"))
+        val size = bob.archiveDirectory.listFiles().orEmpty().sumOf { it.length() }
+
+        // Deleted for everyone: bob's phone lets go of what it kept, and so does alice's.
+        b.forget("alice", drop.id, drop.clientId)
+        a.forget("bob", drop.id, drop.clientId)
+        assertTrue("the content left the file", bob.archiveDirectory.listFiles().orEmpty().sumOf { it.length() } < size / 2)
+        for (client in listOf(b, bob.client(server))) {
+            assertNull("gone, and its key was spent: nothing brings it back", read(client, drop))
+            assertEquals("keep this one", read(client, keep))
+        }
+        assertNull(readOwn(alice.client(server), drop))
+        assertEquals("keep this one", readOwn(alice.client(server), keep))
+        // Forgetting what was never kept, or for somebody nothing was encrypted with, does nothing.
+        b.forget("alice", "s-unknown", null)
+        b.forget("carol", "s-1", "c-1")
+        assertNull(b.security("carol"))
+        b.close()
+        b.forget("alice", keep.id, keep.clientId)
+        assertEquals("a closed client deletes nothing", "keep this one", read(bob.client(server), keep))
+    }
+
+    @Test
+    fun whatWasOpenedSealedIsStillThereWhenTheServerServesSomethingElse() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val wire = send(a, "alice", "bob", "meet at nine")
+        assertEquals("meet at nine", read(b, wire))
+
+        // The row comes back readable — "meet at five" — with the envelope gone. The phone still
+        // knows what it opened under that id, without the envelope.
+        assertEquals("meet at nine", b.kept("alice", wire.id, wire.clientId, mine = false)?.body)
+        assertEquals("meet at nine", bob.client(server).kept("alice", wire.id, null, mine = false)?.body)
+        assertEquals("and the sender what they sent", "meet at nine", alice.client(server).kept("bob", wire.id, wire.clientId, mine = true)?.body)
+        // Nothing is known of a message that was never opened sealed here.
+        assertNull(b.kept("alice", "s-other", "c-other", mine = false))
+        assertNull("nor under the other direction", b.kept("alice", wire.id, wire.clientId, mine = true))
+        assertNull(b.kept("carol", wire.id, wire.clientId, mine = false))
+        assertNull(a.kept("bob", wire.id, null, mine = true))
+        assertNull(b.kept("", wire.id, wire.clientId, mine = false))
+        // An edit that was opened is the newest form.
+        val edit = runBlocking { a.seal("bob", wire.clientId, E2eePayload.text("meet at ten"), editOf = wire.id) }!!
+        assertEquals("meet at ten", b.reveal("alice", wire.id, wire.clientId, mine = false, envelope = edit.envelope)?.body)
+        assertEquals("meet at ten", bob.client(server).kept("alice", wire.id, wire.clientId, mine = false)?.body)
+        // Once forgotten, nothing is kept.
+        b.forget("alice", wire.id, wire.clientId)
+        assertNull(bob.client(server).kept("alice", wire.id, wire.clientId, mine = false))
+    }
+
     // -------------------------------------------------------------- closing
 
     // ------------------------------------------- history as the app meets it
