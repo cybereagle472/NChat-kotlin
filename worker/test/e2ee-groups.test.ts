@@ -358,6 +358,34 @@ describe('a member who could not open the chain they were handed', () => {
     expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([]);
   });
 
+  it('still counts against the chain when that member then takes other keys, or leaves', async () => {
+    // That the envelope did not open is only the member's word. Somebody who asked for the
+    // chain again and then registered other keys, or left, may hold it all the same.
+    const s = await scene();
+    const chain = chainId();
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey }, { to: s.carol, identity: s.carolKey }])).status).toBe(200);
+    expect(await (await askAgain(s.bob, s.group, s.alice, chain)).json()).toEqual({ success: true, asked: true });
+    expect((await roster(s.alice, s.group, chain)).stale).toBe(false);
+
+    // Other keys: nobody to hand it to "again" — the chain is stale, and a new one is due.
+    const newKey = await registerKeys(s.bob);
+    const seen = await roster(s.alice, s.group, chain);
+    const byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: newKey, has_key: false, again: false });
+    expect(seen.stale).toBe(true);
+
+    // Left: the same, in a group of its own so that only this can be the reason.
+    const t = await scene();
+    const other = chainId();
+    expect((await handOver(t.alice, t.group, other, [{ to: t.bob, identity: t.bobKey }, { to: t.carol, identity: t.carolKey }])).status).toBe(200);
+    expect(await (await askAgain(t.carol, t.group, t.alice, other)).json()).toEqual({ success: true, asked: true });
+    expect((await roster(t.alice, t.group, other)).stale).toBe(false);
+    expect((await call('POST', `/groups/${t.group}/leave`, t.carol.token)).status).toBe(200);
+    const after = await roster(t.alice, t.group, other);
+    expect(after.members.map((m) => m.user_id)).not.toContain(t.carol.id);
+    expect(after.stale).toBe(true);
+  });
+
   it('is for members of the group, about somebody else, and well-formed', async () => {
     const s = await scene();
     const chain = chainId();
