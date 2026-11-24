@@ -139,6 +139,19 @@ class EncryptionMarksTest {
     }
 
     @Test
+    fun theSheetOfAGroupSaysWhetherItIsEncryptedAndWhoReads() {
+        val not = groupEncryptionSummary(encrypted = false)
+        val yes = groupEncryptionSummary(encrypted = true)
+        assertTrue(not.contains("not end-to-end encrypted yet"))
+        assertTrue("and what it waits for", not.contains("every member"))
+        assertTrue(yes.contains("are end-to-end encrypted"))
+        assertFalse(yes.contains("not end-to-end encrypted"))
+        assertTrue("who reads what after joining and leaving", yes.contains("joins") && yes.contains("leaves"))
+        assertTrue("where a code can be compared", yes.contains("security code"))
+        assertNotEquals(not, yes)
+    }
+
+    @Test
     fun theSheetNeverCallsAChatEncryptedThatIsNot() {
         val never = encryptionSummary("Sara", null)
         assertTrue(never.contains("not end-to-end encrypted yet"))

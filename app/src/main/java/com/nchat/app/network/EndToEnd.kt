@@ -14,6 +14,8 @@ internal object E2eeText {
     const val PEER_KEYS_UNVERIFIED = "this contact's encryption keys could not be checked"
     const val REPLACED = "this account is now in use on another phone"
     const val CODE_CHANGED = "this contact's security code changed. Check the notice at the top of the chat, then send it again"
+    const val MEMBER_CODE_CHANGED =
+        "the security code of somebody in this group changed. Open your chat with them, check the notice, then send it again"
     const val UNAVAILABLE =
         "encrypted chats can't be opened on this phone right now. Restart NChat; if that doesn't help, sign out and sign in again"
 
@@ -112,6 +114,26 @@ class EndToEnd(
         ): T? = throw IllegalStateException(reason)
 
         override suspend fun willSeal(peerId: String): Boolean = throw IllegalStateException(reason)
+
+        override suspend fun <T : Any> sendGroupSealed(
+            groupId: String,
+            clientId: String,
+            payload: E2eePayload,
+            group: GroupTransport,
+            send: suspend (GroupSealed) -> T,
+        ): T? = throw IllegalStateException(reason)
+
+        override suspend fun willSealGroup(groupId: String, group: GroupTransport): Boolean = throw IllegalStateException(reason)
+
+        override fun revealGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload? = null
+
+        override fun missingGroupKeys(groupId: String, rows: List<GroupRow>): List<GroupKeyRef> = emptyList()
+
+        override fun acceptGroupKey(groupId: String, senderId: String, chainId: String, envelope: String): Boolean = false
+
+        override fun noGroupKey(groupId: String, senderId: String, chainId: String) = Unit
+
+        override fun groupSecurity(groupId: String): GroupSecurity? = null
 
         override fun security(peerId: String): PeerSecurity? = null
 

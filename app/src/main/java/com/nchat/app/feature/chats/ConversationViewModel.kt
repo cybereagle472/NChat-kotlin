@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
@@ -45,6 +46,19 @@ class ConversationViewModel(
     val security: StateFlow<PeerSecurity?> = repository.security
         .map { known -> known[chatId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repository.security.value[chatId])
+
+    /**
+     * Since when this chat is end-to-end encrypted on this phone, by its own clock — with one
+     * person or in a group; null when nothing was ever sealed in it here. It is what decides
+     * which readable messages are marked "Not encrypted".
+     */
+    val encryptedSince: StateFlow<Long?> = combine(repository.security, repository.groupEncryptedSince) { people, groups ->
+        groups[chatId] ?: people[chatId]?.since
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        repository.groupEncryptedSince.value[chatId] ?: repository.security.value[chatId]?.since
+    )
 
     private val _composerText = MutableStateFlow("")
     val composerText: StateFlow<String> = _composerText.asStateFlow()

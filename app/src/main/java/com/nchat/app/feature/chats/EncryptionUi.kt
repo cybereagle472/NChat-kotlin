@@ -104,6 +104,8 @@ fun SecurityChangeBanner(
 fun SecurityCodeDialog(
     name: String,
     security: PeerSecurity?,
+    /** What the sheet says first; a group has its own sentence and no code. */
+    summary: String = encryptionSummary(name, security),
     loadCode: suspend (key: String) -> String?,
     onSetVerified: (key: String, verified: Boolean) -> Unit,
     onAccept: (key: String) -> Unit,
@@ -144,7 +146,7 @@ fun SecurityCodeDialog(
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = encryptionSummary(name, security),
+                text = summary,
                 color = extra.textSecondary,
                 fontSize = 13.sp
             )

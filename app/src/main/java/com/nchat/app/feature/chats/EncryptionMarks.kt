@@ -69,6 +69,20 @@ fun encryptionSummary(name: String, security: PeerSecurity?): String = when {
             "covers texts, locations, photos, videos, voice messages and files."
 }
 
+/**
+ * What the encryption sheet of a group says. [encrypted]: a sealed message was written or read
+ * in the group on this phone.
+ */
+fun groupEncryptionSummary(encrypted: Boolean): String = if (encrypted) {
+    "Messages in this group are end-to-end encrypted: only the phones of its members can read them. That " +
+        "covers texts, locations, photos, videos, voice messages and files. Somebody who joins reads from " +
+        "then on; somebody who leaves reads nothing that follows. To compare a member's security code, " +
+        "open your chat with them."
+} else {
+    "Messages in this group are not end-to-end encrypted yet. That starts by itself, with the first " +
+        "message after every member uses a version of NChat that supports it."
+}
+
 /** The line under the chat's header while a change of the other person's security code is unacknowledged. */
 fun securityChangeNotice(name: String, security: PeerSecurity): String = when {
     security.key == null ->

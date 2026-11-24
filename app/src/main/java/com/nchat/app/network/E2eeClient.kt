@@ -1,6 +1,9 @@
 package com.nchat.app.network
 
+import java.io.IOException
 import java.security.MessageDigest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * End-to-end encryption as the rest of the app uses it. There is always one
@@ -64,7 +67,102 @@ interface SealedMessaging {
      * change. False when the peer's key is no longer [key]. Never throws.
      */
     fun setVerified(peerId: String, key: String, verified: Boolean): Boolean
+
+    /**
+     * Seals [payload] for the group and hands it to [send]. Null — without
+     * [send] being called — means the message may go out unsealed: nothing
+     * was ever sealed in this group on this phone AND this phone, or some
+     * member, has no keys. Every failure is thrown, and then the message
+     * must not be sent in any other form. [group] is the server as far as
+     * this group is concerned: who is in it, and where chains are handed
+     * over.
+     */
+    suspend fun <T : Any> sendGroupSealed(
+        groupId: String,
+        clientId: String,
+        payload: E2eePayload,
+        group: GroupTransport,
+        send: suspend (GroupSealed) -> T,
+    ): T?
+
+    /**
+     * [willSeal] for a group: asked before a file for the group is uploaded.
+     * True makes and hands over this phone's chain if that is still to do.
+     */
+    suspend fun willSealGroup(groupId: String, group: GroupTransport): Boolean
+
+    /**
+     * The content of a sealed group message written by [senderId], or null
+     * when it cannot be read on this phone. Never throws, never touches the
+     * network: a chain this phone lacks is fetched beforehand — see
+     * [missingGroupKeys].
+     */
+    fun revealGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload?
+
+    /**
+     * The chains that [rows] were sealed with and this phone does not hold:
+     * what to ask the server for before the rows are opened. Each chain is
+     * named once; chains the server said it has none of ([noGroupKey]) are
+     * not named again by this process.
+     */
+    fun missingGroupKeys(groupId: String, rows: List<GroupRow>): List<GroupKeyRef>
+
+    /**
+     * Takes in the sealed envelope with which [senderId] handed this phone
+     * their chain [chainId]. True when the chain is held afterwards. Never
+     * throws.
+     */
+    fun acceptGroupKey(groupId: String, senderId: String, chainId: String, envelope: String): Boolean
+
+    /** The server has no envelope that hands this phone that chain (it was not a member then, say). */
+    fun noGroupKey(groupId: String, senderId: String, chainId: String)
+
+    /** What this phone knows about the encryption of a group; null when nothing was ever sealed in it here. */
+    fun groupSecurity(groupId: String): GroupSecurity?
 }
+
+/** The server, as far as one group's chains are concerned. Every call may throw what the network throws. */
+interface GroupTransport {
+    /**
+     * The other members and their keys; with [chainId], also who holds that
+     * chain of this phone's and whether somebody holds it who should not.
+     */
+    suspend fun roster(chainId: String?): GroupRoster
+
+    /** Stores the envelopes that hand the chain [chainId] to members. */
+    suspend fun handOver(chainId: String, keys: List<GroupKey>)
+
+    /** Whether [error] is the server saying that the members, or their keys, are not what this phone assumed. */
+    fun rosterChanged(error: Throwable): Boolean
+}
+
+/**
+ * [stale]: somebody holds the chain that was asked about who has left the
+ * group or has registered other keys since — it must not be used again.
+ */
+class GroupRoster(val members: List<RosterMember>, val stale: Boolean)
+
+/** [identityKey] is null for a member whose app has no keys; [hasKey]: they hold the chain that was asked about. */
+class RosterMember(val userId: String, val identityKey: String?, val hasKey: Boolean)
+
+/** The envelope that hands a chain to one member, and the identity key it was sealed for. */
+class GroupKey(val recipientId: String, val recipientIdentity: String, val envelope: String)
+
+/** A sealed group message ready to send, and the id of the chain it was sealed with. */
+class GroupSealed(val envelope: String, val chainId: String)
+
+/** A stored group message as far as its chain is concerned: who wrote it, and its envelope. */
+class GroupRow(val senderId: String, val envelope: String)
+
+/** A chain this phone was not handed yet. */
+class GroupKeyRef(val senderId: String, val chainId: String) {
+    override fun equals(other: Any?): Boolean = other is GroupKeyRef && other.senderId == senderId && other.chainId == chainId
+    override fun hashCode(): Int = 31 * senderId.hashCode() + chainId.hashCode()
+    override fun toString(): String = "GroupKeyRef($senderId, $chainId)"
+}
+
+/** [since]: when this phone first sealed or opened a sealed message in the group, by its own clock. */
+data class GroupSecurity(val since: Long)
 
 /**
  * What a phone knows about the encryption of one conversation.
@@ -156,7 +254,16 @@ class E2eeClient(
      * lock held: the listener may ask this client anything.
      */
     private val onSecurityChanged: (peerId: String) -> Unit = {},
+    /** After how many messages a group chain is replaced; smaller only in tests. */
+    private val maxChainMessages: Int = E2eeGroup.MAX_CHAIN_MESSAGES,
 ) : SealedMessaging {
+
+    /**
+     * A group message was not sent because [memberId] — a contact the user
+     * had verified — now has other keys, and nothing is sealed for those
+     * until the user has looked (see [PeerSecurity.held]).
+     */
+    class MemberHeld(val memberId: String) : IllegalStateException(E2eeText.MEMBER_CODE_CHANGED)
 
     /**
      * A sealed message ready to send. [recipientIdentity] is the identity key
@@ -181,6 +288,22 @@ class E2eeClient(
 
     /** Peers to announce through [onSecurityChanged] once the unit of work is over. */
     private val securityChanges = LinkedHashSet<String>()
+
+    // Groups, within the unit of work.
+    private val groups = HashMap<String, E2eeStore.GroupRecord?>()
+    private val changedGroups = LinkedHashSet<String>()
+    private val heldChains = HashMap<Pair<String, String>, MutableList<E2eeGroup.Chain>>()
+    private val changedChains = LinkedHashSet<Pair<String, String>>()
+
+    /** Group records and chains that must be on stable storage when the unit of work ends. */
+    private val durableGroups = LinkedHashSet<String>()
+    private val durableChains = LinkedHashSet<Pair<String, String>>()
+
+    /** Chains the server said it has no envelope for; not asked for again by this process. */
+    private val absentChains = LinkedHashSet<String>()
+
+    /** One send per group at a time: making a chain and handing it over is not something to do twice at once. */
+    private val groupGates = HashMap<String, Mutex>()
 
     /**
      * Per peer: messages that would not open. They are not tried again until
@@ -272,7 +395,7 @@ class E2eeClient(
      * peer and one of the two ends has no registered keys. Throws when a
      * session is required and cannot be had.
      */
-    private suspend fun startSession(peerId: String): Boolean {
+    private suspend fun startSession(peerId: String, expected: ByteArray? = null): Boolean {
         // A session takes this device's own keys.
         // Settled before the fetch: a bundle we cannot use must not cost the peer a one-time prekey.
         val keys = identity() ?: run {
@@ -288,6 +411,11 @@ class E2eeClient(
             // Another send, or a handshake from the peer, may have got here first.
             if (sendableFor(peerId)) return@batch true
             val existing = recordFor(peerId)
+            // Asked for under particular keys (a group's roster named them): a bundle for
+            // other keys is not what was asked for, and nothing is built on it.
+            if (expected != null && bundle != null && !bundle.identityPublic.contentEquals(expected)) {
+                throw IOException("the server's answers about this member's keys do not agree")
+            }
             when {
                 bundle != null -> {
                     val session = try {
@@ -457,7 +585,28 @@ class E2eeClient(
         return null
     }
 
-    private fun open(peerId: String, key: String, envelopeJson: String, bindings: List<ByteArray>): E2eePayload? {
+    private fun open(peerId: String, key: String, envelopeJson: String, bindings: List<ByteArray>): E2eePayload? =
+        openPairwise(peerId, envelopeJson, bindings) { payload ->
+            try {
+                archive.put(peerId, key, payload)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+    /**
+     * Opens a one-to-one envelope from [peerId] — a message, or the envelope
+     * that hands over a group chain — as one of [bindings]. [keep] puts what
+     * it contained where it belongs and answers whether that worked; only
+     * then does the advanced ratchet state become something to store.
+     */
+    private fun openPairwise(
+        peerId: String,
+        envelopeJson: String,
+        bindings: List<ByteArray>,
+        keep: (E2eePayload) -> Boolean,
+    ): E2eePayload? {
         val envelope = E2eeProtocol.Envelope.fromJson(envelopeJson) ?: return null
         val known = recordFor(peerId)
         val record = known ?: E2eeStore.PeerRecord()
@@ -471,7 +620,7 @@ class E2eeClient(
                 record.sessions.add(0, stored)
             }
             val payload = E2eePayload.decode(plaintext)
-            accept(peerId, record, key, payload)
+            adopt(peerId, record, keep(payload))
             return payload
         }
 
@@ -502,21 +651,19 @@ class E2eeClient(
         record.sessions.add(0, E2eeStore.StoredSession(opened.session, retired = false))
         record.seenHandshakes += handshakeReference
         val payload = E2eePayload.decode(opened.plaintext)
-        if (accept(peerId, record, key, payload) && oneTimeReference != null) spentOneTimeKeys += oneTimeReference
+        if (adopt(peerId, record, keep(payload)) && oneTimeReference != null) spentOneTimeKeys += oneTimeReference
         return payload
     }
 
     /**
-     * Archive first; only then does the advanced ratchet state become
-     * something to store. Returns false when the archive write failed: the
-     * in-memory state for this peer is then discarded, so the key this
-     * message consumed is never recorded as spent. The caller still shows the
-     * content — the message simply opens again next time.
+     * What was opened is kept first; only then does the advanced ratchet
+     * state become something to store. [kept] false: keeping it failed, and
+     * the in-memory state for this peer is discarded, so the key this
+     * message consumed is never recorded as spent. The caller still shows
+     * the content — the message simply opens again next time.
      */
-    private fun accept(peerId: String, record: E2eeStore.PeerRecord, key: String, payload: E2eePayload): Boolean {
-        try {
-            archive.put(peerId, key, payload)
-        } catch (_: Exception) {
+    private fun adopt(peerId: String, record: E2eeStore.PeerRecord, kept: Boolean): Boolean {
+        if (!kept) {
             records.remove(peerId)
             changedPeers.remove(peerId)
             return false
@@ -534,8 +681,16 @@ class E2eeClient(
      */
     private fun commit() {
         try {
-            if (changedPeers.isNotEmpty() || spentOneTimeKeys.isNotEmpty()) {
+            if (changedPeers.isNotEmpty() || spentOneTimeKeys.isNotEmpty() || changedGroups.isNotEmpty() || changedChains.isNotEmpty()) {
                 archive.flush()
+                // Chains before sessions: a chain arrives inside a one-to-one message, and the
+                // session that opened it must not be stored as having done so before the chain is.
+                for (name in changedChains) {
+                    heldChains[name]?.let { store.saveChains(name.first, name.second, it, durable = name in durableChains) }
+                }
+                for (groupId in changedGroups) {
+                    groups[groupId]?.let { store.saveGroup(groupId, it, durable = groupId in durableGroups) }
+                }
                 for (peerId in changedPeers) {
                     // Not synced as a rule: if this write is lost, the keys are derived again and the
                     // archive answers first. What is known about a peer's key is not found out twice.
@@ -550,8 +705,395 @@ class E2eeClient(
             changedPeers.clear()
             spentOneTimeKeys.clear()
             durablePeers.clear()
+            groups.clear()
+            changedGroups.clear()
+            heldChains.clear()
+            changedChains.clear()
+            durableGroups.clear()
+            durableChains.clear()
         }
     }
+
+    // ----------------------------------------------------------------- groups
+
+    /**
+     * **Groups.** A message to a group is sealed once, with this phone's
+     * chain for that group ([E2eeGroup]), and the chain is handed to every
+     * other member who has keys inside a sealed one-to-one envelope — the
+     * same sessions, the same rules about whose keys they are.
+     *
+     * The server keeps messages and those envelopes in step: it refuses a
+     * sealed message whose chain a member lacks, or that somebody still
+     * holds who has left the group or has other keys now. On that refusal
+     * the roster is read, and then either the chain is handed on (somebody
+     * joined) or a new one is made and handed to everybody who is left
+     * (somebody is to stop reading). In the ordinary case — nothing changed
+     * — a send reads no roster and hands nothing over.
+     *
+     * **No downgrade.** A group counts as encrypted on this phone from the
+     * first message it seals or opens there. Before that, a message goes
+     * out unsealed when this phone or any member has no keys: sealing would
+     * shut that member out of their own group. After that, nothing goes out
+     * unsealed; a member without keys is not handed the chain and cannot
+     * read until they have keys.
+     */
+    override suspend fun <T : Any> sendGroupSealed(
+        groupId: String,
+        clientId: String,
+        payload: E2eePayload,
+        group: GroupTransport,
+        send: suspend (GroupSealed) -> T,
+    ): T? {
+        require(groupId.isNotBlank() && clientId.isNotBlank()) { "group and message ids are required" }
+        val gate = synchronized(lock) { groupGates.getOrPut(groupId) { Mutex() } }
+        return gate.withLock { sendToGroup(groupId, clientId, payload, group, send) }
+    }
+
+    override suspend fun willSealGroup(groupId: String, group: GroupTransport): Boolean {
+        require(groupId.isNotBlank()) { "a group id is required" }
+        val gate = synchronized(lock) { groupGates.getOrPut(groupId) { Mutex() } }
+        return gate.withLock { readyChain(groupId, group, lookAgain = false) }
+    }
+
+    private suspend fun <T : Any> sendToGroup(
+        groupId: String,
+        clientId: String,
+        payload: E2eePayload,
+        group: GroupTransport,
+        send: suspend (GroupSealed) -> T,
+    ): T? {
+        val target = ORIGINAL + clientId
+        var lookAgain = false
+        while (true) {
+            if (!readyChain(groupId, group, lookAgain)) return null
+            // After a refusal the message is sealed anew: whoever was just handed the chain
+            // was handed it as it stands now, which is after the envelope that was refused.
+            val sealed = batch { sealForGroup(groupId, clientId, payload, target, anew = lookAgain) }
+            try {
+                val result = send(sealed)
+                groupDelivered(groupId, target)
+                return result
+            } catch (failure: Throwable) {
+                // Once: a roster that has changed again by the second attempt is the caller's to retry.
+                if (lookAgain || !group.rosterChanged(failure)) throw failure
+                lookAgain = true
+            }
+        }
+    }
+
+    /**
+     * Makes sure this phone has a chain for the group that everybody who is
+     * to read holds, and nobody else. False: the message may go out
+     * unsealed. [lookAgain]: the server refused a message, so the roster is
+     * read whatever this phone believes.
+     */
+    private suspend fun readyChain(groupId: String, group: GroupTransport, lookAgain: Boolean): Boolean {
+        var encryptedHere = false
+        val own = batch {
+            check(!closed) { E2eeText.SIGNED_OUT }
+            val record = groupFor(groupId)
+            encryptedHere = record != null
+            record?.own
+        }
+        val worn = own != null && (own.next >= maxChainMessages || clock() - own.created > MAX_CHAIN_AGE_MS)
+        if (own != null && !worn && !lookAgain) return true
+
+        // A chain is made or handed on, which takes this phone's own keys.
+        val keys = identity() ?: run {
+            prepare()
+            identity()
+        }
+        if (keys == null) {
+            if (!encryptedHere) return false
+            error(E2eeText.NOT_READY)
+        }
+        val roster = group.roster(own?.idText)
+        // Nothing was ever sealed in this group here, and somebody's app has no keys: sealing
+        // would shut them out of their own group. It stays as it was until everyone has keys.
+        if (!encryptedHere && roster.members.any { it.identityKey == null }) return false
+
+        val readers = roster.members.filter { it.identityKey != null }
+        val replace = own == null || worn || roster.stale
+        val chain = if (replace) E2eeGroup.newChain(clock()) else own!!
+        val lacking = if (replace) readers else readers.filter { !it.hasKey }
+        if (lacking.isNotEmpty()) {
+            val handed = E2eeGroup.distribution(chain)
+            // Every envelope first, then the upload: a member whose keys the user has not
+            // looked at stops all of it before anybody was handed anything.
+            val envelopes = lacking.map { member -> sealChainFor(groupId, chain.idText, handed, member) }
+            for (part in envelopes.chunked(KEYS_PER_REQUEST)) group.handOver(chain.idText, part)
+        }
+        if (replace) {
+            batch {
+                check(!closed) { E2eeText.SIGNED_OUT }
+                val record = groupFor(groupId) ?: E2eeStore.GroupRecord()
+                record.own = chain
+                if (record.since == 0L) record.since = clock()
+                // Sealed with a chain that is not used any more.
+                record.unsent.clear()
+                groups[groupId] = record
+                store.saveGroup(groupId, record, durable = true)
+                changedGroups.remove(groupId)
+            }
+        }
+        return true
+    }
+
+    /**
+     * The envelope that hands [member] the chain: sealed on the one-to-one
+     * session with them, under the keys the roster names and no others.
+     */
+    private suspend fun sealChainFor(groupId: String, chainId: String, handed: ByteArray, member: RosterMember): GroupKey {
+        val peerId = member.userId
+        val expected = member.identityKey?.let { decodeBase64(it) } ?: throw IOException("the roster names no usable key for this member")
+        try {
+            val usable = batch {
+                when {
+                    !sendableFor(peerId) -> false
+                    recordFor(peerId)?.sendable()?.session?.remoteIdentityKey()?.contentEquals(expected) == true -> true
+                    else -> {
+                        // The roster names other keys than the session was made with: a new phone.
+                        retireSessions(peerId)
+                        false
+                    }
+                }
+            }
+            if (!usable && !startSession(peerId, expected)) throw IOException("this member's keys could not be fetched")
+        } catch (refused: IllegalStateException) {
+            // The same rule as in a chat with them alone, said about the group.
+            if (refused.message == E2eeText.CODE_CHANGED) throw MemberHeld(peerId)
+            // The roster says they have keys and the key server says they have none: one of
+            // the two answers is out of date. Asking again may settle it; nothing is sent meanwhile.
+            if (refused.message == E2eeText.PEER_HAS_NO_KEYS) throw IOException("this member's keys could not be fetched")
+            throw refused
+        }
+        return batch {
+            check(!closed) { E2eeText.SIGNED_OUT }
+            val record = recordFor(peerId)
+            val session = record?.sendable()?.session
+            if (record == null || session == null || !session.remoteIdentityKey().contentEquals(expected)) {
+                throw IOException("the server's answers about this member's keys do not agree")
+            }
+            try {
+                val content = E2eePayload(E2eePayload.GROUP_KEY, encodeBase64(handed)).encode()
+                val envelope = E2eeProtocol.seal(session, content, chainTarget(groupId, chainId)).toJson()
+                store.savePeer(peerId, record, durable = true)
+                changedPeers.remove(peerId)
+                GroupKey(peerId, encodeBase64(session.remoteIdentityKey()), envelope)
+            } catch (failure: Throwable) {
+                // The in-memory session advanced but was not stored: drop it so the stored state stays the truth.
+                records.remove(peerId)
+                changedPeers.remove(peerId)
+                throw failure
+            }
+        }
+    }
+
+    private fun sealForGroup(groupId: String, clientId: String, payload: E2eePayload, target: String, anew: Boolean): GroupSealed {
+        check(!closed) { E2eeText.SIGNED_OUT }
+        val record = groupFor(groupId) ?: error("no chain for this group")
+        val chain = record.own ?: error("no chain for this group")
+        val chat = GROUP + groupId
+        val plaintext = payload.encode()
+        val content = encodeBase64(MessageDigest.getInstance("SHA-256").digest(plaintext))
+
+        // The same content for the same message, not yet known to have arrived: the same envelope.
+        val kept = record.unsent[target]
+        if (!anew && kept != null && kept.content == content && kept.chain == chain.idText) {
+            val key = groupArchiveKey(SENT, clientId, localId, kept.envelope)
+            if ((archive.recent(chat, key) ?: archive.find(chat, key)) == null) {
+                archive.put(chat, key, payload)
+                archive.flush()
+            }
+            return GroupSealed(kept.envelope, kept.chain)
+        }
+        try {
+            val envelope = E2eeGroup.seal(chain, groupId, localId, plaintext, target.toByteArray(Charsets.UTF_8))
+            archive.put(chat, groupArchiveKey(SENT, clientId, localId, envelope), payload)
+            archive.flush()
+            record.unsent.remove(target)
+            record.unsent[target] = E2eeStore.GroupUnsent(content, envelope, chain.idText)
+            if (record.since == 0L) record.since = clock()
+            store.saveGroup(groupId, record, durable = true)
+            changedGroups.remove(groupId)
+            return GroupSealed(envelope, chain.idText)
+        } catch (failure: Throwable) {
+            // The chain moved on in memory but was not stored: drop it so the stored state stays the truth.
+            groups.remove(groupId)
+            changedGroups.remove(groupId)
+            throw failure
+        }
+    }
+
+    /** The server has this envelope; it need not be kept for a retry any longer. */
+    private fun groupDelivered(groupId: String, target: String) {
+        batch {
+            if (closed) return@batch
+            val record = groupFor(groupId) ?: return@batch
+            if (record.unsent.remove(target) != null) changedGroups += groupId
+        }
+    }
+
+    override fun revealGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean, envelope: String): E2eePayload? {
+        val reference = if (mine) clientId else messageId
+        if (groupId.isBlank() || senderId.isBlank() || messageId.isBlank() || reference.isNullOrBlank()) return null
+        return try {
+            batch {
+                if (closed) return@batch null
+                val chat = GROUP + groupId
+                // A message this phone wrote is kept under this account, whatever the row says.
+                val author = if (mine) localId else senderId
+                if (!mine && senderId == localId) return@batch null
+                val key = groupArchiveKey(if (mine) SENT else RECEIVED, reference, author, envelope)
+                archive.recent(chat, key)
+                    ?: if (unreadable[chat]?.contains(key) == true) null
+                    else {
+                        // Our own envelope is sealed with our chain, which only moves forward: only the archive has its content.
+                        val opened = if (mine) archive.find(chat, key) else openGroup(groupId, senderId, chat, key, messageId, clientId, envelope) ?: archive.find(chat, key)
+                        opened ?: giveUp(chat, key)
+                    }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun openGroup(
+        groupId: String,
+        senderId: String,
+        chat: String,
+        key: String,
+        messageId: String,
+        clientId: String?,
+        envelope: String,
+    ): E2eePayload? {
+        val chainId = E2eeGroup.chainId(envelope) ?: return null
+        val name = groupId to senderId
+        val chain = chainsFor(groupId, senderId).firstOrNull { it.idText == chainId } ?: return null
+        val bindings = listOfNotNull(clientId?.takeIf { it.isNotBlank() }?.let { ORIGINAL + it }, EDIT + messageId)
+            .map { it.toByteArray(Charsets.UTF_8) }
+        val plaintext = bindings.firstNotNullOfOrNull { E2eeGroup.open(chain, groupId, senderId, envelope, it) } ?: return null
+        val payload = E2eePayload.decode(plaintext)
+        // Archive first; only then does the chain having moved become something to store.
+        try {
+            archive.put(chat, key, payload)
+        } catch (_: Exception) {
+            heldChains.remove(name)
+            changedChains.remove(name)
+            return payload
+        }
+        changedChains += name
+        unreadable.remove(chat)
+        encryptedHere(groupId)
+        return payload
+    }
+
+    override fun missingGroupKeys(groupId: String, rows: List<GroupRow>): List<GroupKeyRef> = try {
+        batch {
+            if (closed || groupId.isBlank()) return@batch emptyList()
+            val wanted = LinkedHashMap<String, GroupKeyRef>()
+            for (row in rows) {
+                if (row.senderId.isBlank() || row.senderId == localId) continue
+                val chainId = E2eeGroup.chainId(row.envelope) ?: continue
+                val name = chainName(groupId, row.senderId, chainId)
+                if (name in wanted || name in absentChains) continue
+                if (chainsFor(groupId, row.senderId).any { it.idText == chainId }) continue
+                wanted[name] = GroupKeyRef(row.senderId, chainId)
+            }
+            wanted.values.toList()
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    override fun acceptGroupKey(groupId: String, senderId: String, chainId: String, envelope: String): Boolean = try {
+        batch {
+            if (closed || groupId.isBlank() || senderId.isBlank() || chainId.isBlank()) return@batch false
+            val name = groupId to senderId
+            val held = chainsFor(groupId, senderId)
+            // Held already: the envelope has done its work, and the chain stays where it is.
+            if (held.any { it.idText == chainId }) return@batch true
+            var taken = false
+            openPairwise(senderId, envelope, listOf(chainTarget(groupId, chainId))) { content ->
+                val chain = content.takeIf { it.type == E2eePayload.GROUP_KEY }
+                    ?.let { decodeBase64(it.body) }
+                    ?.let { E2eeGroup.accept(it) }
+                    ?.takeIf { it.idText == chainId }
+                if (chain != null) {
+                    held.add(0, chain)
+                    heldChains[name] = held
+                    changedChains += name
+                    // On stable storage before the session that opened the envelope is: see commit().
+                    durableChains += name
+                    unreadable.remove(GROUP + groupId)
+                    absentChains.remove(chainName(groupId, senderId, chainId))
+                    encryptedHere(groupId)
+                    taken = true
+                }
+                // Authentic either way; its key is spent whether or not it carried what was asked for.
+                true
+            }
+            taken
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    override fun noGroupKey(groupId: String, senderId: String, chainId: String) {
+        synchronized(lock) {
+            if (closed) return
+            absentChains += chainName(groupId, senderId, chainId)
+            val eldest = absentChains.iterator()
+            while (absentChains.size > MAX_REMEMBERED_FAILURES && eldest.hasNext()) {
+                eldest.next()
+                eldest.remove()
+            }
+        }
+    }
+
+    override fun groupSecurity(groupId: String): GroupSecurity? = try {
+        batch {
+            if (closed) null else groupFor(groupId)?.let { GroupSecurity(it.since) }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** A sealed message was written or read in this group on this phone: from here on it counts as encrypted. */
+    private fun encryptedHere(groupId: String) {
+        val record = groupFor(groupId) ?: E2eeStore.GroupRecord().also { groups[groupId] = it }
+        if (record.since != 0L) return
+        record.since = clock()
+        changedGroups += groupId
+        durableGroups += groupId
+    }
+
+    private fun groupFor(groupId: String): E2eeStore.GroupRecord? {
+        if (!groups.containsKey(groupId)) groups[groupId] = store.loadGroup(groupId)
+        return groups[groupId]
+    }
+
+    private fun chainsFor(groupId: String, senderId: String): MutableList<E2eeGroup.Chain> =
+        heldChains.getOrPut(groupId to senderId) { store.loadChains(groupId, senderId) }
+
+    /**
+     * Where an opened group message is kept. Unlike a one-to-one chat, a
+     * group's archive holds messages of many people, so who wrote the message
+     * is part of the name: what was opened as one member's is never found
+     * again as another's.
+     */
+    private fun groupArchiveKey(direction: String, reference: String, senderId: String, envelope: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(senderId.toByteArray(Charsets.UTF_8))
+        digest.update(0)
+        digest.update(envelope.toByteArray(Charsets.UTF_8))
+        return direction + reference + "#" + encodeBase64(digest.digest().copyOf(ENVELOPE_DIGEST_BYTES))
+    }
+
+    /** What the envelope that hands over a chain is sealed for: that chain of that group, and nothing else. */
+    private fun chainTarget(groupId: String, chainId: String): ByteArray = (CHAIN + groupId + ":" + chainId).toByteArray(Charsets.UTF_8)
+
+    private fun chainName(groupId: String, senderId: String, chainId: String): String = groupId.length.toString() + ":" + groupId + ":" + senderId + ":" + chainId
 
     // --------------------------------------------------------- whose keys
 
@@ -701,6 +1243,13 @@ class E2eeClient(
             durablePeers.clear()
             securityChanges.clear()
             unreadable.clear()
+            groups.clear()
+            changedGroups.clear()
+            heldChains.clear()
+            changedChains.clear()
+            durableGroups.clear()
+            durableChains.clear()
+            absentChains.clear()
         }
     }
 
@@ -723,5 +1272,17 @@ class E2eeClient(
         const val EDIT = "e:"
         const val ENVELOPE_DIGEST_BYTES = 16
         const val MAX_REMEMBERED_FAILURES = 1024
+
+        /** What the envelope that hands over a group chain is sealed for. */
+        const val CHAIN = "k:"
+
+        /** The archive of a group's messages, apart from every one-to-one chat. */
+        const val GROUP = "g:"
+
+        /** A chain is not kept for ever: after this long, the next message starts a new one. */
+        const val MAX_CHAIN_AGE_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** How many members one request hands a chain to. */
+        const val KEYS_PER_REQUEST = 100
     }
 }

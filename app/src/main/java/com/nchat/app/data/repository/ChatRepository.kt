@@ -30,6 +30,12 @@ interface ChatRepository {
      */
     val security: StateFlow<Map<String, PeerSecurity>>
 
+    /**
+     * Per group: since when it is end-to-end encrypted on this phone (its clock). A group that
+     * is not in the map has never had a sealed message written or read here.
+     */
+    val groupEncryptedSince: StateFlow<Map<String, Long>>
+
     /** Reads [security] for [chatId] again; a conversation asks for it when it opens. */
     fun refreshSecurity(chatId: String)
 

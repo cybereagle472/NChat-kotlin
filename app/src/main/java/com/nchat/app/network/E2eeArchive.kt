@@ -64,6 +64,13 @@ class E2eePayload(val type: Int, val body: String, replyTo: String? = null, atta
         const val VOICE = 5
         const val DOCUMENT = 6
 
+        /**
+         * Not a message: the chain a member seals their group messages with
+         * ([E2eeGroup.distribution], base64, in [body]), handed to another
+         * member. It is never shown and never kept as content.
+         */
+        const val GROUP_KEY = 16
+
         /** Content that does not decode. No build ever sends this type. */
         const val UNREADABLE = 0
 

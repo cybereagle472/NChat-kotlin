@@ -333,6 +333,11 @@ class EndToEndTest {
         } catch (_: IllegalStateException) {
             // intended: an error — null would have meant "send it to the group readable"
         }
+        try {
+            runBlocking { idle.willSealGroup("g", transport) }
+            fail("answered for nobody")
+        } catch (_: IllegalStateException) {
+        }
         assertNull(idle.revealGroup("g", "bob", "s-1", "c-1", mine = false, envelope = "{}"))
         assertEquals(emptyList<GroupKeyRef>(), idle.missingGroupKeys("g", listOf(GroupRow("bob", "{}"))))
         assertFalse(idle.acceptGroupKey("g", "bob", "chain", "{}"))

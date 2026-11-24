@@ -126,7 +126,7 @@ class E2eeGroupClientTest {
             val held = keys.filterKeys { it.first == caller && it.second == chain }.mapKeys { it.key.third }
             val current = members.filter { it != caller }.associateWith { phones[it]?.identityKey }
             return GroupRoster(
-                members = current.map { (id, identity) -> GroupMember(id, identity, identity != null && held[id]?.first == identity) },
+                members = current.map { (id, identity) -> RosterMember(id, identity, identity != null && held[id]?.first == identity) },
                 stale = held.any { (holder, row) -> current[holder] != row.first },
             )
         }
@@ -294,17 +294,52 @@ class E2eeGroupClientTest {
         val fromBob = send(hub, bob, "sealed too")!!
         assertEquals("sealed too", read(hub, alice, fromBob))
 
-        // A phone that has lost its own keys says so. It does not answer "unsealed is fine".
+        // A phone that cannot reach its own keys for the moment, but holds its chain: what it
+        // writes is sealed as before. The chain is all that sealing takes.
+        val bobsKeys = bob.identity
         bob.identity = null
+        assertEquals("still sealed by bob", read(hub, alice, send(hub, bob, "still sealed by bob")!!))
+        bob.identity = bobsKeys
+
+        // Carol has only ever read here, so she has no chain yet, and her phone has no keys to
+        // make one with. It says so. It does not answer "unsealed is fine".
+        val carol = phones[2]
+        assertEquals("sealed", read(hub, carol, first))
+        val carolsKeys = carol.identity
+        carol.identity = null
         try {
-            send(hub, bob, "must not leave readable")
+            send(hub, carol, "must not leave readable")
             fail("sent, or allowed unsealed, without keys in an encrypted group")
         } catch (refused: IllegalStateException) {
             assertEquals(E2eeText.NOT_READY, refused.message)
         }
+        carol.identity = carolsKeys
         // A phone without keys in a group that was never encrypted on it: as before.
         val frank = hub.join(Phone("frank", hasKeys = false))
         assertNull(send(hub, frank, "an old app writes as it always did"))
+    }
+
+    @Test
+    fun beforeAFileForAGroupIsUploadedItIsKnownWhetherItWillBeSealed() {
+        val hub = Hub()
+        val alice = hub.join(Phone("alice"))
+        val bob = hub.join(Phone("bob"))
+        val dave = hub.join(Phone("dave", hasKeys = false))
+        val a = alice.client(hub)
+
+        // Somebody has no keys and nothing was ever sealed here: a file goes as it always did.
+        assertFalse(runBlocking { a.willSealGroup(group, hub.transport("alice")) })
+        assertTrue(hub.handOvers.isEmpty())
+        // Everyone has keys: the chain the file's message will be sealed with is made and handed over now.
+        dave.identity = E2eeProtocol.generateIdentity()
+        assertTrue(runBlocking { a.willSealGroup(group, hub.transport("alice")) })
+        assertEquals(listOf(listOf("bob", "dave")), hub.handOvers.map { handed -> handed.map { it.recipientId } })
+        // Asking again, and the message itself, hand nothing over a second time.
+        assertTrue(runBlocking { alice.client(hub).willSealGroup(group, hub.transport("alice")) })
+        val row = send(hub, alice, "the photo's message")!!
+        assertEquals(1, hub.handOvers.size)
+        assertEquals("the photo's message", read(hub, bob, row))
+        assertEquals("the photo's message", read(hub, dave, row))
     }
 
     // ------------------------------------------------- when the members change
@@ -479,6 +514,14 @@ class E2eeGroupClientTest {
         assertNull(b.revealGroup(group, "alice", "", row.clientId, mine = false, envelope = row.envelope))
         assertNull(b.revealGroup("", "alice", row.id, row.clientId, mine = false, envelope = row.envelope))
         assertEquals("for the family", b.revealGroup(group, "alice", row.id, row.clientId, mine = false, envelope = row.envelope)?.body)
+
+        // Opened and kept — and still alice's. The same row served later under another member's
+        // name, or as bob's own, is not answered from what the phone kept for alice's.
+        for (client in listOf(b, bob.client(hub))) {
+            assertNull("as carol's, once opened", client.revealGroup(group, "carol", row.id, row.clientId, mine = false, envelope = row.envelope))
+            assertNull("as bob's own", client.revealGroup(group, "bob", row.id, row.clientId, mine = true, envelope = row.envelope))
+            assertEquals("for the family", client.revealGroup(group, "alice", row.id, row.clientId, mine = false, envelope = row.envelope)?.body)
+        }
     }
 
     @Test
@@ -498,14 +541,14 @@ class E2eeGroupClientTest {
         assertFalse(b.acceptGroupKey(group, "carol", chain, key))
         assertFalse(b.acceptGroupKey(group, "alice", chain, "{}"))
         assertFalse(b.acceptGroupKey(group, "alice", "", key))
+        // A sealed message between the two of them, passed off as the envelope that hands over the chain.
+        val direct = runBlocking { alice.client(hub).seal("bob", "c-direct", E2eePayload.text("just for bob")) }!!
+        assertFalse(b.acceptGroupKey(group, "alice", chain, direct.envelope))
         assertNull("nothing came of any of that", b.revealGroup(group, "alice", row.id, row.clientId, mine = false, envelope = row.envelope))
         // None of it used the envelope up.
         assertTrue(b.acceptGroupKey(group, "alice", chain, key))
         assertEquals("group message", b.revealGroup(group, "alice", row.id, row.clientId, mine = false, envelope = row.envelope)?.body)
-
-        // A sealed message between the two of them, passed off as a key.
-        val direct = runBlocking { alice.client(hub).seal("bob", "c-direct", E2eePayload.text("just for bob")) }!!
-        assertFalse(bob.client(hub).acceptGroupKey(group, "alice", chain, direct.envelope))
+        // And the message between the two of them is still theirs to open.
         assertEquals("just for bob", bob.client(hub).reveal("alice", "s-direct", "c-direct", mine = false, envelope = direct.envelope)?.body)
     }
 

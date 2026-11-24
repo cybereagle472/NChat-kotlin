@@ -375,6 +375,8 @@ class NChatApi(private val client: ApiClient) {
         mediaUrl: String? = null,
         thumbnailUrl: String? = null,
         duration: String? = null,
+        /** For a sealed message (`type = "e2ee"`): the id of the sender's chain it was sealed with. */
+        chainId: String? = null,
     ): MessageEnvelope = decode(
         client.post(
             "/groups/$groupId/messages",
@@ -382,6 +384,7 @@ class NChatApi(private val client: ApiClient) {
                 keepsNoFileKey(content, mediaUrl, thumbnailUrl)
                 put("content", content)
                 put("type", type)
+                if (chainId != null) put("chain_id", chainId)
                 if (clientMessageId != null) put("client_message_id", clientMessageId)
                 if (replyTo != null) put("reply_to", replyTo)
                 if (mediaUrl != null) put("media_url", mediaUrl)
@@ -390,6 +393,58 @@ class NChatApi(private val client: ApiClient) {
             }
         )
     )
+
+    // -------------------------------------------------- sealed group messages
+
+    /**
+     * The other members of a group and the keys they have registered; with [chainId], also who
+     * holds that chain of this phone's, and whether somebody holds it who should not.
+     */
+    suspend fun groupRoster(groupId: String, chainId: String?): GroupRosterDto =
+        decode(client.get("/groups/$groupId/roster", if (chainId != null) mapOf("chain" to chainId) else emptyMap()))
+
+    /** Hands this phone's chain [chainId] to members: one sealed envelope each, kept for that member alone. */
+    suspend fun handOverGroupKeys(groupId: String, chainId: String, keys: List<GroupKey>) {
+        client.post(
+            "/groups/$groupId/keys",
+            body {
+                put("chain_id", chainId)
+                putJsonArray("keys") {
+                    keys.forEach { key ->
+                        add(
+                            buildJsonObject {
+                                put("recipient_id", key.recipientId)
+                                put("recipient_identity_key", key.recipientIdentity)
+                                put("envelope", key.envelope)
+                            }
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    /** The envelopes that hand this phone the chains in [wanted]; a chain the server has none for is simply absent. */
+    suspend fun fetchGroupKeys(groupId: String, wanted: List<GroupKeyRef>): List<GroupKeyDto> {
+        val answer: GroupKeysDto = decode(
+            client.post(
+                "/groups/$groupId/keys/fetch",
+                body {
+                    putJsonArray("wanted") {
+                        wanted.forEach { ref ->
+                            add(
+                                buildJsonObject {
+                                    put("sender_id", ref.senderId)
+                                    put("chain_id", ref.chainId)
+                                }
+                            )
+                        }
+                    }
+                }
+            )
+        )
+        return answer.keys
+    }
 
     suspend fun deleteGroupMessageForMe(messageId: String) {
         client.post("/groups/messages/$messageId/delete-for-me")

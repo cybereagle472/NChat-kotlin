@@ -332,6 +332,31 @@ data class BundleDto(
     @SerialName("one_time_prekey") val oneTimePrekey: OneTimePrekeyDto? = null,
 )
 
+/** `GET /groups/:id/roster` — the other members, their keys, and who holds the chain that was asked about. */
+@Serializable
+data class GroupRosterDto(
+    val members: List<GroupRosterMemberDto> = emptyList(),
+    val stale: Boolean = false,
+)
+
+@Serializable
+data class GroupRosterMemberDto(
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("identity_key") val identityKey: String? = null,
+    @SerialName("has_key") val hasKey: Boolean = false,
+)
+
+/** `POST /groups/:id/keys/fetch` — the sealed envelopes that hand this phone the chains it asked for. */
+@Serializable
+data class GroupKeysDto(val keys: List<GroupKeyDto> = emptyList())
+
+@Serializable
+data class GroupKeyDto(
+    @SerialName("sender_id") val senderId: String = "",
+    @SerialName("chain_id") val chainId: String = "",
+    val envelope: String = "",
+)
+
 /** `GET /keys/prekeys` — the identity key this account has registered and the one-time prekeys it has left. */
 @Serializable
 data class KeyStatusDto(

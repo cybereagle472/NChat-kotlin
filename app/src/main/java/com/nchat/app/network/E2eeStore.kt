@@ -338,6 +338,113 @@ class E2eeStore(private val vault: SecretVault) {
         vault.write(SESSION_PREFIX + peerId, encoded.toString(), durable)
     }
 
+    // ----------------------------------------------------------------- groups
+
+    /**
+     * What this phone holds about one group it has sealed a message in or
+     * opened one from. As with a peer, the record existing at all means the
+     * group has been end-to-end encrypted on this phone, and from then on
+     * nothing is sent to it in the clear.
+     */
+    class GroupRecord {
+        /** When that began, by this phone's clock (0: as far back as anybody knows). */
+        var since: Long = 0L
+
+        /** The chain this phone seals its own messages to the group with; null until it has written. */
+        var own: E2eeGroup.OwnChain? = null
+
+        /** Envelopes sealed but not known to have reached the server, oldest first, by what each was sealed for. */
+        val unsent: LinkedHashMap<String, GroupUnsent> = LinkedHashMap()
+    }
+
+    /** [content] identifies what was sealed (a digest); [chain] is the id of the chain it was sealed with. */
+    class GroupUnsent(val content: String, val envelope: String, val chain: String)
+
+    /** Null only when nothing was ever stored for this group on this device. */
+    fun loadGroup(groupId: String): GroupRecord? {
+        if (groupId.isBlank()) return null
+        val entry = GROUP_PREFIX + groupId
+        val record = GroupRecord()
+        val stored = vault.read(entry) ?: return if (vault.contains(entry)) record else null
+        try {
+            val root = Json.parseToJsonElement(stored).jsonObject
+            record.since = (root["s"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+            record.own = (root["o"] as? JsonPrimitive)?.content?.let { decodeBase64(it) }?.let { E2eeGroup.OwnChain.deserialize(it) }
+            for (element in root["u"] as? JsonArray ?: JsonArray(emptyList())) {
+                val item = element as? JsonObject ?: continue
+                val target = (item["k"] as? JsonPrimitive)?.content ?: continue
+                val content = (item["c"] as? JsonPrimitive)?.content ?: continue
+                val envelope = (item["e"] as? JsonPrimitive)?.content ?: continue
+                val chain = (item["h"] as? JsonPrimitive)?.content ?: continue
+                record.unsent[target] = GroupUnsent(content, envelope, chain)
+            }
+        } catch (_: Exception) {
+            // Unreadable, but it was there: still a group that was encrypted on this phone.
+        }
+        return record
+    }
+
+    fun saveGroup(groupId: String, record: GroupRecord, durable: Boolean) {
+        require(groupId.isNotBlank()) { "group id is required" }
+        val unsent = record.unsent.values.iterator()
+        var unsentBytes = record.unsent.values.sumOf { it.envelope.length }
+        while ((record.unsent.size > MAX_UNSENT_PER_PEER || unsentBytes > MAX_UNSENT_BYTES_PER_PEER) && unsent.hasNext()) {
+            unsentBytes -= unsent.next().envelope.length
+            unsent.remove()
+        }
+        val encoded = buildJsonObject {
+            put("s", record.since)
+            record.own?.let { put("o", encodeBase64(it.serialize())) }
+            put(
+                "u",
+                buildJsonArray {
+                    for ((target, kept) in record.unsent) {
+                        add(
+                            buildJsonObject {
+                                put("k", target)
+                                put("c", kept.content)
+                                put("e", kept.envelope)
+                                put("h", kept.chain)
+                            },
+                        )
+                    }
+                },
+            )
+        }
+        vault.write(GROUP_PREFIX + groupId, encoded.toString(), durable)
+    }
+
+    /**
+     * The chains of [senderId] in [groupId] that this phone was handed,
+     * newest first; empty when there are none, or what was stored cannot be
+     * read (their messages then stay closed until they hand out a chain again).
+     */
+    fun loadChains(groupId: String, senderId: String): MutableList<E2eeGroup.Chain> {
+        val chains = ArrayList<E2eeGroup.Chain>()
+        if (groupId.isBlank() || senderId.isBlank()) return chains
+        try {
+            val stored = vault.read(chainsEntry(groupId, senderId)) ?: return chains
+            for (element in Json.parseToJsonElement(stored).jsonObject["c"] as? JsonArray ?: JsonArray(emptyList())) {
+                val blob = (element as? JsonPrimitive)?.content?.let { decodeBase64(it) } ?: continue
+                E2eeGroup.Chain.deserialize(blob)?.let { chains += it }
+            }
+        } catch (_: Exception) {
+        }
+        return chains
+    }
+
+    fun saveChains(groupId: String, senderId: String, chains: MutableList<E2eeGroup.Chain>, durable: Boolean) {
+        require(groupId.isNotBlank() && senderId.isNotBlank()) { "group and sender ids are required" }
+        while (chains.size > MAX_CHAINS_PER_SENDER) chains.removeAt(chains.size - 1)
+        val encoded = buildJsonObject {
+            put("c", buildJsonArray { for (chain in chains) add(JsonPrimitive(encodeBase64(chain.serialize()))) })
+        }
+        vault.write(chainsEntry(groupId, senderId), encoded.toString(), durable)
+    }
+
+    /** The group id's length goes first, so that no two pairs of ids make the same name. */
+    private fun chainsEntry(groupId: String, senderId: String): String = CHAINS_PREFIX + groupId.length + "." + groupId + "." + senderId
+
     // ------------------------------------------------------ one-time prekeys
 
     /**
@@ -406,7 +513,15 @@ class E2eeStore(private val vault: SecretVault) {
         /** The server keeps at most 100 unconsumed; the rest is room for keys spent while this device was away. */
         const val MAX_LOCAL_ONE_TIME_KEYS = 400
 
+        /**
+         * Chains kept per member of a group, newest first. A member starts a new one whenever
+         * somebody leaves the group; the older ones open the history from before.
+         */
+        const val MAX_CHAINS_PER_SENDER = 64
+
         private const val SESSION_PREFIX = "e2ee.session."
+        private const val GROUP_PREFIX = "e2ee.group."
+        private const val CHAINS_PREFIX = "e2ee.chains."
         private const val POOL_KEY = "e2ee.otk"
     }
 }

@@ -195,7 +195,8 @@ fun ConversationScreen(
      */
     val security by viewModel.security.collectAsStateWithLifecycle()
     var encryptionOpen by remember { mutableStateOf(false) }
-    val unsealedIds = remember(messages, security?.since) { unsealedMessageIds(messages, security?.since) }
+    val encryptedSince by viewModel.encryptedSince.collectAsStateWithLifecycle()
+    val unsealedIds = remember(messages, encryptedSince) { unsealedMessageIds(messages, encryptedSince) }
     val wallpaperId by ServiceLocator.wallpapers.selection.collectAsStateWithLifecycle()
     val wallpaper = remember(wallpaperId) {
         com.nchat.app.data.local.Wallpaper.entries.firstOrNull { it.id == wallpaperId }
@@ -1047,14 +1048,11 @@ fun ConversationScreen(
                 optionsOpen = false
                 mediaSheetOpen = true
             },
-            // One-to-one chats only: a group has no security code (its messages are not sealed).
-            onEncryption = if (isGroupChat) {
-                null
-            } else {
-                {
-                    optionsOpen = false
-                    encryptionOpen = true
-                }
+            // A chat with one person shows the security code; a group says whether it is
+            // encrypted and who reads what (codes are compared in the chats with its members).
+            onEncryption = {
+                optionsOpen = false
+                encryptionOpen = true
             }
         )
     }
@@ -1062,7 +1060,8 @@ fun ConversationScreen(
     if (encryptionOpen) {
         SecurityCodeDialog(
             name = chatTitle,
-            security = security,
+            security = if (isGroupChat) null else security,
+            summary = if (isGroupChat) groupEncryptionSummary(encryptedSince != null) else encryptionSummary(chatTitle, security),
             loadCode = { key -> viewModel.securityCode(key) },
             onSetVerified = { key, verified -> viewModel.setVerified(key, verified) },
             onAccept = { key -> viewModel.acceptSecurityChange(key) },
