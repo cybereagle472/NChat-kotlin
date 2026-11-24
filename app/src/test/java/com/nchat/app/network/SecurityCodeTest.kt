@@ -114,4 +114,55 @@ class SecurityCodeTest {
             }
         }
     }
+
+    // ----------------------------------------------------------------- as a QR code
+
+    private val code = "427967518579389282864513861332751967621959880930629597202811"
+
+    @Test
+    fun theQrCodeCarriesTheSameSixtyDigits() {
+        // Scanning replaces reading sixty digits aloud; it must compare exactly what the eye would.
+        val text = SecurityCode.qrText(code)
+        assertEquals(code, SecurityCode.fromQr(text))
+        assertTrue("it says what it is, so that any other QR code is turned away", text.startsWith("NCHAT-SC1:"))
+        // Only what a QR code packs densely: capitals, digits and a few signs. That keeps the
+        // picture small enough to scan off a phone held at arm's length.
+        assertTrue(text.all { it in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:" })
+        assertEquals("a scanner may hand the text over with a line end", code, SecurityCode.fromQr(" $text\n"))
+        try {
+            SecurityCode.qrText(code.dropLast(1))
+            fail("a QR code for something that is not a security code")
+        } catch (expected: IllegalArgumentException) {
+            // intended
+        }
+    }
+
+    @Test
+    fun whatIsNotASecurityCodeIsNotReadAsOne() {
+        val text = SecurityCode.qrText(code)
+        val others = listOf(
+            "", "https://example.com/", code, "NCHAT-SC1:", "NCHAT-SC1:" + code.dropLast(1), "NCHAT-SC1:" + code + "1",
+            "NCHAT-SC1:" + code.replaceRange(10, 11, "x"), "nchat-sc1:" + code, "NCHAT-SC2:" + code, "NCHAT-SC1 " + code,
+            text + text, "WIFI:T:WPA;S:home;P:" + code + ";;", "NCHAT-SC1:" + code.replace('1', '١'),
+        )
+        for (other in others) assertEquals(other, null, SecurityCode.fromQr(other))
+    }
+
+    @Test
+    fun aScannedCodeIsTheSameOrItIsNot() {
+        val mine = code
+        assertEquals(SecurityCode.Scanned.Same, SecurityCode.scanned(SecurityCode.qrText(mine), mine))
+        // One digit apart is another code: this is what somebody in between looks like — or the wrong chat.
+        val other = mine.replaceRange(59, 60, if (mine[59] == '1') "2" else "1")
+        assertEquals(SecurityCode.Scanned.Different, SecurityCode.scanned(SecurityCode.qrText(other), mine))
+        for (index in mine.indices) {
+            val changed = mine.replaceRange(index, index + 1, if (mine[index] == '5') "6" else "5")
+            if (changed != mine) assertEquals("digit $index", SecurityCode.Scanned.Different, SecurityCode.scanned(SecurityCode.qrText(changed), mine))
+        }
+        assertEquals(SecurityCode.Scanned.NotACode, SecurityCode.scanned("https://example.com/", mine))
+        assertEquals(SecurityCode.Scanned.NotACode, SecurityCode.scanned(mine, mine))
+        // Nothing of this phone's own to compare with: never "the same".
+        assertEquals(SecurityCode.Scanned.Different, SecurityCode.scanned(SecurityCode.qrText(mine), ""))
+        assertEquals(SecurityCode.Scanned.Different, SecurityCode.scanned(SecurityCode.qrText(mine), mine.dropLast(1)))
+    }
 }
