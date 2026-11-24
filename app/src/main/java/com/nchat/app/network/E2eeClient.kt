@@ -1079,7 +1079,7 @@ class E2eeClient(
             // Held already: the envelope has done its work, and the chain stays where it is.
             if (held.any { it.idText == chainId }) return@batch true
             var taken = false
-            val opened = openPairwise(senderId, envelope, listOf(chainTarget(groupId, chainId))) { content ->
+            openPairwise(senderId, envelope, listOf(chainTarget(groupId, chainId))) { content ->
                 val chain = content.takeIf { it.type == E2eePayload.GROUP_KEY }
                     ?.let { decodeBase64(it.body) }
                     ?.let { E2eeGroup.accept(it) }
@@ -1101,7 +1101,7 @@ class E2eeClient(
             // It did not open here, or was not the chain it was said to be: no use to this
             // phone, however often it is fetched. (Something that merely went wrong on the
             // way — storage, say — throws, and is not counted as that.)
-            if (!taken) didNotOpen(chainName(groupId, senderId, chainId), envelope, authentic = opened != null)
+            if (!taken) didNotOpen(chainName(groupId, senderId, chainId), envelope)
             taken
         }
     } catch (_: Exception) {
@@ -1109,15 +1109,13 @@ class E2eeClient(
     }
 
     /** An envelope that was to hand over the chain [name] is no use to this phone. */
-    private fun didNotOpen(name: String, envelope: String, authentic: Boolean) {
+    private fun didNotOpen(name: String, envelope: String) {
         val state = lackingOf(name)
         val digest = encodeBase64(MessageDigest.getInstance("SHA-256").digest(envelope.toByteArray(Charsets.UTF_8)))
         // The same envelope fetched once more says nothing new.
         if (state.failed == digest) return
-        // A second one, after the sender was asked for it: not chased further while the app
-        // runs. So is one that opened and carried something else — asking again would spend
-        // the sender a session to no end.
-        if (state.asked || authentic) state.hopeless = true
+        // A second one, after the sender was asked for it: not chased further while the app runs.
+        if (state.asked) state.hopeless = true
         state.failed = digest
     }
 
@@ -1126,7 +1124,8 @@ class E2eeClient(
         val due = synchronized(lock) {
             val state = lackingChains[name]
             // Marked before the request leaves, so that two readers of the same page ask once.
-            if (closed || state == null || state.failed == null || state.asked || state.hopeless) false
+            // (A chain given up on was asked for before it was given up on.)
+            if (closed || state == null || state.failed == null || state.asked) false
             else {
                 state.asked = true
                 true
@@ -1161,7 +1160,7 @@ class E2eeClient(
             val state = lackingChains[chainName(groupId, senderId, chainId)] ?: return
             // Its sender has been asked to hand it over again: "nothing yet" is what the
             // server says until they have, and not a reason to stop looking.
-            if (state.asked && !state.hopeless) return
+            if (state.asked) return
             state.absentUpTo = state.seen
         }
     }
