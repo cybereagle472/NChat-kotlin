@@ -47,6 +47,10 @@ android {
         }
         buildConfigField "String", "NCHAT_API_BASE", "\"${apiBase}\""
 
+        // The encryption tests also run on Android itself, on emulators in CI
+        // (.github/workflows/android-device-tests.yaml).
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
         // libwebrtc ships native code for four architectures (~15 MB each). Every Android
         // phone is arm64 or armv7; including the x86 emulator builds would double the APK
         // for nobody.
@@ -71,7 +75,19 @@ android {
         }
         debug {
             applicationIdSuffix ".debug"
+            // CI's emulators are x86; no phone is. Added to the two above for this build
+            // type only, so the release APK stays as small as it was.
+            ndk {
+                abiFilters 'x86', 'x86_64'
+            }
         }
+    }
+
+    sourceSets {
+        // The end-to-end encryption tests are run twice from the same files: on the build
+        // machine's JVM (`test`), and against Android's own cryptography and Keystore on an
+        // emulator (`androidTest`). Everything else under `src/test` stays JVM-only.
+        androidTest.java.srcDirs += 'src/test/java/com/nchat/app/network'
     }
 
     compileOptions {
@@ -133,5 +149,7 @@ dependencies {
     implementation 'io.github.webrtc-sdk:android:150.7871.01'
 
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }
