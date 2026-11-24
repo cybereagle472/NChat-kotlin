@@ -75,6 +75,36 @@ class E2eeArchiveTest {
     }
 
     @Test
+    fun payloadCarriesWhereItsFileIsAndTheKeyToIt() {
+        val pointer = """{"u":"https://chat.example/media/file/a/b","k":"AAAA","z":12}"""
+        val photo = E2eePayload.decode(E2eePayload(E2eePayload.PHOTO, "the caption", "m-3", attachment = pointer).encode())
+        assertEquals(E2eePayload.PHOTO, photo.type)
+        assertEquals("the caption", photo.body)
+        assertEquals("m-3", photo.replyTo)
+        assertEquals(pointer, photo.attachment)
+        // No caption, no reply: the file alone.
+        val voice = E2eePayload.decode(E2eePayload(E2eePayload.VOICE, "", attachment = pointer).encode())
+        assertEquals(E2eePayload.VOICE, voice.type)
+        assertEquals("", voice.body)
+        assertNull(voice.replyTo)
+        assertEquals(pointer, voice.attachment)
+        // A text has none, and an empty one is none.
+        assertNull(E2eePayload.decode(E2eePayload.text("words").encode()).attachment)
+        assertNull(E2eePayload(E2eePayload.PHOTO, "", attachment = "").attachment)
+        // The four kinds are told apart by the type alone, and each has a number of its own.
+        assertEquals(
+            4,
+            setOf(E2eePayload.PHOTO, E2eePayload.VIDEO, E2eePayload.VOICE, E2eePayload.DOCUMENT, E2eePayload.TEXT, E2eePayload.LOCATION)
+                .minus(setOf(E2eePayload.TEXT, E2eePayload.LOCATION)).size,
+        )
+        assertTrue(E2eePayload(E2eePayload.DOCUMENT, "", attachment = pointer).isAttachment)
+        assertTrue(E2eePayload(E2eePayload.VIDEO, "").isAttachment)
+        assertFalse(E2eePayload.text("x").isAttachment)
+        assertFalse(E2eePayload(E2eePayload.LOCATION, "1,2").isAttachment)
+        assertFalse("a kind from a later build is not assumed to be a file", E2eePayload(200, "").isAttachment)
+    }
+
+    @Test
     fun payloadSizeIsItsContentPlusAFewBytes() {
         // Sealed messages must fit where the same text fits unsealed, whatever characters it is made of.
         for (body in listOf("x".repeat(60_000), "\u0000\"\\".repeat(20_000), "😀".repeat(15_000))) {
@@ -118,6 +148,29 @@ class E2eeArchiveTest {
     }
 
     // -------------------------------------------------------------- archive
+
+    @Test
+    fun anEntryKeepsThePointerToItsFile() {
+        val pointer = """{"u":"https://chat.example/media/file/a/b","k":"QUJDREVGR0hJSktM","z":12,"t":"/9j/"}"""
+        val first = archive()
+        first.put("bob", "m:1", E2eePayload(E2eePayload.VIDEO, "look", "m:0", attachment = pointer))
+        first.put("bob", "m:2", E2eePayload.text("no file"))
+        first.flush()
+        assertEquals(pointer, first.recent("bob", "m:1")!!.attachment)
+
+        val again = archive()
+        val video = again.find("bob", "m:1")!!
+        assertEquals(E2eePayload.VIDEO, video.type)
+        assertEquals("look", video.body)
+        assertEquals("m:0", video.replyTo)
+        assertEquals(pointer, video.attachment)
+        assertNull(again.find("bob", "m:2")!!.attachment)
+        // The key to the file is not readable on disk any more than the text is.
+        for (log in logs()) {
+            assertFalse(log.readBytes().holds("chat.example"))
+            assertFalse(log.readBytes().holds("QUJDREVGR0hJSktM"))
+        }
+    }
 
     @Test
     fun entriesSurviveANewInstanceAndTheLatestWins() {
