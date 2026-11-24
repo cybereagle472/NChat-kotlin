@@ -83,6 +83,20 @@ interface ChatRepository {
         caption: String? = null,
         thumbnail: ByteArray? = null
     )
+
+    /**
+     * [sendMedia] for a file that still has to be made ready — a video, which is re-encoded
+     * before it is uploaded. The bubble appears at once with its ring; [prepare] then runs for
+     * as long as it takes, and keeps running when the conversation is left. It answers the file
+     * to send, or throws with a reason short enough to show.
+     */
+    fun sendPreparedMedia(
+        chatId: String,
+        kind: MessageKind,
+        caption: String? = null,
+        prepare: suspend () -> com.nchat.app.core.util.PickedFile
+    )
+
     /**
      * Shares a position as a `location` message.
      *

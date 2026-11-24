@@ -948,11 +948,39 @@ class RemoteChatRepository(
         caption: String?,
         thumbnail: ByteArray?
     ) {
+        sendFile(chatId, kind, caption, fileName) {
+            com.nchat.app.core.util.PickedFile(fileName, mimeType, bytes, thumbnail)
+        }
+    }
+
+    override fun sendPreparedMedia(
+        chatId: String,
+        kind: MessageKind,
+        caption: String?,
+        prepare: suspend () -> com.nchat.app.core.util.PickedFile
+    ) {
+        sendFile(chatId, kind, caption, shownName = null, prepare = prepare)
+    }
+
+    /**
+     * A photo, video or document: the bubble first, then the file as [prepare] hands it over.
+     *
+     * [prepare] is instant for a file that is ready and takes its time for a video that is
+     * re-encoded first; either way it runs here, in the repository's own scope, so leaving the
+     * conversation does not drop what was being sent.
+     */
+    private fun sendFile(
+        chatId: String,
+        kind: MessageKind,
+        caption: String?,
+        shownName: String?,
+        prepare: suspend () -> com.nchat.app.core.util.PickedFile
+    ) {
         val localId = newClientId()
         val body = caption?.trim().orEmpty()
         val local = baseMessage(chatId, localId, body).copy(
             kind = kind,
-            fileName = fileName,
+            fileName = shownName,
             // The bubble carries a ring from the first byte, so a photo on a slow link looks
             // like something that is happening instead of a message stuck on its clock.
             uploadProgress = 0f
@@ -963,6 +991,19 @@ class RemoteChatRepository(
         scope.launch {
             if (!deliveryGate.tryAcquire(localId)) return@launch
             try {
+                val file = try {
+                    prepare()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (problem: Exception) {
+                    setUploadProgress(chatId, localId, null)
+                    markFailed(chatId, localId, problem.message?.takeIf { it.isNotBlank() } ?: "couldn't prepare the file")
+                    return@launch
+                }
+                val fileName = file.name
+                val mimeType = file.mimeType
+                val bytes = file.bytes
+                val thumbnail = file.thumbnail
                 if (stream(chatId).value.none { it.id == localId }) return@launch
                 // In an encrypted conversation the file is sealed before it leaves the phone,
                 // so whether this one is has to be settled before anything is uploaded.

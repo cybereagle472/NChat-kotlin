@@ -340,6 +340,13 @@ fun ConversationScreen(
         val kind = pendingKind
         pendingKind = null
         if (uri == null || kind == null) return
+        if (kind == MessageKind.Video) {
+            // A camera clip is far larger than an attachment may be. It is re-encoded first —
+            // which takes a while, so the bubble appears now and the work goes on behind it.
+            val app = context.applicationContext
+            viewModel.onSendVideo { com.nchat.app.core.util.prepareVideo(app, uri) }
+            return
+        }
         val picked = readPickedFile(context, uri)
         if (picked == null) {
             NcToaster.show("That file is too large (max 24 MB)")
@@ -359,9 +366,6 @@ fun ConversationScreen(
                     thumbnail = prepared.thumbnail
                 )
             }
-        } else if (kind == MessageKind.Video) {
-            // A clip gets a poster frame so the bubble shows the video, not a black tile.
-            picked.copy(thumbnail = MediaPreparer.videoPoster(context, uri))
         } else {
             picked
         }

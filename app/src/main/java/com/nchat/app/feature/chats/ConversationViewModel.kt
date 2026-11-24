@@ -313,6 +313,11 @@ class ConversationViewModel(
         )
     }
 
+    /** A video goes out once it has been made ready (re-encoded); see `prepareVideo`. */
+    fun onSendVideo(prepare: suspend () -> PickedFile) {
+        repository.sendPreparedMedia(chatId = chatId, kind = MessageKind.Video, prepare = prepare)
+    }
+
     /** React from the full-reactions sheet, where the target outlives the context menu. */
     fun reactTo(messageId: String, emoji: String) {
         repository.toggleReaction(chatId, messageId, emoji)

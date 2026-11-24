@@ -90,6 +90,8 @@ class VideoPlanTest {
         assertEquals(VideoPlan.Decision.Keep, decide(1280, 720, 0, seconds = 60, megabitsPerSecond = 1.5))
         assertEquals(VideoPlan.Decision.Keep, decide(854, 480, 0, seconds = 120, megabitsPerSecond = 1.0))
         assertEquals(VideoPlan.Decision.Keep, decide(720, 1280, 0, seconds = 20, megabitsPerSecond = 2.2))
+        // A large picture at a low bit rate is small too: making it 720 would save next to nothing.
+        assertEquals(VideoPlan.Decision.Keep, decide(1920, 1080, 0, seconds = 30, megabitsPerSecond = 2.0))
         // Small in megabytes but large in pixels and bit rate: a few seconds of 4K still shrink tenfold.
         val short = compressed(decide(3840, 2160, 0, seconds = 4, megabitsPerSecond = 40.0))
         assertEquals(720, short.height)
