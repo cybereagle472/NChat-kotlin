@@ -1,5 +1,6 @@
 package com.nchat.app.feature.chats
 
+import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
 import com.nchat.app.data.model.MessageKind
@@ -115,6 +116,119 @@ class EncryptionMarksTest {
             text("theirs", 500).copy(state = DeliveryState.Sending),
         )
         assertEquals(setOf("sent", "read", "theirs"), unsealedMessageIds(messages, encryptedSince = 300))
+    }
+
+    // ------------------------------------------- the chat list and notifications
+
+    private fun row(lastAt: Long, unsealed: Boolean, group: Boolean = false) = Chat(
+        id = if (group) "group" else "peer", title = "Sara", isGroup = group,
+        lastMessage = "words", lastMessageAt = lastAt, lastMessageUnsealed = unsealed,
+    )
+
+    @Test
+    fun theListSaysWhichChatsAreEncryptedAndWhichNeedALook() {
+        val changed = settled.copy(changed = true)
+        val held = changed.copy(held = true)
+        val lost = changed.copy(key = null)
+
+        assertEquals(ChatLock.None, chatListMark(row(10, false), security = null, groupEncryptedSince = null).lock)
+        assertEquals(ChatLock.Encrypted, chatListMark(row(10, false), settled, null).lock)
+        assertEquals(ChatLock.Encrypted, chatListMark(row(10, false), settled.copy(verified = true), null).lock)
+        assertEquals(ChatLock.Changed, chatListMark(row(10, false), changed, null).lock)
+        assertEquals(ChatLock.Held, chatListMark(row(10, false), held, null).lock)
+        assertEquals("keys that could not be read need a look too", ChatLock.Changed, chatListMark(row(10, false), lost, null).lock)
+
+        // A group has no code of its own: it is encrypted or it is not.
+        assertEquals(ChatLock.None, chatListMark(row(10, false, group = true), null, null).lock)
+        assertEquals(ChatLock.Encrypted, chatListMark(row(10, false, group = true), null, 5L).lock)
+        // What is known about a person says nothing about a group, and the other way round.
+        assertEquals(ChatLock.None, chatListMark(row(10, false, group = true), held, null).lock)
+        assertEquals(ChatLock.None, chatListMark(row(10, false), null, 5L).lock)
+    }
+
+    @Test
+    fun aChangedCodeTakesThePlaceOfThePreviewUntilItWasLookedAt() {
+        val changed = settled.copy(changed = true)
+        assertNull(chatListMark(row(10, false), null, null).notice)
+        assertNull(chatListMark(row(10, false), settled, null).notice)
+        assertNull(chatListMark(row(10, false, group = true), null, 5L).notice)
+        assertEquals("Security code changed", chatListMark(row(10, false), changed, null).notice)
+        val waiting = chatListMark(row(10, false), changed.copy(held = true), null).notice!!
+        assertTrue(waiting.startsWith("Security code changed"))
+        assertTrue("and that something waits for it", waiting.contains("waiting"))
+        assertTrue(chatListMark(row(10, false), changed.copy(key = null), null).notice!!.contains("could not be read"))
+    }
+
+    @Test
+    fun thePreviewOfWordsTheServerCouldReadSaysSoInAnEncryptedChat() {
+        val since = settled.copy(since = 300)
+        // The lock on a row must not vouch for a preview that was never sealed.
+        assertTrue(chatListMark(row(500, unsealed = true), since, null).unsealedPreview)
+        assertTrue("the very moment encryption began counts", chatListMark(row(300, unsealed = true), since, null).unsealedPreview)
+        assertFalse("sealed", chatListMark(row(500, unsealed = false), since, null).unsealedPreview)
+        assertFalse("from before encryption began", chatListMark(row(200, unsealed = true), since, null).unsealedPreview)
+        assertFalse("a chat that never was encrypted marks nothing", chatListMark(row(500, unsealed = true), null, null).unsealedPreview)
+        // Groups go by when the group was first encrypted on this phone.
+        assertTrue(chatListMark(row(500, unsealed = true, group = true), null, 300L).unsealedPreview)
+        assertFalse(chatListMark(row(200, unsealed = true, group = true), null, 300L).unsealedPreview)
+        assertFalse(chatListMark(row(500, unsealed = true, group = true), since, null).unsealedPreview)
+        // While the notice is there it has the line; the mark returns with the preview.
+        val both = chatListMark(row(500, unsealed = true), since.copy(changed = true), null)
+        assertEquals("Security code changed", both.notice)
+        assertTrue(both.unsealedPreview)
+    }
+
+    @Test
+    fun whatALineUnderAChatsNameIsToldAboutItsMessage() {
+        // The row keeps one fact about its newest message: were these somebody's words, readable
+        // by the server? Whether that deserves a mark depends on the chat, which the list knows.
+        assertTrue(reachedServerReadable(text("theirs", 500)))
+        assertTrue(reachedServerReadable(text("mine, sent", 500, mine = true)))
+        assertFalse(reachedServerReadable(text("sealed", 500, sealed = true)))
+        assertFalse("sealed, though this phone cannot open it", reachedServerReadable(text("closed", 500).copy(unreadable = true)))
+        assertFalse(reachedServerReadable(text("deleted", 500).copy(deleted = true)))
+        assertFalse(reachedServerReadable(text("system line", 500).copy(systemEvent = true)))
+        assertFalse("still on its way", reachedServerReadable(text("sending", 500, mine = true).copy(state = DeliveryState.Sending)))
+        assertFalse("never sent", reachedServerReadable(text("failed", 500, mine = true).copy(failed = true)))
+        assertTrue("somebody else's message has no 'sending'", reachedServerReadable(text("theirs", 500).copy(state = DeliveryState.Sending)))
+        // It is the same measure the conversation uses for its own marks.
+        for (message in listOf(text("a", 500), text("b", 500, sealed = true), text("c", 500).copy(deleted = true), text("d", 500, mine = true).copy(failed = true))) {
+            assertEquals(message.id, reachedServerReadable(message), message.id in unsealedMessageIds(listOf(message), encryptedSince = 300))
+        }
+    }
+
+    @Test
+    fun aNotificationOfWordsTheServerCouldReadSaysSoInAnEncryptedChat() {
+        // A notification is where a message slipped into an encrypted chat would be read first.
+        assertEquals("Not encrypted · send me the code", notificationBody("send me the code", text("1", 500), encryptedSince = 300))
+        assertEquals("send me the code", notificationBody("send me the code", text("1", 500, sealed = true), encryptedSince = 300))
+        assertEquals("a chat that never was encrypted", "hello", notificationBody("hello", text("1", 500), encryptedSince = null))
+        assertEquals("from before encryption began", "hello", notificationBody("hello", text("1", 200), encryptedSince = 300))
+        assertEquals("📷 Photo is marked like any words", "Not encrypted · 📷 Photo", notificationBody("📷 Photo", text("1", 500).copy(kind = MessageKind.Photo), 300))
+        assertEquals("nobody's words", "Sara joined", notificationBody("Sara joined", text("1", 500).copy(systemEvent = true), 300))
+    }
+
+    @Test
+    fun aChangedCodeIsAnnouncedOnceAndSaysWhatWaits() {
+        val changed = settled.copy(changed = true)
+        val held = changed.copy(held = true)
+        // What the notification says; null when there is nothing to announce.
+        assertNull(securityNotification("Sara", null))
+        assertNull(securityNotification("Sara", settled))
+        assertEquals(securityChangeNotice("Sara", changed), securityNotification("Sara", changed))
+        assertEquals(securityChangeNotice("Sara", held), securityNotification("Sara", held))
+        assertNull("keys that could not be read are this phone's trouble, not news about Sara", securityNotification("Sara", changed.copy(key = null)))
+
+        // Announced when it changes, not again for the same key, and again for the next one.
+        assertTrue(announcesSecurityChange(before = settled, now = changed.copy(key = "new-key")))
+        assertTrue("first seen already changed", announcesSecurityChange(before = null, now = changed))
+        assertFalse(announcesSecurityChange(before = changed, now = changed))
+        assertFalse("looked at", announcesSecurityChange(before = changed, now = settled))
+        assertFalse(announcesSecurityChange(before = settled, now = settled.copy(verified = true)))
+        assertTrue("another change while the first was not looked at", announcesSecurityChange(before = changed, now = changed.copy(key = "third-key")))
+        assertTrue("now something waits", announcesSecurityChange(before = changed, now = held))
+        assertFalse(announcesSecurityChange(before = settled, now = null))
+        assertFalse(announcesSecurityChange(before = null, now = settled))
     }
 
     // ------------------------------------------------------------- wording
