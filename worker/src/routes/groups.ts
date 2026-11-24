@@ -471,6 +471,14 @@ groups.delete('/:id', async (c) => {
 // hands that chain to each other member inside a sealed one-to-one envelope.
 // The server keeps those envelopes (group_sender_keys) and the messages; it
 // can open neither. Its part is to keep the two in step — see rosterOf.
+//
+// An envelope that does not open on the phone it was sealed for (that phone
+// lost the session it was sealed on, or the envelope did not arrive whole) is
+// no use to anybody, and the first envelope for a member is otherwise kept
+// for good. That member says so (POST …/keys/again): the envelope is emptied
+// — the row stays, so it is still known that they were to hold the chain —
+// and the roster tells the sender to hand the chain to them once more, on a
+// new session. An empty envelope is written by nothing else.
 
 /** The members of a group, or their keys, are not what the sender's chain was handed out for. */
 const ROSTER_CHANGED = { error: 'The members of this group or their keys have changed', code: 'roster_changed' };
@@ -481,12 +489,14 @@ function lacksKeyTables(err: unknown): boolean {
   return /no such table: (group_sender_keys|user_crypto_keys)/.test(String(err));
 }
 
-type RosterEntry = { user_id: string; identity_key: string | null; has_key: boolean };
+type RosterEntry = { user_id: string; identity_key: string | null; has_key: boolean; again: boolean };
 
 /**
  * Everybody in the group but `userId`, with the identity key they have
  * registered (null: an app without keys) and whether they hold the chain
  * `chainId` of `userId` — handed to them under the keys they have now.
+ * `again`: they were handed it and said that envelope does not open; they
+ * do not hold it, and are to be handed it once more.
  *
  * `stale` is the other half: somebody holds that chain who should not read
  * what is sealed with it from here on — a member who has left, or one who
@@ -498,14 +508,20 @@ async function rosterOf(env: Env, groupId: string, userId: string, chainId: stri
     env.DB.prepare(`SELECT gm.user_id AS user_id, k.identity_public_key AS identity_key
       FROM group_members gm LEFT JOIN user_crypto_keys k ON k.user_id = gm.user_id
       WHERE gm.group_id = ?1 AND gm.user_id != ?2`).bind(groupId, userId),
-    env.DB.prepare(`SELECT recipient_id, recipient_identity_key FROM group_sender_keys
+    env.DB.prepare(`SELECT recipient_id, recipient_identity_key, envelope = '' AS emptied FROM group_sender_keys
       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3`).bind(groupId, userId, chainId ?? ''),
   ]);
   const current = new Map((members.results as { user_id: string; identity_key: string | null }[]).map((row) => [row.user_id, row.identity_key]));
-  const held = new Map((holders.results as { recipient_id: string; recipient_identity_key: string }[]).map((row) => [row.recipient_id, row.recipient_identity_key]));
-  const stale = [...held].some(([holder, key]) => current.get(holder) !== key);
+  const held = new Map((holders.results as { recipient_id: string; recipient_identity_key: string; emptied: number }[]).map((row) => [row.recipient_id, row]));
+  // Emptied or not, an envelope for somebody who should not read any more makes the chain stale:
+  // that they could not open it is only their word.
+  const stale = [...held].some(([holder, row]) => current.get(holder) !== row.recipient_identity_key);
   return {
-    members: [...current].map(([user_id, identity_key]) => ({ user_id, identity_key, has_key: identity_key !== null && held.get(user_id) === identity_key })),
+    members: [...current].map(([user_id, identity_key]) => {
+      const row = held.get(user_id);
+      const theirs = row !== undefined && identity_key !== null && row.recipient_identity_key === identity_key;
+      return { user_id, identity_key, has_key: theirs && !row.emptied, again: theirs && !!row.emptied };
+    }),
     stale,
   };
 }
@@ -558,16 +574,19 @@ groups.post('/:id/keys', limitSend, async (c) => {
     if (entries.some((entry) => current.get(entry.recipient_id) !== entry.recipient_identity_key)) return c.json(ROSTER_CHANGED, 409);
 
     // The first envelope for a member stays: it may have been opened already,
-    // and a later one would start further on and leave a hole. Each row is
-    // guarded by the same conditions again, so a member who left in the
-    // meantime is simply not written.
+    // and a later one would start further on and leave a hole. The one
+    // exception is an envelope that member said does not open: the new one
+    // takes its place, when it is for the same keys. Each row is guarded by
+    // the same conditions again, so a member who left in the meantime is
+    // simply not written.
     await c.env.DB.batch(entries.map((entry) => c.env.DB.prepare(
       `INSERT INTO group_sender_keys (group_id, sender_id, chain_id, recipient_id, recipient_identity_key, envelope)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6
        WHERE EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2)
          AND EXISTS (SELECT 1 FROM group_members gm JOIN user_crypto_keys k ON k.user_id = gm.user_id
                      WHERE gm.group_id = ?1 AND gm.user_id = ?4 AND k.identity_public_key = ?5)
-       ON CONFLICT (group_id, sender_id, chain_id, recipient_id) DO NOTHING`,
+       ON CONFLICT (group_id, sender_id, chain_id, recipient_id) DO UPDATE SET envelope = excluded.envelope
+         WHERE group_sender_keys.envelope = '' AND group_sender_keys.recipient_identity_key = excluded.recipient_identity_key`,
     ).bind(groupId, userId, chain, entry.recipient_id, entry.recipient_identity_key, entry.envelope)));
   } catch (err) {
     if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
@@ -602,9 +621,40 @@ groups.post('/:id/keys/fetch', async (c) => {
     const identity = (await registeredIdentityKey(c.env, userId)) ?? '';
     const found = await c.env.DB.batch(pairs.map((pair) => c.env.DB.prepare(
       `SELECT sender_id, chain_id, envelope FROM group_sender_keys
-       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3 AND recipient_id = ?4 AND recipient_identity_key = ?5`,
+       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3 AND recipient_id = ?4 AND recipient_identity_key = ?5
+         AND envelope != ''`,
     ).bind(groupId, pair.sender_id, pair.chain_id, userId, identity)));
     return c.json({ keys: found.flatMap((result) => result.results) });
+  } catch (err) {
+    if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
+    throw err;
+  }
+});
+
+// POST /groups/:id/keys/again — the caller could not open the envelope that
+// was to hand them a chain. Only their own envelope, only the one sealed for
+// the keys they have now, and only once: `asked` is false when there was
+// nothing to empty. The sender learns of it from the roster.
+groups.post('/:id/keys/again', limitSend, async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id')!;
+  if (!(await getMembership(c.env, groupId, userId))) return c.json({ error: 'Not a member of this group' }, 403);
+
+  const body: unknown = await c.req.json().catch(() => null);
+  if (typeof body !== 'object' || body === null) return c.json({ error: 'Invalid request' }, 400);
+  const { sender_id, chain_id } = body as Record<string, unknown>;
+  if (typeof sender_id !== 'string' || !sender_id || sender_id.length > 512 || sender_id === userId || !decodeExact(chain_id, CHAIN_ID_BYTES)) {
+    return c.json({ error: 'Invalid request' }, 400);
+  }
+
+  try {
+    const identity = (await registeredIdentityKey(c.env, userId)) ?? '';
+    const emptied = await c.env.DB.prepare(
+      `UPDATE group_sender_keys SET envelope = ''
+       WHERE group_id = ?1 AND sender_id = ?2 AND chain_id = ?3 AND recipient_id = ?4 AND recipient_identity_key = ?5
+         AND envelope != ''`,
+    ).bind(groupId, sender_id, chain_id as string, userId, identity).run();
+    return c.json({ success: true, asked: (emptied.meta.changes ?? 0) > 0 });
   } catch (err) {
     if (lacksKeyTables(err)) return c.json(SEALED_GROUPS_UNAVAILABLE, 501);
     throw err;

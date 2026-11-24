@@ -260,6 +260,16 @@ object E2eeGroup {
     /** The id of the chain [envelope] was sealed with, or null when it is not a group envelope. */
     fun chainId(envelope: String): String? = parse(envelope)?.let { encodeBase64(it.chain) }
 
+    /** Where an envelope says it stands: which chain, and which message of it. */
+    class Place(val chainId: String, val number: Int)
+
+    /**
+     * The chain [envelope] names and its number in that chain, or null when
+     * it is not a group envelope. Read off the envelope, not checked: only a
+     * phone that holds the chain can tell whether it is true.
+     */
+    fun place(envelope: String): Place? = parse(envelope)?.let { Place(encodeBase64(it.chain), it.number) }
+
     // ------------------------------------------------------------------- open
 
     /**

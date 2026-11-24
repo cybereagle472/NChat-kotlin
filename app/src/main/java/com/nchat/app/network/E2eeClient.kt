@@ -102,8 +102,9 @@ interface SealedMessaging {
     /**
      * The chains that [rows] were sealed with and this phone does not hold:
      * what to ask the server for before the rows are opened. Each chain is
-     * named once; chains the server said it has none of ([noGroupKey]) are
-     * not named again by this process.
+     * named once. A chain the server said it has none of ([noGroupKey]) is
+     * named again only for a message further on than any that was known
+     * then: a chain is handed on to somebody who joins, as it then stands.
      */
     fun missingGroupKeys(groupId: String, rows: List<GroupRow>): List<GroupKeyRef>
 
@@ -116,6 +117,16 @@ interface SealedMessaging {
 
     /** The server has no envelope that hands this phone that chain (it was not a member then, say). */
     fun noGroupKey(groupId: String, senderId: String, chainId: String)
+
+    /**
+     * For a chain whose envelope reached this phone and did not open
+     * ([acceptGroupKey] answered false): tells the server so through [ask],
+     * so that its sender hands the chain over once more. Once per chain
+     * while the app runs — a second envelope that does not open either is
+     * not chased. False: there was nothing to ask. Throws what [ask]
+     * throws; the request then counts as not made.
+     */
+    suspend fun askGroupKeyAgain(groupId: String, senderId: String, chainId: String, ask: suspend () -> Unit): Boolean
 
     /** What this phone knows about the encryption of a group; null when nothing was ever sealed in it here. */
     fun groupSecurity(groupId: String): GroupSecurity?
@@ -162,8 +173,13 @@ interface GroupTransport {
  */
 class GroupRoster(val members: List<RosterMember>, val stale: Boolean)
 
-/** [identityKey] is null for a member whose app has no keys; [hasKey]: they hold the chain that was asked about. */
-class RosterMember(val userId: String, val identityKey: String?, val hasKey: Boolean)
+/**
+ * [identityKey] is null for a member whose app has no keys; [hasKey]: they
+ * hold the chain that was asked about. [again]: they were handed it and
+ * said the envelope did not open on their phone — they are handed it once
+ * more, on a session started anew.
+ */
+class RosterMember(val userId: String, val identityKey: String?, val hasKey: Boolean, val again: Boolean = false)
 
 /** The envelope that hands a chain to one member, and the identity key it was sealed for. */
 class GroupKey(val recipientId: String, val recipientIdentity: String, val envelope: String)
@@ -319,8 +335,24 @@ class E2eeClient(
     private val durableGroups = LinkedHashSet<String>()
     private val durableChains = LinkedHashSet<Pair<String, String>>()
 
-    /** Chains the server said it has no envelope for; not asked for again by this process. */
-    private val absentChains = LinkedHashSet<String>()
+    /**
+     * What is known, while the app runs, about a chain this phone does not
+     * hold. [seen]: the furthest message of it that was met. [absentUpTo]:
+     * the server had no envelope for this phone when messages up to that
+     * number were known. [failed]: an envelope came and did not open (its
+     * digest). [asked]: the server was told so. [hopeless]: the envelope
+     * that came after that did not open either.
+     */
+    private class Lacking {
+        var seen = -1
+        var absentUpTo = -1
+        var failed: String? = null
+        var asked = false
+        var hopeless = false
+    }
+
+    /** By [chainName]; the oldest fall out first. */
+    private val lackingChains = LinkedHashMap<String, Lacking>()
 
     /** One send per group at a time: making a chain and handing it over is not something to do twice at once. */
     private val groupGates = HashMap<String, Mutex>()
@@ -868,8 +900,16 @@ class E2eeClient(
         val expected = member.identityKey?.let { decodeBase64(it) } ?: throw IOException("the roster names no usable key for this member")
         try {
             val usable = batch {
+                // Throws for a member whose changed keys the user has not looked at.
+                val sendable = sendableFor(peerId)
                 when {
-                    !sendableFor(peerId) -> false
+                    // What was sealed for them on the session there is did not open on their
+                    // phone. Nothing more is sealed on it: they are handed the chain on a new one.
+                    member.again -> {
+                        if (sendable) retireSessions(peerId)
+                        false
+                    }
+                    !sendable -> false
                     recordFor(peerId)?.sendable()?.session?.remoteIdentityKey()?.contentEquals(expected) == true -> true
                     else -> {
                         // The roster names other keys than the session was made with: a new phone.
@@ -1014,11 +1054,16 @@ class E2eeClient(
             val wanted = LinkedHashMap<String, GroupKeyRef>()
             for (row in rows) {
                 if (row.senderId.isBlank() || row.senderId == localId) continue
-                val chainId = E2eeGroup.chainId(row.envelope) ?: continue
-                val name = chainName(groupId, row.senderId, chainId)
-                if (name in wanted || name in absentChains) continue
-                if (chainsFor(groupId, row.senderId).any { it.idText == chainId }) continue
-                wanted[name] = GroupKeyRef(row.senderId, chainId)
+                val place = E2eeGroup.place(row.envelope) ?: continue
+                val name = chainName(groupId, row.senderId, place.chainId)
+                val known = lackingChains[name]
+                // Asked for before, and nothing has come since that could change the answer.
+                val settled = known != null && (known.hopeless || place.number <= known.absentUpTo)
+                if (known != null && place.number > known.seen) known.seen = place.number
+                if (name in wanted || settled) continue
+                if (chainsFor(groupId, row.senderId).any { it.idText == place.chainId }) continue
+                if (known == null) lackingOf(name).seen = place.number
+                wanted[name] = GroupKeyRef(row.senderId, place.chainId)
             }
             wanted.values.toList()
         }
@@ -1034,7 +1079,7 @@ class E2eeClient(
             // Held already: the envelope has done its work, and the chain stays where it is.
             if (held.any { it.idText == chainId }) return@batch true
             var taken = false
-            openPairwise(senderId, envelope, listOf(chainTarget(groupId, chainId))) { content ->
+            val opened = openPairwise(senderId, envelope, listOf(chainTarget(groupId, chainId))) { content ->
                 val chain = content.takeIf { it.type == E2eePayload.GROUP_KEY }
                     ?.let { decodeBase64(it.body) }
                     ?.let { E2eeGroup.accept(it) }
@@ -1046,28 +1091,78 @@ class E2eeClient(
                     // On stable storage before the session that opened the envelope is: see commit().
                     durableChains += name
                     unreadable.remove(GROUP + groupId)
-                    absentChains.remove(chainName(groupId, senderId, chainId))
+                    lackingChains.remove(chainName(groupId, senderId, chainId))
                     encryptedHere(groupId)
                     taken = true
                 }
                 // Authentic either way; its key is spent whether or not it carried what was asked for.
                 true
             }
+            // It did not open here, or was not the chain it was said to be: no use to this
+            // phone, however often it is fetched. (Something that merely went wrong on the
+            // way — storage, say — throws, and is not counted as that.)
+            if (!taken) didNotOpen(chainName(groupId, senderId, chainId), envelope, authentic = opened != null)
             taken
         }
     } catch (_: Exception) {
         false
     }
 
+    /** An envelope that was to hand over the chain [name] is no use to this phone. */
+    private fun didNotOpen(name: String, envelope: String, authentic: Boolean) {
+        val state = lackingOf(name)
+        val digest = encodeBase64(MessageDigest.getInstance("SHA-256").digest(envelope.toByteArray(Charsets.UTF_8)))
+        // The same envelope fetched once more says nothing new.
+        if (state.failed == digest) return
+        // A second one, after the sender was asked for it: not chased further while the app
+        // runs. So is one that opened and carried something else — asking again would spend
+        // the sender a session to no end.
+        if (state.asked || authentic) state.hopeless = true
+        state.failed = digest
+    }
+
+    override suspend fun askGroupKeyAgain(groupId: String, senderId: String, chainId: String, ask: suspend () -> Unit): Boolean {
+        val name = chainName(groupId, senderId, chainId)
+        val due = synchronized(lock) {
+            val state = lackingChains[name]
+            // Marked before the request leaves, so that two readers of the same page ask once.
+            if (closed || state == null || state.failed == null || state.asked || state.hopeless) false
+            else {
+                state.asked = true
+                true
+            }
+        }
+        if (!due) return false
+        try {
+            ask()
+        } catch (failure: Throwable) {
+            synchronized(lock) { lackingChains[name]?.asked = false }
+            throw failure
+        }
+        return true
+    }
+
+    private fun lackingOf(name: String): Lacking {
+        lackingChains[name]?.let { return it }
+        val state = Lacking()
+        lackingChains[name] = state
+        val eldest = lackingChains.iterator()
+        while (lackingChains.size > MAX_REMEMBERED_FAILURES && eldest.hasNext()) {
+            eldest.next()
+            eldest.remove()
+        }
+        return state
+    }
+
     override fun noGroupKey(groupId: String, senderId: String, chainId: String) {
         synchronized(lock) {
             if (closed) return
-            absentChains += chainName(groupId, senderId, chainId)
-            val eldest = absentChains.iterator()
-            while (absentChains.size > MAX_REMEMBERED_FAILURES && eldest.hasNext()) {
-                eldest.next()
-                eldest.remove()
-            }
+            // Only a chain that was looked for can be found absent.
+            val state = lackingChains[chainName(groupId, senderId, chainId)] ?: return
+            // Its sender has been asked to hand it over again: "nothing yet" is what the
+            // server says until they have, and not a reason to stop looking.
+            if (state.asked && !state.hopeless) return
+            state.absentUpTo = state.seen
         }
     }
 
@@ -1322,7 +1417,7 @@ class E2eeClient(
             changedChains.clear()
             durableGroups.clear()
             durableChains.clear()
-            absentChains.clear()
+            lackingChains.clear()
         }
     }
 

@@ -901,7 +901,7 @@ class RemoteChatRepository(
                 throw refusal
             }
             return GroupRoster(
-                answer.members.map { RosterMember(it.userId, it.identityKey?.takeIf { key -> key.isNotBlank() }, it.hasKey) },
+                answer.members.map { RosterMember(it.userId, it.identityKey?.takeIf { key -> key.isNotBlank() }, it.hasKey, it.again) },
                 answer.stale
             )
         }
@@ -915,7 +915,9 @@ class RemoteChatRepository(
      * Asks the server for the chains that [rows] of a group were sealed with and this phone does
      * not hold yet, and takes them in — before the rows are opened, which never touches the
      * network. A chain the server has nothing for (sealed before this account was in the group,
-     * or for a phone it no longer uses) is remembered as such and not asked for again.
+     * or for a phone it no longer uses) is remembered as such, and looked for again only when a
+     * later message of it arrives. One that came and does not open here is said to the server,
+     * so that its sender hands it over once more.
      */
     private suspend fun fetchGroupKeys(groupId: String, rows: List<MessageDto>) {
         val sealedRows = rows.filter { it.isSealed() && !it.isDeleted && it.groupId == groupId }
@@ -928,8 +930,16 @@ class RemoteChatRepository(
             val found = api.fetchGroupKeys(groupId, wanted)
             for (chain in wanted) {
                 val envelope = found.firstOrNull { it.senderId == chain.senderId && it.chainId == chain.chainId }?.envelope
-                if (envelope.isNullOrBlank()) messaging.noGroupKey(groupId, chain.senderId, chain.chainId)
-                else messaging.acceptGroupKey(groupId, chain.senderId, chain.chainId, envelope)
+                when {
+                    envelope.isNullOrBlank() -> messaging.noGroupKey(groupId, chain.senderId, chain.chainId)
+                    messaging.acceptGroupKey(groupId, chain.senderId, chain.chainId, envelope) -> Unit
+                    // Not getting through is not the end of it: the next look at these rows asks again.
+                    else -> runCatching {
+                        messaging.askGroupKeyAgain(groupId, chain.senderId, chain.chainId) {
+                            api.askGroupKeyAgain(groupId, chain.senderId, chain.chainId)
+                        }
+                    }
+                }
             }
         }
     }

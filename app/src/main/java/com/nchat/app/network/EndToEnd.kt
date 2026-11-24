@@ -133,6 +133,8 @@ class EndToEnd(
 
         override fun noGroupKey(groupId: String, senderId: String, chainId: String) = Unit
 
+        override suspend fun askGroupKeyAgain(groupId: String, senderId: String, chainId: String, ask: suspend () -> Unit): Boolean = false
+
         override fun groupSecurity(groupId: String): GroupSecurity? = null
 
         override fun kept(peerId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload? = null

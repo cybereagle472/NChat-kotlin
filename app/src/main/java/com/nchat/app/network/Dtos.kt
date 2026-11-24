@@ -344,6 +344,8 @@ data class GroupRosterMemberDto(
     @SerialName("user_id") val userId: String = "",
     @SerialName("identity_key") val identityKey: String? = null,
     @SerialName("has_key") val hasKey: Boolean = false,
+    /** They were handed the chain and said that envelope does not open on their phone. */
+    val again: Boolean = false,
 )
 
 /** `POST /groups/:id/keys/fetch` — the sealed envelopes that hand this phone the chains it asked for. */

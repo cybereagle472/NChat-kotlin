@@ -446,6 +446,20 @@ class NChatApi(private val client: ApiClient) {
         return answer.keys
     }
 
+    /**
+     * Tells the server that the envelope which was to hand this phone the chain [chainId] of
+     * [senderId] does not open here, so that [senderId] hands it over once more.
+     */
+    suspend fun askGroupKeyAgain(groupId: String, senderId: String, chainId: String) {
+        client.post(
+            "/groups/$groupId/keys/again",
+            body {
+                put("sender_id", senderId)
+                put("chain_id", chainId)
+            }
+        )
+    }
+
     suspend fun deleteGroupMessageForMe(messageId: String) {
         client.post("/groups/messages/$messageId/delete-for-me")
     }
