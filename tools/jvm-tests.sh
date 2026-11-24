@@ -42,10 +42,12 @@ APP_MAIN=(
   data/local/ChatListCache.kt data/local/GroupListCache.kt data/local/FriendGraphCache.kt
   data/local/DraftStore.kt data/local/StarredStore.kt data/local/PinnedMessageStore.kt data/local/ArchivedStore.kt
   feature/chats/EncryptionMarks.kt feature/chats/ChatPreview.kt core/util/VideoPlan.kt
+  feature/settings/BackupText.kt
 )
 APP_TESTS=(
   data/local/LocalStoresTest data/local/MessageStoreTest data/local/OutboxStoreTest
   feature/chats/EncryptionMarksTest feature/chats/ChatPreviewTest core/util/VideoPlanTest
+  feature/settings/BackupTextTest
 )
 
 mkdir -p "$TOOLS"
