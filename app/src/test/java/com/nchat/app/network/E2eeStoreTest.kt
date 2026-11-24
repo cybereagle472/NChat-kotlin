@@ -210,6 +210,65 @@ class E2eeStoreTest {
     }
 
     @Test
+    fun whatIsKnownAboutThePeersKeysTravelsWithTheRecord() {
+        val vault = MemoryVault()
+        val store = E2eeStore(vault)
+        val identity = E2eeProtocol.generateIdentity().identityPublic
+        val record = E2eeStore.PeerRecord()
+        record.sessions += E2eeStore.StoredSession(newSession(), retired = false)
+        record.trust = E2eeStore.Trust(identity, verified = true, changed = true, held = true, since = 1_700_000_000_123L)
+        store.savePeer("bob", record, durable = true)
+
+        val loaded = store.loadPeer("bob")!!.trust
+        assertNotNull(loaded)
+        assertArrayEquals(identity, loaded!!.identity)
+        assertTrue(loaded.verified && loaded.changed && loaded.held)
+        assertEquals(1_700_000_000_123L, loaded.since)
+
+        // Each fact on its own, so that none is read from another's place.
+        for (facts in listOf(Triple(true, false, false), Triple(false, true, false), Triple(false, false, true), Triple(false, false, false))) {
+            record.trust = E2eeStore.Trust(identity, verified = facts.first, changed = facts.second, held = facts.third, since = 0L)
+            store.savePeer("bob", record, durable = true)
+            val again = store.loadPeer("bob")!!.trust!!
+            assertEquals(facts, Triple(again.verified, again.changed, again.held))
+            assertEquals(0L, again.since)
+        }
+    }
+
+    @Test
+    fun aRecordThatSaysNothingAboutThePeersKeysLoadsWithoutInventingAny() {
+        val vault = MemoryVault()
+        val store = E2eeStore(vault)
+        store.savePeer("bob", E2eeStore.PeerRecord().apply {
+            sessions += E2eeStore.StoredSession(newSession(), retired = false)
+        }, durable = true)
+        assertNull(store.loadPeer("bob")!!.trust)
+        val entry = vault.entries.keys.single()
+        val written = vault.entries[entry]!!
+
+        // A note that is not a key is no note: better "unknown" than a key nobody ever presented.
+        val identity = encodeBase64(E2eeProtocol.generateIdentity().identityPublic)
+        val notes = listOf(
+            "7",
+            "{}",
+            "{\"s\":5}",
+            "{\"i\":\"AAAA\",\"s\":5}",
+            "{\"i\":\"not base64!\",\"s\":5}",
+            "{\"i\":\"${identity.dropLast(4)}\",\"s\":5}",
+        )
+        for (note in notes) {
+            vault.entries[entry] = "{\"t\":$note," + written.substring(1)
+            val loaded = store.loadPeer("bob")!!
+            assertNull("a note of $note", loaded.trust)
+            assertEquals("the sessions are still there", 1, loaded.sessions.size)
+        }
+        vault.entries[entry] = "{\"t\":{\"i\":\"$identity\"}," + written.substring(1)
+        val sparse = store.loadPeer("bob")!!.trust!!
+        assertFalse(sparse.verified || sparse.changed || sparse.held)
+        assertEquals(0L, sparse.since)
+    }
+
+    @Test
     fun peerRecordIsBoundedAndKeepsTheNewest() {
         val store = E2eeStore(MemoryVault())
         val record = E2eeStore.PeerRecord()

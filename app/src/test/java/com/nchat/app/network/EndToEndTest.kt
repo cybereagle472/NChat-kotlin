@@ -99,6 +99,7 @@ class EndToEndTest {
         val keyring = Keyring()
         var replaced = 0
         val reports = ArrayList<String>()
+        val securityChanges = ArrayList<String>()
 
         /** The directory answers for whoever is signed in on this phone. */
         var account = ""
@@ -117,6 +118,7 @@ class EndToEndTest {
             fetchBundle = { server.bundle(it) },
             onReplaced = { replaced++ },
             report = { what, _ -> reports += what },
+            onSecurityChanged = { securityChanges += it },
         )
 
         fun signIn(userId: String, app: EndToEnd = start()): EndToEnd {
@@ -204,6 +206,48 @@ class EndToEndTest {
         val server = Server()
         val alice = Phone(server).signIn("alice")
         assertNull("an older app has no keys: the message goes out as before", send(alice, "carol", "hi carol"))
+    }
+
+    @Test
+    fun securityCodesComeThroughTheAppsOwnDoor() {
+        val server = Server()
+        val alicePhone = Phone(server)
+        val bobPhone = Phone(server)
+        val alice = alicePhone.signIn("alice")
+        val bob = bobPhone.signIn("bob")
+        assertNull(alice.messaging().security("bob"))
+
+        val hello = send(alice, "bob", "hello bob")!!
+        assertEquals("hello bob", read(bob, "alice", hello))
+        assertEquals("the app is told whose chat changed", listOf("bob"), alicePhone.securityChanges)
+        assertEquals(listOf("alice"), bobPhone.securityChanges)
+
+        val atAlice = alice.messaging().security("bob")!!
+        val atBob = bob.messaging().security("alice")!!
+        assertEquals(server.accounts["bob"]!!.identityKey, atAlice.key)
+        assertEquals(server.accounts["alice"]!!.identityKey, atBob.key)
+        assertTrue("encryption began a moment ago, by this phone's clock", System.currentTimeMillis() - atAlice.since in 0..60_000)
+        val code = alice.messaging().securityCode("bob", atAlice.key!!)
+        assertEquals(SecurityCode.DIGITS, code!!.length)
+        assertEquals("both phones show the same number", code, bob.messaging().securityCode("alice", atBob.key!!))
+
+        // A tick is kept across a restart, and is gone with everything else at sign-out.
+        assertTrue(alice.messaging().setVerified("bob", atAlice.key!!, true))
+        val again = alicePhone.start().also { it.resume("alice") }
+        assertTrue(again.messaging().security("bob")!!.verified)
+        again.signOut()
+        assertNull(again.messaging().security("bob"))
+        assertNull(alicePhone.signIn("alice").messaging().security("bob"))
+    }
+
+    @Test
+    fun withNobodySignedInThereIsNothingToVerify() {
+        val server = Server()
+        val idle = Phone(server).start()
+        assertNull(idle.messaging().security("bob"))
+        assertNull(idle.messaging().securityCode("bob", "any"))
+        assertFalse(idle.messaging().setVerified("bob", "any", true))
+        assertFalse(idle.messaging().acceptChange("bob", "any"))
     }
 
     @Test

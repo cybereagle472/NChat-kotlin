@@ -3,6 +3,9 @@ package com.nchat.app.network
 import com.nchat.app.network.E2eeProtocol.Envelope
 import com.nchat.app.network.E2eeProtocol.PeerBundle
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -15,8 +18,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.util.Collections
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -87,7 +92,13 @@ class E2eeClientTest {
         val identityKey: String get() = encodeBase64(identity!!.identityPublic)
 
         /** A fresh client over this device's storage — what an app restart produces. */
-        fun client(server: Server, archiveAt: File = archiveDirectory, prepare: suspend () -> Unit = {}) = E2eeClient(
+        fun client(
+            server: Server,
+            archiveAt: File = archiveDirectory,
+            prepare: suspend () -> Unit = {},
+            clock: () -> Long = { 0L },
+            changes: (String) -> Unit = {},
+        ) = E2eeClient(
             localId = id,
             store = store,
             archive = E2eeArchive(archiveAt, archiveKey),
@@ -98,6 +109,8 @@ class E2eeClientTest {
             signedPrekey = { prekey },
             fetchBundle = { server.bundle(it) },
             prepare = prepare,
+            clock = clock,
+            onSecurityChanged = changes,
         )
     }
 
@@ -147,6 +160,15 @@ class E2eeClientTest {
             fail(why)
         } catch (expected: IllegalStateException) {
             // intended: an error, never a silent fallback to plaintext
+        }
+    }
+
+    private fun sealFailsWith(client: E2eeClient, to: String, reason: String, editOf: String? = null) {
+        try {
+            runBlocking { client.seal(to, "c-${counter.incrementAndGet()}", E2eePayload.text("must not leave"), editOf) }
+            fail("sealed although: $reason")
+        } catch (refused: IllegalStateException) {
+            assertEquals(reason, refused.message)
         }
     }
 
@@ -1189,6 +1211,454 @@ class E2eeClientTest {
     }
 
     // ------------------------------------------------------------ concurrency
+
+    // ------------------------------------------------------- security codes
+
+    @Test
+    fun theFirstKeysOfAPeerAreTakenOnTrustAndNamed() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        var now = 5_000L
+        val a = alice.client(server, clock = { now })
+        val b = bob.client(server, clock = { now + 77 })
+        assertNull("nothing was ever encrypted with bob", a.security("bob"))
+
+        assertEquals("hi", read(b, send(a, "alice", "bob", "hi")))
+        val atAlice = a.security("bob")!!
+        assertEquals(bob.identityKey, atAlice.key)
+        assertFalse(atAlice.verified)
+        assertFalse(atAlice.changed)
+        assertFalse(atAlice.held)
+        assertEquals("encryption with bob began when the first session did", 5_000L, atAlice.since)
+        val atBob = b.security("alice")!!
+        assertEquals(alice.identityKey, atBob.key)
+        assertFalse(atBob.verified || atBob.changed || atBob.held)
+        assertEquals(5_077L, atBob.since)
+
+        // Later messages and a restart change none of it.
+        now = 9_000L
+        assertEquals("yo", read(a, send(b, "bob", "alice", "yo")))
+        assertEquals("again", read(b, send(a, "alice", "bob", "again")))
+        assertEquals(atAlice, a.security("bob"))
+        assertEquals(atAlice, alice.client(server, clock = { now }).security("bob"))
+        assertEquals(atBob, bob.client(server, clock = { now }).security("alice"))
+        assertNull(a.security("carol"))
+        assertNull(a.security(""))
+    }
+
+    @Test
+    fun aContactWithoutKeysHasNothingToVerify() {
+        val server = Server()
+        val alice = server.install("alice")
+        val a = alice.client(server)
+        assertNull(runBlocking { a.seal("old-client", "c-1", E2eePayload.text("in the clear, as before")) })
+        assertNull(a.security("old-client"))
+        assertNull(a.securityCode("old-client", alice.identityKey))
+    }
+
+    @Test
+    fun bothPhonesShowTheSameCode() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        assertEquals("hi", read(b, send(a, "alice", "bob", "hi")))
+
+        val here = a.securityCode("bob", bob.identityKey)
+        val there = b.securityCode("alice", alice.identityKey)
+        assertNotNull(here)
+        assertEquals(here, there)
+        assertEquals(SecurityCode.of("alice", alice.identity!!.identityPublic, "bob", bob.identity!!.identityPublic), here)
+        assertEquals(SecurityCode.DIGITS, here!!.length)
+
+        // Not for a key that is not the peer's, and not for somebody nothing was encrypted with.
+        assertNull(a.securityCode("bob", alice.identityKey))
+        assertNull(a.securityCode("bob", "not a key"))
+        assertNull(a.securityCode("carol", bob.identityKey))
+        // A phone whose own keys the server has not confirmed has no code to show.
+        alice.identity = null
+        assertNull(a.securityCode("bob", bob.identityKey))
+    }
+
+    @Test
+    fun aPeerWritingFromNewKeysRaisesTheNotice() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        var now = 1_000L
+        val a = alice.client(server, clock = { now })
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+
+        now = 2_000L
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new phone", read(a, send(newBob.client(server), "bob", "alice", "new phone")))
+
+        val security = a.security("bob")!!
+        assertEquals(newBob.identityKey, security.key)
+        assertTrue("the user is told", security.changed)
+        assertFalse("nobody had verified bob, so nothing is held back", security.held)
+        assertFalse(security.verified)
+        assertEquals("the chat has been encrypted since the first keys, not since these", 1_000L, security.since)
+        assertNull("the old code is gone", a.securityCode("bob", oldBob.identityKey))
+        assertEquals(
+            SecurityCode.of("alice", alice.identity!!.identityPublic, "bob", newBob.identity!!.identityPublic),
+            a.securityCode("bob", newBob.identityKey),
+        )
+
+        // Sending goes on, to the new keys.
+        assertEquals(newBob.identityKey, runBlocking { a.seal("bob", "c-on", E2eePayload.text("ok")) }!!.recipientIdentity)
+        // The notice outlives a restart, and ends when the user has seen it.
+        assertTrue(alice.client(server).security("bob")!!.changed)
+        assertTrue(a.acceptChange("bob", newBob.identityKey))
+        assertFalse(a.security("bob")!!.changed)
+        assertFalse(alice.client(server).security("bob")!!.changed)
+    }
+
+    @Test
+    fun newKeysLearntFromTheServerRaiseTheNoticeToo() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        val newBob = server.install("bob", installation = "2")
+
+        val sentTo = ArrayList<String>()
+        runBlocking {
+            a.sendSealed("bob", "c-after", E2eePayload.text("after"), { it is KeysChanged }) { sealed ->
+                sentTo += sealed.recipientIdentity
+                if (sealed.recipientIdentity != newBob.identityKey) throw KeysChanged()
+                "stored"
+            }
+        }
+        assertEquals("an unverified contact is written to straight away", listOf(oldBob.identityKey, newBob.identityKey), sentTo)
+        val security = a.security("bob")!!
+        assertEquals(newBob.identityKey, security.key)
+        assertTrue(security.changed)
+        assertFalse(security.held)
+        assertTrue("on stable storage with the session it came with", alice.client(server).security("bob")!!.changed)
+    }
+
+    @Test
+    fun aVerifiedContactOnNewKeysGetsNothingUntilTheUserHasLooked() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        assertTrue(a.setVerified("bob", oldBob.identityKey, true))
+        assertTrue(a.security("bob")!!.verified)
+
+        // Somebody — bob on a new phone, or somebody in between — writes with other keys.
+        val newBob = server.install("bob", installation = "2")
+        val hello = send(newBob.client(server), "bob", "alice", "it's me, new phone")
+        assertEquals("what arrives is still shown", "it's me, new phone", read(a, hello))
+        val security = a.security("bob")!!
+        assertEquals(newBob.identityKey, security.key)
+        assertTrue(security.changed)
+        assertTrue("nothing goes to keys nobody has checked, for a contact that was checked", security.held)
+        assertFalse("the tick does not pass to keys it was not given for", security.verified)
+
+        val fetches = server.fetches.get()
+        val left = newBob.published.size
+        repeat(3) { sealFailsWith(a, "bob", E2eeText.CODE_CHANGED) }
+        sealFailsWith(a, "bob", E2eeText.CODE_CHANGED, editOf = "s-1")
+        sealFailsWith(alice.client(server), "bob", E2eeText.CODE_CHANGED)
+        assertEquals("refusing costs bob none of his one-time prekeys", fetches, server.fetches.get())
+        assertEquals(left, newBob.published.size)
+        assertEquals("and what keeps arriving is still shown", "hello?", read(a, send(newBob.client(server), "bob", "alice", "hello?")))
+
+        // The user looks and accepts. The new keys are as unverified as anybody's first.
+        assertTrue(a.acceptChange("bob", newBob.identityKey))
+        val after = a.security("bob")!!
+        assertFalse(after.changed || after.held || after.verified)
+        val sealed = runBlocking { a.seal("bob", "c-ok", E2eePayload.text("welcome back")) }!!
+        assertEquals(newBob.identityKey, sealed.recipientIdentity)
+        assertEquals(fetches, server.fetches.get())
+    }
+
+    @Test
+    fun theSameHoldWhenItIsTheServerThatReportsNewKeys() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        assertTrue(a.setVerified("bob", oldBob.identityKey, true))
+        val newBob = server.install("bob", installation = "2")
+
+        val posted = ArrayList<E2eeClient.Sealed>()
+        fun attempt(client: E2eeClient = a): String? = try {
+            runBlocking {
+                client.sendSealed("bob", "c-held", E2eePayload.text("the plan"), { it is KeysChanged }) { sealed ->
+                    posted += sealed
+                    if (sealed.recipientIdentity != newBob.identityKey) throw KeysChanged()
+                    "stored"
+                }
+            }
+        } catch (refused: IllegalStateException) {
+            assertEquals(E2eeText.CODE_CHANGED, refused.message)
+            null
+        }
+
+        assertNull(attempt())
+        assertEquals(
+            "only the envelope for the old keys left this phone, and the server refused it",
+            listOf(oldBob.identityKey),
+            posted.map { it.recipientIdentity },
+        )
+        val security = a.security("bob")!!
+        assertEquals(newBob.identityKey, security.key)
+        assertTrue(security.changed && security.held)
+        assertFalse(security.verified)
+
+        // Trying again — also after a restart — sends nothing and costs bob nothing.
+        val fetches = server.fetches.get()
+        val left = newBob.published.size
+        assertNull(attempt())
+        assertNull(attempt(alice.client(server)))
+        assertEquals(1, posted.size)
+        assertEquals(fetches, server.fetches.get())
+        assertEquals(left, newBob.published.size)
+
+        assertTrue(a.acceptChange("bob", newBob.identityKey))
+        assertEquals("stored", attempt())
+        assertEquals(listOf(oldBob.identityKey, newBob.identityKey), posted.map { it.recipientIdentity })
+        assertEquals("on the session that was waiting, not yet another one", fetches, server.fetches.get())
+        assertEquals(
+            "the plan",
+            newBob.client(server).reveal("alice", "s-held", "c-held", mine = false, envelope = posted.last().envelope)?.body,
+        )
+    }
+
+    @Test
+    fun whatTheUserConfirmsIsTheKeyTheyWereShown() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        val shown = a.security("bob")!!.key!!
+
+        // While the old code is on the screen, bob's keys change.
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new", read(a, send(newBob.client(server), "bob", "alice", "new")))
+
+        assertFalse("a tick for a code that is no longer the code", a.setVerified("bob", shown, true))
+        assertFalse(a.security("bob")!!.verified)
+        assertFalse("nor an OK to a notice about other keys", a.acceptChange("bob", shown))
+        assertTrue(a.security("bob")!!.changed)
+        assertFalse(a.setVerified("bob", "not a key", true))
+        assertFalse(a.setVerified("bob", "", true))
+        assertFalse(a.acceptChange("bob", ""))
+        assertFalse(a.setVerified("carol", shown, true))
+        assertFalse(a.acceptChange("carol", shown))
+        assertNull("nothing came into being for somebody nothing was encrypted with", a.security("carol"))
+
+        // Verifying the keys that are current settles the notice as well.
+        assertTrue(a.setVerified("bob", newBob.identityKey, true))
+        val security = a.security("bob")!!
+        assertTrue(security.verified)
+        assertFalse(security.changed || security.held)
+    }
+
+    @Test
+    fun verifyingReleasesAHeldContactToo() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("first", read(oldBob.client(server), send(a, "alice", "bob", "first")))
+        assertTrue(a.setVerified("bob", oldBob.identityKey, true))
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new", read(a, send(newBob.client(server), "bob", "alice", "new")))
+        sealFailsWith(a, "bob", E2eeText.CODE_CHANGED)
+
+        // Taking the tick back is not the same as having looked at the new code.
+        assertTrue(a.setVerified("bob", newBob.identityKey, false))
+        assertTrue(a.security("bob")!!.held)
+        sealFailsWith(a, "bob", E2eeText.CODE_CHANGED)
+
+        assertTrue(a.setVerified("bob", newBob.identityKey, true))
+        assertEquals(newBob.identityKey, runBlocking { a.seal("bob", "c-ok", E2eePayload.text("ok")) }!!.recipientIdentity)
+        assertTrue(alice.client(server).security("bob")!!.verified)
+    }
+
+    @Test
+    fun verificationSurvivesARestartAndCanBeTakenBack() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        val b = bob.client(server)
+        assertEquals("hi", read(b, send(a, "alice", "bob", "hi")))
+
+        assertTrue(a.setVerified("bob", bob.identityKey, true))
+        assertTrue(alice.client(server).security("bob")!!.verified)
+        assertFalse("bob has verified nothing by alice doing so", b.security("alice")!!.verified)
+        // Ordinary messages leave it alone, in both directions.
+        assertEquals("yo", read(a, send(b, "bob", "alice", "yo")))
+        assertEquals("again", read(b, send(a, "alice", "bob", "again")))
+        assertTrue(alice.client(server).security("bob")!!.verified)
+
+        assertTrue(a.setVerified("bob", bob.identityKey, false))
+        assertFalse(a.security("bob")!!.verified)
+        assertFalse(alice.client(server).security("bob")!!.verified)
+    }
+
+    @Test
+    fun aRecordThatCannotBeReadIsToldAsAChange() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val first = alice.client(server, clock = { 3_000L })
+        assertEquals("sealed", read(bob.client(server), send(first, "alice", "bob", "sealed")))
+        assertTrue(first.setVerified("bob", bob.identityKey, true))
+        val entry = alice.vault.entries.keys.single { it.startsWith("e2ee.session.") }
+        alice.vault.entries[entry] = "damaged beyond repair"
+
+        val a = alice.client(server, clock = { 8_000L })
+        val before = a.security("bob")!!
+        assertNull("whose keys bob had is no longer known", before.key)
+        assertTrue("and that is said, not passed over", before.changed)
+        assertFalse(before.verified || before.held)
+        assertEquals("the chat counts as encrypted from its start: nothing unsealed in it goes unmarked", 0L, before.since)
+
+        // The next session's keys are taken as they come, and flagged for the user to look at.
+        assertEquals("recovered", read(bob.client(server), send(a, "alice", "bob", "recovered")))
+        val after = a.security("bob")!!
+        assertEquals(bob.identityKey, after.key)
+        assertTrue(after.changed)
+        assertFalse(after.verified || after.held)
+        assertEquals(0L, after.since)
+        assertTrue(a.acceptChange("bob", bob.identityKey))
+        assertFalse(alice.client(server).security("bob")!!.changed)
+    }
+
+    @Test
+    fun aRecordFromBeforeCodesWereKeptStillNamesThePeersKeys() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        assertEquals("sealed", read(oldBob.client(server), send(alice.client(server), "alice", "bob", "sealed")))
+        val entry = alice.vault.entries.keys.single { it.startsWith("e2ee.session.") }
+        val stored = Json.parseToJsonElement(alice.vault.entries[entry]!!).jsonObject
+        assertTrue("the record carries what is known about bob's keys", stored.containsKey("t"))
+        alice.vault.entries[entry] = JsonObject(stored - "t").toString()
+
+        val a = alice.client(server, clock = { 4_000L })
+        val security = a.security("bob")!!
+        assertEquals(oldBob.identityKey, security.key)
+        assertFalse(security.changed || security.verified || security.held)
+        assertNotNull(a.securityCode("bob", oldBob.identityKey))
+
+        // …and a change from there is noticed like any other.
+        val newBob = server.install("bob", installation = "2")
+        assertEquals("new", read(a, send(newBob.client(server), "bob", "alice", "new")))
+        assertEquals(newBob.identityKey, a.security("bob")!!.key)
+        assertTrue(a.security("bob")!!.changed)
+    }
+
+    @Test
+    fun everyChangeOfWhatIsKnownIsAnnouncedOnceTheWorkIsDone() {
+        val server = Server()
+        val alice = server.install("alice")
+        val oldBob = server.install("bob")
+        val oldB = oldBob.client(server)
+        val announced = Collections.synchronizedList(ArrayList<String>())
+        val asker = Executors.newSingleThreadExecutor()
+        var client: E2eeClient? = null
+        val a = alice.client(server, changes = { peerId ->
+            // The app asks from another thread. Announced while the client is still busy, this never returns.
+            val seen = asker.submit(Callable { client!!.security(peerId) }).get(5, TimeUnit.SECONDS)
+            announced += "$peerId changed=${seen?.changed} verified=${seen?.verified} held=${seen?.held}"
+        })
+        client = a
+        try {
+            assertEquals("first", read(oldB, send(a, "alice", "bob", "first")))
+            assertEquals("encryption with bob began", listOf("bob changed=false verified=false held=false"), announced.toList())
+            announced.clear()
+
+            // Ordinary traffic announces nothing.
+            assertEquals("yo", read(a, send(oldB, "bob", "alice", "yo")))
+            assertEquals("again", read(oldB, send(a, "alice", "bob", "again")))
+            assertNotNull(a.securityCode("bob", oldBob.identityKey))
+            assertEquals(emptyList<String>(), announced.toList())
+
+            assertTrue(a.setVerified("bob", oldBob.identityKey, true))
+            assertEquals(listOf("bob changed=false verified=true held=false"), announced.toList())
+            announced.clear()
+            assertTrue("already so: true, and nothing to announce", a.setVerified("bob", oldBob.identityKey, true))
+            assertTrue(a.acceptChange("bob", oldBob.identityKey))
+            assertEquals(emptyList<String>(), announced.toList())
+
+            // A page of history is one unit of work: one announcement, after it.
+            val newB = server.install("bob", installation = "2").client(server)
+            val page = listOf(send(newB, "bob", "alice", "new phone"), send(newB, "bob", "alice", "are you there?"))
+            a.batch {
+                for (wire in page) assertNotNull(read(a, wire))
+                assertEquals("not in the middle of the work", emptyList<String>(), announced.toList())
+            }
+            assertEquals(listOf("bob changed=true verified=false held=true"), announced.toList())
+            announced.clear()
+
+            // Something refused changes nothing and announces nothing.
+            assertFalse(a.acceptChange("bob", oldBob.identityKey))
+            assertFalse(a.setVerified("bob", oldBob.identityKey, true))
+            sealFailsWith(a, "bob", E2eeText.CODE_CHANGED)
+            assertEquals(emptyList<String>(), announced.toList())
+
+            assertTrue(a.acceptChange("bob", a.security("bob")!!.key!!))
+            assertEquals(listOf("bob changed=false verified=false held=false"), announced.toList())
+        } finally {
+            asker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun aListenerThatFailsCostsNoMessage() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server, changes = { throw IllegalStateException("the screen is gone") })
+        assertEquals("hi", read(bob.client(server), send(a, "alice", "bob", "hi")))
+        assertTrue(a.setVerified("bob", bob.identityKey, true))
+        assertTrue(a.security("bob")!!.verified)
+    }
+
+    @Test
+    fun questionsAboutCodesNeverThrowAndNeverPretend() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob")
+        val a = alice.client(server)
+        assertEquals("hi", read(bob.client(server), send(a, "alice", "bob", "hi")))
+
+        // A tick that could not be stored is not a tick.
+        alice.vault.failSessionWrites = true
+        assertFalse(a.setVerified("bob", bob.identityKey, true))
+        alice.vault.failSessionWrites = false
+        assertFalse(a.security("bob")!!.verified)
+        assertFalse(alice.client(server).security("bob")!!.verified)
+
+        alice.vault.failReads = true
+        assertNull(a.security("bob"))
+        assertNull(a.securityCode("bob", bob.identityKey))
+        assertFalse(a.setVerified("bob", bob.identityKey, true))
+        assertFalse(a.acceptChange("bob", bob.identityKey))
+        alice.vault.failReads = false
+        assertNotNull(a.security("bob"))
+
+        // A client whose account has left this phone knows nothing and changes nothing.
+        a.close()
+        assertNull(a.security("bob"))
+        assertNull(a.securityCode("bob", bob.identityKey))
+        assertFalse(a.setVerified("bob", bob.identityKey, true))
+        assertFalse(a.acceptChange("bob", bob.identityKey))
+        assertFalse(alice.client(server).security("bob")!!.verified)
+    }
 
     @Test
     fun messagesSealedAndOpenedFromManyThreadsAllSurvive() {
