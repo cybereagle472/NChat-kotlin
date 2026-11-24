@@ -3,6 +3,7 @@ package com.nchat.app.feature.chats
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.VerifiedUser
@@ -19,7 +22,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,11 +126,24 @@ fun SecurityCodeDialog(
     }
     val code = worked?.takeIf { it.first == key }?.second
 
+    // What scanning the other person's code showed; forgotten when the keys change underneath.
+    var scanned by remember(key) { mutableStateOf<SecurityCode.Scanned?>(null) }
+    val scan = rememberQrScanner { text ->
+        // Compared with the code on this screen, and ticked for the key that code is for.
+        if (text != null && code != null && key != null) {
+            val outcome = SecurityCode.scanned(text, code)
+            scanned = outcome
+            if (outcome == SecurityCode.Scanned.Same) onSetVerified(key, true)
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color.White)
+                // With the QR code the sheet is taller than a small screen.
+                .verticalScroll(rememberScrollState())
                 .padding(NcSpace.lg)
         ) {
             Row(
@@ -165,10 +184,35 @@ fun SecurityCodeDialog(
                     code == null -> CodeNote("The code can't be shown right now. Close this and open it again in a moment.")
                     else -> SecurityCodeGrid(code)
                 }
+                if (code != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    QrImage(
+                        text = SecurityCode.qrText(code),
+                        side = 176.dp,
+                        description = "The security code as a QR code",
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Box(modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                        SheetAction(label = "Scan $name's code", color = MaterialTheme.colorScheme.primary) {
+                            scan("Point the camera at the code on $name's phone")
+                        }
+                    }
+                    when (scanned) {
+                        SecurityCode.Scanned.Same -> ScanNote("The two codes are the same. Marked as verified.", VerifiedGreen)
+                        SecurityCode.Scanned.Different -> ScanNote(
+                            "That is not the code of this chat. Check that $name has the chat with you open. " +
+                                "If so, somebody may be in between: do not mark this code as verified.",
+                            NoticeAccent
+                        )
+                        SecurityCode.Scanned.NotACode -> ScanNote("That is not an NChat security code.", extra.textTertiary)
+                        null -> Unit
+                    }
+                }
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "Compare this number with the one $name sees in this chat — side by side, or " +
-                        "read aloud on a call. If the two are the same, nobody is in between.",
+                        "read aloud on a call — or scan the code on $name's phone. If the two are the " +
+                        "same, nobody is in between.",
                     color = extra.textSecondary,
                     fontSize = 12.sp
                 )
@@ -245,6 +289,18 @@ private fun SecurityCodeGrid(code: String) {
             }
         }
     }
+}
+
+/** What scanning showed, under the code. */
+@Composable
+private fun ScanNote(text: String, color: Color) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 2.dp)
+    )
 }
 
 @Composable

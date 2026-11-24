@@ -56,6 +56,51 @@ object SecurityCode {
     /** [code] as it is shown: groups of five digits. */
     fun grouped(code: String): List<String> = code.chunked(CHUNK_DIGITS)
 
+    // ------------------------------------------------------------ as a QR code
+
+    /**
+     * What a QR code of [code] says: a few characters that name it, then the
+     * sixty digits. Scanning then compares exactly what two people would
+     * compare by eye, and nothing else travels in the picture.
+     *
+     * Capitals, digits, a hyphen and a colon only — the characters a QR code
+     * packs densely, so the picture stays small.
+     */
+    fun qrText(code: String): String {
+        require(isCode(code)) { "not a security code" }
+        return QR_PREFIX + code
+    }
+
+    /** The code a scanned QR code carries; null when it is not a security code, or one of a version this build does not know. */
+    fun fromQr(text: String): String? {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith(QR_PREFIX)) return null
+        return trimmed.substring(QR_PREFIX.length).takeIf(::isCode)
+    }
+
+    /** What scanning the other person's QR code showed. */
+    enum class Scanned {
+        /** Their phone shows the code this phone shows: nobody is in between. */
+        Same,
+
+        /** A security code, and not this one: the wrong chat — or somebody in between. */
+        Different,
+
+        /** Some other QR code. */
+        NotACode,
+    }
+
+    /** Compares what was scanned with [own], the code this phone shows for the same chat. */
+    fun scanned(text: String, own: String): Scanned {
+        val theirs = fromQr(text) ?: return Scanned.NotACode
+        return if (isCode(own) && theirs == own) Scanned.Same else Scanned.Different
+    }
+
+    /** Sixty of the digits 0 to 9 — not the digits of another script, which [Char.isDigit] would let through. */
+    private fun isCode(value: String): Boolean = value.length == DIGITS && value.all { it in '0'..'9' }
+
+    private const val QR_PREFIX = "NCHAT-SC1:"
+
     private fun half(accountId: String, identity: ByteArray): String {
         require(accountId.isNotBlank()) { "an account id is required" }
         require(E2eeProtocol.isValidPublicKey(identity)) { "not a P-256 public key" }

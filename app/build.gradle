@@ -147,6 +147,10 @@ dependencies {
     // Call media: `org.webrtc` itself (the maintained Maven Central build of libwebrtc).
     // Signalling was already real in 1.0.40; this is what carries the voice and video.
     implementation 'io.github.webrtc-sdk:android:150.7871.01'
+    // The security code as a QR code. ZXing draws the code and reads it; the second library
+    // is its camera screen. Neither needs Google Play services.
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'junit:junit:4.13.2'
