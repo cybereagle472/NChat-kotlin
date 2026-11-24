@@ -71,6 +71,8 @@ jobs:
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/nchat-signers.txt
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" > /tmp/nchat-badging.txt
           python3 .github/scripts/verify_release_apk.py /tmp/nchat-badging.txt /tmp/nchat-signers.txt version.json
+          # What shrinking left in, and what it took out: see the script.
+          python3 .github/scripts/release_contents.py "$APK"
           } 2>&1 | tee -a /tmp/gradle-build.log
       - name: Capture build log on failure
         if: failure()
