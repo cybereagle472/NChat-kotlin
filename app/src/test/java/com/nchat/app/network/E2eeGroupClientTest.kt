@@ -906,18 +906,22 @@ class E2eeGroupClientTest {
         val one = send(hub, alice, "one")!!
         val chain = E2eeGroup.chainId(one.envelope)!!
         val b = bob.client(hub)
+        val page = listOf(GroupRow("alice", one.envelope))
         var asked = 0
         val ask: suspend () -> Unit = { asked++ }
 
         // Nothing was tried yet: there is nothing to ask again for.
         assertFalse(runBlocking { b.askGroupKeyAgain(group, "alice", chain, ask) })
-        // A chain the server has nothing of is absent, not unopenable.
+        // The chain is looked for, and the server has nothing of it: absent, not unopenable.
+        assertEquals(listOf(GroupKeyRef("alice", chain)), b.missingGroupKeys(group, page))
+        assertFalse("looked for, and no envelope has failed yet", runBlocking { b.askGroupKeyAgain(group, "alice", chain, ask) })
         b.noGroupKey(group, "alice", chain)
         assertFalse(runBlocking { b.askGroupKeyAgain(group, "alice", chain, ask) })
         assertEquals(0, asked)
 
         // The envelope does not open. The request does not get through: it is not counted as made.
         val c = bob.client(hub)
+        assertEquals(listOf(GroupKeyRef("alice", chain)), c.missingGroupKeys(group, page))
         hub.damageKey("bob", "alice", chain)
         assertFalse(c.acceptGroupKey(group, "alice", chain, hub.keyFor("bob", "alice", chain)!!))
         try {
@@ -929,9 +933,12 @@ class E2eeGroupClientTest {
         assertEquals(1, asked)
         assertFalse("and not a second time", runBlocking { c.askGroupKeyAgain(group, "alice", chain, ask) })
         assertEquals(1, asked)
-        // While the answer is on its way, "nothing there yet" does not make the phone stop looking.
+        // While the answer is on its way, "nothing there yet" does not make the phone stop looking
+        // — not for the very message it first met the chain at, and not however often it is said.
         c.noGroupKey(group, "alice", chain)
-        assertEquals(listOf(GroupKeyRef("alice", chain)), c.missingGroupKeys(group, listOf(GroupRow("alice", one.envelope))))
+        assertEquals(listOf(GroupKeyRef("alice", chain)), c.missingGroupKeys(group, page))
+        c.noGroupKey(group, "alice", chain)
+        assertEquals(listOf(GroupKeyRef("alice", chain)), c.missingGroupKeys(group, page))
 
         // A chain that was taken in is not asked for again, whatever is said about it afterwards.
         val carol = phones[2]
@@ -944,6 +951,78 @@ class E2eeGroupClientTest {
         e.close()
         assertFalse(runBlocking { e.askGroupKeyAgain(group, "alice", chain, ask) })
         assertEquals(1, asked)
+    }
+
+    @Test
+    fun theSameEnvelopeSeenTwiceIsNotASecondOne() {
+        // Two readers of one page, or a page read again before the sender has answered: the
+        // envelope that did not open is met a second time. That is not the "second envelope
+        // that does not open either", after which a phone stops asking.
+        val (hub, phones) = family()
+        val (alice, bob) = phones
+        val one = send(hub, alice, "one")!!
+        val chain = E2eeGroup.chainId(one.envelope)!!
+        val page = listOf(GroupRow("alice", one.envelope))
+        hub.damageKey("bob", "alice", chain)
+        val damaged = hub.keyFor("bob", "alice", chain)!!
+
+        val b = bob.client(hub)
+        assertEquals(listOf(GroupKeyRef("alice", chain)), b.missingGroupKeys(group, page))
+        assertFalse(b.acceptGroupKey(group, "alice", chain, damaged))
+        assertTrue(runBlocking { b.askGroupKeyAgain(group, "alice", chain) { hub.askAgain("bob", "alice", chain) } })
+        assertFalse("the same one, once more", b.acceptGroupKey(group, "alice", chain, damaged))
+
+        // Still looked for — and what the sender hands over next is taken in and opens.
+        assertEquals(listOf(GroupKeyRef("alice", chain)), b.missingGroupKeys(group, page))
+        val two = send(hub, alice, "two")!!
+        assertEquals("two", read(hub, bob, two, b))
+        assertEquals(1, hub.askedAgain)
+    }
+
+    @Test
+    fun aChainThatCameAfterAllIsNotAskedAbout() {
+        // The envelope arrived damaged once and whole the next time. The chain is held: there
+        // is nothing to tell the sender, who would otherwise seal it all over again.
+        val (hub, phones) = family()
+        val (alice, bob) = phones
+        val one = send(hub, alice, "one")!!
+        val chain = E2eeGroup.chainId(one.envelope)!!
+        val whole = hub.keyFor("bob", "alice", chain)!!
+        hub.damageKey("bob", "alice", chain)
+
+        val b = bob.client(hub)
+        var asked = 0
+        assertFalse(b.acceptGroupKey(group, "alice", chain, hub.keyFor("bob", "alice", chain)!!))
+        assertTrue(b.acceptGroupKey(group, "alice", chain, whole))
+        assertFalse(runBlocking { b.askGroupKeyAgain(group, "alice", chain) { asked++ } })
+        assertEquals(0, asked)
+        assertEquals("one", b.revealGroup(group, "alice", one.id, one.clientId, mine = false, envelope = one.envelope)?.body)
+    }
+
+    @Test
+    fun anAbsentChainIsAskedForOnceForEachNewMessageNotOnEveryPage() {
+        val (hub, phones) = family()
+        val (alice) = phones
+        val a = alice.client(hub)
+        val early = (1..4).map { send(hub, alice, "early $it", a)!! }
+        val chain = E2eeGroup.chainId(early[0].envelope)!!
+        val dan = hub.join(Phone("dan"))
+        val d = dan.client(hub)
+        fun page(vararg rows: Row) = rows.map { GroupRow("alice", it.envelope) }
+
+        // The first page: asked for, and the server has nothing for Dan.
+        assertEquals(listOf(GroupKeyRef("alice", chain)), d.missingGroupKeys(group, page(early[0])))
+        d.noGroupKey(group, "alice", chain)
+        assertEquals(emptyList<GroupKeyRef>(), d.missingGroupKeys(group, page(early[0])))
+        // A page with later messages of the chain: asked once more, since the chain may have
+        // been handed on in the meantime…
+        assertEquals(listOf(GroupKeyRef("alice", chain)), d.missingGroupKeys(group, page(early[1], early[2])))
+        d.noGroupKey(group, "alice", chain)
+        // …and then not again for that page, nor for anything before it,
+        assertEquals(emptyList<GroupKeyRef>(), d.missingGroupKeys(group, page(early[1], early[2])))
+        assertEquals(emptyList<GroupKeyRef>(), d.missingGroupKeys(group, page(early[0], early[2])))
+        // but for the message after it.
+        assertEquals(listOf(GroupKeyRef("alice", chain)), d.missingGroupKeys(group, page(early[3])))
     }
 
     @Test
