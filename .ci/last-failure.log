@@ -1,4 +1,4 @@
-run: 45369949232
+run: 45373710625
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 
@@ -76,87 +76,148 @@ w: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/main/java/com/ncha
 
 > Task :app:compileDebugJavaWithJavac
 > Task :app:processDebugJavaRes
-> Task :app:bundleDebugClassesToCompileJar
 > Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
 
 > Task :app:compileDebugUnitTestKotlin FAILED
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:31 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:52 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:70 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:31:87 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:33:29 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:34:9 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:36:29 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:37:9 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:37:81 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:54:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:71:36 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:72:22 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:80:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:84:17 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:85:17 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:93:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:107:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:123:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:127:37 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:128:38 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:129:39 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:130:50 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:132:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:139:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:146:22 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:147:44 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:148:59 Cannot infer a type for this parameter. Please specify it explicitly.
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:148:66 Cannot infer a type for this parameter. Please specify it explicitly.
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:153:23 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:154:23 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:155:60 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:156:36 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:167:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:170:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:198:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:201:16 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:205:25 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:207:68 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:207:104 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:212:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:230:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:235:22 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:240:24 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:251:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:73 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:252:95 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:253:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:255:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:69 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:256:90 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:257:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:264:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:265:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:266:23 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:267:36 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:269:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:270:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:271:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:272:39 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:272:77 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:45 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:48 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:64 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:274:67 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:275:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:277:25 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:278:45 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:279:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:280:45 Unresolved reference: it
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:281:20 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:286:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:287:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:289:21 Unresolved reference: E2eeGroup
-e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupTest.kt:293:34 Unresolved reference: E2eeGroup
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795514239173.json
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:93:13 Cannot find a parameter with this name: maxChainMessages
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:103:40 Unresolved reference: GroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:124:53 Unresolved reference: GroupRoster
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:128:20 Unresolved reference: GroupRoster
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:129:59 Unresolved reference: GroupMember
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:134:66 Unresolved reference: GroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:141:60 Unresolved reference: GroupSealed
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:145:52 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:145:79 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:153:50 Unresolved reference: GroupTransport
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:154:13 'roster' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:154:60 Unresolved reference: GroupRoster
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:156:13 'handOver' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:156:71 Unresolved reference: GroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:158:13 'rosterChanged' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:166:9 Type mismatch: inferred type is Unit but E2eeGroupClientTest.Row? was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:166:21 Type mismatch: inferred type is Unit but E2eeGroupClientTest.Row? was expected
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:167:20 Unresolved reference: sendGroupSealed
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:167:104 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:172:31 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:172:62 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:174:42 Unresolved reference: noGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:175:25 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:177:23 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:219:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:219:74 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:270:38 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:278:41 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:325:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Double, p1: Double, p2: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Float, p1: Float, p2: Float): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Any!, p2: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Array<(out) Any!>!, p2: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Double, p2: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: String!, p1: Long, p2: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:328:38 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:344:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:365:39 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:385:35 Unresolved reference: MemberHeld
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:387:35 Unresolved reference: MEMBER_CODE_CHANGED
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:430:24 Unresolved reference: sendGroupSealed
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:430:114 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:453:23 Unresolved reference: sendGroupSealed
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:453:113 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:472:26 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:472:57 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:473:26 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:475:36 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:476:42 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:477:44 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:479:22 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:480:22 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:481:42 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:496:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:497:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:498:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:499:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:500:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:501:53 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:503:22 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:504:41 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:508:37 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:522:22 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:525:22 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:526:36 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:532:36 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:544:57 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:544:94 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:547:24 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:548:98 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:550:79 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:553:22 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:553:68 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:553:144 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:554:11 Unresolved reference: noGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:554:53 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:555:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:555:32 Unresolved reference: GroupKeyRef
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:555:50 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:556:22 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:558:55 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:558:91 Unresolved reference: it
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:559:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:559:32 Unresolved reference: GroupKeyRef
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:559:50 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:591:38 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:594:48 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:596:36 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:599:46 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:603:48 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:604:38 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:671:22 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:672:23 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:673:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:673:32 Unresolved reference: GroupKeyRef
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:673:50 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:673:81 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/E2eeGroupClientTest.kt:674:22 Unresolved reference: groupSecurity
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:325:34 Unresolved reference: GroupTransport
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:326:13 'roster' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:326:61 Unresolved reference: GroupRoster
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:327:13 'handOver' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:327:71 Unresolved reference: GroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:328:13 'rosterChanged' overrides nothing
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:331:32 Unresolved reference: sendGroupSealed
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:336:25 Unresolved reference: revealGroup
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:337:9 None of the following functions can be called with the arguments supplied: 
+public open fun assertEquals(p0: Any!, p1: Any!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Array<(out) Any!>!, p1: Array<(out) Any!>!): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Double, p1: Double): Unit defined in org.junit.Assert
+public open fun assertEquals(p0: Long, p1: Long): Unit defined in org.junit.Assert
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:337:32 Unresolved reference: GroupKeyRef
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:337:53 Unresolved reference: missingGroupKeys
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:337:82 Unresolved reference: GroupRow
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:338:26 Unresolved reference: acceptGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:339:14 Unresolved reference: noGroupKey
+e: file:///home/runner/work/NChat-kotlin/NChat-kotlin/app/src/test/java/com/nchat/app/network/EndToEndTest.kt:340:25 Unresolved reference: groupSecurity
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1795515608075.json
 
 FAILURE: Build failed with an exception.
 
@@ -200,6 +261,34 @@ org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:com
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
@@ -326,6 +415,34 @@ Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionExcept
 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:463)
 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:380)
+	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:116)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
+	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:264)
+	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:44)
+	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:255)
+	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:249)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:109)
+	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:200)
 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
 Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
@@ -362,5 +479,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 1m 46s
+BUILD FAILED in 1m 42s
 22 actionable tasks: 13 executed, 9 from cache
