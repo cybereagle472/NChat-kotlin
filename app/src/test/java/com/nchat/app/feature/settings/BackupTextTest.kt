@@ -39,18 +39,19 @@ class BackupTextTest {
         val one = BackupText.written(E2eeBackup.Written(messages = 1, chats = 1, unreadableChats = 0))
         assertTrue(one, one.startsWith("Saved 1 message from 1 chat."))
 
-        // An empty file is not passed off as a backup of something.
+        // With nothing to put in it no file is left behind, and nothing is called saved.
         val nothing = BackupText.written(E2eeBackup.Written(messages = 0, chats = 0, unreadableChats = 0))
         assertFalse(nothing, nothing.startsWith("Saved"))
-        assertTrue(nothing, nothing.contains("no encrypted messages"))
+        assertTrue(nothing, nothing.contains("no encrypted messages") && nothing.contains("No file was saved"))
 
         // Chats that could not be read are named as missing, with a number.
         val partly = BackupText.written(E2eeBackup.Written(messages = 40, chats = 3, unreadableChats = 2))
-        assertTrue(partly, partly.contains("2 chats could not be read") && partly.contains("not in the file"))
+        assertTrue(partly, partly.contains("2 chats could not be read") && partly.contains("are not in the file"))
         val oneMissing = BackupText.written(E2eeBackup.Written(messages = 40, chats = 3, unreadableChats = 1))
-        assertTrue(oneMissing, oneMissing.contains("1 chat could not be read"))
+        assertTrue(oneMissing, oneMissing.contains("1 chat could not be read") && oneMissing.contains("is not in the file"))
         val onlyMissing = BackupText.written(E2eeBackup.Written(messages = 0, chats = 0, unreadableChats = 1))
         assertTrue(onlyMissing, onlyMissing.contains("1 chat could not be read") && !onlyMissing.startsWith("Saved"))
+        assertFalse("there is no file for it to be missing from", onlyMissing.contains("in the file"))
 
         // Nobody signed in, or storage that cannot be opened: nothing was written.
         val unavailable = BackupText.written(null)
@@ -85,6 +86,17 @@ class BackupTextTest {
         assertTrue(BackupText.failed(E2eeBackup.Failure(Problem.Damaged, restored = 1)).contains("1 message "))
         // The technical name of the reason is never what the user reads.
         for (sentence in sentences.values) for (problem in Problem.values()) assertFalse(sentence, sentence.contains(problem.name))
+    }
+
+    @Test
+    fun whileItWorksItSaysThatItTakesAWhile() {
+        // Making the key from the passphrase is slow on purpose: several seconds on a phone.
+        // A screen that only says "Saving…" for that long looks stuck.
+        for (line in listOf(BackupText.SAVING, BackupText.RESTORING)) {
+            assertTrue(line, line.contains("a minute"))
+        }
+        assertTrue(BackupText.SAVING.startsWith("Saving"))
+        assertTrue(BackupText.RESTORING.startsWith("Restoring"))
     }
 
     @Test

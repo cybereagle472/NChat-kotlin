@@ -791,6 +791,33 @@ class EndToEndTest {
     }
 
     @Test
+    fun aChatThePhoneCanNoLongerNameIsSaidToBeMissingFromTheBackup() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val carol = Phone(server).signIn("carol")
+        val alice = phone.signIn("alice")
+        assertEquals("from bob", read(alice, "bob", send(bob, "alice", "from bob")!!))
+        assertEquals("from carol", read(alice, "carol", send(carol, "alice", "from carol")!!))
+
+        // One chat's file loses the line that says whose it is; what it holds cannot be read
+        // without that.
+        val log = File(File(File(phone.root, hashedName("alice")), "archive"), hashedName("bob") + ".log")
+        val lines = log.readLines().filter { it.isNotBlank() }
+        assertEquals("the name, then the message", 2, lines.size)
+        log.writeText(lines.drop(1).joinToString("\n", postfix = "\n"))
+
+        val file = ByteArrayOutputStream()
+        val written = alice.backUp(file, "correct horse battery".toCharArray())!!
+        assertEquals("the other chat is in the backup", 1, written.chats)
+        assertEquals(1, written.messages)
+        assertEquals("and the one that is not is counted, not passed over", 1, written.unreadableChats)
+        val chats = ArrayList<String>()
+        E2eeBackup.read(ByteArrayInputStream(file.toByteArray()), "alice", "correct horse battery".toCharArray()) { chat, _, _ -> chats += chat }
+        assertEquals(listOf("carol"), chats)
+    }
+
+    @Test
     fun aDamagedBackupGivesBackWhatCanStillBeRead() {
         val server = Server()
         val phone = Phone(server)
