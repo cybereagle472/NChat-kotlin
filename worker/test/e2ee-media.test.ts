@@ -111,7 +111,7 @@ describe('a sealed file for one person', () => {
     const [alice, bob] = await Promise.all([signup('alice'), signup('bob')]);
     await becomeFriends(alice, bob);
     // An app that named the file after its content would be giving the content away here.
-    const telling = new File([sealedBytes], 'passport-scan.pdf', { type: 'application/pdf' });
+    const telling = new File([sealedBytes], 'passport-scan.jpg', { type: 'image/jpeg' });
     const response = await upload(alice.token, { sealed_for_user: bob.id }, telling);
     expect(response.status).toBe(201);
     const file = await response.json() as { key: string; media_type: string; file_name: string };
@@ -125,8 +125,11 @@ describe('a sealed file for one person', () => {
       file_name: 'sealed', mime_type: 'application/octet-stream', media_type: 'sealed',
       file_size: sealedBytes.length, sealed_for_user: bob.id, sealed_for_group: null,
     });
+    // Not in the object store either, where a type would decide how the bytes are served.
+    expect((await env.MEDIA.head(file.key))?.httpMetadata?.contentType).toBe('application/octet-stream');
     const served = await read(file.key, bob.token);
     expect(served.headers.get('content-type')).toBe('application/octet-stream');
+    expect(served.headers.get('content-disposition')).toBe('attachment');
     await served.arrayBuffer();
   });
 

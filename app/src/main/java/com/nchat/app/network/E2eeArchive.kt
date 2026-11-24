@@ -12,27 +12,36 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
- * What one sealed message contains once opened: a type tag, a body and,
- * for a reply, the id of the message it answers. All of it travels inside
- * the ciphertext, so the server can neither tell a text from anything else
- * nor see or change what a message replies to — and a build that meets a tag
- * it does not know can say "update NChat" instead of misreading it.
+ * What one sealed message contains once opened: a type tag, a body, for a
+ * reply the id of the message it answers, and for a photo, video, voice
+ * message or file the pointer to it ([E2eeAttachment.Pointer], with the key
+ * that opens it). All of it travels inside the ciphertext, so the server can
+ * neither tell a text from anything else nor see or change what a message
+ * replies to — and a build that meets a tag it does not know can say "update
+ * NChat" instead of misreading it.
  *
  * Encoded as the type byte followed by fields, each `tag (1 byte) || length
  * (4 bytes, big-endian) || value`. A reader skips tags it does not know, so
  * a later build can add fields without breaking this one. The size of an
  * encoded payload is its content plus a few bytes, whatever the content is.
  */
-class E2eePayload(val type: Int, val body: String, replyTo: String? = null) {
+class E2eePayload(val type: Int, val body: String, replyTo: String? = null, attachment: String? = null) {
 
     /** The id of the message this one replies to. */
     val replyTo: String? = replyTo?.takeIf { it.isNotEmpty() }
+
+    /** Where the file of this message is and the key to it: an encoded [E2eeAttachment.Pointer]. */
+    val attachment: String? = attachment?.takeIf { it.isNotEmpty() }
+
+    /** A message whose content is a file; [body] is then its caption. */
+    val isAttachment: Boolean get() = type == PHOTO || type == VIDEO || type == VOICE || type == DOCUMENT
 
     fun encode(): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(type)
         if (body.isNotEmpty()) out.writeField(BODY, body)
         replyTo?.let { out.writeField(REPLY_TO, it) }
+        attachment?.let { out.writeField(ATTACHMENT, it) }
         return out.toByteArray()
     }
 
@@ -49,11 +58,18 @@ class E2eePayload(val type: Int, val body: String, replyTo: String? = null) {
         /** A shared position: `latitude,longitude`. */
         const val LOCATION = 2
 
+        /** A file, with [attachment] pointing at it and [body] as its caption. */
+        const val PHOTO = 3
+        const val VIDEO = 4
+        const val VOICE = 5
+        const val DOCUMENT = 6
+
         /** Content that does not decode. No build ever sends this type. */
         const val UNREADABLE = 0
 
         private const val BODY = 1
         private const val REPLY_TO = 2
+        private const val ATTACHMENT = 3
         private const val FIELD_HEADER_BYTES = 5
 
         fun text(body: String, replyTo: String? = null) = E2eePayload(TEXT, body, replyTo)
@@ -63,6 +79,7 @@ class E2eePayload(val type: Int, val body: String, replyTo: String? = null) {
             if (bytes.isEmpty()) return E2eePayload(UNREADABLE, "")
             var body = ""
             var replyTo: String? = null
+            var attachment: String? = null
             var at = 1
             while (at < bytes.size) {
                 if (bytes.size - at < FIELD_HEADER_BYTES) return E2eePayload(UNREADABLE, "")
@@ -74,10 +91,11 @@ class E2eePayload(val type: Int, val body: String, replyTo: String? = null) {
                 when (tag) {
                     BODY -> body = String(bytes, at, length, Charsets.UTF_8)
                     REPLY_TO -> replyTo = String(bytes, at, length, Charsets.UTF_8)
+                    ATTACHMENT -> attachment = String(bytes, at, length, Charsets.UTF_8)
                 }
                 at += length
             }
-            return E2eePayload(bytes[0].toInt() and 0xff, body, replyTo)
+            return E2eePayload(bytes[0].toInt() and 0xff, body, replyTo, attachment)
         }
     }
 }
@@ -145,6 +163,7 @@ class E2eeArchive internal constructor(
                 put("y", payload.type)
                 put("t", payload.body)
                 payload.replyTo?.let { put("r", it) }
+                payload.attachment?.let { put("a", it) }
             }.toString()
             val line = encodeBase64(box.seal(CONTEXT + chatId, entry.toByteArray(Charsets.UTF_8)))
             // The leading newline closes a line that a crash left unfinished.
@@ -221,7 +240,7 @@ class E2eeArchive internal constructor(
             val key = (entry["k"] as? JsonPrimitive)?.content ?: return
             val type = (entry["y"] as? JsonPrimitive)?.content?.toIntOrNull() ?: return
             val body = (entry["t"] as? JsonPrimitive)?.content ?: return
-            into[key] = E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content)
+            into[key] = E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content, (entry["a"] as? JsonPrimitive)?.content)
         } catch (_: Exception) {
             // A torn or damaged line costs exactly one entry.
         }
