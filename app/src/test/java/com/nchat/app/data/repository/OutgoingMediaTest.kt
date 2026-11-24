@@ -56,7 +56,6 @@ class OutgoingMediaTest {
     }
 
     @Test
-    fun normalTextAndLocationDoNotRequireMediaUrls() {    @Test
     fun normalTextAndLocationDoNotRequireMediaUrls() {
         val text = voice.copy(type = "text", text = "hello")
         val location = voice.copy(type = "location", text = "33.1,73.1")
