@@ -71,7 +71,11 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
+            // Code that nothing uses is left out of the release — and nothing else is done to
+            // it: see proguard-rules.pro. Resources are not shrunk: they are small, and one
+            // that is looked up by name would be at risk.
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         debug {
             applicationIdSuffix ".debug"
