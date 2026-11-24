@@ -136,7 +136,12 @@ class E2eeArchive internal constructor(
 
     constructor(directory: File, key: ByteArray) : this(directory, key, TAIL_BYTES, MAX_LOADED_ENTRIES)
 
-    private class Index(val entries: HashMap<String, E2eePayload>, var complete: Boolean)
+    /**
+     * [newest]: per message — the part of a key up to and including its `#` — the key of the
+     * entry written last. Entries are read in the order they were written, so the last one seen
+     * is the newest form of the message (its latest edit).
+     */
+    private class Index(val entries: HashMap<String, E2eePayload>, val newest: HashMap<String, String>, var complete: Boolean)
 
     private val box = SealedBox(key)
     private val lock = Any()
@@ -161,6 +166,65 @@ class E2eeArchive internal constructor(
         index.entries[key]
     }
 
+    /**
+     * What this device kept of the message [reference] names, in its newest form — without the
+     * envelope, which [find] needs. [reference] is the part of a key up to and including its `#`.
+     * Reads the whole chat when the message is not among the recent ones.
+     */
+    fun latest(chatId: String, reference: String): E2eePayload? = synchronized(lock) {
+        val index = indexFor(chatId)
+        index.newest[reference]?.let { return@synchronized index.entries[it] }
+        if (index.complete) return@synchronized null
+        read(chatId, index, whole = true)
+        trim(chatId)
+        index.newest[reference]?.let { index.entries[it] }
+    }
+
+    /**
+     * Takes every entry of the messages [references] name out of the chat's file — the message
+     * as first kept, and each edit of it. The file is written again without them, so their
+     * bytes are no longer in it; lines that could not be read anyway go with them. Returns how
+     * many entries were removed. Throws when the file cannot be rewritten; it is then unchanged.
+     */
+    fun remove(chatId: String, references: List<String>): Int {
+        if (references.isEmpty()) return 0
+        synchronized(lock) {
+            val file = fileFor(chatId)
+            if (!file.isFile) return 0
+            // Asked often for messages that were never kept here: answered from memory.
+            val index = indexFor(chatId)
+            if (!index.complete) {
+                read(chatId, index, whole = true)
+                trim(chatId)
+            }
+            if (references.none { it in index.newest }) return 0
+
+            var removed = 0
+            val kept = ArrayList<String>()
+            for (line in file.readText(Charsets.US_ASCII).split('\n')) {
+                val text = line.trim()
+                if (text.isEmpty()) continue
+                val key = keyOf(chatId, text) ?: continue
+                if (references.any { key.startsWith(it) }) removed++ else kept += text
+            }
+            if (removed == 0) return 0
+            val rewritten = File(directory, file.name + ".tmp")
+            try {
+                FileOutputStream(rewritten).use { out ->
+                    for (line in kept) out.write((line + "\n").toByteArray(Charsets.US_ASCII))
+                    out.fd.sync()
+                }
+                if (!rewritten.renameTo(file)) throw IOException("could not replace the archive file")
+            } finally {
+                rewritten.delete()
+            }
+            unsynced.remove(chatId)
+            // What is in memory was read from the old file: read again when it is next asked for.
+            loaded.remove(chatId)?.let { loadedEntries -= it.entries.size }
+            return removed
+        }
+    }
+
     /** Appends an entry. It is on stable storage only after [flush]. Throws on failure. */
     fun put(chatId: String, key: String, payload: E2eePayload) {
         synchronized(lock) {
@@ -178,6 +242,7 @@ class E2eeArchive internal constructor(
             unsynced += chatId
             val index = loaded[chatId] ?: return
             if (index.entries.put(key, payload) == null) loadedEntries++
+            index.newest[referenceOf(key)] = key
             trim(chatId)
         }
     }
@@ -206,7 +271,7 @@ class E2eeArchive internal constructor(
 
     private fun indexFor(chatId: String): Index {
         loaded[chatId]?.let { return it }
-        val index = Index(HashMap(), complete = false)
+        val index = Index(HashMap(), HashMap(), complete = false)
         loaded[chatId] = index
         read(chatId, index, whole = false)
         trim(chatId)
@@ -228,7 +293,7 @@ class E2eeArchive internal constructor(
                 }
                 val lines = String(bytes, Charsets.US_ASCII).split('\n')
                 // A read that starts mid-file starts mid-line: that fragment is not an entry.
-                for (line in if (start > 0L) lines.drop(1) else lines) parse(chatId, line, index.entries)
+                for (line in if (start > 0L) lines.drop(1) else lines) parse(chatId, line, index)
             }
             index.complete = start == 0L
         } catch (_: Exception) {
@@ -238,7 +303,7 @@ class E2eeArchive internal constructor(
         loadedEntries += index.entries.size - before
     }
 
-    private fun parse(chatId: String, line: String, into: HashMap<String, E2eePayload>) {
+    private fun parse(chatId: String, line: String, into: Index) {
         if (line.isBlank()) return
         try {
             val sealed = decodeBase64(line.trim()) ?: return
@@ -247,11 +312,23 @@ class E2eeArchive internal constructor(
             val key = (entry["k"] as? JsonPrimitive)?.content ?: return
             val type = (entry["y"] as? JsonPrimitive)?.content?.toIntOrNull() ?: return
             val body = (entry["t"] as? JsonPrimitive)?.content ?: return
-            into[key] = E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content, (entry["a"] as? JsonPrimitive)?.content)
+            into.entries[key] = E2eePayload(type, body, (entry["r"] as? JsonPrimitive)?.content, (entry["a"] as? JsonPrimitive)?.content)
+            into.newest[referenceOf(key)] = key
         } catch (_: Exception) {
             // A torn or damaged line costs exactly one entry.
         }
     }
+
+    /** The key of the entry in [line], or null when the line cannot be read. */
+    private fun keyOf(chatId: String, line: String): String? = try {
+        val opened = decodeBase64(line)?.let { box.open(CONTEXT + chatId, it) }
+        opened?.let { (Json.parseToJsonElement(String(it, Charsets.UTF_8)).jsonObject["k"] as? JsonPrimitive)?.content }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** The part of a key that names the message: everything up to and including the last `#`. */
+    private fun referenceOf(key: String): String = key.substring(0, key.lastIndexOf('#') + 1)
 
     /** Keeps memory bounded: least recently used chats leave first, never [current]. */
     private fun trim(current: String) {

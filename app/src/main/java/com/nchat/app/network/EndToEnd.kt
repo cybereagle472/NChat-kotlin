@@ -135,6 +135,14 @@ class EndToEnd(
 
         override fun groupSecurity(groupId: String): GroupSecurity? = null
 
+        override fun kept(peerId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload? = null
+
+        override fun keptInGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload? = null
+
+        override fun forget(peerId: String, messageId: String, clientId: String?) = Unit
+
+        override fun forgetInGroup(groupId: String, senderId: String, messageId: String, clientId: String?) = Unit
+
         override fun security(peerId: String): PeerSecurity? = null
 
         override fun securityCode(peerId: String, key: String): String? = null

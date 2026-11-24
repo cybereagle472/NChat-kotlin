@@ -516,6 +516,7 @@ class RemoteChatRepository(
         val me = myId
         val visibleRows = rows.filterNot { me.isNotEmpty() && me in it.deletedFor }
         if (isGroup) fetchGroupKeys(chatId, visibleRows)
+        forgetDeleted(chatId, visibleRows)
         openSealed(chatId, visibleRows)
         if (isGroup) refreshSecurity(chatId)
         val server = visibleRows.map { it.toModel(chatId) }
@@ -719,6 +720,7 @@ class RemoteChatRepository(
                 val previousCursor = cursor
                 val nextCursor = page.first().createdAt
                 if (group) fetchGroupKeys(chatId, page)
+                forgetDeleted(chatId, page)
                 openSealed(chatId, page)
                 updateMessages(chatId) { local ->
                     mergeMessages(local, page.map { it.toModel(chatId) })
@@ -2067,6 +2069,8 @@ class RemoteChatRepository(
                 }
             }
             val error = response.exceptionOrNull() ?: run {
+                // Deleted on the server: what the phone kept of it goes as well.
+                forgetSealed(chatId, target)
                 if (reportSuccess) NcToaster.show(if (forEveryone) "Message deleted for everyone" else "Message deleted for you")
                 return@launch
             }
@@ -2530,18 +2534,20 @@ class RemoteChatRepository(
     /** "Deleted for everyone", applied to the bubble that is on screen right now. */
     private fun tombstoneMessage(chatId: String, messageId: String) {
         if (chatId.isEmpty()) return
-        var hit = false
+        var hit: Message? = null
         updateMessages(chatId) { messages ->
             messages.map { message ->
                 if (message.id == messageId && !message.deleted) {
-                    hit = true
+                    hit = message
                     message.tombstone()
                 } else {
                     message
                 }
             }
         }
-        if (hit) previewFromLast(chatId)
+        val deleted = hit ?: return
+        previewFromLast(chatId)
+        forgetSealed(chatId, deleted)
     }
 
     // --------------------------------------------------------------- helpers
@@ -2987,15 +2993,66 @@ class RemoteChatRepository(
         } else {
             null
         }) ?: return Opened(MessageKind.Text, E2eeText.CANNOT_SHOW, null, readable = false)
-        return when (payload.type) {
-            E2eePayload.TEXT -> Opened(MessageKind.Text, payload.body, payload.replyTo, readable = true)
-            E2eePayload.LOCATION -> Opened(MessageKind.Location, payload.body, payload.replyTo, readable = true)
-            E2eePayload.PHOTO -> payload.withFile(MessageKind.Photo)
-            E2eePayload.VIDEO -> payload.withFile(MessageKind.Video)
-            E2eePayload.VOICE -> payload.withFile(MessageKind.Voice)
-            E2eePayload.DOCUMENT -> payload.withFile(MessageKind.Document)
-            // Content of a kind a later version introduced.
-            else -> Opened(MessageKind.Text, E2eeText.NEEDS_UPDATE, null, readable = false)
+        return payload.asOpened()
+    }
+
+    private fun E2eePayload.asOpened(): Opened = when (type) {
+        E2eePayload.TEXT -> Opened(MessageKind.Text, body, replyTo, readable = true)
+        E2eePayload.LOCATION -> Opened(MessageKind.Location, body, replyTo, readable = true)
+        E2eePayload.PHOTO -> withFile(MessageKind.Photo)
+        E2eePayload.VIDEO -> withFile(MessageKind.Video)
+        E2eePayload.VOICE -> withFile(MessageKind.Voice)
+        E2eePayload.DOCUMENT -> withFile(MessageKind.Document)
+        // Content of a kind a later version introduced.
+        else -> Opened(MessageKind.Text, E2eeText.NEEDS_UPDATE, null, readable = false)
+    }
+
+    /**
+     * For a row that is *not* sealed: what this phone opened under that row's id when it was.
+     *
+     * An honest server never puts readable content in the place of a sealed message — it
+     * refuses the edit that would. So a readable row whose id this phone has a sealed message
+     * for is not the message: it is something written over it. The phone shows what it opened,
+     * and the row's own words are not used. Null for every ordinary readable row.
+     */
+    private fun MessageDto.keptSealed(chatId: String): Opened? {
+        val me = myId
+        if (me.isBlank() || chatId.isBlank() || id.isBlank()) return null
+        val payload = runCatching {
+            val messaging = encryption()
+            when {
+                groupId != null -> if (groupId == chatId) messaging.keptInGroup(chatId, senderId, id, clientMessageId, senderId == me) else null
+                (senderId == me && receiverId == chatId) || (senderId == chatId && receiverId == me) ->
+                    messaging.kept(chatId, id, clientMessageId, senderId == me)
+                else -> null
+            }
+        }.getOrNull() ?: return null
+        return payload.asOpened()
+    }
+
+    /** A message was deleted: what this phone kept of it — its content and its opened file — goes too. */
+    private fun forgetSealed(chatId: String, message: Message) {
+        if (!message.encrypted && !SealedMedia.isSealed(message.mediaUrl)) return
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val messaging = encryption()
+                if (isGroup(chatId)) messaging.forgetInGroup(chatId, message.authorId, message.id, message.clientMessageId)
+                else messaging.forget(chatId, message.id, message.clientMessageId)
+                MediaFiles.sealedFiles.forget(message.mediaUrl)
+            }
+        }
+    }
+
+    /** The same for rows the server marks as deleted: a deletion that happened while this phone was away. */
+    private fun forgetDeleted(chatId: String, rows: List<MessageDto>) {
+        val deleted = rows.filter { it.isDeleted && it.isSealed() && it.id.isNotBlank() }
+        if (deleted.isEmpty()) return
+        runCatching {
+            val messaging = encryption()
+            for (row in deleted) {
+                if (row.groupId != null) messaging.forgetInGroup(chatId, row.senderId, row.id, row.clientMessageId)
+                else messaging.forget(chatId, row.id, row.clientMessageId)
+            }
         }
     }
 
@@ -3042,7 +3099,12 @@ class RemoteChatRepository(
     private fun MessageDto.toModel(chatId: String): Message {
         val mine = senderId == myId
         // A sealed message keeps its kind, its text and what it replies to inside the envelope.
-        val opened = if (isSealed() && !isDeleted) unseal(chatId) else null
+        // A readable row in the place of a message this phone opened sealed shows what was opened.
+        val opened = when {
+            isDeleted -> null
+            isSealed() -> unseal(chatId)
+            else -> keptSealed(chatId)
+        }
         val kind = opened?.kind ?: kind()
         /*
          * Where the file lives.

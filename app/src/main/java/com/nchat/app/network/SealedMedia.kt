@@ -270,6 +270,17 @@ class SealedMediaStore(
         }
     }
 
+    /** The message of [address] was deleted: its opened file and its small picture go with it. */
+    fun forget(address: String?) {
+        val ref = SealedMedia.parse(address) ?: return
+        try {
+            fileFor(ref)?.delete()
+            directory()?.let { File(File(it, THUMBNAILS), nameOf(ref) + ".jpg").delete() }
+        } catch (_: Exception) {
+            // Still bounded by the room the store has; it goes when its turn comes.
+        }
+    }
+
     private fun fileFor(ref: SealedMedia.Ref): File? = directory()?.let { File(it, nameOf(ref) + "." + ref.extension) }
 
     /** A name that says nothing of the address, and differs when the key does. */

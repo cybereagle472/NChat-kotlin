@@ -119,6 +119,26 @@ interface SealedMessaging {
 
     /** What this phone knows about the encryption of a group; null when nothing was ever sealed in it here. */
     fun groupSecurity(groupId: String): GroupSecurity?
+
+    /**
+     * What this phone kept of a message with [peerId] when it opened it
+     * sealed — asked without the envelope, for a row the server now serves
+     * in another form. The newest form when the message was edited; null
+     * when it was never opened sealed here. Never throws.
+     */
+    fun kept(peerId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload?
+
+    /** [kept] for a group message; only under the member who wrote it. */
+    fun keptInGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload?
+
+    /**
+     * The message was deleted: what this phone kept of it — as first
+     * opened, and every edit — is taken out of its archive. Never throws.
+     */
+    fun forget(peerId: String, messageId: String, clientId: String?)
+
+    /** [forget] for a message [senderId] wrote to a group. */
+    fun forgetInGroup(groupId: String, senderId: String, messageId: String, clientId: String?)
 }
 
 /** The server, as far as one group's chains are concerned. Every call may throw what the network throws. */
@@ -1082,12 +1102,65 @@ class E2eeClient(
      * is part of the name: what was opened as one member's is never found
      * again as another's.
      */
-    private fun groupArchiveKey(direction: String, reference: String, senderId: String, envelope: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        digest.update(senderId.toByteArray(Charsets.UTF_8))
-        digest.update(0)
-        digest.update(envelope.toByteArray(Charsets.UTF_8))
-        return direction + reference + "#" + encodeBase64(digest.digest().copyOf(ENVELOPE_DIGEST_BYTES))
+    private fun groupArchiveKey(direction: String, reference: String, senderId: String, envelope: String): String =
+        archiveKey(direction, authored(senderId, reference), envelope)
+
+    /** A message of a group as its archive names it: who wrote it, then its id. The length keeps the two apart. */
+    private fun authored(senderId: String, reference: String): String = senderId.length.toString() + ":" + senderId + ":" + reference
+
+    // ------------------------------------------------- deleted, and replaced
+
+    override fun kept(peerId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload? {
+        val reference = if (mine) clientId else messageId
+        if (peerId.isBlank() || reference.isNullOrBlank()) return null
+        return keptAs(peerId, (if (mine) SENT else RECEIVED) + reference + "#")
+    }
+
+    override fun keptInGroup(groupId: String, senderId: String, messageId: String, clientId: String?, mine: Boolean): E2eePayload? {
+        val reference = if (mine) clientId else messageId
+        if (groupId.isBlank() || senderId.isBlank() || reference.isNullOrBlank()) return null
+        if (!mine && senderId == localId) return null
+        return keptAs(GROUP + groupId, (if (mine) SENT else RECEIVED) + authored(if (mine) localId else senderId, reference) + "#")
+    }
+
+    private fun keptAs(chat: String, reference: String): E2eePayload? = try {
+        batch { if (closed) null else archive.latest(chat, reference) }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun forget(peerId: String, messageId: String, clientId: String?) {
+        if (peerId.isBlank()) return
+        forgetAs(
+            peerId,
+            listOfNotNull(
+                messageId.takeIf { it.isNotBlank() }?.let { RECEIVED + it + "#" },
+                clientId?.takeIf { it.isNotBlank() }?.let { SENT + it + "#" },
+            ),
+        )
+    }
+
+    override fun forgetInGroup(groupId: String, senderId: String, messageId: String, clientId: String?) {
+        if (groupId.isBlank() || senderId.isBlank()) return
+        forgetAs(
+            GROUP + groupId,
+            listOfNotNull(
+                messageId.takeIf { it.isNotBlank() }?.let { RECEIVED + authored(senderId, it) + "#" },
+                // This phone's own copy is kept under this account, by the id it gave the message.
+                clientId?.takeIf { it.isNotBlank() && senderId == localId }?.let { SENT + authored(localId, it) + "#" },
+            ),
+        )
+    }
+
+    private fun forgetAs(chat: String, references: List<String>) {
+        try {
+            batch {
+                if (closed) return@batch
+                if (archive.remove(chat, references) > 0) unreadable.remove(chat)
+            }
+        } catch (_: Exception) {
+            // What could not be removed now is still there to be removed the next time it is asked.
+        }
     }
 
     /** What the envelope that hands over a chain is sealed for: that chain of that group, and nothing else. */
