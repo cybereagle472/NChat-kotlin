@@ -13,3 +13,12 @@ export async function mayMessage(env: Env, userId: string, otherId: string): Pro
       OR (b.user_id = ?2 AND b.blocked_user_id = ?1)) LIMIT 1`).bind(userId, otherId).first();
   return !!row;
 }
+
+/** Are `userId` and `otherId` both members of at least one group right now? */
+export async function shareGroup(env: Env, userId: string, otherId: string): Promise<boolean> {
+  if (userId === otherId) return false;
+  const row = await env.DB.prepare(`SELECT 1 FROM group_members mine
+    JOIN group_members theirs ON theirs.group_id = mine.group_id
+    WHERE mine.user_id = ?1 AND theirs.user_id = ?2 LIMIT 1`).bind(userId, otherId).first();
+  return !!row;
+}

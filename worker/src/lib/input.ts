@@ -11,11 +11,17 @@ export function exceedsTextLimits(body: Record<string, unknown>, limits: Record<
  */
 export const DIRECT_MESSAGE_TYPES = new Set(['text', 'e2ee', 'image', 'video', 'voice', 'document', 'location']);
 
-/**
- * Group message types — identical minus 'e2ee': sealed group messages are
- * rejected until group E2EE ships and its renderer exists.
- */
-export const GROUP_MESSAGE_TYPES = new Set(['text', 'image', 'video', 'voice', 'document', 'location']);
+/** Group message types: the same set. A sealed one must also name its chain (routes/groups.ts). */
+export const GROUP_MESSAGE_TYPES = new Set(['text', 'e2ee', 'image', 'video', 'voice', 'document', 'location']);
+
+/** The id of a group chain: 16 bytes, as canonical base64. */
+export const CHAIN_ID_BYTES = 16;
+
+/** The longest envelope that hands a chain to one member. They are a few hundred bytes. */
+export const KEY_ENVELOPE_BYTES = 8192;
+
+/** How many members one request may hand a chain to; a larger group takes several requests. */
+export const KEYS_PER_REQUEST = 100;
 
 /** The longest message text, in bytes. */
 export const TEXT_CONTENT_BYTES = 65536;

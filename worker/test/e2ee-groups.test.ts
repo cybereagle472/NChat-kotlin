@@ -189,6 +189,15 @@ describe('handing a chain to the members of a group', () => {
     expect(both.map((k) => k.sender_id).sort()).toEqual([s.alice.id, s.carol.id].sort());
 
     expect((await call('POST', `/groups/${s.group}/keys/fetch`, s.outsider.token, { wanted: [{ sender_id: s.alice.id, chain_id: chain }] })).status).toBe(403);
+
+    // An envelope is kept for a person, not for a key: an account that registers the very
+    // key material another member published (it is public) is not handed that member's envelope.
+    await env.DB.prepare('UPDATE user_crypto_keys SET identity_public_key = ?1 WHERE user_id = ?2').bind(s.bobKey, s.dave.id).run();
+    await env.DB.prepare(`INSERT INTO user_crypto_keys (user_id, identity_public_key, signed_prekey_public, signed_prekey_signature)
+      SELECT ?1, identity_public_key, signed_prekey_public, signed_prekey_signature FROM user_crypto_keys WHERE user_id = ?2
+      ON CONFLICT (user_id) DO NOTHING`).bind(s.dave.id, s.bob.id).run();
+    expect(await fetchKeys(s.dave, s.group, [{ sender: s.alice, chain }])).toEqual([]);
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toHaveLength(1);
   });
 
   it('keeps the first envelope when the same chain is handed to the same member again', async () => {
@@ -224,7 +233,8 @@ describe('handing a chain to the members of a group', () => {
     const malformed = [
       await body([key()], 'short'),
       await body([key()], b64(new Uint8Array(15))),
-      await body([key()], undefined),
+      await body([key()], null),
+      await body([key()], 7),
       await body('not a list'),
       await body([]),
       await body([key({ envelope: '' })]),
@@ -234,7 +244,8 @@ describe('handing a chain to the members of a group', () => {
       await body([key({ recipient_id: '' })]),
       await body([key({ recipient_id: s.alice.id, recipient_identity_key: s.aliceKey })]),
       await body([key(), key()]),
-      await body(Array.from({ length: 101 }, () => key())),
+      // More than one request may carry — each for somebody else, so that it is the number that is refused.
+      await body(Array.from({ length: 101 }, () => key({ recipient_id: crypto.randomUUID() }))),
       await body([key(), 'not a key entry']),
     ];
     expect(malformed.map((r) => r.status)).toEqual(malformed.map(() => 400));

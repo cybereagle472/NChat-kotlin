@@ -110,6 +110,8 @@ class SealedMediaTest {
             "https://attacker.test/api/media/file/1",
             "https://chat.example.com:8443/api/media/file/1",
             "http://chat.example.com/api/media/file/1",
+            // The same port, spoken without TLS: the scheme itself is compared, not only what follows from it.
+            "http://chat.example.com:443/api/media/file/1",
             "https://chat.example.com/api-fake/media/file/1",
             "https://chat.example.com/media/file/1",
             "https://chat.example.com/api/media/file/",
@@ -186,6 +188,11 @@ class SealedMediaTest {
         assertEquals(file, store.local(address, shelf::fetch))
         assertEquals(file, store.cached(address))
         assertEquals("asked for once", 1, shelf.asked.get())
+        // A copy that is no longer whole (a full disk, a file cut by something else) is not the file.
+        file.writeBytes(plain.copyOf(plain.size - 1))
+        assertNull(store.cached(address))
+        assertArrayEquals(plain, store.local(address, shelf::fetch).readBytes())
+        assertEquals(2, shelf.asked.get())
         // The same after a restart.
         assertEquals(file, SealedMediaStore({ directory() }).cached(address))
         assertEquals("nothing but the file is left lying about", listOf(file), everyFile())
@@ -344,15 +351,16 @@ class SealedMediaTest {
     @Test
     fun aSmallPictureOfTheFileIsWrittenOnceAndFoundAgain() {
         val store = SealedMediaStore({ directory() })
-        val address = SealedMedia.address(url, key, 9L, "jpg")
         val jpeg = byteArrayOf(-1, -40, -1, -32, 1, 2, 3)
+        // A file exactly as long as its own thumbnail: if the two were kept in one place, this is where it would show.
+        val address = SealedMedia.address(url, key, jpeg.size.toLong(), "jpg")
         val first = store.thumbnail(address, jpeg)!!
         assertArrayEquals(jpeg, first.readBytes())
         assertTrue(first.name.endsWith(".jpg"))
-        val modified = first.lastModified()
+        first.setLastModified(1_000L)
         assertEquals(first, store.thumbnail(address, jpeg))
-        assertEquals("not written again", modified, first.lastModified())
-        assertNotEquals(first, store.thumbnail(SealedMedia.address("$url-2", key, 9L, "jpg"), jpeg))
+        assertEquals("not written again", 1_000L, first.lastModified())
+        assertNotEquals(first, store.thumbnail(SealedMedia.address("$url-2", key, jpeg.size.toLong(), "jpg"), jpeg))
         assertNull("nothing to show", store.thumbnail(address, ByteArray(0)))
         assertNull(store.thumbnail(url, jpeg))
         // It is not the file, and does not stand in for it.

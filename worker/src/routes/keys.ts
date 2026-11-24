@@ -4,7 +4,7 @@ import type { Env, Variables } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { limitSend } from '../middleware/rate-limit';
 import { decodeExact, SPKI_BYTES } from '../lib/input';
-import { mayMessage } from '../lib/contacts';
+import { mayMessage, shareGroup } from '../lib/contacts';
 import { keyTablesExist, registeredIdentityKey } from '../lib/keys';
 import { broadcastToUser } from '../lib/realtime';
 
@@ -183,16 +183,20 @@ keys.get('/prekeys', requireAuth, limitSend, async (c) => {
 // prekey per fetch (single-statement DELETE ... RETURNING = atomic under
 // concurrency, so two fetchers can never receive the same key).
 //
-// Only for callers who may message the target (or the target itself): a
-// bundle is the first step of a direct message, and each fetch spends a
-// one-time prekey — a stranger must be able to do neither. A refusal is the
-// same 404 as "no keys", so it says nothing about the target's key state.
-// (Group E2EE will need bundles between group members who are not contacts;
-// widen this rule there, not here.)
+// Only for callers who may message the target, who share a group with them,
+// or the target itself: a bundle is the first step of a sealed message, and
+// each fetch spends a one-time prekey — a stranger must be able to do
+// neither. A refusal is the same 404 as "no keys", so it says nothing about
+// the target's key state.
+//
+// Sharing a group counts because a member hands their group chain to every
+// other member in a sealed one-to-one envelope, contact or not, and that
+// takes a session. It does not make the two contacts: direct messages
+// between them are refused as before.
 keys.get('/bundle/:userId', requireAuth, limitSend, async (c) => {
   const targetId = c.req.param('userId');
   const userId = c.get('userId');
-  if (!targetId || (targetId !== userId && !(await mayMessage(c.env, userId, targetId)))) {
+  if (!targetId || (targetId !== userId && !(await mayMessage(c.env, userId, targetId)) && !(await shareGroup(c.env, userId, targetId)))) {
     return c.json({ error: 'No keys registered for this user' }, 404);
   }
   const stored = await c.env.DB.prepare(

@@ -153,7 +153,7 @@ describe('message type hardening (fail closed)', () => {
     expect((await send(alice.token, { receiver_id: bob.id, content: envelope, type: 'e2ee', client_message_id: crypto.randomUUID(), recipient_identity_key: bobIdentity })).status).toBe(201);
   }, 30000);
 
-  it('rejects sealed group messages until group E2EE ships', async () => {
+  it('rejects a sealed group message that does not say which message and which chain it is', async () => {
     const owner = await signup('owner');
     const member = await signup('member');
     const group = crypto.randomUUID();

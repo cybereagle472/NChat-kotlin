@@ -622,7 +622,7 @@ object E2eeProtocol {
     }
 
     /** The chain key [steps] messages further on. */
-    private fun advance(chainKey: ByteArray, steps: Int): ByteArray {
+    internal fun advance(chainKey: ByteArray, steps: Int): ByteArray {
         if (steps <= 0) return chainKey
         val mac = Mac.getInstance(MAC)
         var key = chainKey
@@ -698,7 +698,7 @@ object E2eeProtocol {
     }
 
     /** Signal-style chain KDF: message key and next chain key from one step. */
-    private fun chainKdf(chainKey: ByteArray): Pair<ByteArray, ByteArray> {
+    internal fun chainKdf(chainKey: ByteArray): Pair<ByteArray, ByteArray> {
         val messageKey = hmac(chainKey, byteArrayOf(0x01))
         val next = hmac(chainKey, CHAIN_STEP)
         return messageKey to next
@@ -721,7 +721,7 @@ object E2eeProtocol {
         }
 
     /** `nonce || ciphertext || tag` with a fresh random nonce. */
-    private fun gcmEncrypt(key: ByteArray, header: ByteArray, plaintext: ByteArray): ByteArray {
+    internal fun gcmEncrypt(key: ByteArray, header: ByteArray, plaintext: ByteArray): ByteArray {
         val nonce = ByteArray(GCM_NONCE_BYTES).also { random.nextBytes(it) }
         val cipher = Cipher.getInstance(CIPHER)
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(GCM_TAG_BITS, nonce))
@@ -729,7 +729,7 @@ object E2eeProtocol {
         return nonce + cipher.doFinal(plaintext)
     }
 
-    private fun gcmDecrypt(key: ByteArray, header: ByteArray, sealed: ByteArray): ByteArray? {
+    internal fun gcmDecrypt(key: ByteArray, header: ByteArray, sealed: ByteArray): ByteArray? {
         return try {
             if (sealed.size < GCM_NONCE_BYTES + GCM_TAG_BITS / 8) return null
             val cipher = Cipher.getInstance(CIPHER)
@@ -746,14 +746,14 @@ object E2eeProtocol {
     }
 
     /** ISO/IEC 7816-4 padding to a multiple of [PAD_BLOCK]: `0x80` then zeros. */
-    private fun pad(plaintext: ByteArray): ByteArray {
+    internal fun pad(plaintext: ByteArray): ByteArray {
         val padded = ByteArray((plaintext.size / PAD_BLOCK + 1) * PAD_BLOCK)
         System.arraycopy(plaintext, 0, padded, 0, plaintext.size)
         padded[plaintext.size] = 0x80.toByte()
         return padded
     }
 
-    private fun unpad(padded: ByteArray): ByteArray? {
+    internal fun unpad(padded: ByteArray): ByteArray? {
         if (padded.isEmpty() || padded.size % PAD_BLOCK != 0) return null
         var end = padded.size - 1
         while (end >= 0 && padded[end].toInt() == 0) end--
@@ -772,7 +772,7 @@ object E2eeProtocol {
             doFinal(data)
         }
 
-    private fun verifyPrekeySignature(prekeyPublic: ByteArray, signature: ByteArray, identityPublic: ByteArray): Boolean = try {
+    internal fun verifyPrekeySignature(prekeyPublic: ByteArray, signature: ByteArray, identityPublic: ByteArray): Boolean = try {
         Signature.getInstance("SHA256withECDSA").run {
             initVerify(loadPublic(identityPublic))
             update(prekeyPublic)
