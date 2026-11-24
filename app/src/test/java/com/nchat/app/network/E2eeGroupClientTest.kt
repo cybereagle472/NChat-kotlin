@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * (worker/test/e2ee-groups.test.ts): it keeps the envelopes that hand out
  * chains, accepts a sealed message only when every other member with keys
  * holds its chain, and refuses one whose chain is held by somebody who left
- * or has other keys now.
+ * or has other keys now. A member who could not open the envelope they were
+ * handed says so, and it tells the sender to hand the chain to them again.
  */
 class E2eeGroupClientTest {
     @get:Rule val folder = TemporaryFolder()
@@ -105,6 +106,9 @@ class E2eeGroupClientTest {
         var postFailure: (() -> Throwable?)? = null
         var bundleLies: ((String, PeerBundle) -> PeerBundle)? = null
 
+        /** How often a member told the server that the chain they were handed does not open. */
+        var askedAgain = 0
+
         /** group chain envelopes: (sender, chain, recipient) → (identity it was sealed for, envelope) */
         private val keys = LinkedHashMap<Triple<String, String, String>, Pair<String, String>>()
         private val counter = AtomicInteger()
@@ -126,7 +130,11 @@ class E2eeGroupClientTest {
             val held = keys.filterKeys { it.first == caller && it.second == chain }.mapKeys { it.key.third }
             val current = members.filter { it != caller }.associateWith { phones[it]?.identityKey }
             return GroupRoster(
-                members = current.map { (id, identity) -> RosterMember(id, identity, identity != null && held[id]?.first == identity) },
+                // An envelope the member said they could not open is kept as an empty one.
+                members = current.map { (id, identity) ->
+                    val theirs = held[id]?.takeIf { identity != null && it.first == identity }
+                    RosterMember(id, identity, hasKey = theirs != null && theirs.second.isNotEmpty(), again = theirs != null && theirs.second.isEmpty())
+                },
                 stale = held.any { (holder, row) -> current[holder] != row.first },
             )
         }
@@ -135,7 +143,31 @@ class E2eeGroupClientTest {
             if (sender !in members) throw IllegalStateException("403")
             if (handed.any { it.recipientId !in members || phones[it.recipientId]?.identityKey != it.recipientIdentity }) throw RosterChanged()
             handOvers += handed
-            for (key in handed) keys.putIfAbsent(Triple(sender, chain, key.recipientId), key.recipientIdentity to key.envelope)
+            for (key in handed) {
+                val name = Triple(sender, chain, key.recipientId)
+                val kept = keys[name]
+                // The first envelope stays — unless the member said it does not open.
+                if (kept == null || (kept.second.isEmpty() && kept.first == key.recipientIdentity)) keys[name] = key.recipientIdentity to key.envelope
+            }
+        }
+
+        /** A member says the envelope that was to hand them [chain] of [sender] does not open. */
+        fun askAgain(recipient: String, sender: String, chain: String): Boolean {
+            val name = Triple(sender, chain, recipient)
+            val kept = keys[name] ?: return false
+            if (kept.second.isEmpty() || kept.first != phones[recipient]?.identityKey) return false
+            keys[name] = kept.first to ""
+            askedAgain++
+            return true
+        }
+
+        /** The envelope kept for [recipient] reaches them changed: a server, or a disk, that does not keep what it was given. */
+        fun damageKey(recipient: String, sender: String, chain: String) {
+            val name = Triple(sender, chain, recipient)
+            val kept = keys[name] ?: error("no envelope to damage")
+            val at = kept.second.indexOf("\"ct\":\"") + 8
+            val other = if (kept.second[at] == 'A') 'B' else 'A'
+            keys[name] = kept.first to kept.second.substring(0, at) + other + kept.second.substring(at + 1)
         }
 
         fun post(sender: String, clientId: String, sealed: GroupSealed): Row {
@@ -148,7 +180,7 @@ class E2eeGroupClientTest {
 
         /** The envelope that hands [recipient] the chain, if there is one sealed for the keys they have now. */
         fun keyFor(recipient: String, sender: String, chain: String): String? =
-            keys[Triple(sender, chain, recipient)]?.takeIf { it.first == phones[recipient]?.identityKey }?.second
+            keys[Triple(sender, chain, recipient)]?.takeIf { it.first == phones[recipient]?.identityKey }?.second?.takeIf { it.isNotEmpty() }
 
         fun transport(caller: String) = object : GroupTransport {
             override suspend fun roster(chainId: String?): GroupRoster = this@Hub.roster(caller, chainId)
@@ -171,8 +203,13 @@ class E2eeGroupClientTest {
     private fun read(hub: Hub, phone: Phone, row: Row, client: E2eeClient = phone.client(hub)): String? {
         for (wanted in client.missingGroupKeys(group, listOf(GroupRow(row.sender, row.envelope)))) {
             val envelope = hub.keyFor(phone.id, wanted.senderId, wanted.chainId)
-            if (envelope == null) client.noGroupKey(group, wanted.senderId, wanted.chainId)
-            else client.acceptGroupKey(group, wanted.senderId, wanted.chainId, envelope)
+            when {
+                envelope == null -> client.noGroupKey(group, wanted.senderId, wanted.chainId)
+                client.acceptGroupKey(group, wanted.senderId, wanted.chainId, envelope) -> Unit
+                else -> runBlocking {
+                    client.askGroupKeyAgain(group, wanted.senderId, wanted.chainId) { hub.askAgain(phone.id, wanted.senderId, wanted.chainId) }
+                }
+            }
         }
         return client.revealGroup(group, row.sender, row.id, row.clientId, mine = row.sender == phone.id, envelope = row.envelope)?.body
     }
@@ -775,5 +812,185 @@ class E2eeGroupClientTest {
         } catch (refused: IllegalStateException) {
             assertEquals(E2eeText.SIGNED_OUT, refused.message)
         }
+    }
+
+    // ------------------------------------------- a chain that could not be opened
+
+    @Test
+    fun aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne() {
+        val (hub, phones) = family()
+        val (alice, bob, carol) = phones
+        // Alice and Bob have both written here, so the session between them is an established
+        // one: what Alice seals for Bob from now on carries nothing to start a session from.
+        val one = send(hub, alice, "one")!!
+        assertEquals("one", read(hub, bob, one))
+        assertEquals("from bob", read(hub, alice, send(hub, bob, "from bob")!!))
+        // A month on Alice's chain is replaced, and handed out on the sessions there are.
+        alice.now += 31L * 24 * 60 * 60 * 1000
+        val two = send(hub, alice, "two")!!
+        val chain = E2eeGroup.chainId(two.envelope)!!
+        assertNotEquals(E2eeGroup.chainId(one.envelope), chain)
+
+        // Bob's phone has lost what it knew of its session with Alice.
+        assertNotNull(bob.vault.entries.remove("e2ee.session.alice"))
+        val b = bob.client(hub)
+        assertNull("the envelope that hands over the new chain does not open", read(hub, bob, two, b))
+        assertEquals("so the phone tells the server", 1, hub.askedAgain)
+        assertNull(read(hub, bob, two, b))
+        assertEquals("once", 1, hub.askedAgain)
+        assertEquals("nobody else is affected", "two", read(hub, carol, two))
+
+        // Alice's next message. The server refuses it, she finds that Bob asked, and hands him
+        // the chain on a session started anew from his key bundle — the old one is what failed.
+        val handOvers = hub.handOvers.size
+        val fetches = hub.bundleFetches.get()
+        val three = send(hub, alice, "three")!!
+        assertEquals("the same chain: nobody is to stop reading", chain, E2eeGroup.chainId(three.envelope))
+        assertEquals(listOf(listOf("bob")), hub.handOvers.drop(handOvers).map { handed -> handed.map { it.recipientId } })
+        assertEquals("a new session with Bob", fetches + 1, hub.bundleFetches.get())
+        assertEquals("the phone that asked looks again without a restart", "three", read(hub, bob, three, b))
+        assertEquals("three", read(hub, carol, three))
+        // What was sealed before the chain reached him stays closed; it is not shown as anything else.
+        assertNull(read(hub, bob, two, b))
+
+        // From here on it costs nothing extra, on either phone.
+        val four = send(hub, alice, "four")!!
+        assertEquals(handOvers + 1, hub.handOvers.size)
+        assertEquals(fetches + 1, hub.bundleFetches.get())
+        assertEquals("four", read(hub, bob, four))
+        assertEquals(1, hub.askedAgain)
+        // The session that was started anew is the one the two of them use from here on, in
+        // a chat with each other as well, and in both directions.
+        val direct = runBlocking { b.sendSealed("alice", "c-direct", E2eePayload.text("just to you"), { false }) { it.envelope } }!!
+        assertEquals("just to you", alice.client(hub).reveal("bob", "s-direct", "c-direct", mine = false, envelope = direct)?.body)
+        val answer = runBlocking { alice.client(hub).sendSealed("bob", "c-answer", E2eePayload.text("and to you"), { false }) { it.envelope } }!!
+        assertEquals("and to you", bob.client(hub).reveal("alice", "s-answer", "c-answer", mine = false, envelope = answer)?.body)
+        assertEquals("nobody's keys were fetched for that", fetches + 1, hub.bundleFetches.get())
+    }
+
+    @Test
+    fun anEnvelopeThatArrivesDamagedIsAskedForAgainAndASecondOneIsNotChasedForever() {
+        val (hub, phones) = family()
+        val (alice, bob, carol) = phones
+        val one = send(hub, alice, "one")!!
+        val chain = E2eeGroup.chainId(one.envelope)!!
+        hub.damageKey("bob", "alice", chain)
+
+        val b = bob.client(hub)
+        assertNull(read(hub, bob, one, b))
+        assertEquals(1, hub.askedAgain)
+        assertEquals("one", read(hub, carol, one))
+
+        // Handed again — and that envelope arrives damaged too.
+        val two = send(hub, alice, "two")!!
+        hub.damageKey("bob", "alice", chain)
+        assertNull(read(hub, bob, two, b))
+        assertEquals("a phone asks once for a chain while it runs", 1, hub.askedAgain)
+        // And stops fetching what it has seen will not open.
+        assertEquals(emptyList<GroupKeyRef>(), b.missingGroupKeys(group, listOf(GroupRow("alice", two.envelope))))
+
+        // After a restart it may ask once more; this time what it is handed is whole.
+        val restarted = bob.client(hub)
+        assertNull(read(hub, bob, two, restarted))
+        assertEquals(2, hub.askedAgain)
+        val three = send(hub, alice, "three")!!
+        assertEquals("three", read(hub, bob, three, restarted))
+        assertEquals("three", read(hub, bob, three))
+        assertEquals(2, hub.askedAgain)
+    }
+
+    @Test
+    fun askingAgainIsOnlyForAnEnvelopeThatWasThereAndDidNotOpen() {
+        val (hub, phones) = family()
+        val (alice, bob) = phones
+        val one = send(hub, alice, "one")!!
+        val chain = E2eeGroup.chainId(one.envelope)!!
+        val b = bob.client(hub)
+        var asked = 0
+        val ask: suspend () -> Unit = { asked++ }
+
+        // Nothing was tried yet: there is nothing to ask again for.
+        assertFalse(runBlocking { b.askGroupKeyAgain(group, "alice", chain, ask) })
+        // A chain the server has nothing of is absent, not unopenable.
+        b.noGroupKey(group, "alice", chain)
+        assertFalse(runBlocking { b.askGroupKeyAgain(group, "alice", chain, ask) })
+        assertEquals(0, asked)
+
+        // The envelope does not open. The request does not get through: it is not counted as made.
+        val c = bob.client(hub)
+        hub.damageKey("bob", "alice", chain)
+        assertFalse(c.acceptGroupKey(group, "alice", chain, hub.keyFor("bob", "alice", chain)!!))
+        try {
+            runBlocking { c.askGroupKeyAgain(group, "alice", chain) { throw IOException("offline") } }
+            fail("a request that failed was swallowed")
+        } catch (_: IOException) {
+        }
+        assertTrue(runBlocking { c.askGroupKeyAgain(group, "alice", chain, ask) })
+        assertEquals(1, asked)
+        assertFalse("and not a second time", runBlocking { c.askGroupKeyAgain(group, "alice", chain, ask) })
+        assertEquals(1, asked)
+        // While the answer is on its way, "nothing there yet" does not make the phone stop looking.
+        c.noGroupKey(group, "alice", chain)
+        assertEquals(listOf(GroupKeyRef("alice", chain)), c.missingGroupKeys(group, listOf(GroupRow("alice", one.envelope))))
+
+        // A chain that was taken in is not asked for again, whatever is said about it afterwards.
+        val carol = phones[2]
+        val d = carol.client(hub)
+        assertEquals("one", read(hub, carol, one, d))
+        assertFalse(runBlocking { d.askGroupKeyAgain(group, "alice", chain, ask) })
+        // Nor does a client that has been signed out ask anything.
+        val e = bob.client(hub)
+        assertFalse(e.acceptGroupKey(group, "alice", chain, hub.keyFor("bob", "alice", chain)!!))
+        e.close()
+        assertFalse(runBlocking { e.askGroupKeyAgain(group, "alice", chain, ask) })
+        assertEquals(1, asked)
+    }
+
+    @Test
+    fun aMemberWhoAskedAgainIsHandedAReplacedChainOnANewSessionAsWell() {
+        val (hub, phones) = family()
+        val (alice, bob, carol) = phones
+        val one = send(hub, alice, "one")!!
+        assertEquals("one", read(hub, bob, one))
+        assertEquals("from bob", read(hub, alice, send(hub, bob, "from bob")!!))
+        alice.now += 31L * 24 * 60 * 60 * 1000
+        val two = send(hub, alice, "two")!!
+        assertNotNull(bob.vault.entries.remove("e2ee.session.alice"))
+        val b = bob.client(hub)
+        assertNull(read(hub, bob, two, b))
+        assertEquals(1, hub.askedAgain)
+
+        // Before Alice writes again somebody leaves, so her chain is replaced altogether. Bob is
+        // handed the new one like everybody who stays — on a new session, since the old one failed.
+        hub.members -= "carol"
+        val fetches = hub.bundleFetches.get()
+        val three = send(hub, alice, "three")!!
+        assertNotEquals(E2eeGroup.chainId(two.envelope), E2eeGroup.chainId(three.envelope))
+        assertEquals(fetches + 1, hub.bundleFetches.get())
+        assertEquals("three", read(hub, bob, three, b))
+        assertNull(read(hub, carol, three))
+    }
+
+    @Test
+    fun aNewMemberWhoLookedAtTheHistoryFirstStillReadsWhatComesAfter() {
+        val (hub, phones) = family()
+        val (alice) = phones
+        val a = alice.client(hub)
+        val early = (1..3).map { send(hub, alice, "early $it", a)!! }
+
+        // Dan joins and opens the group. Its history was sealed before he was in it: the
+        // server has no chain for him, and his phone remembers that.
+        val dan = hub.join(Phone("dan"))
+        val d = dan.client(hub)
+        for (row in early) assertNull("sent before dan was in the group", read(hub, dan, row, d))
+
+        // Alice writes again, and her chain — the same one — is handed on to Dan. His app has
+        // been running all along; it must look for the chain again and read the message.
+        val late = send(hub, alice, "welcome dan", a)!!
+        assertEquals(E2eeGroup.chainId(early[0].envelope), E2eeGroup.chainId(late.envelope))
+        assertEquals("welcome dan", read(hub, dan, late, d))
+        assertEquals("and the next", read(hub, dan, send(hub, alice, "and the next", a)!!, d))
+        // What came before stays closed.
+        for (row in early) assertNull(read(hub, dan, row, d))
     }
 }

@@ -50,6 +50,7 @@ describe('a server whose database has no table for group chains', () => {
       await call('GET', `/groups/${group}/roster?chain=${encodeURIComponent(chain)}`, alice.token),
       await call('POST', `/groups/${group}/keys`, alice.token, { chain_id: chain, keys: [{ recipient_id: bob.id, recipient_identity_key: btoa(String.fromCharCode(...new Uint8Array(91))), envelope: 'x' }] }),
       await call('POST', `/groups/${group}/keys/fetch`, bob.token, { wanted: [{ sender_id: alice.id, chain_id: chain }] }),
+      await call('POST', `/groups/${group}/keys/again`, bob.token, { sender_id: alice.id, chain_id: chain }),
       await call('POST', `/groups/${group}/messages`, alice.token, { type: 'e2ee', content: 'sealed', client_message_id: crypto.randomUUID(), chain_id: chain }),
     ];
     for (const response of sealed) {

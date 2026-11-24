@@ -17,6 +17,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
  *    the sender then starts a new chain;
  *  - an envelope that carries a chain is handed to the member it was sealed
  *    for and to nobody else.
+ *  - a member who could not open the envelope they were handed can say so:
+ *    the server stops handing it out, and the sender is told to hand the
+ *    chain to that member again (E2EE Batch 6).
  * The roster tells a sender who is in the group, with which keys, and who
  * holds the chain already.
  */
@@ -74,7 +77,7 @@ const chainId = () => b64(crypto.getRandomValues(new Uint8Array(16)));
 const sealedMessage = (n: number) => JSON.stringify({ v: 1, c: 'AAAAAAAAAAAAAAAAAAAAAA==', n, ct: 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=', sig: 'c2lnbmF0dXJl' });
 const keyEnvelope = (tag: string) => JSON.stringify({ v: 1, dh: 'AOCsVJxqKzN2mH8vYtQwErTyUiOpAsDfGhJkLzXcVbNm', n: 0, pn: 0, ct: `a2V5LWZvci0${tag}` });
 
-type RosterEntry = { user_id: string; identity_key: string | null; has_key: boolean };
+type RosterEntry = { user_id: string; identity_key: string | null; has_key: boolean; again: boolean };
 
 async function roster(member: Account, group: string, chain?: string) {
   const response = await call('GET', `/groups/${group}/roster${chain ? `?chain=${encodeURIComponent(chain)}` : ''}`, member.token);
@@ -118,10 +121,10 @@ describe('the roster of a group', () => {
     expect(seen.stale).toBe(false);
     expect(seen.members.map((m) => m.user_id).sort()).toEqual([s.bob.id, s.carol.id, s.dave.id].sort());
     const byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
-    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: s.bobKey, has_key: false });
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: s.bobKey, has_key: false, again: false });
     expect(byId[s.carol.id].identity_key).toBe(s.carolKey);
     // An app without keys: named, so the sender knows somebody cannot read sealed messages.
-    expect(byId[s.dave.id]).toEqual({ user_id: s.dave.id, identity_key: null, has_key: false });
+    expect(byId[s.dave.id]).toEqual({ user_id: s.dave.id, identity_key: null, has_key: false, again: false });
 
     expect((await call('GET', `/groups/${s.group}/roster`, s.outsider.token)).status).toBe(403);
     expect((await call('GET', `/groups/${crypto.randomUUID()}/roster`, s.alice.token)).status).toBe(403);
@@ -146,7 +149,7 @@ describe('the roster of a group', () => {
     const bobsNewKey = await registerKeys(s.bob);
     seen = await roster(s.alice, s.group, chain);
     byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
-    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: bobsNewKey, has_key: false });
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: bobsNewKey, has_key: false, again: false });
     expect(seen.stale).toBe(true);
 
     // Carol holds another chain and then leaves: that chain is held by somebody outside the group.
@@ -260,6 +263,133 @@ describe('handing a chain to the members of a group', () => {
     expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([]);
     expect((await call('POST', `/groups/${s.group}/leave`, s.carol.token)).status).toBe(200);
     expect((await call('POST', `/groups/${s.group}/keys/fetch`, s.carol.token, { wanted: [{ sender_id: s.alice.id, chain_id: chain }] })).status).toBe(403);
+  });
+});
+
+function askAgain(member: Account, group: string, sender: Account, chain: unknown, senderId: unknown = sender.id) {
+  return call('POST', `/groups/${group}/keys/again`, member.token, { sender_id: senderId, chain_id: chain });
+}
+
+describe('a member who could not open the chain they were handed', () => {
+  it('says so, is handed nothing unusable again, and the sender is told to hand it over once more', async () => {
+    const s = await scene();
+    const chain = chainId();
+    const first = keyEnvelope('first');
+    const carols = keyEnvelope('carol');
+    expect((await handOver(s.alice, s.group, chain, [
+      { to: s.bob, identity: s.bobKey, envelope: first }, { to: s.carol, identity: s.carolKey, envelope: carols },
+    ])).status).toBe(200);
+    expect((await post(s.alice, s.group, chain)).status).toBe(201);
+
+    const asked = await askAgain(s.bob, s.group, s.alice, chain);
+    expect(asked.status).toBe(200);
+    expect(await asked.json()).toEqual({ success: true, asked: true });
+
+    // The envelope that could not be opened is not handed out any more.
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([]);
+    // The sender is told, for that member and nobody else; nobody holds the chain who should not.
+    let seen = await roster(s.alice, s.group, chain);
+    let byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: s.bobKey, has_key: false, again: true });
+    expect(byId[s.carol.id]).toEqual({ user_id: s.carol.id, identity_key: s.carolKey, has_key: true, again: false });
+    expect(seen.stale).toBe(false);
+    // And a message under that chain waits until the member has been handed it again.
+    const refused = await post(s.alice, s.group, chain);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('roster_changed');
+
+    // Handed again: this time the new envelope takes the place of the one that could not be opened.
+    const second = keyEnvelope('second');
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey, envelope: second }])).status).toBe(200);
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([{ sender_id: s.alice.id, chain_id: chain, envelope: second }]);
+    seen = await roster(s.alice, s.group, chain);
+    byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: s.bobKey, has_key: true, again: false });
+    expect((await post(s.alice, s.group, chain)).status).toBe(201);
+
+    // From here on it is an envelope like any other: the first one stays.
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey, envelope: keyEnvelope('third') }])).status).toBe(200);
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([{ sender_id: s.alice.id, chain_id: chain, envelope: second }]);
+    // Nobody else's envelope was touched by any of it.
+    expect(await fetchKeys(s.carol, s.group, [{ sender: s.alice, chain }])).toEqual([{ sender_id: s.alice.id, chain_id: chain, envelope: carols }]);
+  });
+
+  it('asks only for what the member holds, and only once', async () => {
+    const s = await scene();
+    const chain = chainId();
+    const other = chainId();
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey }, { to: s.carol, identity: s.carolKey }])).status).toBe(200);
+
+    // A chain this member was never handed: there is nothing to ask again for, and nothing appears.
+    const never = await askAgain(s.bob, s.group, s.alice, other);
+    expect(never.status).toBe(200);
+    expect(await never.json()).toEqual({ success: true, asked: false });
+    const nothing = await roster(s.alice, s.group, other);
+    expect(nothing.members.every((m) => !m.has_key && !m.again)).toBe(true);
+    expect(nothing.stale).toBe(false);
+    // The same chain of somebody who never handed it to them.
+    expect(await (await askAgain(s.bob, s.group, s.carol, chain)).json()).toEqual({ success: true, asked: false });
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toHaveLength(1);
+
+    // Asked: once.
+    expect(await (await askAgain(s.bob, s.group, s.alice, chain)).json()).toEqual({ success: true, asked: true });
+    expect(await (await askAgain(s.bob, s.group, s.alice, chain)).json()).toEqual({ success: true, asked: false });
+    // It is the member's own envelope they speak of — never another member's.
+    expect(await fetchKeys(s.carol, s.group, [{ sender: s.alice, chain }])).toHaveLength(1);
+    const seen = await roster(s.alice, s.group, chain);
+    const byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
+    expect([byId[s.carol.id].has_key, byId[s.carol.id].again]).toEqual([true, false]);
+    expect([byId[s.bob.id].has_key, byId[s.bob.id].again]).toEqual([false, true]);
+  });
+
+  it('is not what a member with other keys does: their old envelope makes the chain stale, as before', async () => {
+    const s = await scene();
+    const chain = chainId();
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey }, { to: s.carol, identity: s.carolKey }])).status).toBe(200);
+    const newKey = await registerKeys(s.bob);
+
+    expect(await (await askAgain(s.bob, s.group, s.alice, chain)).json()).toEqual({ success: true, asked: false });
+    const seen = await roster(s.alice, s.group, chain);
+    const byId = Object.fromEntries(seen.members.map((m) => [m.user_id, m]));
+    expect(byId[s.bob.id]).toEqual({ user_id: s.bob.id, identity_key: newKey, has_key: false, again: false });
+    expect(seen.stale).toBe(true);
+    // An envelope asked for again is replaced only by one for the same keys.
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: newKey, envelope: keyEnvelope('new-phone') }])).status).toBe(200);
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toEqual([]);
+  });
+
+  it('is for members of the group, about somebody else, and well-formed', async () => {
+    const s = await scene();
+    const chain = chainId();
+    expect((await handOver(s.alice, s.group, chain, [{ to: s.bob, identity: s.bobKey }])).status).toBe(200);
+
+    expect((await askAgain(s.outsider, s.group, s.alice, chain)).status).toBe(403);
+    expect((await askAgain(s.bob, crypto.randomUUID(), s.alice, chain)).status).toBe(403);
+    expect((await SELF.fetch(`https://example.test/groups/${s.group}/keys/again`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': address() },
+      body: JSON.stringify({ sender_id: s.alice.id, chain_id: chain }),
+    })).status).toBe(401);
+
+    const malformed = [
+      await askAgain(s.bob, s.group, s.alice, 'short'),
+      await askAgain(s.bob, s.group, s.alice, b64(new Uint8Array(15))),
+      await askAgain(s.bob, s.group, s.alice, null),
+      await askAgain(s.bob, s.group, s.alice, 7),
+      await askAgain(s.bob, s.group, s.alice, chain, ''),
+      await askAgain(s.bob, s.group, s.alice, chain, 7),
+      await askAgain(s.bob, s.group, s.alice, chain, null),
+      await askAgain(s.bob, s.group, s.alice, chain, 'x'.repeat(513)),
+      // One's own chain is not handed to oneself.
+      await askAgain(s.bob, s.group, s.alice, chain, s.bob.id),
+      await call('POST', `/groups/${s.group}/keys/again`, s.bob.token, 'not an object'),
+    ];
+    expect(malformed.map((r) => r.status)).toEqual(malformed.map(() => 400));
+    // None of it changed anything.
+    expect(await fetchKeys(s.bob, s.group, [{ sender: s.alice, chain }])).toHaveLength(1);
+
+    // A member who has left no longer asks.
+    expect((await call('POST', `/groups/${s.group}/leave`, s.bob.token)).status).toBe(200);
+    expect((await askAgain(s.bob, s.group, s.alice, chain)).status).toBe(403);
   });
 });
 
