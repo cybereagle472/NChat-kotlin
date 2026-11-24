@@ -9,7 +9,7 @@ class MediaOriginTest {
     private fun get(url: String) = Request.Builder().url(url).build()
 
     @Test
-    fun `credentials only go to media on the configured origin and base path`() {
+    fun credentialsOnlyGoToMediaOnTheConfiguredOriginAndBasePath() {
         val base = "https://chat.example.com/api"
         assertTrue(isBackendMedia(base, get("https://chat.example.com/api/media/file/1")))
         assertFalse(isBackendMedia(base, get("https://chat.example.com.attacker.test/api/media/file/1")))

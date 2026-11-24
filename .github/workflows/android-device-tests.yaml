@@ -16,6 +16,9 @@ permissions:
 jobs:
   device-tests:
     name: Emulator, API ${{ matrix.api-level }}
+    # A commit that only adds tests which are meant to fail first says so with [red]:
+    # there is nothing to learn from an emulator about code that is not written yet.
+    if: ${{ !contains(github.event.head_commit.message, '[red]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
