@@ -2,7 +2,6 @@ package com.nchat.app.feature.chats
 
 import com.nchat.app.data.model.DeliveryState
 import com.nchat.app.data.model.Message
-import com.nchat.app.data.model.MessageKind
 import com.nchat.app.network.PeerSecurity
 
 /**
@@ -11,24 +10,29 @@ import com.nchat.app.network.PeerSecurity
  *
  * A sealed message carries a lock. That alone would leave the absence of a lock as the only
  * sign of a message somebody slipped into the conversation, and nobody notices an absence. So
- * the exception is what gets marked: text or a position that came through unsealed after
- * encryption with this person began. It is true of a forged message, and equally of an honest
- * one written on a client without encryption (the website); either way the reader should know.
+ * the exception is what gets marked: whatever came through unsealed after encryption with this
+ * person began. That is true of a forged message, and equally of an honest one — written on a
+ * client without encryption (the website), or of a kind that is not sealed yet. Every kind is
+ * marked for that reason: leaving attachments out because none of them is sealed today would
+ * leave a photo with a caption as the way to slip words in unmarked.
  *
- * [encryptedSince] is when this phone first had a session with the other person, by its own
- * clock — null when it never had one, and then nothing is marked. Two rules, either is enough:
+ * Two rules, either is enough:
  *
- *  - the message is dated at or after [encryptedSince];
- *  - a sealed message stands before it in [messages] (oldest first). This one does not depend
- *    on the phone's clock having been right, and the first one does not depend on a sealed
- *    message being among the rows that happen to be loaded.
+ *  - a sealed message stands before it in [messages] (oldest first) — one this phone opened,
+ *    or one it holds no keys for. This rule needs nothing but the rows: not a clock that was
+ *    right, and not a session, which a phone does not have after a reinstall until the next
+ *    message is exchanged;
+ *  - the message is dated at or after [encryptedSince]: when this phone first had a session
+ *    with the other person, by its own clock, or null when it never had one. This rule does
+ *    not need a sealed message to be among the rows that happen to be loaded.
  *
- * Not marked: attachments, which are not sealed yet (marking every one of them would say
- * nothing); deleted messages and system lines; and this phone's own messages that are still on
- * their way or failed, which the server has not seen in any form.
+ * Not marked: deleted messages and system lines, which carry nobody's words; and this phone's
+ * own messages that are still on their way or failed, which the server has not seen at all.
+ *
+ * What the rules leave out is the history from before the first sealed message. It never was
+ * protected: the server holds it readable and can change it, or add to it under an old date.
  */
 fun unsealedMessageIds(messages: List<Message>, encryptedSince: Long?): Set<String> {
-    if (encryptedSince == null) return emptySet()
     val marked = LinkedHashSet<String>()
     var sealedSeen = false
     for (message in messages) {
@@ -37,9 +41,8 @@ fun unsealedMessageIds(messages: List<Message>, encryptedSince: Long?): Set<Stri
             continue
         }
         if (message.deleted || message.systemEvent) continue
-        if (message.kind != MessageKind.Text && message.kind != MessageKind.Location) continue
         if (message.isMine && (message.failed || message.state == DeliveryState.Sending)) continue
-        if (sealedSeen || message.timestamp >= encryptedSince) marked += message.id
+        if (sealedSeen || (encryptedSince != null && message.timestamp >= encryptedSince)) marked += message.id
     }
     return marked
 }
