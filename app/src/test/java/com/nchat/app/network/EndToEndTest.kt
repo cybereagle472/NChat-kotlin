@@ -319,6 +319,27 @@ class EndToEndTest {
         }
     }
 
+    @Test
+    fun withNobodySignedInNothingGoesToAGroupAndNothingOfAGroupIsShown() {
+        val idle = Phone(Server()).start().messaging()
+        val transport = object : GroupTransport {
+            override suspend fun roster(chainId: String?) = GroupRoster(emptyList(), stale = false)
+            override suspend fun handOver(chainId: String, keys: List<GroupKey>) = Unit
+            override fun rosterChanged(error: Throwable) = false
+        }
+        try {
+            runBlocking { idle.sendGroupSealed("g", "c-1", E2eePayload.text("hello"), transport) { "posted" } }
+            fail("answered for nobody")
+        } catch (_: IllegalStateException) {
+            // intended: an error — null would have meant "send it to the group readable"
+        }
+        assertNull(idle.revealGroup("g", "bob", "s-1", "c-1", mine = false, envelope = "{}"))
+        assertEquals(emptyList<GroupKeyRef>(), idle.missingGroupKeys("g", listOf(GroupRow("bob", "{}"))))
+        assertFalse(idle.acceptGroupKey("g", "bob", "chain", "{}"))
+        idle.noGroupKey("g", "bob", "chain")
+        assertNull(idle.groupSecurity("g"))
+    }
+
     // ------------------------------------------------------------- sign-out
 
     @Test
