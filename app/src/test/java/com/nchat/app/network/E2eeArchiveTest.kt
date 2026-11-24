@@ -427,8 +427,13 @@ class E2eeArchiveTest {
         assertEquals(listOf("g:family-5678", "user-bob-1234"), archive().chats().ids.sorted())
         assertEquals("three", archive().find("user-bob-1234", "m:3#c")?.body)
 
-        archive().clear()
+        val cleared = archive()
+        cleared.put("user-bob-1234", "m:9#z", E2eePayload.text("nine"))
+        cleared.clear()
+        assertEquals(emptyList<String>(), cleared.chats().ids)
         assertEquals(emptyList<String>(), archive().chats().ids)
+        cleared.put("user-bob-1234", "m:1#a", E2eePayload.text("after everything was erased"))
+        assertEquals("a chat written to after everything was erased says again whose it is", listOf("user-bob-1234"), cleared.chats().ids)
     }
 
     @Test
@@ -463,9 +468,13 @@ class E2eeArchiveTest {
         assertEquals(emptyList<String>(), elsewhere.ids)
         assertEquals(1, elsewhere.unreadable)
 
-        // A file with nothing in it is not a chat that could not be read.
+        // A file with nothing in it is not a chat that could not be read…
         directory().resolve(hashedName("nobody") + ".log").writeText("\n")
         assertEquals(0, archive().chats().unreadable)
+        // …and neither is what a rewrite left behind when the phone went off in the middle of it.
+        directory().resolve(bob.name + ".tmp").writeText(bob.readText())
+        assertEquals(0, archive().chats().unreadable)
+        assertEquals(listOf("user-bob-1234", "user-carol-9"), archive().chats().ids.sorted())
     }
 
     @Test
@@ -493,6 +502,15 @@ class E2eeArchiveTest {
         archive().remove("bob", listOf("c:c-2#"))
         assertFalse(archive().entries("bob").any { it.first == "c:c-2#b" })
         assertEquals(42, archive().entries("bob").size)
+
+        // One key written twice: the later one counts, and stands where it was written.
+        archive().put("dave", "m:s-1#a", E2eePayload.text("as first sent"))
+        archive().put("dave", "m:s-1#b", E2eePayload.text("an edit"))
+        archive().put("dave", "m:s-1#a", E2eePayload.text("as first sent, written again"))
+        assertEquals(
+            listOf("m:s-1#b" to "an edit", "m:s-1#a" to "as first sent, written again"),
+            archive().entries("dave").map { it.first to it.second.body },
+        )
     }
 
     @Test
@@ -523,6 +541,18 @@ class E2eeArchiveTest {
         assertEquals("only in the backup", target().find("bob", "m:c-8#r")?.body)
         assertEquals(0, target().restore("bob", emptyList()))
         assertEquals("a restored file still says which chat it is", listOf("bob"), target().chats().ids)
+
+        // A backup that says one thing twice: the later one counts, where it stands.
+        val twice = listOf(
+            "m:s-1#a" to E2eePayload.text("as first sent"),
+            "m:s-1#b" to E2eePayload.text("an edit"),
+            "m:s-1#a" to E2eePayload.text("as first sent, written again"),
+        )
+        assertEquals(2, target().restore("erin", twice))
+        assertEquals(
+            listOf("m:s-1#b" to "an edit", "m:s-1#a" to "as first sent, written again"),
+            target().entries("erin").map { it.first to it.second.body },
+        )
     }
 
     @Test

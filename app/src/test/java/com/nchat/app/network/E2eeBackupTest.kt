@@ -11,6 +11,9 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * A backup is everything a phone kept of an account's sealed messages, in one
@@ -89,6 +92,25 @@ class E2eeBackupTest {
             start = end
         }
         return found
+    }
+
+    // The records inside a file, written by hand: a chat is tag 1 and its id, an entry tag 2,
+    // its key and its payload, every part with its length before it.
+    private fun int(value: Int) = byteArrayOf((value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte())
+
+    private fun block(bytes: ByteArray) = int(bytes.size) + bytes
+
+    private fun chatRecord(name: String) = byteArrayOf(1) + block(name.toByteArray(Charsets.UTF_8))
+
+    private fun entryRecord(key: String, payload: E2eePayload) = byteArrayOf(2) + block(key.toByteArray(Charsets.UTF_8)) + block(payload.encode())
+
+    /** A file that holds exactly [records], sealed like any other. */
+    private fun sealed(vararg records: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        val sealing = E2eeBackup.Sealing(out, account, passphrase, rounds)
+        for (record in records) sealing.write(record)
+        sealing.finish()
+        return out.toByteArray()
     }
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { ((it.toInt() and 0xff) + 0x100).toString(16).substring(1) }
@@ -192,6 +214,79 @@ class E2eeBackupTest {
     }
 
     @Test
+    fun aFileRelabelledForAnotherAccountOpensUnderNoPassphrase() {
+        // The tag says whose a file is to anybody who knows the account, so anybody can work out
+        // the tag of another account and write it on the file. That must not make it theirs.
+        val file = write(history)
+        val mac = Mac.getInstance("HmacSHA256").also { it.init(SecretKeySpec(file.copyOfRange(12, 28), "HmacSHA256")) }
+        fun tag(of: String) = mac.doFinal("nchat-backup-account:$of".toByteArray(Charsets.UTF_8)).copyOf(16)
+        assertArrayEquals("the tag is what the format says it is", tag(account), file.copyOfRange(28, 44))
+
+        val relabelled = file.copyOf().also { System.arraycopy(tag("02b8d4f6-bob"), 0, it, 28, 16) }
+        val seen = ArrayList<Kept>()
+        assertEquals(Problem.WrongPassphrase, problem(relabelled, forAccount = "02b8d4f6-bob", seen = seen))
+        assertEquals(emptyList<Kept>(), seen)
+        assertEquals("and it is no longer the first account's either", Problem.OtherAccount, problem(relabelled))
+    }
+
+    @Test
+    fun whatIsInsideAFileIsNotBelievedJustBecauseThePassphraseFits() {
+        // Whoever knows the passphrase can write a file — and so can somebody who talks a user
+        // into restoring "this backup, the passphrase is…". What is inside is read as carefully
+        // as the outside: it ends in "damaged", never in a crash or in memory running out.
+        val first = history[0]
+        val whole = sealed(chatRecord(first.chat), entryRecord(first.key, first.payload))
+        assertEquals("records written by hand read like a writer's", listOf(first.toString()), read(whole).map { it.toString() })
+        val split = sealed(chatRecord(first.chat).copyOf(3), chatRecord(first.chat).drop(3).toByteArray(), entryRecord(first.key, first.payload))
+        assertEquals("however they were handed over", listOf(first.toString()), read(split).map { it.toString() })
+
+        val before = listOf(first.toString())
+        fun after(vararg records: ByteArray): Pair<Problem?, List<String>> {
+            val seen = ArrayList<Kept>()
+            return problem(sealed(chatRecord(first.chat), entryRecord(first.key, first.payload), *records), seen = seen) to seen.map { it.toString() }
+        }
+        assertEquals("a record of a kind nobody knows", Problem.Damaged to before, after(byteArrayOf(3) + block("what".toByteArray())))
+        assertEquals("a record that stops half way", Problem.Damaged to before, after(entryRecord("m:c-2#x", E2eePayload.text("cut")).copyOf(9)))
+        assertEquals("a chat's name that stops half way", Problem.Damaged to before, after(chatRecord("user-carol-5678").copyOf(8)))
+        assertEquals("a length without a record", Problem.Damaged to before, after(byteArrayOf(1, 0, 0)))
+        assertEquals("a record longer than any message", Problem.Damaged to before, after(byteArrayOf(2) + int(Int.MAX_VALUE)))
+        assertEquals("a record of less than no length", Problem.Damaged to before, after(byteArrayOf(2) + int(-1)))
+        assertEquals("an entry that says more than it holds", Problem.Damaged to before, after(byteArrayOf(2) + block("m:c-2#x".toByteArray()) + int(50) + ByteArray(10)))
+
+        val seen = ArrayList<Kept>()
+        assertEquals("a message of no chat", Problem.Damaged, problem(sealed(entryRecord(first.key, first.payload)), seen = seen))
+        assertEquals(emptyList<Kept>(), seen)
+
+        // A sealed stream that was never finished is not a file to restore from.
+        val unfinished = ByteArrayOutputStream()
+        E2eeBackup.Sealing(unfinished, account, passphrase, rounds).write(chatRecord(first.chat))
+        assertEquals(Problem.Damaged, problem(unfinished.toByteArray()))
+    }
+
+    @Test
+    fun aFileThatArrivesAFewBytesAtATimeIsReadAllTheSame() {
+        // A file picked from a cloud folder does not come in the portions that are asked for.
+        val long = ArrayList<Kept>(history)
+        for (index in 0 until 3_000) long += Kept("user-dave-3456", "m:c-$index#${index * 7}", E2eePayload.text("message number $index, with a little to say"))
+        val file = write(long)
+        assertTrue(pieces(file).size >= 3)
+        val dribbling = object : InputStream() {
+            private var at = 0
+            override fun read(): Int = if (at < file.size) file[at++].toInt() and 0xff else -1
+            override fun read(target: ByteArray, offset: Int, length: Int): Int {
+                if (at >= file.size) return -1
+                val count = minOf(length, 1 + at % 13, file.size - at)
+                System.arraycopy(file, at, target, offset, count)
+                at += count
+                return count
+            }
+        }
+        val found = ArrayList<Kept>()
+        E2eeBackup.read(dribbling, account, passphrase) { chat, key, payload -> found += Kept(chat, key, payload) }
+        assertEquals(long.map { it.toString() }, found.map { it.toString() })
+    }
+
+    @Test
     fun whatIsNotABackupIsNotReadAsOne() {
         val file = write(history)
         for (other in listOf(ByteArray(0), "{}".toByteArray(), "NCHATBK".toByteArray(), ByteArray(4096) { 7 }, file.copyOf(E2eeBackup.HEADING_BYTES - 1))) {
@@ -200,11 +295,13 @@ class E2eeBackupTest {
         // A file of a format this build has never heard of: said as such, not as a wrong passphrase.
         val later = file.copyOf().also { it[7] = '9'.code.toByte() }
         assertEquals(Problem.NewerVersion, problem(later))
-        // A file that says its key takes more rounds than any phone has time for is not tried.
-        val absurd = file.copyOf().also { for (index in 8..11) it[index] = 0x7f }
+        // A file that says its key takes more rounds than any build asks for is not tried: it
+        // would only stall the phone.
+        val tooMany = file.copyOf().also { System.arraycopy(int(E2eeBackup.MAX_ROUNDS + 1), 0, it, 8, 4) }
         val started = System.nanoTime()
-        assertEquals(Problem.Damaged, problem(absurd))
+        assertEquals(Problem.Damaged, problem(tooMany))
         assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+        assertEquals("no rounds at all are none to try either", Problem.Damaged, problem(file.copyOf().also { System.arraycopy(int(0), 0, it, 8, 4) }))
     }
 
     @Test
@@ -262,6 +359,48 @@ class E2eeBackupTest {
         val foreign = pieces(other)[1]
         val mixed = heading + file.copyOfRange(pieces[0].first, pieces[0].last + 1) + other.copyOfRange(foreign.first, foreign.last + 1)
         assertEquals(Problem.Damaged, problem(mixed))
+    }
+
+    @Test
+    fun piecesThatEndWhereRecordsEndAreStillHeldInTheirPlaces() {
+        // The hard case for the test above: there a moved piece also tears a record in two, and
+        // the torn record alone would give it away. Here every piece holds whole records — one
+        // chat and one message, to the byte — so nothing but the sealing itself can tell that a
+        // piece is not where it was written, or that the file stops before its end.
+        val pieceBytes = E2eeBackup.SEALED_PIECE_BYTES - 16
+        fun wholePiece(index: Int): ByteArray {
+            val entry = entryRecord("m:c-$index#k", E2eePayload.text("message $index " + "x".repeat(pieceBytes - 400)))
+            val padding = pieceBytes - entry.size - chatRecord("chat-$index-").size
+            return chatRecord("chat-$index-" + "p".repeat(padding)) + entry
+        }
+        val file = sealed(wholePiece(0), wholePiece(1), wholePiece(2), wholePiece(3))
+        assertEquals("four pieces, each full", E2eeBackup.HEADING_BYTES + 4 * E2eeBackup.SEALED_PIECE_BYTES, file.size)
+        fun keysOf(bytes: ByteArray): List<String> = read(bytes).map { it.key }
+        assertEquals(listOf("m:c-0#k", "m:c-1#k", "m:c-2#k", "m:c-3#k"), keysOf(file))
+
+        val pieces = pieces(file)
+        val heading = file.copyOf(E2eeBackup.HEADING_BYTES)
+        fun join(vararg order: Int): ByteArray = order.fold(heading) { sofar, index -> sofar + file.copyOfRange(pieces[index].first, pieces[index].last + 1) }
+        fun outcome(bytes: ByteArray): String {
+            val seen = ArrayList<Kept>()
+            return "${problem(bytes, seen = seen)} after ${seen.map { it.key }}"
+        }
+        assertEquals("as written", "null after [m:c-0#k, m:c-1#k, m:c-2#k, m:c-3#k]", outcome(join(0, 1, 2, 3)))
+        assertEquals("two swapped", "Damaged after [m:c-0#k]", outcome(join(0, 2, 1, 3)))
+        assertEquals("one left out", "Damaged after [m:c-0#k]", outcome(join(0, 2, 3)))
+        assertEquals("one twice", "Damaged after [m:c-0#k]", outcome(join(0, 0, 1, 2, 3)))
+        assertEquals("the first left out", "Damaged after []", outcome(join(1, 2, 3)))
+        assertEquals("the last left out: a file that stops early is not a shorter backup", "Damaged after [m:c-0#k, m:c-1#k]", outcome(join(0, 1, 2)))
+        assertEquals("cut to its first piece", "Damaged after []", outcome(join(0)))
+        assertEquals("the last one where the first was", "Damaged after []", outcome(join(3)))
+        assertEquals("something after the end", "Damaged after [m:c-0#k, m:c-1#k, m:c-2#k]", outcome(join(0, 1, 2, 3, 3)))
+
+        // A piece of another file under the same passphrase, in the same place, does not fit.
+        val other = sealed(wholePiece(0), wholePiece(1), wholePiece(2), wholePiece(3))
+        val foreign = other.copyOfRange(pieces[1].first, pieces[1].last + 1)
+        assertEquals("Damaged after [m:c-0#k]", outcome(join(0) + foreign + file.copyOfRange(pieces[2].first, file.size)))
+        // …and neither does this file's under another file's heading.
+        assertEquals("Damaged after []", outcome(other.copyOf(E2eeBackup.HEADING_BYTES) + file.copyOfRange(E2eeBackup.HEADING_BYTES, file.size)))
     }
 
     @Test

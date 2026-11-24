@@ -42,9 +42,11 @@ import javax.crypto.spec.SecretKeySpec
  *     pieces    AES-256-GCM, 64 KiB of plaintext each, the last one shorter
  *
  * The key comes from the passphrase by PBKDF2-HMAC-SHA-256 with the file's
- * salt and round count, then HKDF over the heading and the account. The
- * account tag lets a file of another account be turned away at once, and
- * the key check lets a wrong passphrase be told from a damaged file. Every
+ * salt and round count, then HKDF over the heading — and so over the account
+ * tag in it: a file relabelled for another account opens under no
+ * passphrase. The account tag lets a file of another account be turned away
+ * at once, and the key check lets a wrong passphrase be told from a damaged
+ * file. Every
  * piece is sealed with its number and with whether it is the last one, and
  * with the heading as associated data: pieces cannot be reordered, dropped,
  * repeated, taken from another file, or cut off the end without it showing.
@@ -156,11 +158,11 @@ object E2eeBackup {
 
     private class Keys(val seal: SecretKeySpec, val check: ByteArray)
 
-    /** [keyed]: the heading up to the key check. The account itself goes in as well, not only its tag. */
-    private fun keys(passphrase: String, rounds: Int, keyed: ByteArray, account: String): Keys {
+    /** [keyed]: the heading up to the key check — every byte of it decides the key. */
+    private fun keys(passphrase: String, rounds: Int, keyed: ByteArray): Keys {
         val salt = keyed.copyOfRange(KEYED_BYTES - TAG_BYTES - SALT_BYTES, KEYED_BYTES - TAG_BYTES)
         val master = stretch(passphrase.toCharArray(), salt, rounds)
-        val info = "nchat-backup-v1".toByteArray(Charsets.US_ASCII) + keyed + account.toByteArray(Charsets.UTF_8)
+        val info = "nchat-backup-v1".toByteArray(Charsets.US_ASCII) + keyed
         val derived = E2eeProtocol.hkdf(master, salt, info, KEY_BYTES + CHECK_BYTES)
         return Keys(SecretKeySpec(derived.copyOf(KEY_BYTES), "AES"), derived.copyOfRange(KEY_BYTES, KEY_BYTES + CHECK_BYTES))
     }
@@ -186,68 +188,35 @@ object E2eeBackup {
     private fun int(value: Int): ByteArray = byteArrayOf((value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte())
 
     /**
-     * Writes a backup to [out]: [chat] for a chat, [entry] for each of its
-     * messages in the order the archive kept them, and [finish] — without
-     * which the file is not a backup, and does not restore.
+     * The sealed stream a backup is, without what the stream means: bytes
+     * go in through [write], and [finish] seals the last of them as the last
+     * piece — without which the file is not a backup, and does not restore.
      *
      * Throws [IllegalArgumentException] — before anything is written — for a
      * passphrase that [passphraseProblem] turns down, and whatever [out]
      * throws.
      */
-    class Writer(private val out: OutputStream, account: String, passphrase: CharArray, rounds: Int = ROUNDS) {
+    internal class Sealing(private val out: OutputStream, account: String, passphrase: CharArray, rounds: Int) {
         private val heading: ByteArray
         private val key: SecretKeySpec
         private val piece = ByteArray(PIECE_BYTES)
         private var filled = 0
         private var index = 0L
-        private var inChat = false
         private var finished = false
-
-        /** How many messages were written. */
-        var entries = 0
-            private set
 
         init {
             passphraseProblem(passphrase)?.let { throw IllegalArgumentException(it) }
             require(rounds in 1..MAX_ROUNDS) { "rounds out of range" }
             val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
             val keyed = MAGIC + VERSION + int(rounds) + salt + accountTag(salt, account)
-            val keys = keys(canonical(passphrase), rounds, keyed, account)
+            val keys = keys(canonical(passphrase), rounds, keyed)
             heading = keyed + keys.check
             key = keys.seal
             out.write(heading)
         }
 
-        fun chat(chatId: String) {
+        fun write(bytes: ByteArray) {
             check(!finished) { "the backup is finished" }
-            write(byteArrayOf(CHAT.toByte()))
-            block(chatId.toByteArray(Charsets.UTF_8))
-            inChat = true
-        }
-
-        fun entry(key: String, payload: E2eePayload) {
-            check(!finished) { "the backup is finished" }
-            check(inChat) { "an entry belongs to a chat" }
-            write(byteArrayOf(ENTRY.toByte()))
-            block(key.toByteArray(Charsets.UTF_8))
-            block(payload.encode())
-            entries++
-        }
-
-        /** Seals what is left as the last piece: the file now says where it ends. */
-        fun finish() {
-            check(!finished) { "the backup is finished" }
-            finished = true
-            seal(last = true)
-            out.flush()
-        }
-
-        private fun block(bytes: ByteArray) {
-            write(int(bytes.size))
-            write(bytes)
-        }
-
-        private fun write(bytes: ByteArray) {
             var from = 0
             while (from < bytes.size) {
                 // A full piece goes out only when more follows it: the last one is sealed as the last.
@@ -259,10 +228,57 @@ object E2eeBackup {
             }
         }
 
+        fun finish() {
+            check(!finished) { "the backup is finished" }
+            finished = true
+            seal(last = true)
+            out.flush()
+        }
+
         private fun seal(last: Boolean) {
             out.write(cipher(Cipher.ENCRYPT_MODE, key, index, last, heading).doFinal(piece, 0, filled))
             index++
             filled = 0
+        }
+    }
+
+    /**
+     * Writes a backup to [out]: [chat] for a chat, [entry] for each of its
+     * messages in the order the archive kept them, and [finish] — without
+     * which the file is not a backup, and does not restore.
+     *
+     * Throws [IllegalArgumentException] — before anything is written — for a
+     * passphrase that [passphraseProblem] turns down, and whatever [out]
+     * throws.
+     */
+    class Writer(out: OutputStream, account: String, passphrase: CharArray, rounds: Int = ROUNDS) {
+        private val sealing = Sealing(out, account, passphrase, rounds)
+        private var inChat = false
+
+        /** How many messages were written. */
+        var entries = 0
+            private set
+
+        fun chat(chatId: String) {
+            sealing.write(byteArrayOf(CHAT.toByte()))
+            block(chatId.toByteArray(Charsets.UTF_8))
+            inChat = true
+        }
+
+        fun entry(key: String, payload: E2eePayload) {
+            check(inChat) { "an entry belongs to a chat" }
+            sealing.write(byteArrayOf(ENTRY.toByte()))
+            block(key.toByteArray(Charsets.UTF_8))
+            block(payload.encode())
+            entries++
+        }
+
+        /** Seals what is left as the last piece: the file now says where it ends. */
+        fun finish() = sealing.finish()
+
+        private fun block(bytes: ByteArray) {
+            sealing.write(int(bytes.size))
+            sealing.write(bytes)
         }
     }
 
@@ -286,7 +302,7 @@ object E2eeBackup {
         if (!MessageDigest.isEqual(tag, accountTag(salt, account))) throw Failure(Problem.OtherAccount)
         // No backup is written under no passphrase at all.
         val secret = canonical(passphrase).ifEmpty { throw Failure(Problem.WrongPassphrase) }
-        val keys = keys(secret, rounds, keyed, account)
+        val keys = keys(secret, rounds, keyed)
         if (!MessageDigest.isEqual(keys.check, heading.copyOfRange(KEYED_BYTES, HEADING_BYTES))) throw Failure(Problem.WrongPassphrase)
 
         val stream = DataInputStream(Pieces(input, keys.seal, heading))

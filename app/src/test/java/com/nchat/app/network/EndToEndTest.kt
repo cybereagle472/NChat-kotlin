@@ -572,6 +572,11 @@ class EndToEndTest {
         assertEquals("what was received", "from bob, before", read(again, "bob", received))
         assertEquals("and what was sent", "from alice, before", readOwn(again, "bob", sent))
         assertEquals("a second time adds nothing", 0, again.restore(ByteArrayInputStream(file.toByteArray()), passphrase.toCharArray()))
+        fun keysIn(backup: ByteArray): List<String> {
+            val keys = ArrayList<String>()
+            E2eeBackup.read(ByteArrayInputStream(backup), "alice", passphrase.toCharArray()) { _, key, _ -> keys += key }
+            return keys
+        }
         // It is kept like any other history from here on: a restart finds it, sealed for the new key.
         val restarted = phone.start().also { it.resume("alice") }
         assertEquals("from bob, before", read(restarted, "bob", received))
@@ -579,7 +584,10 @@ class EndToEndTest {
         // …and the next backup holds it again, with what came since.
         val after = send(restarted, "bob", "after the restore")!!
         assertEquals("after the restore", read(bob, "alice", after))
-        assertEquals(3, restarted.backUp(ByteArrayOutputStream(), passphrase.toCharArray())?.messages)
+        val second = ByteArrayOutputStream()
+        assertEquals(3, restarted.backUp(second, passphrase.toCharArray())?.messages)
+        // What came back stands in the order it was kept in, ahead of what came since.
+        assertEquals(keysIn(file.toByteArray()), keysIn(second.toByteArray()).take(2))
     }
 
     @Test
@@ -644,7 +652,7 @@ class EndToEndTest {
         val alice = phone.signIn("alice")
         assertEquals("kept", read(alice, "bob", send(bob, "alice", "kept")!!))
 
-        // The account leaves while the file is being written: here, between the heading and the rest.
+        // The account leaves while the file is being written: here, before anything was read for it.
         val file = object : ByteArrayOutputStream() {
             var left = false
             override fun write(bytes: ByteArray, offset: Int, length: Int) {
@@ -673,6 +681,80 @@ class EndToEndTest {
     }
 
     @Test
+    fun signingOutOnceEverythingWasReadStillLeavesAWholeBackup() {
+        // The other way round would be the worst moment to refuse: the backup is what is left.
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val wires = (0 until 30).map { send(bob, "alice", "message $it " + "x".repeat(4_000))!! }
+        wires.forEach { assertNotNull(read(alice, "bob", it)) }
+
+        // Leaves when the second portion is written: the heading is the first, a full piece the next.
+        val file = object : ByteArrayOutputStream() {
+            var writes = 0
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                super.write(bytes, offset, length)
+                if (++writes == 2) alice.signOut()
+            }
+        }
+        val written = alice.backUp(file, "correct horse battery".toCharArray())!!
+        assertEquals(30, written.messages)
+        assertTrue("it left during the writing, not after it", file.writes > 2)
+        assertTrue(phone.files().isEmpty())
+
+        val again = phone.signIn("alice")
+        assertEquals(30, again.restore(ByteArrayInputStream(file.toByteArray()), "correct horse battery".toCharArray()))
+        assertTrue(read(again, "bob", wires[29])!!.startsWith("message 29 "))
+    }
+
+    @Test
+    fun aRestoreCutOffBySigningOutWritesNothing() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        assertEquals("kept", read(alice, "bob", send(bob, "alice", "kept")!!))
+        val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
+        alice.signOut()
+        val again = phone.signIn("alice", alice)
+
+        // The account leaves while the file is being read.
+        val input = object : ByteArrayInputStream(file) {
+            var left = false
+            override fun read(target: ByteArray, offset: Int, length: Int): Int {
+                if (!left) {
+                    left = true
+                    again.signOut()
+                }
+                return super.read(target, offset, length)
+            }
+        }
+        assertNull("there is nobody to restore it for", again.restore(input, "correct horse battery".toCharArray()))
+        assertEquals("nothing was written back for an account that has left", emptyList<File>(), phone.files())
+    }
+
+    @Test
+    fun aChatWithNothingLeftInItIsNotInTheBackup() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val received = send(bob, "alice", "to be deleted")!!
+        assertEquals("to be deleted", read(alice, "bob", received))
+        alice.messaging().forget("bob", received.id, received.clientId)
+
+        val file = ByteArrayOutputStream()
+        val written = alice.backUp(file, "correct horse battery".toCharArray())!!
+        assertEquals(0, written.messages)
+        assertEquals("a chat that is only a name is not counted as backed up", 0, written.chats)
+        assertEquals(0, written.unreadableChats)
+        val found = ArrayList<String>()
+        E2eeBackup.read(ByteArrayInputStream(file.toByteArray()), "alice", "correct horse battery".toCharArray()) { chat, _, _ -> found += chat }
+        assertEquals(emptyList<String>(), found)
+    }
+
+    @Test
     fun aDamagedBackupGivesBackWhatCanStillBeRead() {
         val server = Server()
         val phone = Phone(server)
@@ -685,6 +767,7 @@ class EndToEndTest {
         assertTrue(file.size > E2eeBackup.HEADING_BYTES + E2eeBackup.SEALED_PIECE_BYTES)
         alice.signOut()
         val again = phone.signIn("alice", alice)
+        assertNull("it was tried before the backup was there, and could not be shown", read(again, "bob", wires[0]))
 
         // The end of the file is damaged; its first piece is whole.
         val damaged = file.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
