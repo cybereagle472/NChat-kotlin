@@ -64,10 +64,9 @@ fun encryptionSummary(name: String, security: PeerSecurity?): String = when {
     security.changed ->
         "$name's security code changed. That happens when somebody signs in again or changes phone. " +
             "If it surprises you, compare the code with $name."
-    // Attachments are named for as long as they are not sealed; this sentence goes when they are.
     else ->
-        "Texts and locations in this chat are end-to-end encrypted: only your phone and $name's can read " +
-            "them. Photos, videos, voice messages and files are not encrypted yet."
+        "Messages in this chat are end-to-end encrypted: only your phone and $name's can read them. That " +
+            "covers texts, locations, photos, videos, voice messages and files."
 }
 
 /** The line under the chat's header while a change of the other person's security code is unacknowledged. */

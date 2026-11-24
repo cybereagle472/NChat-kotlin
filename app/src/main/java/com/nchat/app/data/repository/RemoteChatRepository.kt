@@ -17,8 +17,12 @@ import com.nchat.app.data.model.hasUnconfirmedDelivery
 import com.nchat.app.data.model.Reaction
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.ChatDto
+import com.nchat.app.core.util.MediaPreparer
+import com.nchat.app.network.E2eeAttachment
 import com.nchat.app.network.E2eePayload
 import com.nchat.app.network.E2eeText
+import com.nchat.app.network.MediaFiles
+import com.nchat.app.network.SealedMedia
 import com.nchat.app.network.GroupDto
 import com.nchat.app.network.MediaDto
 import com.nchat.app.network.MessageDto
@@ -121,7 +125,13 @@ class RemoteChatRepository(
      * conversation with them has changed: encryption began, their keys changed, or the user
      * settled a notice.
      */
-    private val securityChanges: Flow<String> = emptyFlow()
+    private val securityChanges: Flow<String> = emptyFlow(),
+    /**
+     * The server this app talks to. A sealed message names the address of its file, and can
+     * name any address; only a file under this server's media path is ever fetched. Empty
+     * means no sealed file is accepted at all.
+     */
+    private val mediaRoot: String = ""
 ) : ChatRepository {
 
 
@@ -954,6 +964,34 @@ class RemoteChatRepository(
             if (!deliveryGate.tryAcquire(localId)) return@launch
             try {
                 if (stream(chatId).value.none { it.id == localId }) return@launch
+                // In an encrypted conversation the file is sealed before it leaves the phone,
+                // so whether this one is has to be settled before anything is uploaded.
+                val seals = try {
+                    sealsFilesFor(chatId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    setUploadProgress(chatId, localId, null)
+                    markFailed(chatId, localId, error.describeSend())
+                    return@launch
+                }
+                if (seals) {
+                    sendSealedMedia(
+                        OutboxEntry(
+                            clientId = localId,
+                            chatId = chatId,
+                            isGroup = false,
+                            ownerId = myId,
+                            text = body,
+                            type = kind.wireType(),
+                            fileName = fileName,
+                            mimeType = mimeType,
+                            thumbnailUrl = MediaPreparer.inlinePreview(thumbnail)?.let { SealedMedia.inlineImage(it) }
+                        ),
+                        bytes
+                    )
+                    return@launch
+                }
                 // 1) upload the file (and its preview), 2) send a message that points at both.
                 val media = runCatching {
                     api.uploadMedia(fileName, mimeType, bytes) { fraction ->
@@ -1064,16 +1102,21 @@ class RemoteChatRepository(
         // deleted", which is the one thing forwarding must never do.
         // Nor has a message this phone could not open: its text is a notice, not a message.
         if (source.deleted || source.unreadable) return
-        val media = source.mediaUrl.shareableMediaUrl()
-        if (source.kind !in setOf(MessageKind.Text, MessageKind.Location) && media == null) {
+        // A sealed file was sealed for the conversation it came from: its address and its key
+        // are of no use — and of no business — anywhere else.
+        val sealedSource = SealedMedia.parse(source.mediaUrl)
+        val media = if (sealedSource != null) null else source.mediaUrl.shareableMediaUrl()
+        if (source.kind !in setOf(MessageKind.Text, MessageKind.Location) && media == null && sealedSource == null) {
             NcToaster.show("Send the attachment before forwarding it")
             return
         }
+        val voice = source.kind == MessageKind.Voice
         val localId = newClientId()
         val local = baseMessage(targetChatId, localId, source.text).copy(
             kind = source.kind,
             fileName = source.fileName,
-            mediaUrl = media,
+            // On this phone the forwarded bubble shows the file it was forwarded from.
+            mediaUrl = source.mediaUrl.takeIf { sealedSource != null } ?: media,
             thumbnailUrl = source.thumbnailUrl,
             durationLabel = source.durationLabel,
             forwarded = true
@@ -1088,13 +1131,163 @@ class RemoteChatRepository(
             text = source.text,
             type = source.kind.wireType(),
             mediaUrl = media,
-            thumbnailUrl = source.thumbnailUrl,
+            // A voice message's "thumbnail" is its waveform and travels as it is. A picture's is
+            // an address, which is forwarded only when it is one a server may be told.
+            thumbnailUrl = if (voice) source.thumbnailUrl?.takeUnless { SealedMedia.carriesKey(it) } else source.thumbnailUrl.shareableMediaUrl(),
             duration = source.durationLabel?.let { durationSeconds(it) },
             fileName = source.fileName
         )
-        if (!enqueue(entry)) return
-        if (!online()) return
-        scope.launch { deliver(entry) }
+        if (sealedSource == null) {
+            if (!enqueue(entry)) return
+            if (!online()) return
+            scope.launch { deliver(entry) }
+            return
+        }
+        // Opened here, the file becomes a file of this phone's like one just picked: it is
+        // queued with its content, and delivery seals it anew for the conversation it goes to
+        // (or uploads it readable, where that conversation is not encrypted).
+        scope.launch {
+            val content = MediaFiles.bytes(source.mediaUrl.orEmpty()).getOrNull()
+            val saved = content?.let { voiceClips?.save(localId, it, sealedSource.extension) }
+            if (saved == null) {
+                markFailed(targetChatId, localId, "couldn't open the attachment to forward it")
+                return@launch
+            }
+            val picture = source.thumbnailUrl?.takeIf { !voice && it.startsWith("file://") }
+                ?.let { runCatching { java.io.File(it.removePrefix("file://")).readBytes() }.getOrNull() }
+            val ready = entry.copy(
+                localFile = saved,
+                fileName = source.fileName ?: "file.${sealedSource.extension}",
+                mimeType = mimeFor(source.kind, sealedSource.extension),
+                thumbnailUrl = if (voice) entry.thumbnailUrl else MediaPreparer.inlinePreview(picture)?.let { SealedMedia.inlineImage(it) }
+            )
+            if (!enqueue(ready)) return@launch
+            if (!online()) return@launch
+            deliver(ready)
+        }
+    }
+
+    /** A type for a file this phone holds only by its kind and its ending. */
+    private fun mimeFor(kind: MessageKind, extension: String): String = when (kind) {
+        MessageKind.Photo -> if (extension == "png" || extension == "webp" || extension == "gif") "image/$extension" else "image/jpeg"
+        MessageKind.Video -> if (extension == "webm") "video/webm" else "video/mp4"
+        MessageKind.Voice -> if (extension == "ogg" || extension == "opus") "audio/ogg" else "audio/mp4"
+        else -> if (extension == "pdf") "application/pdf" else "application/octet-stream"
+    }
+
+    // ------------------------------------------------------------ sealed files
+
+    /**
+     * Whether a file sent to [chatId] now is sealed. True starts the session the file's message
+     * will be sealed in. Throws when the conversation is encrypted but cannot be sealed for at
+     * the moment — then nothing is uploaded, in any form.
+     */
+    private suspend fun sealsFilesFor(chatId: String): Boolean = !isGroup(chatId) && encryption().willSeal(chatId)
+
+    /**
+     * Seals [content] under a key made for it, uploads the result for the conversation [row]
+     * belongs to, and answers the row as it is from then on: its `mediaUrl` is the file's
+     * address with the key in the fragment ([SealedMedia]), so a retry — in a moment or after a
+     * restart — sends the same file again instead of sealing and uploading another.
+     */
+    private suspend fun uploadSealedFile(row: OutboxEntry, content: ByteArray): OutboxEntry {
+        check(content.isNotEmpty()) { "the attachment is empty" }
+        check(content.size <= E2eeAttachment.MAX_BYTES) { "this file is too large to send encrypted (the limit is 44 MB)" }
+        val key = E2eeAttachment.newKey()
+        val sealedBytes = withContext(Dispatchers.Default) { E2eeAttachment.seal(key, content) }
+        val uploaded = try {
+            api.uploadSealed(
+                sealedBytes,
+                forUser = row.chatId.takeIf { !row.isGroup },
+                forGroup = row.chatId.takeIf { row.isGroup }
+            ) { fraction -> setUploadProgress(row.chatId, row.clientId, fraction) }
+        } catch (refusal: ApiException) {
+            // A server that cannot keep sealed files yet (its database is one step behind the
+            // code). Waiting will not change that, and the file does not go out readable instead.
+            if (refusal.status == NChatApi.KEYS_NOT_SET_UP) error("the server can't store encrypted files yet")
+            throw refusal
+        }
+        val url = uploaded.url.shareableMediaUrl()?.takeIf { SealedMedia.isOn(mediaRoot, it) }
+            ?: throw IOException("The upload did not return a usable address")
+        val address = SealedMedia.address(url, key, content.size.toLong(), SealedMedia.extensionFor(row.mimeType, row.fileName))
+        // This phone has the file already: its own bubble need not download and open it.
+        MediaFiles.sealedFiles.seed(address, content)
+        return row.copy(mediaUrl = address, fileSize = content.size.toString())
+    }
+
+    /** What a row whose file is sealed says inside its envelope; null when it holds no sealed file. */
+    private fun sealedFilePayload(row: OutboxEntry): E2eePayload? {
+        val file = SealedMedia.parse(row.mediaUrl) ?: return null
+        val voice = row.type == "voice" || row.type == "audio"
+        val pointer = E2eeAttachment.Pointer(
+            url = file.url,
+            key = file.key,
+            size = file.size,
+            mime = row.mimeType,
+            name = row.fileName,
+            duration = row.duration,
+            waveform = row.thumbnailUrl.takeIf { voice },
+            thumbnail = if (voice) null else SealedMedia.inlineImageBytes(row.thumbnailUrl)
+        )
+        val type = when (row.type) {
+            "image", "photo" -> E2eePayload.PHOTO
+            "video" -> E2eePayload.VIDEO
+            "voice", "audio" -> E2eePayload.VOICE
+            else -> E2eePayload.DOCUMENT
+        }
+        // A voice message's text is a placeholder for lists that cannot play it, not a caption.
+        return E2eePayload(type, if (voice) "" else row.text, row.replyTo, pointer.encode())
+    }
+
+    /**
+     * Sends the message of a file that is sealed and uploaded. The envelope carries the key, so
+     * there is no other form this can go out in: if the conversation answers "unsealed" — which
+     * it does not once a session exists — the message is not sent.
+     */
+    private suspend fun sendSealedFile(row: OutboxEntry): MessageEnvelope {
+        val payload = sealedFilePayload(row) ?: error("the attachment is not available to send")
+        return encryption().sendSealed(row.chatId, row.clientId, payload, ::keysChanged) { message ->
+            api.sendMessage(
+                row.chatId,
+                message.envelope,
+                type = SEALED_TYPE,
+                clientMessageId = row.clientId,
+                recipientIdentityKey = message.recipientIdentity
+            )
+        } ?: error(E2eeText.NOT_READY)
+    }
+
+    /** A photo, video or document for an encrypted conversation: sealed, uploaded, then sent. */
+    private suspend fun sendSealedMedia(entry: OutboxEntry, content: ByteArray) {
+        val chatId = entry.chatId
+        val localId = entry.clientId
+        val row = try {
+            uploadSealedFile(entry, content)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            setUploadProgress(chatId, localId, null)
+            markFailed(chatId, localId, error.describeSend())
+            return
+        }
+        setUploadProgress(chatId, localId, null)
+        updateMessages(chatId) { messages ->
+            messages.map { if (it.id == localId) it.copy(mediaUrl = row.mediaUrl, thumbnailUrl = row.thumbnailUrl) else it }
+        }
+        if (!enqueue(row)) return
+        var failure: Throwable? = null
+        val created = sendWithRetry(onFailure = { failure = it }) { sendSealedFile(row) }
+        if (created == null) {
+            val transient = isTransientSendFailure(failure)
+            // Still queued, with its sealed file: the next flush sends the message alone.
+            if (transient && outbox != null) return
+            if (!transient) failAndDequeue(chatId, localId, failure)
+            else markFailed(chatId, localId, failure?.describeSend())
+            return
+        }
+        outbox?.remove(localId)
+        replaceLocal(chatId, localId, created.toModel(chatId).copy(state = DeliveryState.Sent))
+        previewFromLast(chatId)
     }
 
     /** Persist before dispatch; never show an unsaved entry as safely queued. */
@@ -1214,6 +1407,46 @@ class RemoteChatRepository(
                 return
             }
             /*
+             * A file for one person. In an encrypted conversation it is sealed before it is
+             * uploaded — a voice note waiting on disk, and equally a file that was forwarded or
+             * queued with a readable upload behind it: that one is fetched and sealed anew, so
+             * nothing readable is added to a conversation that is encrypted.
+             */
+            val hasFile = !row.mediaUrl.isNullOrBlank() || !row.localFile.isNullOrBlank()
+            var sealedFile = !row.isGroup && SealedMedia.isSealed(row.mediaUrl)
+            if (!row.isGroup && hasFile && !sealedFile) {
+                val prepared = try {
+                    if (sealsFilesFor(row.chatId)) {
+                        val content = (if (!row.localFile.isNullOrBlank()) voiceClips?.read(row.localFile) else null)
+                            ?: row.mediaUrl?.takeIf { it.isNotBlank() }?.let { MediaFiles.bytes(it).getOrThrow() }
+                            ?: error("the attachment is not available to send")
+                        uploadSealedFile(row, content)
+                    } else {
+                        null
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    setUploadProgress(row.chatId, row.clientId, null)
+                    onDeliveryFailure(row, error)
+                    return
+                }
+                if (prepared != null) {
+                    setUploadProgress(row.chatId, row.clientId, null)
+                    row = prepared
+                    if (store != null && !store.replaceIfPresent(row)) {
+                        if (store.find(row.clientId) != null) {
+                            NcToaster.show("Couldn't save the uploaded file; check device storage")
+                        }
+                        return
+                    }
+                    updateMessages(row.chatId) { messages ->
+                        messages.map { if (it.id == row.clientId) it.copy(mediaUrl = row.mediaUrl) else it }
+                    }
+                    sealedFile = true
+                }
+            }
+            /*
              * A voice note recorded without a network arrives here with its audio on disk and no
              * URL: the upload is part of delivery, not a condition for queueing. Once it succeeds
              * the entry is rewritten with the URL, so a failed post afterwards re-sends the message
@@ -1256,9 +1489,12 @@ class RemoteChatRepository(
                         clientMessageId = row.clientId,
                         replyTo = row.replyTo,
                         mediaUrl = row.mediaUrl,
-                        thumbnailUrl = row.thumbnailUrl,
+                        // A thumbnail written out as text travels inside sealed messages only.
+                        thumbnailUrl = row.thumbnailUrl?.takeUnless { SealedMedia.inlineImageBytes(it) != null },
                         duration = row.duration
                     )
+                } else if (sealedFile) {
+                    sendSealedFile(row)
                 } else if (row.isSealable()) {
                     // The queue keeps what was written; it is sealed on the way out.
                     sendDirect(row.chatId, row.clientId, row.type, row.text, row.replyTo)
@@ -1270,7 +1506,8 @@ class RemoteChatRepository(
                         clientMessageId = row.clientId,
                         replyTo = row.replyTo,
                         mediaUrl = row.mediaUrl,
-                        thumbnailUrl = row.thumbnailUrl,
+                        // A thumbnail written out as text travels inside sealed messages only.
+                        thumbnailUrl = row.thumbnailUrl?.takeUnless { SealedMedia.inlineImageBytes(it) != null },
                         duration = row.duration,
                         fileName = row.fileName,
                         fileSize = row.fileSize
@@ -1282,11 +1519,13 @@ class RemoteChatRepository(
                 store?.remove(row.clientId)
                 // The server owns the message now; the local clip is only a fallback.
                 voiceClips?.delete(row.localFile)
+                val model = created.toModel(row.chatId)
                 replaceLocal(
                     row.chatId,
                     row.clientId,
-                    created.toModel(row.chatId).copy(
-                        mediaUrl = created.mediaUrl ?: row.mediaUrl,
+                    model.copy(
+                        // What a sealed message shows comes out of its envelope alone.
+                        mediaUrl = if (model.encrypted || model.unreadable) model.mediaUrl else created.mediaUrl ?: row.mediaUrl,
                         state = DeliveryState.Sent
                     )
                 )
@@ -2536,7 +2775,14 @@ class RemoteChatRepository(
      * [readable] is false for the notice: an envelope this phone has no key for, because it was
      * sealed for (or sent from) another installation of the app.
      */
-    private class Opened(val kind: MessageKind, val text: String, val replyTo: String?, val readable: Boolean)
+    private class Opened(
+        val kind: MessageKind,
+        val text: String,
+        val replyTo: String?,
+        val readable: Boolean,
+        /** Where the file of a photo, video, voice message or document is, and the key to it. */
+        val file: E2eeAttachment.Pointer? = null
+    )
 
     private fun MessageDto.isSealed(): Boolean = type.equals(SEALED_TYPE, ignoreCase = true)
 
@@ -2561,9 +2807,24 @@ class RemoteChatRepository(
         return when (payload.type) {
             E2eePayload.TEXT -> Opened(MessageKind.Text, payload.body, payload.replyTo, readable = true)
             E2eePayload.LOCATION -> Opened(MessageKind.Location, payload.body, payload.replyTo, readable = true)
+            E2eePayload.PHOTO -> payload.withFile(MessageKind.Photo)
+            E2eePayload.VIDEO -> payload.withFile(MessageKind.Video)
+            E2eePayload.VOICE -> payload.withFile(MessageKind.Voice)
+            E2eePayload.DOCUMENT -> payload.withFile(MessageKind.Document)
             // Content of a kind a later version introduced.
             else -> Opened(MessageKind.Text, E2eeText.NEEDS_UPDATE, null, readable = false)
         }
+    }
+
+    /**
+     * A sealed message whose content is a file. The message is authentic — it opened — but
+     * the address in it is the sender's to choose, so it is checked before anything acts on
+     * it: a file that is not on this app's server is not fetched, and the message says so.
+     */
+    private fun E2eePayload.withFile(kind: MessageKind): Opened {
+        val file = attachment?.let { E2eeAttachment.Pointer.decode(it) }?.takeIf { SealedMedia.isOn(mediaRoot, it.url) }
+            ?: return Opened(MessageKind.Text, E2eeText.FILE_UNAVAILABLE, null, readable = false)
+        return Opened(kind, body, replyTo, readable = true, file = file)
     }
 
     /**
@@ -2610,7 +2871,13 @@ class RemoteChatRepository(
          * `mediaUrl` null for exactly those messages, which is what painted the empty gradient
          * tile for their photos, a poster-less video and a voice note with nothing to play.
          */
-        val media = mediaUrl?.takeIf { it.isNotBlank() }
+        // A sealed file is carried through the app as its address with the key in the fragment.
+        val sealedFile = opened?.file
+        val sealedAddress = sealedFile?.let {
+            SealedMedia.address(it.url, it.key, it.size, SealedMedia.extensionFor(it.mime, it.name))
+        }
+        val media = sealedAddress
+            ?: mediaUrl?.takeIf { opened == null && it.isNotBlank() }
             ?: content.trim().takeIf { opened == null && kind != MessageKind.Text && it.isPlayableUrl() }
         // When `content` *is* the URL there is no caption to print under the bubble.
         val caption = when {
@@ -2633,10 +2900,21 @@ class RemoteChatRepository(
                 isRead -> DeliveryState.Read
                 else -> DeliveryState.Sent
             },
-            durationLabel = durationLabelOf(duration).takeIf { kind == MessageKind.Voice } ?: duration,
-            fileName = fileName,
+            // For a sealed message everything about the file comes out of the envelope; what the
+            // row says beside it is the server's word and is not used.
+            durationLabel = (if (opened != null) sealedFile?.duration else duration).let { raw ->
+                durationLabelOf(raw).takeIf { kind == MessageKind.Voice } ?: raw
+            },
+            fileName = if (opened != null) sealedFile?.name else fileName,
             mediaUrl = media,
-            thumbnailUrl = thumbnailUrl,
+            thumbnailUrl = when {
+                opened == null -> thumbnailUrl
+                sealedFile == null -> null
+                // A voice message keeps its waveform where a picture keeps its thumbnail.
+                kind == MessageKind.Voice -> sealedFile.waveform
+                // The small picture that came inside the message, on disk for the image views.
+                else -> sealedFile.thumbnail?.let { MediaFiles.sealedFiles.thumbnail(sealedAddress, it) }?.let { "file://${it.absolutePath}" }
+            },
             reactions = reactions.toModel(),
             // `reply_to` used to be decoded and thrown away, which is why a reply sent from the
             // web arrived here as a bare message. It is kept and resolved against the

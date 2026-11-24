@@ -23,7 +23,9 @@ internal fun OutboxEntry.prepareMediaForDelivery(): OutboxEntry? {
             it.startsWith("file://", ignoreCase = true) || it.startsWith("content://", ignoreCase = true)
         }
     } else {
-        thumbnailUrl.shareableMediaUrl()
+        // A picture written out as text (`data:image/…`) is the thumbnail itself, waiting to
+        // travel inside a sealed message; it is content, not an address that could go stale.
+        thumbnailUrl?.takeIf { it.startsWith("data:image/", ignoreCase = true) } ?: thumbnailUrl.shareableMediaUrl()
     }
     return if (mediaUrl == shareable && thumbnailUrl == thumbnail) this
     else copy(mediaUrl = shareable, thumbnailUrl = thumbnail)

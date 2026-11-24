@@ -47,6 +47,20 @@ object MediaFiles {
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
 
+    /** The server this app talks to; a sealed file is fetched from there and nowhere else. */
+    private var root: String = ""
+
+    /** Where the signed-in account's opened files are kept; null while nobody is signed in. */
+    @Volatile
+    private var sealedDirectory: () -> File? = { null }
+
+    /**
+     * The opened copies of sealed files — the photos, clips and voice messages of encrypted
+     * conversations. They are fetched sealed, opened on this phone, and from then on read from
+     * here like any local file. See [SealedMediaStore].
+     */
+    val sealedFiles = SealedMediaStore({ runCatching { sealedDirectory() }.getOrNull() })
+
     /**
      * Wires the downloader once, at start-up.
      *
@@ -57,9 +71,12 @@ object MediaFiles {
         context: Context,
         rootUrl: String,
         accessToken: () -> String?,
-        renewSession: suspend () -> String?
+        renewSession: suspend () -> String?,
+        sealedDirectory: () -> File? = { null }
     ) {
         appContext = context.applicationContext
+        root = rootUrl.trim().trimEnd('/')
+        this.sealedDirectory = sealedDirectory
         client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -76,6 +93,8 @@ object MediaFiles {
     /** The file behind a `file://` URL already on this device (a clip recorded here). */
     fun existingLocal(url: String?): File? {
         val raw = url?.takeIf { it.isNotBlank() } ?: return null
+        // A sealed file that was opened before is as local as one recorded here.
+        if (SealedMedia.isSealed(raw)) return sealedFiles.cached(raw)
         if (!raw.startsWith("file://", ignoreCase = true)) return null
         return File(raw.removePrefix("file://")).takeIf { it.isFile && it.length() > 0 }
     }
@@ -83,6 +102,7 @@ object MediaFiles {
     /** The cached download of [url], or null when it has never been fetched. */
     fun cached(url: String): File? {
         if (url.isBlank()) return null
+        if (SealedMedia.isSealed(url)) return sealedFiles.cached(url)
         val dir = cacheDir() ?: return null
         return dir.listFiles()
             ?.firstOrNull { it.name.startsWith(key(url)) && it.isFile && it.length() > 0 }
@@ -95,6 +115,7 @@ object MediaFiles {
      * caller is a tap on a play button.
      */
     suspend fun local(url: String): Result<File> = withContext(Dispatchers.IO) {
+        if (SealedMedia.isSealed(url)) return@withContext sealedLocal(url)
         existingLocal(url)?.let { return@withContext Result.success(it) }
         cached(url)?.let { return@withContext Result.success(it) }
         // A `file://` clip that is gone (already sent, or swept) cannot be downloaded back:
@@ -105,6 +126,98 @@ object MediaFiles {
             )
         }
         download(url)
+    }
+
+    /**
+     * The bytes of a file as it is — sealed files opened first — for sending it on.
+     *
+     * Forwarding a photo into an encrypted chat means sealing it for that chat, which takes
+     * the photo itself and not its address. Nothing larger than a sealed file may be is read.
+     */
+    suspend fun bytes(url: String): Result<ByteArray> = withContext(Dispatchers.IO) {
+        if (SealedMedia.isSealed(url)) {
+            return@withContext sealedLocal(url).mapCatching { it.readBytes() }
+        }
+        existingLocal(url)?.let { file -> return@withContext runCatching { file.readBytes() } }
+        if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+            return@withContext Result.failure(MediaFileException("this file is no longer on this device"))
+        }
+        val sink = java.io.ByteArrayOutputStream()
+        try {
+            fetchSealed(url, sink)
+            Result.success(sink.toByteArray())
+        } catch (error: MediaFileException) {
+            Result.failure(error)
+        } catch (error: Exception) {
+            Result.failure(MediaFileException(error.short()))
+        }
+    }
+
+    /**
+     * A sealed file: fetched from this app's own server, opened with the key its message
+     * carried, and kept. Whatever does not open completely is not kept and not shown.
+     */
+    private fun sealedLocal(address: String): Result<File> {
+        sealedFiles.cached(address)?.let { return Result.success(it) }
+        // The address came out of a sealed message, which can name any address. Only this
+        // app's server is asked — with the session token, as for every other media read.
+        if (!SealedMedia.isOn(root, address)) {
+            return Result.failure(MediaFileException("this file is not on the NChat server"))
+        }
+        return try {
+            Result.success(sealedFiles.local(address) { url, into -> fetchSealed(url, into) })
+        } catch (error: MediaFileException) {
+            Result.failure(error)
+        } catch (error: Exception) {
+            Result.failure(MediaFileException(error.short()))
+        }
+    }
+
+    /**
+     * Streams the bytes at [url] into [into] as the server sends them; a refusal is thrown with
+     * a user-sized reason. The session token goes with the request only when [url] is on this
+     * app's server (see `MediaAuthInterceptor`).
+     */
+    private fun fetchSealed(url: String, into: OutputStream) {
+        val http = client ?: throw MediaFileException("the downloader is not configured")
+        val started = System.currentTimeMillis()
+        val request = runCatching { Request.Builder().url(url).get().build() }.getOrElse {
+            throw MediaFileException("that link cannot be opened")
+        }
+        val response = try {
+            http.newCall(request).execute()
+        } catch (error: IOException) {
+            ApiLog.record("GET", pathOf(url), null, System.currentTimeMillis() - started, error.short())
+            throw MediaFileException(error.short())
+        }
+        response.use { answer ->
+            val millis = System.currentTimeMillis() - started
+            if (!answer.isSuccessful) {
+                ApiLog.record("GET", pathOf(url), answer.code, millis, "media read refused")
+                throw MediaFileException(
+                    when (answer.code) {
+                        401, 403 -> "the file is not shared with you"
+                        404 -> "the file is no longer on the server"
+                        else -> "the server answered ${answer.code}"
+                    }
+                )
+            }
+            val body = answer.body ?: throw MediaFileException("the server sent no file")
+            // Nothing sealed is larger than this; more is not a file of ours.
+            val limit = E2eeAttachment.sealedSize(E2eeAttachment.MAX_BYTES)
+            val buffer = ByteArray(16 * 1024)
+            var total = 0L
+            body.byteStream().use { source ->
+                while (true) {
+                    val read = source.read(buffer)
+                    if (read <= 0) break
+                    total += read
+                    if (total > limit) throw MediaFileException("the file is too large")
+                    into.write(buffer, 0, read)
+                }
+            }
+            ApiLog.record("GET", pathOf(url), answer.code, millis, null)
+        }
     }
 
     private fun download(url: String): Result<File> {

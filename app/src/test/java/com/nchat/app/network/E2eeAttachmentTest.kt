@@ -290,6 +290,9 @@ class E2eeAttachmentTest {
             """{"u":"https://chat.example/f","k":"!!!","z":10}""",
             """{"u":"https://chat.example/f","k":"$k","z":-1}""",
             """{"u":"https://chat.example/f","k":"$k","z":"ten"}""",
+            // A size is a number. Written as text it is something else's idea of this format.
+            """{"u":"https://chat.example/f","k":"$k","z":"10"}""",
+            """{"u":"https://chat.example/f","k":"$k","z":10.5}""",
             """{"u":"https://chat.example/f","k":"$k"}""",
             """{"u":"https://chat.example/f","k":"$k","z":${E2eeAttachment.MAX_BYTES + 1}}""",
         )

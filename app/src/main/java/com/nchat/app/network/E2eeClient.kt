@@ -29,6 +29,16 @@ interface SealedMessaging {
     ): T?
 
     /**
+     * Whether what is sent to [peerId] next will be sealed — asked before a
+     * file is uploaded, which has to be sealed or not and cannot be decided
+     * afterwards. True starts the session if there is none yet. False means
+     * the conversation is not encrypted and a file may go as it always did.
+     * Every failure is thrown, as in [sendSealed], and then nothing may be
+     * uploaded readable.
+     */
+    suspend fun willSeal(peerId: String): Boolean
+
+    /**
      * What this phone knows about the encryption of the conversation with
      * [peerId]; null when nothing was ever encrypted with them. Never throws.
      */
@@ -234,45 +244,71 @@ class E2eeClient(
         }
         val target = targetOf(clientId, editOf)
         batch { sealOnCurrent(peerId, clientId, payload, target) }?.let { return it }
+        // No session to seal on: one is started, or the message may go out unsealed.
+        if (!startSession(peerId)) return null
+        return batch { sealOnCurrent(peerId, clientId, payload, target) } ?: error(E2eeText.PEER_HAS_NO_KEYS)
+    }
 
-        // A session has to be started, which takes this device's own keys.
+    override suspend fun willSeal(peerId: String): Boolean {
+        require(peerId.isNotBlank()) { "a peer id is required" }
+        if (batch { sendableFor(peerId) }) return true
+        return startSession(peerId)
+    }
+
+    /** Whether there is a session to seal on for [peerId]. Throws for a closed client and for a held contact. */
+    private fun sendableFor(peerId: String): Boolean {
+        check(!closed) { E2eeText.SIGNED_OUT }
+        val record = recordFor(peerId) ?: return false
+        // A contact the user had verified now presents other keys: nothing is sealed for them,
+        // and no bundle is fetched, until the user has looked.
+        if (record.trust?.held == true) error(E2eeText.CODE_CHANGED)
+        return record.sendable() != null
+    }
+
+    /**
+     * Starts a session with [peerId] from their key bundle and stores it.
+     * True when there is a session to seal on afterwards. False when the
+     * conversation may stay unsealed: nothing was ever encrypted with this
+     * peer and one of the two ends has no registered keys. Throws when a
+     * session is required and cannot be had.
+     */
+    private suspend fun startSession(peerId: String): Boolean {
+        // A session takes this device's own keys.
         // Settled before the fetch: a bundle we cannot use must not cost the peer a one-time prekey.
         val keys = identity() ?: run {
             prepare()
             identity()
         }
         if (keys == null) {
-            if (batch { recordFor(peerId) } == null) return null
+            if (batch { recordFor(peerId) } == null) return false
             error(E2eeText.NOT_READY)
         }
         val bundle = fetchBundle(peerId)
         return batch {
             // Another send, or a handshake from the peer, may have got here first.
-            sealOnCurrent(peerId, clientId, payload, target) ?: run {
-                val existing = recordFor(peerId)
-                when {
-                    bundle != null -> {
-                        val session = try {
-                            E2eeProtocol.initiate(keys, bundle, localId, peerId)
-                        } catch (unverified: IllegalStateException) {
-                            throw IllegalStateException(E2eeText.PEER_KEYS_UNVERIFIED, unverified)
-                        }
-                        val record = existing ?: E2eeStore.PeerRecord()
-                        noteIdentity(peerId, record, bundle.identityPublic, first = existing == null)
-                        record.sessions.add(0, E2eeStore.StoredSession(session, retired = false))
-                        records[peerId] = record
-                        if (record.trust?.held == true) {
-                            // Kept all the same: the notice must outlive a restart, and the next
-                            // attempt must not cost the peer another one-time prekey.
-                            store.savePeer(peerId, record, durable = true)
-                            changedPeers.remove(peerId)
-                            error(E2eeText.CODE_CHANGED)
-                        }
-                        sealOn(peerId, record, clientId, payload, target)
+            if (sendableFor(peerId)) return@batch true
+            val existing = recordFor(peerId)
+            when {
+                bundle != null -> {
+                    val session = try {
+                        E2eeProtocol.initiate(keys, bundle, localId, peerId)
+                    } catch (unverified: IllegalStateException) {
+                        throw IllegalStateException(E2eeText.PEER_KEYS_UNVERIFIED, unverified)
                     }
-                    existing != null -> error(E2eeText.PEER_HAS_NO_KEYS)
-                    else -> null
+                    val record = existing ?: E2eeStore.PeerRecord()
+                    noteIdentity(peerId, record, bundle.identityPublic, first = existing == null)
+                    record.sessions.add(0, E2eeStore.StoredSession(session, retired = false))
+                    records[peerId] = record
+                    // Stored at once, held or not: the notice must outlive a restart, a file
+                    // may take minutes to upload before the first message is sealed, and the
+                    // next attempt must not cost the peer another one-time prekey.
+                    store.savePeer(peerId, record, durable = true)
+                    changedPeers.remove(peerId)
+                    if (record.trust?.held == true) error(E2eeText.CODE_CHANGED)
+                    true
                 }
+                existing != null -> error(E2eeText.PEER_HAS_NO_KEYS)
+                else -> false
             }
         }
     }
@@ -312,13 +348,8 @@ class E2eeClient(
     private fun targetOf(clientId: String, editOf: String?): String = if (editOf == null) ORIGINAL + clientId else EDIT + editOf
 
     private fun sealOnCurrent(peerId: String, clientId: String, payload: E2eePayload, target: String): Sealed? {
-        check(!closed) { E2eeText.SIGNED_OUT }
-        val record = recordFor(peerId) ?: return null
-        // A contact the user had verified now presents other keys: nothing is sealed for them,
-        // and no bundle is fetched, until the user has looked.
-        if (record.trust?.held == true) error(E2eeText.CODE_CHANGED)
-        if (record.sendable() == null) return null
-        return sealOn(peerId, record, clientId, payload, target)
+        if (!sendableFor(peerId)) return null
+        return sealOn(peerId, recordFor(peerId) ?: return null, clientId, payload, target)
     }
 
     private fun sealOn(

@@ -222,6 +222,7 @@ class NChatApi(private val client: ApiClient) {
         client.post(
             "/messages",
             body {
+                keepsNoFileKey(content, mediaUrl, thumbnailUrl)
                 put("receiver_id", receiverId)
                 put("content", content)
                 put("type", type)
@@ -378,6 +379,7 @@ class NChatApi(private val client: ApiClient) {
         client.post(
             "/groups/$groupId/messages",
             body {
+                keepsNoFileKey(content, mediaUrl, thumbnailUrl)
                 put("content", content)
                 put("type", type)
                 if (clientMessageId != null) put("client_message_id", clientMessageId)
@@ -437,6 +439,7 @@ class NChatApi(private val client: ApiClient) {
         client.post(
             "/status",
             body {
+                keepsNoFileKey(textContent, contentUrl, caption)
                 put("content_type", contentType)
                 put("text_content", textContent)
                 put("privacy", privacy)
@@ -558,6 +561,24 @@ class NChatApi(private val client: ApiClient) {
     ): MediaDto =
         decode(client.upload("/media/upload", fileName, mimeType, bytes, onProgress))
 
+    /**
+     * Uploads a file that was sealed on this phone ([E2eeAttachment]) for one person
+     * ([forUser]) or one group ([forGroup]) — the only ones the server will hand it to.
+     *
+     * The name and type sent with it say nothing: the server is given bytes and an audience,
+     * and what the file is travels inside the sealed message.
+     */
+    suspend fun uploadSealed(
+        bytes: ByteArray,
+        forUser: String? = null,
+        forGroup: String? = null,
+        onProgress: ((Float) -> Unit)? = null
+    ): MediaDto {
+        require((forUser == null) != (forGroup == null)) { "a sealed file has one audience" }
+        val audience = if (forUser != null) mapOf("sealed_for_user" to forUser) else mapOf("sealed_for_group" to forGroup!!)
+        return decode(client.upload("/media/upload", "sealed", "application/octet-stream", bytes, onProgress, audience))
+    }
+
     // --------------------------------------------------------------- privacy
 
     suspend fun privacySettings(): SettingsEnvelope = decode(client.get("/privacy"))
@@ -597,6 +618,18 @@ class NChatApi(private val client: ApiClient) {
     }
 
     private fun body(block: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject(block)
+
+    /**
+     * The last line of defence for the key of a sealed file.
+     *
+     * Inside the app a sealed file is an address with its key in the fragment (see
+     * [SealedMedia]). That string must never be sent to the server as readable data: the key
+     * would be stored next to the file it protects. Every place that sends an address as part
+     * of a readable message checks here, and a request that would carry one is not made.
+     */
+    private fun keepsNoFileKey(vararg readable: String?) {
+        check(readable.none { SealedMedia.carriesKey(it) }) { "this file can only be sent encrypted" }
+    }
 
     /**
      * JSON → DTO, with a parse failure written to [ApiLog].

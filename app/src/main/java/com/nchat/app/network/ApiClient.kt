@@ -92,12 +92,15 @@ class ApiClient(
         fileName: String,
         mimeType: String,
         bytes: ByteArray,
-        onProgress: ((Float) -> Unit)? = null
+        onProgress: ((Float) -> Unit)? = null,
+        /** Further form fields sent with the file (the audience of a sealed file). */
+        fields: Map<String, String> = emptyMap()
     ): String {
         check(isConfigured) { "No backend configured" }
         val media = (mimeType.ifBlank { "application/octet-stream" }).toMediaType()
         val body = okhttp3.MultipartBody.Builder()
             .setType(okhttp3.MultipartBody.FORM)
+            .apply { fields.forEach { (name, value) -> addFormDataPart(name, value) } }
             .addFormDataPart("file", fileName, ProgressBody(bytes.toRequestBody(media), onProgress))
             .build()
         fun request(token: String?) = Request.Builder()

@@ -26,7 +26,7 @@ class SealedMediaTest {
     @get:Rule val folder = TemporaryFolder()
 
     private val key = ByteArray(32) { (it * 3 + 1).toByte() }
-    private val url = "https://chat.example/api/media/file/u1/f1"
+    private val url = "https://chat.example/api/media/file/u1/qz-attachment"
 
     // -------------------------------------------------------------- address
 
@@ -45,7 +45,7 @@ class SealedMediaTest {
         // What a request, a log line or another server may be given: the address without the key.
         assertEquals(url, SealedMedia.strip(address))
         val sent = java.net.URI(address)
-        assertEquals("/api/media/file/u1/f1", sent.rawPath)
+        assertEquals("/api/media/file/u1/qz-attachment", sent.rawPath)
         assertNull(sent.rawQuery)
         assertFalse("the key is in the fragment and nowhere else", address.substringBefore('#').contains(encodeBase64(key).take(12)))
     }
@@ -125,6 +125,28 @@ class SealedMediaTest {
         assertFalse("an app without a server has no media", SealedMedia.isOn("", "https://chat.example.com/api/media/file/1"))
     }
 
+    @Test
+    fun aThumbnailWaitingToBeSentIsAPictureWrittenOutAsText() {
+        val jpeg = byteArrayOf(-1, -40, -1, -32, 0, 16, 74, 70)
+        val text = SealedMedia.inlineImage(jpeg)
+        assertTrue(text.startsWith("data:image/jpeg;base64,"))
+        assertArrayEquals(jpeg, SealedMedia.inlineImageBytes(text))
+        for (other in listOf(null, "", url, "file:///x/thumb.jpg", "data:text/plain;base64,AAAA", "data:image/jpeg;base64,", "data:image/jpeg;base64,!!!", "3,9,27")) {
+            assertNull("$other", SealedMedia.inlineImageBytes(other))
+        }
+    }
+
+    @Test
+    fun whateverHoldsAKeyIsRecognisedBeforeItIsSentAsReadableData() {
+        val address = SealedMedia.address(url, key, 10L, "jpg")
+        assertTrue(SealedMedia.carriesKey(address))
+        assertTrue("also inside a longer text", SealedMedia.carriesKey("look at $address please"))
+        assertTrue("also when it is no longer whole", SealedMedia.carriesKey(address.dropLast(20)))
+        for (plain in listOf(null, "", url, "$url#section", "hello", SealedMedia.strip(address))) {
+            assertFalse("$plain", SealedMedia.carriesKey(plain))
+        }
+    }
+
     // ---------------------------------------------------------------- store
 
     /** A server that holds sealed files and counts how often it is asked. */
@@ -159,7 +181,7 @@ class SealedMediaTest {
         assertArrayEquals(plain, file.readBytes())
         assertTrue(file.name.endsWith(".jpg"))
         assertTrue(file.absolutePath.startsWith(directory().absolutePath))
-        assertFalse("the name says nothing of where the file came from", file.name.contains("f1"))
+        assertFalse("the name says nothing of where the file came from", file.name.contains("attachment") || file.name.contains("qz"))
 
         assertEquals(file, store.local(address, shelf::fetch))
         assertEquals(file, store.cached(address))

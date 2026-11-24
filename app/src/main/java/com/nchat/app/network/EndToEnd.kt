@@ -22,6 +22,9 @@ internal object E2eeText {
 
     /** In place of sealed content of a kind this build does not know. */
     const val NEEDS_UPDATE = "🔒 Update NChat to see this message"
+
+    /** In place of a sealed file whose address is missing or is not on this app's server. */
+    const val FILE_UNAVAILABLE = "🔒 This attachment can't be opened"
 }
 
 /**
@@ -108,6 +111,8 @@ class EndToEnd(
             send: suspend (E2eeClient.Sealed) -> T,
         ): T? = throw IllegalStateException(reason)
 
+        override suspend fun willSeal(peerId: String): Boolean = throw IllegalStateException(reason)
+
         override fun security(peerId: String): PeerSecurity? = null
 
         override fun securityCode(peerId: String, key: String): String? = null
@@ -152,6 +157,18 @@ class EndToEnd(
     /** Sealing and opening for the signed-in account. */
     fun messaging(): SealedMessaging = synchronized(lock) {
         if (current == null) signedOut else account()?.client ?: unavailable
+    }
+
+    /**
+     * Where the opened copies of this account's sealed files are kept (see
+     * [SealedMediaStore]); null when nobody is signed in or the account's
+     * storage cannot be opened. It lies inside what belongs to the account,
+     * so it is erased with the keys — at sign-out, and when another account
+     * signs in.
+     */
+    fun mediaDirectory(): File? = synchronized(lock) {
+        val userId = current ?: return@synchronized null
+        if (account() == null) null else File(File(root, hashedName(userId)), MEDIA)
     }
 
     /**
@@ -242,5 +259,9 @@ class EndToEnd(
         if (!root.deleteRecursively() && root.exists()) {
             report("end-to-end encryption files could not be removed", IllegalStateException("delete failed"))
         }
+    }
+
+    private companion object {
+        const val MEDIA = "media"
     }
 }

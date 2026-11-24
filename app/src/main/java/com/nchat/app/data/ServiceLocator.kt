@@ -113,7 +113,10 @@ object ServiceLocator {
                 context = requireContext(),
                 rootUrl = serverUrl,
                 accessToken = { tokens.accessToken },
-                renewSession = { apiClient.renewAccessToken() }
+                renewSession = { apiClient.renewAccessToken() },
+                // The opened files of encrypted chats live with the account's keys, and are
+                // erased with them at sign-out.
+                sealedDirectory = { endToEnd.mediaDirectory() }
             )
         }
         startNetworkWatch()
@@ -671,7 +674,8 @@ object ServiceLocator {
                 notifications.show(chat, message, mentioned = mentionsMe(chat, message))
             },
             encryption = { endToEnd.messaging() },
-            securityChanges = securityEvents
+            securityChanges = securityEvents,
+            mediaRoot = serverUrl
         )
     }
     val friendRepository: FriendRepository by lazy {

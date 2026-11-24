@@ -3,6 +3,8 @@ package com.nchat.app.network
 import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
+import coil.request.ErrorResult
+import coil.request.ImageResult
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
@@ -59,6 +61,8 @@ object MediaImages {
 
         return ImageLoader.Builder(context)
             .okHttpClient(http)
+            // Photos and posters of encrypted conversations are opened on the phone first.
+            .components { add(SealedImageInterceptor()) }
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve("media-cache"))
@@ -66,6 +70,32 @@ object MediaImages {
                     .build()
             }
             .build()
+    }
+}
+
+/**
+ * A picture of an encrypted conversation.
+ *
+ * Its address carries the key in its fragment (see [SealedMedia]). What the server holds is
+ * sealed, so handing that address to Coil's own fetcher would download bytes no decoder can
+ * read. This step comes first: the file is fetched and opened by [MediaFiles], and Coil is
+ * given the opened copy on disk instead. Any other address passes through untouched.
+ *
+ * A picture that cannot be fetched or does not open is the ordinary error tile.
+ */
+internal class SealedImageInterceptor : coil.intercept.Interceptor {
+    override suspend fun intercept(chain: coil.intercept.Interceptor.Chain): ImageResult {
+        val request = chain.request
+        val address = request.data as? String ?: return chain.proceed(request)
+        // The thumbnail of a file that is still on its way: a picture written out as text.
+        SealedMedia.inlineImageBytes(address)?.let { picture ->
+            return chain.proceed(request.newBuilder().data(java.nio.ByteBuffer.wrap(picture)).build())
+        }
+        if (!SealedMedia.isSealed(address)) return chain.proceed(request)
+        val file = MediaFiles.local(address).getOrElse { error ->
+            return ErrorResult(request.error, request, error)
+        }
+        return chain.proceed(request.newBuilder().data(file).build())
     }
 }
 
