@@ -55,7 +55,14 @@ class LocalStoresTest {
 
     private fun everyFile(): List<File> = folder.root.walkTopDown().filter { it.isFile }.toList()
 
+    /**
+     * [words] are looked for in every file as they would stand in it unsealed. Each has to be
+     * long enough not to turn up by chance: sealed bytes are as good as random, and two given
+     * letters are somewhere in a few hundred random bytes about once in a hundred and fifty
+     * runs — which is how often a test that looked for "m1" failed for no reason.
+     */
     private fun assertNothingReadable(vararg words: String) {
+        for (word in words) require(word.length >= 5) { "'$word' is short enough to be found by chance" }
         val files = everyFile()
         assertTrue("something was written", files.isNotEmpty())
         for (file in files) {
@@ -69,7 +76,7 @@ class LocalStoresTest {
     fun aConversationIsSealedOnDiskAndReadBack() {
         val root = folder.root.resolve("messages")
         assertTrue(MessageStore(root, mine).save("alice", "bob", listOf(message)))
-        assertNothingReadable("Bob", "m1")
+        assertNothingReadable("\"authorName\":\"Bob\"", "\"id\":\"m1\"")
         assertEquals(listOf(message), MessageStore(root, mine).load("alice", "bob"))
         // Not with another account's key, and not in another conversation's place.
         assertEquals(emptyList<Message>(), MessageStore(root, another).load("alice", "bob"))
@@ -175,7 +182,7 @@ class LocalStoresTest {
         assertTrue(store.clearExcept("alice"))
         assertTrue(store.add(entry))
         assertEquals(listOf(entry), OutboxStore(file, mine).all())
-        assertNothingReadable("theirs", "zoe")
+        assertNothingReadable("theirs", "\"ownerId\":\"zoe\"")
     }
 
     @Test
@@ -200,7 +207,7 @@ class LocalStoresTest {
     fun theChatListWithItsPreviewsIsSealed() {
         val file = folder.root.resolve("cache/chats.json")
         ChatListCache(file, mine).save(listOf(chat))
-        assertNothingReadable("Bob")
+        assertNothingReadable("\"title\":\"Bob\"")
         assertEquals(listOf(chat), ChatListCache(file, mine).load())
         assertEquals(emptyList<Chat>(), ChatListCache(file, another).load())
         assertEquals(emptyList<Chat>(), ChatListCache(file, none).load())
@@ -260,7 +267,7 @@ class LocalStoresTest {
     fun draftsAreSealed() {
         val file = folder.root.resolve("drafts.json")
         DraftStore(file, mine).set("bob", secret)
-        assertNothingReadable("bob")
+        assertNothingReadable("\"bob\":")
         assertEquals(secret, DraftStore(file, mine).get("bob"))
         assertEquals("", DraftStore(file, another).get("bob"))
         // Saying the same again writes nothing: the view model does that on every keystroke's pause.
@@ -290,7 +297,7 @@ class LocalStoresTest {
         val file = folder.root.resolve("starred.json")
         val star = StarredMessage(chatId = "bob", messageId = "m1", authorName = "Bob", preview = secret, at = 9L)
         StarredStore(file, mine).toggle(star)
-        assertNothingReadable("Bob", "m1")
+        assertNothingReadable("\"authorName\":\"Bob\"", "\"messageId\":\"m1\"")
         assertEquals(listOf(star), StarredStore(file, mine).forChat("bob"))
         assertEquals(emptyList<StarredMessage>(), StarredStore(file, another).forChat("bob"))
         val before = file.readBytes().toList()

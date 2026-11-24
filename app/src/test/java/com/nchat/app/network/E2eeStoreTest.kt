@@ -183,7 +183,11 @@ class E2eeStoreTest {
     fun peerRecordRoundTripsOrderRetirementAndHandshakes() {
         val vault = MemoryVault()
         val store = E2eeStore(vault)
-        assertNull(store.loadPeer("bob"))
+        // An id that cannot turn up by chance in what is stored: that is base64, which has
+        // neither ':' nor '@'. A three-letter name did turn up — three given letters are
+        // somewhere in a few thousand characters of base64 about once in ninety runs.
+        val bob = "peer:bob@example"
+        assertNull(store.loadPeer(bob))
 
         val first = newSession()
         val second = newSession()
@@ -191,9 +195,9 @@ class E2eeStoreTest {
         record.sessions += E2eeStore.StoredSession(first, retired = true)
         record.sessions += E2eeStore.StoredSession(second, retired = false)
         record.seenHandshakes += listOf("h-one", "h-two")
-        store.savePeer("bob", record, durable = true)
+        store.savePeer(bob, record, durable = true)
 
-        val loaded = store.loadPeer("bob")
+        val loaded = store.loadPeer(bob)
         assertNotNull(loaded)
         assertEquals(2, loaded!!.sessions.size)
         assertArrayEquals(first.serialize(), loaded.sessions[0].session.serialize())
@@ -206,7 +210,7 @@ class E2eeStoreTest {
 
         assertNull(store.loadPeer("carol"))
         assertNull(store.loadPeer(""))
-        assertFalse(vault.entries.values.any { it.contains("bob") })
+        assertFalse("who it is about is not written into what is stored", vault.entries.values.any { it.contains(bob) })
     }
 
     @Test
