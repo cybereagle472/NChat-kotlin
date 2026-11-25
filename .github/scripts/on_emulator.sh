@@ -21,6 +21,8 @@ API_LEVEL="${1:?api level}"
 APK=app/build/outputs/apk/smoke/app-smoke.apk
 PACKAGE=com.nchat.app.smoke
 ACTIVITY=com.nchat.app.MainActivity
+# The app in all its builds: the tests run com.nchat.app.debug, the start is tried with .smoke.
+APP='com\.nchat\.app'
 TMP="${NCHAT_CI_TMP:-/tmp}"
 OUT="$TMP/app-start"
 RUN_LOG="$TMP/device-run.log"
@@ -31,7 +33,7 @@ START_LOG="$TMP/app-start.log"
 # ("Emulator commands on Android API …") how long the slowest of each kind took, so that a
 # limit which comes close is seen before it fails a run. The environment can set each one;
 # the tests do, and so does a fire drill (see the workflow).
-TOTAL_LIMIT="${NCHAT_TOTAL_LIMIT:-1500}"    # everything below together; the workflow's own limits rest on it
+TOTAL_LIMIT="${NCHAT_TOTAL_LIMIT:-1200}"    # everything below together; the workflow's own limits rest on it
 TESTS_LIMIT="${NCHAT_TESTS_LIMIT:-900}"     # the test run
 INSTALL_LIMIT="${NCHAT_INSTALL_LIMIT:-300}" # installing the app; Android 7 compiles it while it installs
 LAUNCH_LIMIT="${NCHAT_LAUNCH_LIMIT:-120}"   # `am start -W`, which waits for the first frame
@@ -164,13 +166,35 @@ still_answers() {
   probe "has it started, and how long has it run" 4 "" adb shell "getprop sys.boot_completed; uptime"
   probe "what is in front" 8 "mResumedActivity|ResumedActivity:|topResumedActivity|mCurrentFocus|mFocusedApp" \
     adb shell "dumpsys activity activities; dumpsys window windows"
-  probe "the app's process" 4 "$PACKAGE" adb shell "ps -A 2> /dev/null || ps"
+  probe "the app's processes" 6 "$APP" adb shell "ps -A 2> /dev/null || ps"
   probe "what an app that did not respond left behind" 120 "" \
     adb shell 'ls -l /data/anr 2>&1; for file in $(ls -t /data/anr 2> /dev/null | head -n 1); do head -n 110 "/data/anr/$file" 2>&1; done'
-  probe "the log" 80 "ANR in|FATAL EXCEPTION|Fatal signal|not responding|Watchdog|$PACKAGE|AndroidRuntime: |ActivityManager: (PID:|Reason:|Load:|Start proc|Killing|Displayed|Process .* has (died|crashed))" \
+  # Of the log: the app's lines, any app that crashed or stopped responding, what was put on
+  # the screen — and not what an emulator says about itself while it starts.
+  probe "the log" 80 "$APP|ANR in|FATAL EXCEPTION|Fatal signal|not responding|Watchdog: |WATCHDOG|E AndroidRuntime: |ActivityManager: (PID:|Reason:|Load:|Killing|Process .* has (died|crashed))|Manager: Displayed" \
     adb logcat -d -t 3000
   echo "- on this machine"
   ps -eo pid,etimes,args 2> /dev/null | grep -E "qemu|emulator|adb|[g]radle|java" | grep -v "grep -E" | cut -c1-160 | head -n 20 | sed 's/^/    /'
+}
+
+# Where the Java processes of a test run that did not end are.
+#
+# Stopping the run stops the command. The process it started for the build ("a single-use
+# Daemon process will be forked") and the test platform which that one started are not in its
+# group and go on — seen on the runners, where they ended by themselves some seconds later.
+# When the run hangs they are the ones that wait, so each is asked for its threads, and the
+# threads that are in the build, in the test platform or talking to the emulator are kept.
+# Neither is stopped here: asked later, it could not say where it had been. The job's end
+# clears what is left.
+# ("^[^ ]*java ": a Java process — and not this question itself, which has the same words.)
+JAVA_THREADS='for pid in $(pgrep -f "^[^ ]*java .*$0" | head -n 2); do
+  echo "process $pid"
+  jstack "$pid" 2>&1 | awk -v RS= "/com\\.android\\.|org\\.gradle\\.api|com\\.google\\.testing|ProcessImpl\\.waitFor/" | head -n 120
+done'
+where_java_is() {
+  SILENT=0
+  probe "where Gradle is" 240 "" bash -c "$JAVA_THREADS" org.gradle.launcher.daemon.bootstrap.GradleDaemon
+  probe "where the test platform is" 240 "" bash -c "$JAVA_THREADS" .android/utp/
 }
 
 # The words on the screen as `uiautomator dump` last read them, one per line: "package: words".
@@ -213,6 +237,8 @@ if unanswered; then
     echo "Encryption tests on Android API $API_LEVEL: $stopped."
     echo "--- the end of what it had written"
     tail -n 40 "$RUN_LOG"
+    echo "--- where its Java processes are"
+    where_java_is
     still_answers
     echo
   } >> "$START_LOG" 2>&1

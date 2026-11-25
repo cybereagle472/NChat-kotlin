@@ -56,7 +56,10 @@ case "$*" in
   "shell pidof "*) echo 4321 ;;
   "shell uiautomator dump "*) echo "UI hierchary dumped to: /sdcard/nchat-window.xml" ;;
   "shell cat /sdcard/nchat-window.xml") cat "$FAKE/window.xml" ;;
-  "shell ps -A"*) echo "u0_a99    4321  1234  1 S com.nchat.app.smoke" ;;
+  "shell ps -A"*)
+    echo "radio     1502  1234  1 S com.android.phone"
+    echo "u0_a62    2829  1234  1 S com.nchat.app.debug"
+    echo "u0_a99    4321  1234  1 S com.nchat.app.smoke" ;;
   "shell dumpsys activity activities"*)
     echo "  mResumedActivity: ActivityRecord{1a2b3c u0 com.nchat.app.smoke/com.nchat.app.MainActivity t12}" ;;
   "shell ls -l /data/anr"*) echo "total 0" ;;
@@ -66,11 +69,18 @@ exit 0
 """
 
 # Stands in for gradle: with FAKE_GRADLE_SILENT it starts the tests and never returns; with
-# FAKE_GRADLE_KILLED it is killed at once, as by a machine that has run out of memory.
+# FAKE_GRADLE_KILLED it is killed at once, as by a machine that has run out of memory. With
+# FAKE_GRADLE_DAEMON it first does what the real one does on the runners ("a single-use Daemon
+# process will be forked"): it starts a Java process of its own that is not stopped with it.
 GRADLE = r"""#!/usr/bin/env bash
 echo "$$" >> "$FAKE/pids"
 echo "gradle $*" >> "$FAKE/asked"
 echo "> Task :app:connectedDebugAndroidTest"
+if [ -n "${FAKE_GRADLE_DAEMON:-}" ]; then
+  setsid bash -c 'exec -a "/usr/lib/jvm/temurin-17-jdk-amd64/bin/java -Xmx4g org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.2" sleep 600' < /dev/null > /dev/null 2>&1 &
+  echo "$!" >> "$FAKE/pids"
+  echo "$!" > "$FAKE/daemon"
+fi
 if [ -n "${FAKE_GRADLE_SILENT:-}" ]; then
   echo "Starting 290 tests on test(AVD) - 7.0"
   exec sleep 600
@@ -84,6 +94,41 @@ else
   echo "FAILURE: Build failed with an exception."
 fi
 exit "${FAKE_GRADLE_STATUS:-0}"
+"""
+
+# Stands in for the JDK's jstack: the threads of a Gradle daemon that waits for the emulator.
+JSTACK = r"""#!/usr/bin/env bash
+echo "jstack $*" >> "$FAKE/asked"
+cat <<'DUMP'
+2026-11-25 03:46:08
+Full thread dump OpenJDK 64-Bit Server VM (17.0.13+11 mixed mode, sharing):
+
+"Daemon worker" #23 prio=5 os_prio=0 cpu=5121.07ms elapsed=45.12s tid=0x00007f1 nid=0xcd3 runnable  [0x00007f0]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.13/Native Method)
+	at com.android.ddmlib.SyncService.pullFile(SyncService.java:341)
+	at com.android.build.gradle.internal.testing.utp.UtpTestRunner.run(UtpTestRunner.kt:88)
+
+"Reference Handler" #2 daemon prio=10 os_prio=0 cpu=0.31ms elapsed=45.80s tid=0x00007f2 nid=0xcb9 waiting on condition  [0x00007f3]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.ref.Reference.waitForReferencePendingList(java.base@17.0.13/Native Method)
+
+"G1 Conc#0" os_prio=0 cpu=12.02ms elapsed=45.81s tid=0x00007f4 nid=0xcb4 runnable
+DUMP
+"""
+
+# What an emulator's log holds beside the app's own lines, as seen on the runners.
+BUSY_LOG = """11-25 03:45:19.421  1591  1615 I ActivityManager: Start proc 2029:android.ext.services/u0a12 for on-hold
+11-25 03:45:22.719  2519  2519 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-25 03:45:22.720  2519  2519 D AndroidRuntime: CheckJNI is OFF
+11-25 03:45:41.475  1591  1680 D WifiStateMachine: Start Dhcp Watchdog 1
+11-25 03:45:45.350  1591  1605 I ActivityManager: Start proc 2829:com.nchat.app.debug/u0a62 for added application com.nchat.app.debug
+11-25 03:45:48.274  1591  1615 I ActivityManager: Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations: +367ms
+11-25 03:45:58.100  1591  1606 E ActivityManager: ANR in com.nchat.app.debug
+11-25 03:45:58.100  1591  1606 E ActivityManager: PID: 2829
+11-25 03:45:58.100  1591  1606 E ActivityManager: Reason: executing service com.nchat.app.debug/com.nchat.app.data.push.BackgroundSyncService
+11-25 03:45:59.000  2829  2829 E AndroidRuntime: FATAL EXCEPTION: main
+11-25 03:45:59.000  2829  2829 E AndroidRuntime: Process: com.nchat.app.debug, PID: 2829
 """
 
 # A window of the app that is not its first screen.
@@ -145,7 +190,7 @@ class OnEmulator(unittest.TestCase):
         self.addCleanup(shutil.rmtree, fake, True)
         (fake / "bin").mkdir()
         (fake / "tmp").mkdir()
-        for name, text in (("adb", ADB), ("gradle", GRADLE)):
+        for name, text in (("adb", ADB), ("gradle", GRADLE), ("jstack", JSTACK)):
             program = fake / "bin" / name
             program.write_text(text, encoding="utf-8")
             program.chmod(program.stat().st_mode | stat.S_IXUSR)
@@ -421,6 +466,53 @@ class OnEmulator(unittest.TestCase):
         self.assertIn("::notice title=App start on Android API 24::started", run.output)
         self.assertLess(run.seconds, 20, "the test run was given more than its two seconds")
         self.assert_nothing_left_running(run)
+
+    def test_where_gradle_is_when_the_test_run_does_not_end(self):
+        # Stopping the test run stops the command and not the Java process it started for the
+        # build (seen on the runners, 2026-11-25) — and that process is the one that waits.
+        # Its threads say for what: the ones that are in the build or talk to the emulator.
+        run = self.run_script(FAKE_GRADLE_SILENT=1, FAKE_GRADLE_DAEMON=1, NCHAT_TESTS_LIMIT=2)
+
+        self.assertNotEqual(run.status, 0)
+        daemon = (run.fake / "daemon").read_text().strip()
+        self.assertIn(f"jstack {daemon}", run.asked)
+        log = run.start_log
+        self.assertIn('"Daemon worker" #23', log)
+        self.assertIn("at com.android.ddmlib.SyncService.pullFile(SyncService.java:341)", log)
+        self.assertNotIn("Reference Handler", log)
+        self.assertNotIn("G1 Conc", log)
+        # It is not stopped: asked later, it could not say where it had been.
+        self.assertIn(STARTED, log)
+
+    def test_no_java_process_left_is_said_and_nothing_is_asked_of_one(self):
+        run = self.run_script(FAKE_GRADLE_SILENT=1, NCHAT_TESTS_LIMIT=2)
+
+        self.assertNotEqual(run.status, 0)
+        self.assertIn("- where Gradle is\n    (nothing)", run.start_log)
+        self.assertNotIn("jstack", " ".join(run.asked))
+
+    def test_the_report_keeps_the_app_in_all_its_builds_and_drops_the_chatter(self):
+        # The tests run the debug build and the start is tried with the build made like the
+        # release: both are "the app". Of the log, what an emulator says about itself while
+        # it starts is not kept; what it says about the app, and about any app that crashed
+        # or stopped responding, is.
+        run = self.run_script(logcat=BUSY_LOG, FAKE_ADB_SILENT="uiautomator", NCHAT_ANSWER_LIMIT=2)
+
+        report = run.start_log.split(STILL_ANSWERS, 1)[1]
+        self.assertIn("u0_a62    2829  1234  1 S com.nchat.app.debug", report)
+        self.assertIn("u0_a99    4321  1234  1 S com.nchat.app.smoke", report)
+        self.assertNotIn("com.android.phone", report)
+        for kept in (
+            "Start proc 2829:com.nchat.app.debug/u0a62",
+            "Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations",
+            "ANR in com.nchat.app.debug",
+            "ActivityManager: PID: 2829",
+            "Reason: executing service",
+            "AndroidRuntime: FATAL EXCEPTION: main",
+        ):
+            self.assertIn(kept, report)
+        for dropped in ("android.ext.services", "RuntimeInit", "CheckJNI", "Dhcp Watchdog"):
+            self.assertNotIn(dropped, report)
 
     def test_a_test_run_stopped_by_the_limit_of_the_whole_run_says_that_limit(self):
         # Thirty seconds of its own and two for the whole run: two is what it got, and two
