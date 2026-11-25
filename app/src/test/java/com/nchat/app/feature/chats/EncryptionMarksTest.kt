@@ -270,6 +270,17 @@ class EncryptionMarksTest {
     }
 
     @Test
+    fun aChangedCodeIsExplainedByWhatReallyChangesIt() {
+        // Logging out and signing in again on the same phone keeps the keys, and with them the
+        // code. What changes it is a phone that starts anew: another one, or this one set up again.
+        val changed = settled.copy(changed = true)
+        for (text in listOf(securityChangeNotice("Sara", changed), encryptionSummary("Sara", changed))) {
+            assertFalse(text, text.contains("signed in again") || text.contains("signs in again"))
+            assertTrue(text, text.contains("phone") && text.contains("up again"))
+        }
+    }
+
+    @Test
     fun theSheetOfAGroupSaysWhetherItIsEncryptedAndWhoReads() {
         val not = groupEncryptionSummary(encrypted = false)
         val yes = groupEncryptionSummary(encrypted = true)
