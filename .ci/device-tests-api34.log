@@ -1,0 +1,82 @@
+run 45540547458, attempt 1, Android API 34 — the step with the emulator: failure
+290 tests, 0 failed, 0 skipped on Android API 34
+slowest: E2eeProtocolTest.forgedCountersCostBoundedWork 12.8 s, E2eeClientTest.aWeekOfUnreadMessagesOpensFromTheNewestPageBackwards 9.9 s, E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 6.7 s
+
+::error title=App start on Android API 34::not judged — no answer within 60 s: adb shell uiautomator dump /sdcard/nchat-window.xml
+App start on Android API 34: not judged — no answer within 60 s: adb shell uiautomator dump /sdcard/nchat-window.xml
+--- what the launch said
+Starting: Intent { cmp=com.nchat.app.smoke/com.nchat.app.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.nchat.app.smoke/com.nchat.app.MainActivity
+TotalTime: 1951
+WaitTime: 1960
+Complete
+--- the screen as it was last read
+(it had not been read)
+--- what the emulator still answers
+- is it attached
+    List of devices attached
+    emulator-5554	device
+    
+- has it started, and how long has it run
+    1
+     03:37:21 up 4 min,  0 users,  load average: 4.77, 6.50, 3.01
+- what is in front
+        topResumedActivity=ActivityRecord{d801fbe u0 com.nchat.app.smoke/com.nchat.app.MainActivity t9}
+      ResumedActivity: ActivityRecord{d801fbe u0 com.nchat.app.smoke/com.nchat.app.MainActivity t9}
+      mCurrentFocus=Window{4153dda u0 com.nchat.app.smoke/com.nchat.app.MainActivity}
+      mFocusedApp=ActivityRecord{d801fbe u0 com.nchat.app.smoke/com.nchat.app.MainActivity t9}
+- the app's process
+    u0_a194       6152   334   13864592 129548 0                   0 S com.nchat.app.smoke
+- the last time an app did not respond
+    ACTIVITY MANAGER LAST ANR (dumpsys activity lastanr)
+      <no ANR has occurred since boot>
+- where that app's threads were
+    total 0
+    head: /data/anr/traces.txt: No such file or directory
+- the log
+    11-25 03:36:14.475  1604  1604 I AiAiEcho: AppFetcherImpl onPackageChanged com.nchat.app.smoke.
+    11-25 03:36:14.495  1604  2925 I AiAiEcho: AppIndexer Package:[com.nchat.app.smoke] UserProfile:[0] Enabled:[true].
+    11-25 03:36:14.495  1604  2925 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.nchat.app.smoke], userId:[0], reason:[package is updated.].
+    11-25 03:36:14.618   516  1717 V SplashScreenExceptionList: SplashScreen checking exception for package com.nchat.app.smoke (target sdk:34) -> false
+    11-25 03:36:14.631   834   880 V WindowManagerShell: Transition requested: android.os.BinderProxy@abe60ff TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=9 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.nchat.app.smoke/com.nchat.app.MainActivity } baseActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} topActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} origActivity=null realActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} numActivities=1 lastActiveTime=183865 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@8d72ecc} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{1a94515 com.nchat.app.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+    11-25 03:36:14.633   516  1717 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.nchat.app.smoke/com.nchat.app.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+    11-25 03:36:14.650   516   546 I ActivityManager: Start proc 6152:com.nchat.app.smoke/u0a194 for next-top-activity {com.nchat.app.smoke/com.nchat.app.MainActivity}
+    11-25 03:36:14.734   516  2131 D CoreBackPreview: Window{7cde9f6 u0 Splash Screen com.nchat.app.smoke}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@d441ce, mPriority=0, mIsAnimationCallback=false}
+    11-25 03:36:14.791  6152  6152 D nativeloader: Configuring clns-6 for other apk /data/app/~~g0xbAMBvhfMcowqsLijQBQ==/com.nchat.app.smoke-IuaeHUpz57nwnQGLkB3QGw==/base.apk. target_sdk_version=34, uses_libraries=, library_path=/data/app/~~g0xbAMBvhfMcowqsLijQBQ==/com.nchat.app.smoke-IuaeHUpz57nwnQGLkB3QGw==/lib/x86_64:/data/app/~~g0xbAMBvhfMcowqsLijQBQ==/com.nchat.app.smoke-IuaeHUpz57nwnQGLkB3QGw==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.nchat.app.smoke
+    11-25 03:36:14.807  6152  6152 V GraphicsEnvironment: ANGLE GameManagerService for com.nchat.app.smoke: false
+    11-25 03:36:14.807  6152  6152 V GraphicsEnvironment: com.nchat.app.smoke is not listed in per-application setting
+    11-25 03:36:14.824   516   590 D ConnectivityService: requestNetwork for uid/pid:10194/6152 activeRequest: null callbackRequest: 161 [NetworkRequest [ REQUEST id=162, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10194 RequestorUid: 10194 RequestorPkg: com.nchat.app.smoke UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647
+    11-25 03:36:14.827   516   756 D WifiNetworkFactory: got request NetworkRequest [ REQUEST id=162, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10194 RequestorUid: 10194 RequestorPkg: com.nchat.app.smoke UnderlyingNetworks: Null] ]
+    11-25 03:36:14.827   516   756 D UntrustedWifiNetworkFactory: got request NetworkRequest [ REQUEST id=162, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10194 RequestorUid: 10194 RequestorPkg: com.nchat.app.smoke UnderlyingNetworks: Null] ]
+    11-25 03:36:14.827   516   756 D OemPaidWifiNetworkFactory: got request NetworkRequest [ REQUEST id=162, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10194 RequestorUid: 10194 RequestorPkg: com.nchat.app.smoke UnderlyingNetworks: Null] ]
+    11-25 03:36:14.828   516   756 D MultiInternetWifiNetworkFactory: got request NetworkRequest [ REQUEST id=162, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10194 RequestorUid: 10194 RequestorPkg: com.nchat.app.smoke UnderlyingNetworks: Null] ]
+    11-25 03:36:15.024  5446  5995 I ProximityAuth: [RecentAppsMediator] Package added: (user=UserHandle{0}) com.nchat.app.smoke
+    11-25 03:36:15.025  5446  5636 I FontLog : Package com.nchat.app.smoke has no metadata [CONTEXT service_id=132 ]
+    11-25 03:36:15.057   516   535 V WindowManager: Sent Transition #7 createdAt=11-25 03:36:14.585 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=9 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.nchat.app.smoke/com.nchat.app.MainActivity } baseActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} topActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} origActivity=null realActivity=ComponentInfo{com.nchat.app.smoke/com.nchat.app.MainActivity} numActivities=1 lastActiveTime=183865 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{4aa5078 Task{e1a79ca #9 type=standard A=10194:com.nchat.app.smoke}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{5d90351 com.nchat.app.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+    11-25 03:36:15.058   516   535 V WindowManager:     info={id=7 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{RemoteToken{4aa5078 Task{e1a79ca #9 type=standard A=10194:com.nchat.app.smoke}}} m=OPEN f=NONE leash=Surface(name=Task=9)/@0x405a6ea sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{RemoteToken{db1f6f Task{c8316ea #8 type=standard A=1000:com.android.settings}}} m=TO_BACK f=TRANSLUCENT leash=Surface(name=Task=8)/@0x61ebdaa sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{RemoteToken{11f2cb7 Task{9f3e9ac #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x43dae4c sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0}]}
+    11-25 03:36:15.154  5484  5962 I BlockstoreStorage: Clearing Blockstore Data for package com.nchat.app.smoke [CONTEXT service_id=258 ]
+    11-25 03:36:15.480   516  2131 D CoreBackPreview: Window{4153dda u0 com.nchat.app.smoke/com.nchat.app.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@68721c7, mPriority=0, mIsAnimationCallback=false}
+    11-25 03:36:16.519   516   535 I ActivityTaskManager: Displayed com.nchat.app.smoke/com.nchat.app.MainActivity for user 0: +1s951ms
+    11-25 03:36:16.578   516  2417 W InputManager-JNI: Input channel object '7cde9f6 Splash Screen com.nchat.app.smoke (client)' was disposed without first being removed with the input manager!
+    11-25 03:36:16.579   516  2131 D CoreBackPreview: Window{7cde9f6 u0 Splash Screen com.nchat.app.smoke EXITING}: Setting back callback null
+    11-25 03:36:16.829   516  2772 I ImeTracker: com.nchat.app.smoke:e6756e93: onRequestHide at ORIGIN_SERVER_HIDE_INPUT reason HIDE_UNSPECIFIED_WINDOW
+    11-25 03:36:16.829   516  2772 I ImeTracker: com.nchat.app.smoke:e6756e93: onCancelled at PHASE_SERVER_SHOULD_HIDE
+    11-25 03:36:16.855  1504  1504 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1877 onStartInput(EditorInfo{inputType=0x0(NULL) imeOptions=0x0 privateImeOptions=null actionName=UNSPECIFIED actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.nchat.app.smoke fieldId=0 fieldName=null extras=null}, false)
+    11-25 03:36:19.538   516   545 W ProcessStats: Tracking association SourceState{66ea25 com.nchat.app.smoke/10194 BTop #11840} whose proc state 2 is better than process ProcessState{34c6b54 com.google.android.gms.persistent/10131 pkg=com.google.android.gms} proc state 4 (5207 skipped)
+    11-25 03:36:20.411  6152  6229 D ProfileInstaller: Installing profile for com.nchat.app.smoke
+    11-25 03:36:24.867   155  5951 I keystore2: system/security/keystore2/src/watchdog.rs:319 - Watchdog thread idle -> terminating. Have a great day.
+    11-25 03:36:51.442   155  6248 I keystore2: system/security/keystore2/src/watchdog.rs:319 - Watchdog thread idle -> terminating. Have a great day.
+- on this machine
+       2896     294 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
+       3279     253 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-
+       3283     253 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
+       3348     252 /usr/local/lib/android/sdk/emulator/netsimd --host-dns=127.0.0.53
+       3384     243 adb -L tcp:5037 fork-server server --reply-fd 4
+       3480     214 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 34
+       3481     214 bash .github/scripts/on_emulator.sh 34
+--- what the log says of the app
+--- still running on the build machine when this was written
+   3384     244 adb -L tcp:5037 fork-server server --reply-fd 4
+   4193       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3279 -sleep 20
