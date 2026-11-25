@@ -40,6 +40,8 @@ echo "$$" >> "$FAKE/pids"
 echo "adb $*" >> "$FAKE/asked"
 if [ -n "${FAKE_ADB_SILENT:-}" ] && [[ "$*" =~ $FAKE_ADB_SILENT ]]; then
   [ -n "${FAKE_DEAF:-}" ] && trap '' TERM
+  # The real one says how it installs before it sends the file.
+  case "$*" in "install -r "*) echo "Performing Streamed Install" ;; esac
   exec sleep 600
 fi
 if [ -n "${FAKE_ADB_SLOW:-}" ] && [[ "$*" =~ ${FAKE_ADB_SLOW_AT:-.} ]]; then sleep "$FAKE_ADB_SLOW"; fi
@@ -58,8 +60,12 @@ case "$*" in
   "shell uiautomator dump "*) echo "UI hierchary dumped to: /sdcard/nchat-window.xml" ;;
   "shell cat /sdcard/nchat-window.xml") cat "$FAKE/window.xml" ;;
   "shell ps -A"*)
+    echo "root      1234     1  1 S zygote"
+    echo "system    1596  1234  1 S system_server"
     echo "radio     1502  1234  1 S com.android.phone"
     echo "u0_a62    2829  1234  1 S com.nchat.app.debug"
+    echo "shell     3001  1190  1 S cmd"
+    echo "root      3002  1201  1 R /system/bin/dex2oat"
     echo "u0_a99    4321  1234  1 S com.nchat.app.smoke" ;;
   "shell dumpsys activity activities"*)
     echo "  mResumedActivity: ActivityRecord{1a2b3c u0 com.nchat.app.smoke/com.nchat.app.MainActivity t12}" ;;
@@ -109,6 +115,46 @@ Full thread dump OpenJDK 64-Bit Server VM (17.0.13+11 mixed mode, sharing):
 	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.13/Native Method)
 	at com.android.ddmlib.SyncService.pullFile(SyncService.java:341)
 	at com.android.build.gradle.internal.testing.utp.UtpTestRunner.run(UtpTestRunner.kt:88)
+	at org.gradle.internal.execution.steps.Step1.execute(Step1.java:1)
+	at org.gradle.internal.execution.steps.Step2.execute(Step2.java:2)
+	at org.gradle.internal.execution.steps.Step3.execute(Step3.java:3)
+	at org.gradle.internal.execution.steps.Step4.execute(Step4.java:4)
+	at org.gradle.internal.execution.steps.Step5.execute(Step5.java:5)
+	at org.gradle.internal.execution.steps.Step6.execute(Step6.java:6)
+	at org.gradle.internal.execution.steps.Step7.execute(Step7.java:7)
+	at org.gradle.internal.execution.steps.Step8.execute(Step8.java:8)
+	at org.gradle.internal.execution.steps.Step9.execute(Step9.java:9)
+	at org.gradle.internal.execution.steps.Step10.execute(Step10.java:10)
+	at org.gradle.internal.execution.steps.Step11.execute(Step11.java:11)
+	at org.gradle.internal.execution.steps.Step12.execute(Step12.java:12)
+	at org.gradle.internal.execution.steps.Step13.execute(Step13.java:13)
+	at org.gradle.internal.execution.steps.Step14.execute(Step14.java:14)
+	at org.gradle.internal.execution.steps.Step15.execute(Step15.java:15)
+	at org.gradle.internal.execution.steps.Step16.execute(Step16.java:16)
+	at org.gradle.internal.execution.steps.Step17.execute(Step17.java:17)
+	at org.gradle.internal.execution.steps.Step18.execute(Step18.java:18)
+	at org.gradle.internal.execution.steps.Step19.execute(Step19.java:19)
+	at org.gradle.internal.execution.steps.Step20.execute(Step20.java:20)
+	at org.gradle.internal.execution.steps.Step21.execute(Step21.java:21)
+	at org.gradle.internal.execution.steps.Step22.execute(Step22.java:22)
+	at org.gradle.internal.execution.steps.Step23.execute(Step23.java:23)
+	at org.gradle.internal.execution.steps.Step24.execute(Step24.java:24)
+	at org.gradle.internal.execution.steps.Step25.execute(Step25.java:25)
+	at org.gradle.internal.execution.steps.Step26.execute(Step26.java:26)
+	at org.gradle.internal.execution.steps.Step27.execute(Step27.java:27)
+	at org.gradle.internal.execution.steps.Step28.execute(Step28.java:28)
+	at org.gradle.internal.execution.steps.Step29.execute(Step29.java:29)
+	at org.gradle.internal.execution.steps.Step30.execute(Step30.java:30)
+	at org.gradle.internal.execution.steps.Step31.execute(Step31.java:31)
+	at org.gradle.internal.execution.steps.Step32.execute(Step32.java:32)
+	at org.gradle.internal.execution.steps.Step33.execute(Step33.java:33)
+	at org.gradle.internal.execution.steps.Step34.execute(Step34.java:34)
+	at org.gradle.internal.execution.steps.Step35.execute(Step35.java:35)
+	at org.gradle.internal.execution.steps.Step36.execute(Step36.java:36)
+	at org.gradle.internal.execution.steps.Step37.execute(Step37.java:37)
+	at org.gradle.internal.execution.steps.Step38.execute(Step38.java:38)
+	at org.gradle.internal.execution.steps.Step39.execute(Step39.java:39)
+	at org.gradle.internal.execution.steps.Step40.execute(Step40.java:40)
 
 "Reference Handler" #2 daemon prio=10 os_prio=0 cpu=0.31ms elapsed=45.80s tid=0x00007f2 nid=0xcb9 waiting on condition  [0x00007f3]
    java.lang.Thread.State: RUNNABLE
@@ -130,6 +176,11 @@ BUSY_LOG = """11-25 03:45:19.421  1591  1615 I ActivityManager: Start proc 2029:
 11-25 03:45:58.100  1591  1606 E ActivityManager: Reason: executing service com.nchat.app.debug/com.nchat.app.data.push.BackgroundSyncService
 11-25 03:45:59.000  2829  2829 E AndroidRuntime: FATAL EXCEPTION: main
 11-25 03:45:59.000  2829  2829 E AndroidRuntime: Process: com.nchat.app.debug, PID: 2829
+11-25 03:46:01.000  2824  2839 I TestRunner: started: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
+11-25 03:46:01.050  2824  2839 I TestRunner: finished: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
+11-25 03:46:02.000  1596  1629 I PackageManager: Package com.example.other codePath changed from /data/app/a to /data/app/b; Retaining data and using new
+11-25 03:46:02.100  3002  3002 I dex2oat : /system/bin/dex2oat --dex-file=/data/app/vmdl1.tmp/base.apk --oat-fd=7
+11-25 03:46:02.200  1201  1201 E installd: Failed to delete /data/app/vmdl1.tmp: No such file or directory
 """
 
 # A window of the app that is not its first screen.
@@ -344,6 +395,8 @@ class OnEmulator(unittest.TestCase):
         self.assertIn(STILL_ANSWERS, run.start_log)
         self.assertIn("(no answer within 1 s)", run.start_log)
         self.assertIn("nothing more was asked", run.start_log)
+        # How far the command had come is what it had said itself.
+        self.assertIn("--- what it had said until then\nPerforming Streamed Install\n", run.start_log)
         adb = [line for line in run.asked if line.startswith("adb ")]
         self.assertEqual(adb[:2], [f"adb install -r {APK}", "adb devices"])
         self.assertEqual(len(adb), 3, adb)
@@ -482,6 +535,11 @@ class OnEmulator(unittest.TestCase):
         self.assertIn("at com.android.ddmlib.SyncService.pullFile(SyncService.java:341)", log)
         self.assertNotIn("Reference Handler", log)
         self.assertNotIn("G1 Conc", log)
+        # Of a thread, where it is: the top of its stack. The hundred frames of Gradle's own
+        # machinery under it are counted and left out.
+        self.assertIn("Step25.execute", log)
+        self.assertNotIn("Step26.execute", log)
+        self.assertIn("… 15 more", log)
         # It is not stopped: asked later, it could not say where it had been.
         self.assertIn(STARTED, log)
 
@@ -514,6 +572,20 @@ class OnEmulator(unittest.TestCase):
             self.assertIn(kept, report)
         for dropped in ("android.ext.services", "RuntimeInit", "CheckJNI", "Dhcp Watchdog"):
             self.assertNotIn(dropped, report)
+        # An install that hangs (seen on Android 7, 2026-11-25) is the system's own work on
+        # packages: those lines stay although they do not name the app. The 290 lines that
+        # say which test began and ended do name it, and go.
+        for kept in ("PackageManager: Package com.example.other", "dex2oat : /system/bin/dex2oat", "installd: Failed to delete"):
+            self.assertIn(kept, report)
+        self.assertNotIn("TestRunner", report)
+        # And which commands are still at work on the emulator: the installer, the compiler.
+        working = report.split("- what is at work there\n", 1)
+        self.assertEqual(len(working), 2, report)
+        working = working[1].split("\n- ", 1)[0]
+        self.assertIn("shell     3001  1190  1 S cmd", working)
+        self.assertIn("root      3002  1201  1 R /system/bin/dex2oat", working)
+        for other in ("zygote", "system_server", "com.android.phone", "com.nchat.app"):
+            self.assertNotIn(other, working)
 
     def test_a_test_run_stopped_by_the_limit_of_the_whole_run_says_that_limit(self):
         # Thirty seconds of its own and two for the whole run: two is what it got, and two

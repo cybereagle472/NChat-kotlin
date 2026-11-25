@@ -118,16 +118,21 @@ limited() {
 # Once a question has gone unanswered no other is put: each would be waited for in turn, and
 # what was read before stays as it was.
 ask() {
-  local kind="$1" answer="$2"
+  local kind="$1" answer="$2" status
   shift 2
   unanswered && return 1
   limited "$kind" adb "$@" > "$answer" 2>&1
+  status=$?
+  # How far a command came before it went silent is what it had said itself.
+  if unanswered && [ -f "$answer" ]; then cp "$answer" "$OUT/said.txt"; fi
+  return "$status"
 }
 
 # probe <what is asked> <lines to keep> <pattern, or nothing for every line> <command…>
 #
 # A question about an emulator that has gone silent, with a short limit of its own. After two
-# in a row without an answer the rest are not asked.
+# in a row without an answer the rest are not asked. DROP, when it is set, is a pattern for
+# lines that are left out although the first pattern has them.
 SILENT=0
 probe() {
   local what="$1" keep="$2" pattern="$3" status
@@ -144,7 +149,7 @@ probe() {
   fi
   SILENT=0
   if [ -n "$pattern" ]; then
-    grep -E "$pattern" "$OUT/probe.txt" | tail -n "$keep" > "$OUT/probe-kept.txt"
+    grep -E "$pattern" "$OUT/probe.txt" | grep -v -E "${DROP:-^$}" | tail -n "$keep" > "$OUT/probe-kept.txt"
   else
     grep -v '^[[:space:]]*$' "$OUT/probe.txt" | tail -n "$keep" > "$OUT/probe-kept.txt"
   fi
@@ -167,11 +172,16 @@ still_answers() {
   probe "what is in front" 8 "mResumedActivity|ResumedActivity:|topResumedActivity|mCurrentFocus|mFocusedApp" \
     adb shell "dumpsys activity activities; dumpsys window windows"
   probe "the app's processes" 6 "$APP" adb shell "ps -A 2> /dev/null || ps"
+  # Commands in flight: the installer (cmd, pm), the compiler of an install (dex2oat), a
+  # shell, a look at the screen. An `adb install` that never returns left one of them there.
+  probe "what is at work there" 12 "[ /](cmd|pm|sh|app_process(32|64)?|dex2oat|patchoat|uiautomator|logcat)\$" \
+    adb shell "ps -A 2> /dev/null || ps"
   probe "what an app that did not respond left behind" 120 "" \
     adb shell 'ls -l /data/anr 2>&1; for file in $(ls -t /data/anr 2> /dev/null | head -n 1); do head -n 110 "/data/anr/$file" 2>&1; done'
   # Of the log: the app's lines, any app that crashed or stopped responding, what was put on
-  # the screen — and not what an emulator says about itself while it starts.
-  probe "the log" 80 "$APP|ANR in|FATAL EXCEPTION|Fatal signal|not responding|Watchdog: |WATCHDOG|E AndroidRuntime: |ActivityManager: (PID:|Reason:|Load:|Killing|Process .* has (died|crashed))|Manager: Displayed" \
+  # the screen, and the system's work on packages (an install that hangs is that) — and not
+  # what an emulator says about itself while it starts, nor which test began and ended.
+  DROP=" TestRunner: " probe "the log" 80 "$APP|ANR in|FATAL EXCEPTION|Fatal signal|not responding|Watchdog: |WATCHDOG|E AndroidRuntime: |ActivityManager: (PID:|Reason:|Load:|Killing|Process .* has (died|crashed))|Manager: Displayed|PackageManager|PackageInstaller|installd|dex2oat" \
     adb logcat -d -t 3000
   echo "- on this machine"
   ps -eo pid,etimes,args 2> /dev/null | grep -E "qemu|emulator|adb|[g]radle|java" | grep -v "grep -E" | cut -c1-160 | head -n 20 | sed 's/^/    /'
@@ -183,18 +193,19 @@ still_answers() {
 # Daemon process will be forked") and the test platform which that one started are not in its
 # group and go on — seen on the runners, where they ended by themselves some seconds later.
 # When the run hangs they are the ones that wait, so each is asked for its threads, and the
-# threads that are in the build, in the test platform or talking to the emulator are kept.
+# threads that are in the build, in the test platform or talking to the emulator are kept —
+# of each the top of its stack, which is where it is; what is under it is counted.
 # Neither is stopped here: asked later, it could not say where it had been. The job's end
 # clears what is left.
 # ("^[^ ]*java ": a Java process — and not this question itself, which has the same words.)
 JAVA_THREADS='for pid in $(pgrep -f "^[^ ]*java .*$0" | head -n 2); do
   echo "process $pid"
-  jstack "$pid" 2>&1 | awk -v RS= "/com\\.android\\.|org\\.gradle\\.api|com\\.google\\.testing|ProcessImpl\\.waitFor/" | head -n 120
+  jstack "$pid" 2>&1 | awk -v RS= -F "\n" "/com\\.android\\.|org\\.gradle\\.api|com\\.google\\.testing|ProcessImpl\\.waitFor/ { top = NF < 30 ? NF : 30; for (at = 1; at <= top; at++) print \$at; if (NF > top) print \"\\t… \" NF - top \" more\" }" | head -n 180
 done'
 where_java_is() {
   SILENT=0
-  probe "where Gradle is" 240 "" bash -c "$JAVA_THREADS" org.gradle.launcher.daemon.bootstrap.GradleDaemon
-  probe "where the test platform is" 240 "" bash -c "$JAVA_THREADS" .android/utp/
+  probe "where Gradle is" 200 "" bash -c "$JAVA_THREADS" org.gradle.launcher.daemon.bootstrap.GradleDaemon
+  probe "where the test platform is" 200 "" bash -c "$JAVA_THREADS" .android/utp/
 }
 
 # The words on the screen as `uiautomator dump` last read them, one per line: "package: words".
@@ -300,6 +311,8 @@ start_app() {
     what=$(head -n 1 "$UNANSWERED")
     echo "::error title=App start on Android API $API_LEVEL::not judged — $what"
     echo "App start on Android API $API_LEVEL: not judged — $what"
+    echo "--- what it had said until then"
+    if [ -s "$OUT/said.txt" ]; then tail -n 20 "$OUT/said.txt"; else echo "(nothing)"; fi
     echo "--- what the launch said"
     if [ -s "$OUT/launch.txt" ]; then cat "$OUT/launch.txt"; else echo "(it had not been launched)"; fi
     echo "--- the screen as it was last read"
