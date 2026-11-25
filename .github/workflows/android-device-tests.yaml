@@ -137,7 +137,9 @@ jobs:
           git add -f ".ci/device-tests-api$API_LEVEL.log"
           git commit -m "ci: capture device test failures, API $API_LEVEL [skip ci]" || exit 0
           # Two emulators may get here at the same moment: the second one fetches and tries again.
+          # Two runs may have failed on the same system, and then both wrote this file: the later
+          # one's log is the one that stays, and the earlier one's is in its own commit.
           for attempt in 1 2 3 4; do
-            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then break; fi
+            if git pull --rebase -X theirs origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then break; fi
             sleep 7
           done

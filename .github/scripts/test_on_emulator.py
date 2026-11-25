@@ -26,6 +26,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SCRIPT = HERE / "on_emulator.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "android-device-tests.yaml"
+BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "build-apk.yaml"
 
 APK = "app/build/outputs/apk/smoke/app-smoke.apk"
 STARTED = "App start on Android API 24: started"
@@ -664,6 +665,136 @@ class OnEmulator(unittest.TestCase):
             build + emulator + 600, job,
             "the job can run into its own limit: it would be cancelled, and a cancelled job commits no log",
         )
+
+
+class KeepingTheReport(unittest.TestCase):
+    """The steps of the workflows that commit the log of a failed job, run as they are written there.
+
+    A job's own log cannot be read from where this project is worked on; what a failed job
+    commits to `.ci/` is all there is to go by. So a log that silently does not arrive is a
+    failure nobody can look into.
+    """
+
+    @staticmethod
+    def step_script(name, workflow=WORKFLOW):
+        lines = workflow.read_text(encoding="utf-8").splitlines()
+        at = lines.index(f"      - name: {name}")
+        for index in range(at + 1, len(lines)):
+            line = lines[index]
+            if line.startswith("      - "):
+                break
+            if line == "        run: |":
+                body = []
+                for inner in lines[index + 1:]:
+                    if inner.strip() and not inner.startswith("          "):
+                        break
+                    body.append(inner[10:])
+                return "\n".join(body) + "\n"
+            if line.startswith("        run: "):
+                return line[len("        run: "):] + "\n"
+        raise AssertionError(f"the step '{name}' runs nothing")
+
+    def git(self, where, *arguments):
+        done = subprocess.run(["git", *arguments], cwd=where, env=self.env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, f"git {' '.join(arguments)}: {done.stderr}")
+        return done.stdout
+
+    def setUp(self):
+        """A branch on a server, and two checkouts of it: an earlier job's and a later one's.
+
+        The earlier job has failed, and has committed and pushed the two logs a failed run
+        can leave; the later job's checkout is from before that.
+        """
+        self.root = Path(tempfile.mkdtemp(prefix="keep-the-report-"))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.env = dict(
+            os.environ,
+            HOME=str(self.root),
+            GIT_CONFIG_NOSYSTEM="1",
+            GIT_AUTHOR_NAME="a test", GIT_AUTHOR_EMAIL="test@nchat.local",
+            GIT_COMMITTER_NAME="a test", GIT_COMMITTER_EMAIL="test@nchat.local",
+        )
+        seed = self.root / "seed"
+        seed.mkdir()
+        self.git(seed, "init", "-q", "-b", "work")
+        (seed / "README").write_text("the branch\n", encoding="utf-8")
+        self.git(seed, "add", "README")
+        self.git(seed, "commit", "-q", "-m", "the branch")
+        self.git(self.root, "clone", "-q", "--bare", str(seed), "origin.git")
+        self.git(self.root, "clone", "-q", "origin.git", "earlier")
+        self.git(self.root, "clone", "-q", "origin.git", "later")
+        self.origin = self.root / "origin.git"
+
+        earlier = self.root / "earlier"
+        (earlier / ".ci").mkdir()
+        (earlier / ".ci" / "device-tests-api24.log").write_text("the log of the earlier run\n", encoding="utf-8")
+        (earlier / ".ci" / "last-failure.log").write_text("run: 1\nthe build log of the earlier run\n", encoding="utf-8")
+        self.git(earlier, "add", "-f", ".ci/device-tests-api24.log", ".ci/last-failure.log")
+        self.git(earlier, "commit", "-q", "-m", "ci: capture device test failures, API 24 [skip ci]")
+        self.git(earlier, "push", "-q", "origin", "HEAD:work")
+        self.first = self.git(earlier, "rev-parse", "HEAD").strip()
+
+    def run_step(self, name, workflow=WORKFLOW, **settings):
+        """The step's script, run in the later job's checkout the way a workflow runs it."""
+        done = subprocess.run(
+            ["bash", "-e", "-c", self.step_script(name, workflow)],
+            cwd=self.root / "later",
+            env=dict(self.env, GITHUB_REF_NAME="work", GITHUB_RUN_ID="777", GITHUB_RUN_ATTEMPT="2", **settings),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_two_failed_runs_on_the_same_system_both_leave_their_log(self):
+        # Two runs fail on Android 7, one after the other, and each commits
+        # `.ci/device-tests-api24.log`. The second was checked out before the first one's
+        # commit, so its own commit does not fit on top — and its log must not be the one
+        # that is lost: the file ends as the later run wrote it, the earlier log stays in
+        # its commit.
+        self.run_step("Keep the report where it can be read", API_LEVEL="24", EMULATOR_STEP="failure")
+
+        origin, first = self.origin, self.first
+        kept = self.git(origin, "show", "work:.ci/device-tests-api24.log")
+        self.assertTrue(
+            kept.startswith("run 777, attempt 2, Android API 24 — the step with the emulator: failure\n"),
+            f"the later run's log did not reach the branch; the file there says: {kept[:120]!r}",
+        )
+        self.assertEqual(self.git(origin, "show", f"{first}:.ci/device-tests-api24.log"), "the log of the earlier run\n")
+        self.assertEqual(self.git(origin, "rev-list", "--count", "work").strip(), "3")
+
+    def test_a_build_log_is_kept_when_another_job_committed_its_log_first(self):
+        # A commit that does not compile fails the build and both emulator jobs, and the
+        # push before it may have failed its build as well. Whichever of them commits its
+        # log first moves the branch, and this build's log has to be put on top of that —
+        # not dropped because the branch is no longer where it was, nor because an earlier
+        # build wrote the same file.
+        build_log = self.root / "gradle-build.log"
+        build_log.write_text("e: ChatScreen.kt: (12, 5): Unresolved reference: lock\nFAILURE: Build failed with an exception.\n", encoding="utf-8")
+
+        self.run_step("Capture build log on failure", BUILD_WORKFLOW, NCHAT_BUILD_LOG=str(build_log))
+
+        kept = self.git(self.origin, "show", "work:.ci/last-failure.log")
+        self.assertEqual(kept.splitlines()[0], "run: 777")
+        self.assertIn("e: ChatScreen.kt: (12, 5): Unresolved reference: lock", kept)
+        self.assertNotIn("the build log of the earlier run", kept)
+        self.assertEqual(self.git(self.origin, "show", "work:.ci/device-tests-api24.log"), "the log of the earlier run\n")
+        self.assertEqual(self.git(self.origin, "show", f"{self.first}:.ci/last-failure.log"), "run: 1\nthe build log of the earlier run\n")
+
+    def test_a_job_that_failed_before_the_build_still_leaves_a_log(self):
+        # The step that tests these scripts comes before the build. When it fails there is
+        # no build log yet — and the step that keeps the log must not stop at that.
+        self.run_step("Capture build log on failure", BUILD_WORKFLOW, NCHAT_BUILD_LOG=str(self.root / "no-such-log"))
+
+        kept = self.git(self.origin, "show", "work:.ci/last-failure.log")
+        self.assertEqual(kept.splitlines()[0], "run: 777")
+        self.assertIn("there is no build log", kept)
+
+    def test_what_the_tests_of_these_scripts_print_is_in_the_build_log(self):
+        # So that a failure of these very tests on the build machine can be read afterwards.
+        script = self.step_script("Test release verification", BUILD_WORKFLOW)
+        self.assertIn("set -o pipefail", script)
+        self.assertRegex(script, r"python3 -m unittest discover -s \.github/scripts -p 'test_\*\.py' 2>&1 \| tee /tmp/gradle-build\.log")
 
 
 if __name__ == "__main__":

@@ -46,7 +46,10 @@ jobs:
           fi
 
       - name: Test release verification
-        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+        # Into the build log as well: when these tests fail here, the step below commits it.
+        run: |
+          set -o pipefail
+          python3 -m unittest discover -s .github/scripts -p 'test_*.py' 2>&1 | tee /tmp/gradle-build.log
       - name: Run Android unit tests
         run: |
           set -o pipefail
@@ -78,12 +81,25 @@ jobs:
         if: failure()
         run: |
           mkdir -p .ci
-          { echo "run: $GITHUB_RUN_ID"; tail -n 500 /tmp/gradle-build.log; } > .ci/last-failure.log
+          BUILD_LOG="${NCHAT_BUILD_LOG:-/tmp/gradle-build.log}"
+          {
+            echo "run: $GITHUB_RUN_ID"
+            if [ -f "$BUILD_LOG" ]; then
+              tail -n 500 "$BUILD_LOG"
+            else
+              echo "(there is no build log: the job failed before the first step that writes one)"
+            fi
+          } > .ci/last-failure.log
           git config user.name "nchat-ci"
           git config user.email "ci@nchat.local"
           git add -f .ci/last-failure.log
-          git commit -m "ci: capture build failure log [skip ci]" || true
-          git push origin "HEAD:$GITHUB_REF_NAME" || true
+          git commit -m "ci: capture build failure log [skip ci]" || exit 0
+          # A failed emulator job may have committed its own log in the meantime, and then the
+          # branch is no longer where this job found it: fetch, put this commit on top, try again.
+          for attempt in 1 2 3 4; do
+            if git pull --rebase -X theirs origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then break; fi
+            sleep 7
+          done
       - name: Read release metadata
         id: release-metadata
         run: |
