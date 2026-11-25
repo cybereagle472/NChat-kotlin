@@ -188,6 +188,12 @@ class ConversationTimelineTest {
         assertEquals(4, grown.messages.size)
         assertEquals("the list holds its place by this", before.key, grown.key)
         assertEquals(more.size, more.map { it.key }.toSet().size)
+
+        // A message that a backup brings back becomes a bubble, known by its own id. The notice
+        // it stood in must not have been known by that id: it is another row, not the same one.
+        for (notice in (page + more).filterIsInstance<TimelineItem.Locked>()) {
+            assertTrue("a notice is not known by the id of a message", notice.messages.none { it.id == notice.key })
+        }
     }
 
     @Test

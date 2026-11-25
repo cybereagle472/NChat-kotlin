@@ -289,6 +289,31 @@ class EndToEndTest {
         assertNotNull(bob)
     }
 
+    @Test
+    fun withNobodySignedInAnAccountThatIsStillOpenInsideSealsAndShowsNothing() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val received = send(bob, "alice", "for alice")!!
+        assertEquals("for alice", read(alice, "bob", received))
+        assertNotNull(alice.localSeal())
+        assertNotNull(alice.mediaDirectory())
+
+        // Not a log-out: the app's word that no account is signed in, while this one is still open inside.
+        alice.resume(null)
+        assertNull("nothing to seal with for nobody", alice.localSeal())
+        assertNull("nowhere to keep nobody's files", alice.mediaDirectory())
+        refusesToSend(alice, "bob", "nobody is signed in")
+        assertNull(read(alice, "bob", received))
+        assertNull(runBlocking { alice.sync() })
+
+        // Nothing was removed by it: the account is where it was.
+        alice.resume("alice")
+        assertEquals("for alice", read(alice, "bob", received))
+        assertNotNull(alice.localSeal())
+    }
+
     // ---------------------------------------------------------- opened files
 
     @Test

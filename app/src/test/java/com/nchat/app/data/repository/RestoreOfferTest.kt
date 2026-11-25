@@ -73,4 +73,17 @@ class RestoreOfferTest {
         offer.cannotShow()
         assertTrue(offer.asking.value)
     }
+
+    @Test
+    fun aQuestionThatWasStillUpIsNotCarriedIntoTheNextSignIn() {
+        val offer = RestoreOffer()
+        offer.signedIn(startedAnew = true)
+        offer.cannotShow()
+        assertTrue(offer.asking.value)
+        // Whoever signs in now is not the one who was asked — even if nothing said that the other had left.
+        offer.signedIn(startedAnew = false)
+        assertFalse(offer.asking.value)
+        offer.signedIn(startedAnew = true)
+        assertFalse("asked when such a message is met, not before", offer.asking.value)
+    }
 }

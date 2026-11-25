@@ -31,11 +31,10 @@ internal object PhoneFiles {
      * it is left; a directory that is not there has nothing left in it.
      */
     fun erase(filesDir: File, cacheDir: File): Boolean {
-        var clean = true
         // The cache directory itself stays: the app goes on writing into it.
-        cacheDir.listFiles()?.forEach { if (!remove(it)) clean = false }
-        for (name in ACCOUNT_DIRECTORIES) if (!remove(File(filesDir, name))) clean = false
-        return clean
+        val targets = cacheDir.listFiles().orEmpty().toList() + ACCOUNT_DIRECTORIES.map { File(filesDir, it) }
+        // Every one of them is tried, whatever became of the one before it.
+        return targets.count { !remove(it) } == 0
     }
 
     private fun remove(target: File): Boolean = !target.exists() || target.deleteRecursively() || !target.exists()

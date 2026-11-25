@@ -61,4 +61,36 @@ class PhoneFilesTest {
         assertTrue(PhoneFiles.erase(files, cache))
         assertTrue(PhoneFiles.erase(File(files, "no such directory"), File(cache, "no such directory")))
     }
+
+    /** A file that is there and that the phone will not remove, whatever is asked of it. */
+    private class Stuck(path: String) : File(path) {
+        override fun delete(): Boolean = false
+    }
+
+    @Test
+    fun whatThePhoneWillNotRemoveIsReportedAndEverythingElseGoesAllTheSame() {
+        val files = folder.newFolder("files")
+        val real = folder.newFolder("cache")
+        val before = file(real, "a-photo.jpg")
+        val stuck = Stuck(file(real, "m-will-not-go").path)
+        val after = file(real, "z-clip.m4a")
+        val recorded = file(files, "voice-out/c-1.m4a")
+        val blocked = file(files, "blocked/alice.json")
+        // The cache directory as the phone lists it, with the one thing in it that stays.
+        val cache = object : File(real.path) {
+            override fun listFiles(): Array<File> = arrayOf(before, stuck, after)
+        }
+
+        assertFalse("it is reported, not passed over", PhoneFiles.erase(files, cache))
+        assertTrue(stuck.exists())
+        // What came before it and what came after it went all the same.
+        assertFalse(before.exists())
+        assertFalse(after.exists())
+        assertFalse(recorded.exists())
+        assertFalse(blocked.exists())
+
+        // Once it does go, there is nothing left to report.
+        assertTrue(File(stuck.path).delete())
+        assertTrue(PhoneFiles.erase(files, cache))
+    }
 }
