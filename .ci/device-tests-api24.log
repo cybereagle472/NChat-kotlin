@@ -1,0 +1,59 @@
+run 45540547458, attempt 1, Android API 24 — the step with the emulator: failure
+290 tests, 0 failed, 0 skipped on Android API 24
+slowest: E2eeProtocolTest.forgedCountersCostBoundedWork 18.0 s, EndToEndTest.theAppWritesItsBackupsTheSlowWay 8.7 s, E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 3.8 s
+
+::error title=App start on Android API 24::not judged — no answer within 60 s: adb shell uiautomator dump /sdcard/nchat-window.xml
+App start on Android API 24: not judged — no answer within 60 s: adb shell uiautomator dump /sdcard/nchat-window.xml
+--- what the launch said
+Starting: Intent { cmp=com.nchat.app.smoke/com.nchat.app.MainActivity }
+Status: ok
+Activity: com.nchat.app.smoke/com.nchat.app.MainActivity
+ThisTime: 1046
+TotalTime: 1046
+WaitTime: 1063
+Complete
+--- the screen as it was last read
+(it had not been read)
+--- what the emulator still answers
+- is it attached
+    List of devices attached
+    emulator-5554	device
+    
+- has it started, and how long has it run
+    1
+     03:35:53 up 2 min,  0 users,  load average: 0.33, 0.27, 0.11
+- what is in front
+        mResumedActivity: ActivityRecord{1704ee6 u0 com.nchat.app.smoke/com.nchat.app.MainActivity t5}
+      mCurrentFocus=Window{5c173b3 u0 com.nchat.app.smoke/com.nchat.app.MainActivity}
+      mFocusedApp=AppWindowToken{baad87d token=Token{bfdc27 ActivityRecord{1704ee6 u0 com.nchat.app.smoke/com.nchat.app.MainActivity t5}}}
+- the app's process
+    u0_a64    3047  1306  1680556 65140 SyS_epoll_ 00000000 S com.nchat.app.smoke
+- the last time an app did not respond
+    Unknown command: lastanr
+    Bad activity command, or no activities match: lastanr
+    Use -h for help.
+- where that app's threads were
+    total 0
+    head: /data/anr/traces.txt: No such file or directory
+- the log
+    11-25 03:34:47.558  3036  3036 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+    11-25 03:34:47.559  3036  3036 D AndroidRuntime: CheckJNI is OFF
+    11-25 03:34:47.586  3036  3036 D AndroidRuntime: Calling main entry com.android.commands.am.Am
+    11-25 03:34:47.588  1592  2051 I ActivityManager: START u0 {flg=0x10000000 cmp=com.nchat.app.smoke/com.nchat.app.MainActivity} from uid 2000 on display 0
+    11-25 03:34:47.616  1592  1996 I ActivityManager: Start proc 3047:com.nchat.app.smoke/u0a64 for activity com.nchat.app.smoke/com.nchat.app.MainActivity
+    11-25 03:34:48.651  1592  1618 I ActivityManager: Displayed com.nchat.app.smoke/com.nchat.app.MainActivity: +1s46ms
+    11-25 03:34:48.651  3036  3036 D AndroidRuntime: Shutting down VM
+    11-25 03:34:48.671  1592  1618 I WindowManager: Destroying surface Surface(name=Starting com.nchat.app.smoke) called by com.android.server.wm.WindowStateAnimator.destroySurface:2014 com.android.server.wm.WindowStateAnimator.destroySurfaceLocked:881 com.android.server.wm.WindowState.destroyOrSaveSurface:2073 com.android.server.wm.AppWindowToken.destroySurfaces:363 com.android.server.wm.WindowStateAnimator.finishExit:565 com.android.server.wm.WindowStateAnimator.stepAnimationLocked:491 com.android.server.wm.WindowAnimator.updateWindowsLocked:303 com.android.server.wm.WindowAnimator.animateLocked:704 
+    11-25 03:34:53.084  3047  3077 D ProfileInstaller: Installing profile for com.nchat.app.smoke
+    11-25 03:34:54.635  1592  1755 I ActivityManager: Killing 2465:com.android.camera2/u0a27 (adj 906): empty #17
+- on this machine
+       2678     217 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
+       3074     173 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
+       3078     173 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
+       3170     163 adb -L tcp:5037 fork-server server --reply-fd 4
+       3199     162 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
+       3200     162 bash .github/scripts/on_emulator.sh 24
+--- what the log says of the app
+--- still running on the build machine when this was written
+   3170     165 adb -L tcp:5037 fork-server server --reply-fd 4
+   3574       2 /usr/local/lib/android/sdk/emulator/emulator -kill 3074 -sleep 20
