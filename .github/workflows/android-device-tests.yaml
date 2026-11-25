@@ -10,11 +10,27 @@ name: Encryption tests on Android
 # has to come up with its first screen and without a crash. It is the only
 # place where the app runs at all before it reaches a phone. It gets no
 # further than the sign-in screen: beyond it is the server, and there is one.
+#
+# An emulator can stop answering. Nothing here waits for it without a limit:
+# on_emulator.sh gives every command one, says which command went unanswered
+# and what the emulator still answered, and fails. The steps that can take long
+# have limits too, and those fail the job rather than cancel it — a cancelled
+# job commits no log. To see all of that happen on a real emulator, start this
+# workflow by hand with a drill (the input below); such a run is meant to fail
+# and to leave `.ci/device-tests-api<level>.log` on the branch.
 
 on:
   push:
     branches: [main, 'arena/**']
   workflow_dispatch:
+    inputs:
+      drill:
+        description: >-
+          Fire drill — a run that is meant to fail. Settings for on_emulator.sh as NAME=value,
+          separated by spaces: NCHAT_DRILL_STUCK=uiautomator lets that command go unanswered,
+          NCHAT_TESTS_LIMIT=45 stops the test run after 45 seconds. Empty: an ordinary run.
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -26,7 +42,10 @@ jobs:
     # there is nothing to learn from an emulator about code that is not written yet.
     if: ${{ !contains(github.event.head_commit.message, '[red]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A job that is stopped by this limit is cancelled, and a cancelled job commits no log. So
+    # the two steps that can take long have limits of their own, which fail the job instead,
+    # and this one is larger than both together (test_on_emulator.py holds the arithmetic).
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
@@ -60,19 +79,39 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Build the app and its tests
+        timeout-minutes: 20
         env:
           # An address that leads nowhere: the app shows its sign-in screen and reaches no server.
           NCHAT_API_BASE: https://nchat-smoke.invalid
         run: |
           set -o pipefail
           gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleSmoke 2>&1 | tee /tmp/device-build.log
+      - name: Fire drill settings
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.drill != '' }}
+        env:
+          DRILL: ${{ inputs.drill }}
+          API_LEVEL: ${{ matrix.api-level }}
+        run: |
+          for setting in $DRILL; do
+            case "$setting" in
+              NCHAT_[A-Z_]*=*) echo "$setting" >> "$GITHUB_ENV" ;;
+              *) echo "::error title=Fire drill::not a setting of on_emulator.sh: $setting"; exit 1 ;;
+            esac
+          done
+          echo "::warning title=Fire drill on Android API $API_LEVEL::this run is meant to fail — $DRILL"
       - name: Run the tests on the emulator
+        id: emulator
+        # on_emulator.sh ends by itself: every command in it has a limit, and so has the run.
+        # This limit is for what is around it — the emulator being fetched, started and taken
+        # down — and it fails the step, so that the two steps below still run.
+        timeout-minutes: 50
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
           disable-animations: true
+          emulator-boot-timeout: 600
           script: bash .github/scripts/on_emulator.sh ${{ matrix.api-level }}
       - name: Report what ran
         if: always()
@@ -83,9 +122,16 @@ jobs:
         if: failure()
         env:
           API_LEVEL: ${{ matrix.api-level }}
+          EMULATOR_STEP: ${{ steps.emulator.outcome }}
         run: |
           mkdir -p .ci
-          cat /tmp/device-report.log /tmp/app-start.log > ".ci/device-tests-api$API_LEVEL.log" 2> /dev/null || true
+          {
+            echo "run $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT, Android API $API_LEVEL — the step with the emulator: ${EMULATOR_STEP:-not reached}"
+            cat /tmp/device-report.log /tmp/app-start.log 2> /dev/null
+            # When that step was stopped at its own limit, this is what it was waiting for.
+            echo "--- still running on the build machine when this was written"
+            ps -eo pid,etimes,args | grep -E "qemu|emulator|adb|[g]radle" | grep -v "grep -E" | cut -c1-160 | head -n 20
+          } > ".ci/device-tests-api$API_LEVEL.log" 2>&1 || true
           git config user.name "nchat-ci"
           git config user.email "ci@nchat.local"
           git add -f ".ci/device-tests-api$API_LEVEL.log"
