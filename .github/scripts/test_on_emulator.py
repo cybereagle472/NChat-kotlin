@@ -43,7 +43,7 @@ if [ -n "${FAKE_ADB_SILENT:-}" ] && [[ "$*" =~ $FAKE_ADB_SILENT ]]; then
 fi
 if [ -n "${FAKE_ADB_SLOW:-}" ] && [[ "$*" =~ ${FAKE_ADB_SLOW_AT:-.} ]]; then sleep "$FAKE_ADB_SLOW"; fi
 case "$*" in
-  devices) printf 'List of devices attached\nemulator-5554\tdevice\n' ;;
+  devices) printf 'List of devices attached\nemulator-5554\tdevice\n\n' ;;
   "install -r "*)
     if [ -n "${FAKE_INSTALL_FAILS:-}" ]; then
       echo "Performing Streamed Install"
@@ -59,7 +59,7 @@ case "$*" in
   "shell ps -A"*) echo "u0_a99    4321  1234  1 S com.nchat.app.smoke" ;;
   "shell dumpsys activity activities"*)
     echo "  mResumedActivity: ActivityRecord{1a2b3c u0 com.nchat.app.smoke/com.nchat.app.MainActivity t12}" ;;
-  "shell dumpsys activity lastanr"*) echo "  <no ANR has occurred since boot>" ;;
+  "shell ls -l /data/anr"*) echo "total 0" ;;
   "logcat -d"*) cat "$FAKE/logcat.txt" ;;
 esac
 exit 0
@@ -316,7 +316,17 @@ class OnEmulator(unittest.TestCase):
         self.assertIn("emulator-5554\tdevice", log)
         self.assertIn("mResumedActivity: ActivityRecord{1a2b3c u0 com.nchat.app.smoke/com.nchat.app.MainActivity t12}", log)
         self.assertIn("Status: ok", log)
-        self.assertNotIn("(no answer within", log.split(STILL_ANSWERS, 1)[1])
+        report = log.split(STILL_ANSWERS, 1)[1]
+        self.assertNotIn("(no answer within", report)
+        # An answer's empty lines are not kept: the next question follows its last line.
+        self.assertIn("emulator-5554\tdevice\n- has it started", report)
+        # Android 7 has no `dumpsys activity lastanr` (seen on the emulator, 2026-11-25). What
+        # an app that did not respond leaves behind is a file in /data/anr on every version.
+        asked_then = " | ".join(run.asked[run.asked.index("adb devices"):])
+        self.assertNotIn("lastanr", asked_then)
+        self.assertIn("adb shell ls -l /data/anr", asked_then)
+        # The app's own lines of the log were never fetched, so there is no heading for them.
+        self.assertNotIn("--- what the log says of the app", log)
         # Nothing is asked between the question that went unanswered and the report.
         asked = run.asked
         at = asked.index("adb shell uiautomator dump /sdcard/nchat-window.xml")
@@ -370,7 +380,7 @@ class OnEmulator(unittest.TestCase):
     def test_two_silences_that_are_not_in_a_row_do_not_end_the_asking(self):
         # The emulator answers some questions and not others. Only two in a row without an
         # answer mean that it is gone; until then every question is put.
-        run = self.run_script(FAKE_ADB_SILENT="uiautomator|^devices$|lastanr", NCHAT_ANSWER_LIMIT=2, NCHAT_PROBE_LIMIT=2)
+        run = self.run_script(FAKE_ADB_SILENT="uiautomator|^devices$|data/anr", NCHAT_ANSWER_LIMIT=2, NCHAT_PROBE_LIMIT=2)
 
         self.assertNotEqual(run.status, 0)
         report = run.start_log.split(STILL_ANSWERS, 1)[1]
@@ -465,6 +475,11 @@ class OnEmulator(unittest.TestCase):
         self.assertNotEqual(run.status, 0)
         self.assertIn("::error title=App start on Android API 24::crashed: java.lang.NoClassDefFoundError", run.output)
         self.assertLess(run.seconds, 15, "the thirty seconds for the first screen were waited out after a crash")
+        # The log the workflow commits ends with the app's own lines of the emulator's log.
+        own = run.start_log.split("--- what the log says of the app\n", 1)
+        self.assertEqual(len(own), 2, run.start_log)
+        self.assertIn("AndroidRuntime: FATAL EXCEPTION: main", own[1])
+        self.assertIn("at com.nchat.app.network.ApiClient.<init>(ApiClient.kt:41)", own[1])
 
     def test_the_whole_run_has_a_limit_of_its_own(self):
         # No command is slow enough to run into its own limit, and together they still take

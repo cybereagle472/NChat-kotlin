@@ -144,13 +144,19 @@ probe() {
   if [ -n "$pattern" ]; then
     grep -E "$pattern" "$OUT/probe.txt" | tail -n "$keep" > "$OUT/probe-kept.txt"
   else
-    tail -n "$keep" "$OUT/probe.txt" > "$OUT/probe-kept.txt"
+    grep -v '^[[:space:]]*$' "$OUT/probe.txt" | tail -n "$keep" > "$OUT/probe-kept.txt"
   fi
   if [ -s "$OUT/probe-kept.txt" ]; then sed 's/^/    /' "$OUT/probe-kept.txt"; else echo "    (nothing)"; fi
 }
 
 # What there is to know when a command has gone unanswered: is the emulator still attached,
 # what is in front, is the app there, did an app stop responding, and what the log says.
+#
+# Each of these was seen to answer on the emulators of Android 7 and 14 (the fire drill of
+# 2026-11-25). An app that does not respond shows in three of them: its dialog is the window
+# in front ("Application Not Responding: …"), the log says "ANR in …" and why, and the system
+# writes where its threads were to a file in /data/anr — traces.txt on Android 7, one file
+# per case later. `dumpsys activity lastanr` is not asked: Android 7 does not know it.
 still_answers() {
   echo "--- what the emulator still answers"
   SILENT=0
@@ -159,8 +165,8 @@ still_answers() {
   probe "what is in front" 8 "mResumedActivity|ResumedActivity:|topResumedActivity|mCurrentFocus|mFocusedApp" \
     adb shell "dumpsys activity activities; dumpsys window windows"
   probe "the app's process" 4 "$PACKAGE" adb shell "ps -A 2> /dev/null || ps"
-  probe "the last time an app did not respond" 30 "" adb shell "dumpsys activity lastanr | head -n 30"
-  probe "where that app's threads were" 120 "" adb shell "ls -l /data/anr 2>&1; head -n 110 /data/anr/traces.txt 2>&1"
+  probe "what an app that did not respond left behind" 120 "" \
+    adb shell 'ls -l /data/anr 2>&1; for file in $(ls -t /data/anr 2> /dev/null | head -n 1); do head -n 110 "/data/anr/$file" 2>&1; done'
   probe "the log" 80 "ANR in|FATAL EXCEPTION|Fatal signal|not responding|Watchdog|$PACKAGE|AndroidRuntime: |ActivityManager: (PID:|Reason:|Load:|Start proc|Killing|Displayed|Process .* has (died|crashed))" \
     adb logcat -d -t 3000
   echo "- on this machine"
@@ -285,7 +291,9 @@ start_app() {
 start_app >> "$START_LOG" 2>&1
 started=$?
 cat "$START_LOG"
-if [ "$started" -ne 0 ]; then
+# The app's own lines of the emulator's log — when the start was judged; of an emulator that
+# went silent the log was asked above, and what there is of it is there.
+if [ "$started" -ne 0 ] && ! unanswered; then
   {
     echo "--- what the log says of the app"
     grep -E "$PACKAGE|FATAL EXCEPTION|ANR in|Fatal signal|AndroidRuntime: (java|kotlin|Caused|	at )" "$OUT/logcat.txt" 2> /dev/null | tail -n 120
