@@ -1,580 +1,6 @@
-run 45547855344, attempt 1, Android API 24 — the step with the emulator: failure
-188 tests, 1 failed, 0 skipped on Android API 24
-slowest: E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 3.7 s, E2eeGroupTest.aMessageTooFarAheadIsRefusedWithoutBeingWorkedOn 3.3 s, E2eeProtocolTest.forgedCountersCostBoundedWork 2.3 s
-
-FAILED com.nchat.app.network.E2eeProtocolTest.forgedCountersCostBoundedWork
-
-
---- device-build.log
-…
-> Task :app:compileDebugJavaWithJavac FROM-CACHE
-> Task :app:mergeDebugShaders FROM-CACHE
-> Task :app:compileDebugShaders NO-SOURCE
-> Task :app:generateDebugAssets UP-TO-DATE
-> Task :app:mergeDebugAssets FROM-CACHE
-> Task :app:compressDebugAssets FROM-CACHE
-> Task :app:desugarDebugFileDependencies FROM-CACHE
-> Task :app:dexBuilderDebug FROM-CACHE
-> Task :app:mergeDebugGlobalSynthetics FROM-CACHE
-> Task :app:processDebugJavaRes
-> Task :app:mergeDebugJniLibFolders FROM-CACHE
-> Task :app:checkDebugDuplicateClasses
-> Task :app:mergeDebugNativeLibs
-> Task :app:mergeExtDexDebug FROM-CACHE
-> Task :app:mergeLibDexDebug FROM-CACHE
-> Task :app:mergeProjectDexDebug FROM-CACHE
-
-> Task :app:stripDebugDebugSymbols
-Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
-
-> Task :app:mergeDebugJavaResource
-> Task :app:validateSigningDebug
-> Task :app:writeDebugAppMetadata
-> Task :app:writeDebugSigningConfigVersions
-> Task :app:preDebugAndroidTestBuild SKIPPED
-> Task :app:bundleDebugClassesToCompileJar
-> Task :app:processDebugAndroidTestManifest
-> Task :app:generateDebugAndroidTestBuildConfig FROM-CACHE
-> Task :app:checkDebugAndroidTestAarMetadata
-> Task :app:generateDebugAndroidTestResValues FROM-CACHE
-> Task :app:mapDebugAndroidTestSourceSetPaths
-> Task :app:generateDebugAndroidTestResources UP-TO-DATE
-> Task :app:mergeDebugAndroidTestResources FROM-CACHE
-> Task :app:processDebugAndroidTestResources FROM-CACHE
-> Task :app:compileDebugAndroidTestKotlin FROM-CACHE
-> Task :app:javaPreCompileDebugAndroidTest FROM-CACHE
-> Task :app:compileDebugAndroidTestJavaWithJavac FROM-CACHE
-> Task :app:mergeDebugAndroidTestShaders FROM-CACHE
-> Task :app:compileDebugAndroidTestShaders NO-SOURCE
-> Task :app:generateDebugAndroidTestAssets UP-TO-DATE
-> Task :app:mergeDebugAndroidTestAssets FROM-CACHE
-> Task :app:compressDebugAndroidTestAssets FROM-CACHE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
-> Task :app:desugarDebugAndroidTestFileDependencies FROM-CACHE
-> Task :app:dexBuilderDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestGlobalSynthetics FROM-CACHE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
-> Task :app:processDebugAndroidTestJavaRes
-> Task :app:mergeDebugAndroidTestJavaResource
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
-> Task :app:checkDebugAndroidTestDuplicateClasses
-> Task :app:mergeDebugAndroidTestJniLibFolders FROM-CACHE
-> Task :app:mergeExtDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestJavaResource
-> Task :app:mergeLibDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestJavaResource
-> Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
-> Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
-> Task :app:validateSigningDebugAndroidTest
-> Task :app:writeDebugAndroidTestSigningConfigVersions
-> Task :app:mergeDebugAndroidTestJavaResource
-> Task :app:buildKotlinToolingMetadata
-> Task :app:preSmokeBuild UP-TO-DATE
-> Task :app:generateSmokeBuildConfig FROM-CACHE
-> Task :app:generateSmokeResValues FROM-CACHE
-> Task :app:checkSmokeAarMetadata
-> Task :app:mapSmokeSourceSetPaths
-> Task :app:generateSmokeResources UP-TO-DATE
-> Task :app:mergeSmokeResources FROM-CACHE
-> Task :app:packageSmokeResources FROM-CACHE
-> Task :app:parseSmokeLocalResources FROM-CACHE
-> Task :app:createSmokeCompatibleScreenManifests
-> Task :app:extractDeepLinksSmoke FROM-CACHE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect
-> Task :app:assembleDebugAndroidTest
-> Task :app:processSmokeMainManifest FROM-CACHE
-> Task :app:processSmokeManifest FROM-CACHE
-> Task :app:processSmokeManifestForPackage FROM-CACHE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect
-> Task :app:assembleDebugAndroidTest
-> Task :app:processSmokeResources FROM-CACHE
-> Task :app:compileSmokeKotlin FROM-CACHE
-> Task :app:javaPreCompileSmoke FROM-CACHE
-> Task :app:compileSmokeJavaWithJavac FROM-CACHE
-> Task :app:extractProguardFiles
-> Task :app:generateSmokeLintVitalReportModel
-> Task :app:lintVitalAnalyzeSmoke FROM-CACHE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
-> Task :app:mergeSmokeJniLibFolders FROM-CACHE
-> Task :app:checkSmokeDuplicateClasses
-> Task :app:mergeSmokeGeneratedProguardFiles
-> Task :app:processSmokeJavaRes
-> Task :app:mergeSmokeNativeLibs
-> Task :app:mergeSmokeArtProfile
-> Task :app:expandSmokeArtProfileWildcards FROM-CACHE
-> Task :app:mergeSmokeShaders FROM-CACHE
-
-> Task :app:stripSmokeDebugSymbols
-Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
-
-> Task :app:extractSmokeNativeSymbolTables FROM-CACHE
-> Task :app:mergeSmokeNativeDebugMetadata NO-SOURCE
-> Task :app:compileSmokeShaders NO-SOURCE
-> Task :app:generateSmokeAssets UP-TO-DATE
-> Task :app:mergeSmokeAssets FROM-CACHE
-> Task :app:compressSmokeAssets FROM-CACHE
-> Task :app:optimizeSmokeResources FROM-CACHE
-> Task :app:collectSmokeDependencies
-> Task :app:mergeSmokeJavaResource
-> Task :app:sdkSmokeDependencyData
-> Task :app:minifySmokeWithR8 FROM-CACHE
-> Task :app:compileSmokeArtProfile FROM-CACHE
-> Task :app:validateSigningSmoke
-> Task :app:writeSmokeAppMetadata
-> Task :app:writeSmokeSigningConfigVersions
-> Task :app:packageSmoke
-> Task :app:createSmokeApkListingFileRedirect
-> Task :app:lintVitalReportSmoke
-> Task :app:lintVitalSmoke
-> Task :app:assembleSmoke
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795581373437.json
-
-BUILD SUCCESSFUL in 18s
-110 actionable tasks: 47 executed, 63 from cache
-
---- device-run.log
-…
-To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
-Daemon will be stopped at the end of the build 
-
-> Configure project :app
-NCHAT_API_BASE is not set: this APK will ask for a server address on first launch.
-Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
-
-> Task :app:checkKotlinGradlePluginConfigurationErrors
-> Task :app:preBuild UP-TO-DATE
-> Task :app:preDebugBuild UP-TO-DATE
-> Task :app:generateDebugBuildConfig FROM-CACHE
-> Task :app:checkDebugAarMetadata UP-TO-DATE
-> Task :app:generateDebugResValues UP-TO-DATE
-> Task :app:mapDebugSourceSetPaths UP-TO-DATE
-> Task :app:generateDebugResources UP-TO-DATE
-> Task :app:mergeDebugResources UP-TO-DATE
-> Task :app:packageDebugResources UP-TO-DATE
-> Task :app:parseDebugLocalResources UP-TO-DATE
-> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
-> Task :app:extractDeepLinksDebug UP-TO-DATE
-> Task :app:processDebugMainManifest UP-TO-DATE
-> Task :app:processDebugManifest UP-TO-DATE
-> Task :app:processDebugManifestForPackage UP-TO-DATE
-> Task :app:processDebugResources UP-TO-DATE
-> Task :app:compileDebugKotlin FROM-CACHE
-> Task :app:javaPreCompileDebug UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac FROM-CACHE
-> Task :app:preDebugAndroidTestBuild SKIPPED
-> Task :app:processDebugAndroidTestManifest UP-TO-DATE
-> Task :app:generateDebugAndroidTestBuildConfig FROM-CACHE
-> Task :app:checkDebugAndroidTestAarMetadata UP-TO-DATE
-> Task :app:generateDebugAndroidTestResValues UP-TO-DATE
-> Task :app:mapDebugAndroidTestSourceSetPaths UP-TO-DATE
-> Task :app:generateDebugAndroidTestResources UP-TO-DATE
-> Task :app:mergeDebugAndroidTestResources UP-TO-DATE
-> Task :app:processDebugAndroidTestResources UP-TO-DATE
-> Task :app:javaPreCompileDebugAndroidTest UP-TO-DATE
-> Task :app:mergeDebugShaders UP-TO-DATE
-> Task :app:compileDebugShaders NO-SOURCE
-> Task :app:generateDebugAssets UP-TO-DATE
-> Task :app:bundleDebugClassesToCompileJar
-> Task :app:mergeDebugAssets UP-TO-DATE
-> Task :app:compileDebugAndroidTestKotlin FROM-CACHE
-> Task :app:compileDebugAndroidTestJavaWithJavac FROM-CACHE
-> Task :app:compressDebugAssets UP-TO-DATE
-> Task :app:desugarDebugFileDependencies UP-TO-DATE
-> Task :app:dexBuilderDebug FROM-CACHE
-> Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
-> Task :app:processDebugJavaRes UP-TO-DATE
-> Task :app:mergeDebugJavaResource UP-TO-DATE
-> Task :app:checkDebugDuplicateClasses UP-TO-DATE
-> Task :app:mergeExtDexDebug UP-TO-DATE
-> Task :app:mergeLibDexDebug UP-TO-DATE
-> Task :app:mergeProjectDexDebug FROM-CACHE
-> Task :app:mergeDebugJniLibFolders UP-TO-DATE
-> Task :app:mergeDebugNativeLibs UP-TO-DATE
-> Task :app:stripDebugDebugSymbols UP-TO-DATE
-> Task :app:validateSigningDebug UP-TO-DATE
-> Task :app:writeDebugAppMetadata UP-TO-DATE
-> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
-> Task :app:mergeDebugAndroidTestShaders UP-TO-DATE
-> Task :app:compileDebugAndroidTestShaders NO-SOURCE
-> Task :app:generateDebugAndroidTestAssets UP-TO-DATE
-> Task :app:mergeDebugAndroidTestAssets UP-TO-DATE
-> Task :app:compressDebugAndroidTestAssets UP-TO-DATE
-> Task :app:desugarDebugAndroidTestFileDependencies UP-TO-DATE
-> Task :app:dexBuilderDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestGlobalSynthetics UP-TO-DATE
-> Task :app:processDebugAndroidTestJavaRes UP-TO-DATE
-> Task :app:mergeDebugAndroidTestJavaResource UP-TO-DATE
-> Task :app:checkDebugAndroidTestDuplicateClasses UP-TO-DATE
-> Task :app:mergeExtDexDebugAndroidTest UP-TO-DATE
-> Task :app:mergeLibDexDebugAndroidTest UP-TO-DATE
-> Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestJniLibFolders UP-TO-DATE
-> Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
-> Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
-> Task :app:validateSigningDebugAndroidTest UP-TO-DATE
-> Task :app:writeDebugAndroidTestSigningConfigVersions UP-TO-DATE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect UP-TO-DATE
-[EmulatorConsole]: Failed to start Emulator console for 5554
-
-> Task :app:connectedDebugAndroidTest
-additionalTestOutput is not supported on this device running API level 24 because the additional test output directory could not be found
-Starting 290 tests on emulator-5554 - 7.0
-
-The test run did not end within 45 s and was stopped.
-
-Encryption tests on Android API 24: the test run did not end within 45 s and was stopped.
---- the end of what it had written
-> Task :app:checkDebugDuplicateClasses UP-TO-DATE
-> Task :app:mergeExtDexDebug UP-TO-DATE
-> Task :app:mergeLibDexDebug UP-TO-DATE
-> Task :app:mergeProjectDexDebug FROM-CACHE
-> Task :app:mergeDebugJniLibFolders UP-TO-DATE
-> Task :app:mergeDebugNativeLibs UP-TO-DATE
-> Task :app:stripDebugDebugSymbols UP-TO-DATE
-> Task :app:validateSigningDebug UP-TO-DATE
-> Task :app:writeDebugAppMetadata UP-TO-DATE
-> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
-> Task :app:mergeDebugAndroidTestShaders UP-TO-DATE
-> Task :app:compileDebugAndroidTestShaders NO-SOURCE
-> Task :app:generateDebugAndroidTestAssets UP-TO-DATE
-> Task :app:mergeDebugAndroidTestAssets UP-TO-DATE
-> Task :app:compressDebugAndroidTestAssets UP-TO-DATE
-> Task :app:desugarDebugAndroidTestFileDependencies UP-TO-DATE
-> Task :app:dexBuilderDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestGlobalSynthetics UP-TO-DATE
-> Task :app:processDebugAndroidTestJavaRes UP-TO-DATE
-> Task :app:mergeDebugAndroidTestJavaResource UP-TO-DATE
-> Task :app:checkDebugAndroidTestDuplicateClasses UP-TO-DATE
-> Task :app:mergeExtDexDebugAndroidTest UP-TO-DATE
-> Task :app:mergeLibDexDebugAndroidTest UP-TO-DATE
-> Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestJniLibFolders UP-TO-DATE
-> Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
-> Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
-> Task :app:validateSigningDebugAndroidTest UP-TO-DATE
-> Task :app:writeDebugAndroidTestSigningConfigVersions UP-TO-DATE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect UP-TO-DATE
-[EmulatorConsole]: Failed to start Emulator console for 5554
-
-> Task :app:connectedDebugAndroidTest
-additionalTestOutput is not supported on this device running API level 24 because the additional test output directory could not be found
-Starting 290 tests on emulator-5554 - 7.0
-
-The test run did not end within 45 s and was stopped.
---- where its Java processes are
-- where Gradle is
-    process 3218
-    "included builds" #49 prio=5 os_prio=0 cpu=2731.43ms elapsed=38.71s tid=0x00007687ce627c60 nid=0xcd0 waiting on condition  [0x00007688299f7000]
-       java.lang.Thread.State: WAITING (parking)
-    	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x0000000716084760> (a java.util.concurrent.CountDownLatch$Sync)
-    	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
-    	at java.util.concurrent.CountDownLatch.await(java.base@17.0.21/CountDownLatch.java:230)
-    	at org.gradle.internal.work.AbstractConditionalExecution.await(AbstractConditionalExecution.java:45)
-    	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:281)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker$$Lambda$1613/0x0000768830c6e3e0.run(Unknown Source)
-    	at org.gradle.internal.Factories$1.create(Factories.java:31)
-    	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:321)
-    	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:304)
-    	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLock(DefaultWorkerLeaseService.java:309)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:126)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:88)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForAll(DefaultAsyncWorkTracker.java:78)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForCompletion(DefaultAsyncWorkTracker.java:72)
-    	at org.gradle.workers.internal.DefaultWorkerExecutor.await(DefaultWorkerExecutor.java:211)
-    	at org.gradle.workers.internal.DefaultWorkerExecutor.access$100(DefaultWorkerExecutor.java:59)
-    	at org.gradle.workers.internal.DefaultWorkerExecutor$DefaultWorkQueue.await(DefaultWorkerExecutor.java:308)
-    	at com.android.build.gradle.internal.testing.utp.UtpTestUtilsKt.runUtpTestSuiteAndWait(UtpTestUtils.kt:191)
-    	at com.android.build.gradle.internal.testing.utp.UtpTestUtilsKt.runUtpTestSuiteAndWait$default(UtpTestUtils.kt:112)
-    	at com.android.build.gradle.internal.testing.utp.UtpTestRunner$1.invoke(UtpTestRunner.kt:55)
-    	at com.android.build.gradle.internal.testing.utp.UtpTestRunner$1.invoke(UtpTestRunner.kt:54)
-    	at com.android.build.gradle.internal.testing.utp.UtpTestRunner.scheduleTests(UtpTestRunner.kt:124)
-    	at com.android.build.gradle.internal.testing.BaseTestRunner.runTests(BaseTestRunner.java:196)
-    	at com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask.lambda$doTaskAction$2(DeviceProviderInstrumentTestTask.java:334)
-    	… 164 more
-    "WorkerExecutor Queue" #85 prio=5 os_prio=0 cpu=132.77ms elapsed=36.48s tid=0x00007688740f2070 nid=0xcf7 waiting on condition  [0x00007687cb4fd000]
-       java.lang.Thread.State: WAITING (parking)
-    	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x0000000715c40490> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
-    	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:341)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(java.base@17.0.21/AbstractQueuedSynchronizer.java:506)
-    	at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.21/ForkJoinPool.java:3465)
-    	at java.util.concurrent.ForkJoinPool.managedBlock(java.base@17.0.21/ForkJoinPool.java:3436)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(java.base@17.0.21/AbstractQueuedSynchronizer.java:1630)
-    	at org.gradle.process.internal.DefaultExecHandle.waitForFinish(DefaultExecHandle.java:315)
-    	at org.gradle.process.internal.DefaultJavaExecAction.execute(DefaultJavaExecAction.java:50)
-    	at org.gradle.process.internal.DefaultExecActionFactory.javaexec(DefaultExecActionFactory.java:195)
-    	at org.gradle.process.internal.DefaultExecOperations.javaexec(DefaultExecOperations.java:42)
-    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction$execute$javaProcessExecutor$1.apply(RunUtpWorkAction.kt:41)
-    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction$execute$javaProcessExecutor$1.apply(RunUtpWorkAction.kt:40)
-    	at com.android.build.gradle.internal.process.GradleJavaProcessExecutor.execute(GradleJavaProcessExecutor.java:58)
-    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction.execute(RunUtpWorkAction.kt:67)
-    	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
-    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
-    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
-    	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
-    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
-    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$$Lambda$1611/0x0000768830c53d20.execute(Unknown Source)
-    	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
-    	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
-    	… 24 more
-    "Monitor" #97 prio=5 os_prio=0 cpu=0.47ms elapsed=33.88s tid=0x0000768874150450 nid=0xd03 runnable  [0x00007687ca8fe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
-    	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
-    	- locked <0x000000070c3ec658> (a sun.nio.ch.Util$2)
-    	- locked <0x000000070c3ec608> (a sun.nio.ch.EPollSelectorImpl)
-    	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
-    	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
-    "Device List Monitor" #102 prio=5 os_prio=0 cpu=13.27ms elapsed=33.86s tid=0x0000768874166120 nid=0xd0a runnable  [0x00007687ca7fe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
-    	at sun.nio.ch.IOUtil.readIntoNativeBuffer(java.base@17.0.21/IOUtil.java:330)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:296)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:259)
-    	at sun.nio.ch.SocketChannelImpl.read(java.base@17.0.21/SocketChannelImpl.java:417)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:37)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:53)
-    	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
-    	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
-    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-    "Exec process" #106 prio=5 os_prio=0 cpu=1.53ms elapsed=30.74s tid=0x00007688880cc7d0 nid=0xd12 in Object.wait()  [0x00007687ca5fe000]
-       java.lang.Thread.State: WAITING (on object monitor)
-    	at java.lang.Object.wait(java.base@17.0.21/Native Method)
-    	- waiting on <no object reference available>
-    	at java.lang.Object.wait(java.base@17.0.21/Object.java:338)
-    	at java.lang.ProcessImpl.waitFor(java.base@17.0.21/ProcessImpl.java:434)
-    	- locked <0x0000000715c93478> (a java.lang.ProcessImpl)
-    	at org.gradle.process.internal.ExecHandleRunner.run(ExecHandleRunner.java:82)
-    	at org.gradle.internal.operations.CurrentBuildOperationPreservingRunnable.run(CurrentBuildOperationPreservingRunnable.java:42)
-    	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
-    	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
-    	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@17.0.21/ThreadPoolExecutor.java:1136)
-    	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.21/ThreadPoolExecutor.java:635)
-    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-- where the test platform is
-    process 3348
-    "main" #1 prio=5 os_prio=0 cpu=861.26ms elapsed=31.06s tid=0x0000777ea402a370 nid=0xd17 waiting on condition  [0x0000777eaad19000]
-       java.lang.Thread.State: TIMED_WAITING (parking)
-    	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x000000070ed27920> (a kotlinx.coroutines.BlockingCoroutine)
-    	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@17.0.21/LockSupport.java:252)
-    	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:88)
-    	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:59)
-    	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source)
-    	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:38)
-    	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source)
-    	at com.android.tools.utp.plugins.deviceprovider.ddmlib.DdmlibAndroidDeviceController$executeAsync$1.waitFor(DdmlibAndroidDeviceController.kt:323)
-    	at com.android.tools.utp.plugins.deviceprovider.ddmlib.DdmlibAndroidDeviceController.execute(DdmlibAndroidDeviceController.kt:120)
-    	at com.google.testing.platform.executor.DeviceControllerProxy$execute$2.invoke(DeviceControllerProxy.kt:105)
-    	at com.google.testing.platform.executor.DeviceControllerProxy$execute$2.invoke(DeviceControllerProxy.kt:104)
-    	at com.google.testing.platform.core.telemetry.common.noop.NoopDiagnosticsScope.recordEvent(NoopDiagnosticsScope.kt:35)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent(Telemetry.kt:66)
-    	at com.google.testing.platform.executor.DeviceControllerProxy.execute(DeviceControllerProxy.kt:104)
-    	at com.google.testing.platform.runtime.android.controller.ext.AndroidDeviceControllerExtKt.deviceShell(AndroidDeviceControllerExt.kt:74)
-    	at com.google.testing.platform.runtime.android.controller.ext.AndroidDeviceControllerExtKt.deviceShell$default(AndroidDeviceControllerExt.kt:73)
-    	at com.google.testing.platform.runtime.android.controller.ext.AndroidDeviceControllerExtKt.uninstall(AndroidDeviceControllerExt.kt:213)
-    	at com.google.testing.platform.runtime.android.controller.ext.AndroidDeviceControllerExtKt.uninstall$default(AndroidDeviceControllerExt.kt:208)
-    	at com.android.tools.utp.plugins.host.apkinstaller.AndroidTestApkInstallerPlugin.afterAll(AndroidTestApkInstallerPlugin.kt:236)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1$1.invoke(PluginLifecycle.kt:304)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1$1.invoke(PluginLifecycle.kt:303)
-    	at com.google.testing.platform.plugin.PluginLifecycle$verify$1.invoke(PluginLifecycle.kt:104)
-    	at com.google.testing.platform.api.event.Events.verify(Events.kt:31)
-    	at com.google.testing.platform.plugin.PluginLifecycle.verify(PluginLifecycle.kt:104)
-    	at com.google.testing.platform.plugin.PluginLifecycle.access$verify(PluginLifecycle.kt:52)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:303)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:302)
-    	… 41 more
-    "Monitor" #19 prio=5 os_prio=0 cpu=18.72ms elapsed=30.24s tid=0x0000777ea4e71490 nid=0xd32 runnable  [0x0000777e75ffe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
-    	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
-    	- locked <0x0000000707000788> (a sun.nio.ch.Util$2)
-    	- locked <0x0000000707000738> (a sun.nio.ch.EPollSelectorImpl)
-    	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
-    	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
-    "Device List Monitor" #25 prio=5 os_prio=0 cpu=20.66ms elapsed=30.18s tid=0x0000777ea4e8ac80 nid=0xd3b runnable  [0x0000777e75dfe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
-    	at sun.nio.ch.IOUtil.readIntoNativeBuffer(java.base@17.0.21/IOUtil.java:330)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:296)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:259)
-    	at sun.nio.ch.SocketChannelImpl.read(java.base@17.0.21/SocketChannelImpl.java:417)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:37)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:53)
-    	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
-    	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
-    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-    "DefaultDispatcher-worker-1" #27 daemon prio=5 os_prio=0 cpu=101.81ms elapsed=29.97s tid=0x0000777ea4f142f0 nid=0xd3e waiting on condition  [0x0000777e75efe000]
-       java.lang.Thread.State: TIMED_WAITING (sleeping)
-    	at java.lang.Thread.sleep(java.base@17.0.21/Native Method)
-    	at com.android.ddmlib.AdbHelper.executeRemoteCommand(AdbHelper.java:733)
-    	at com.android.ddmlib.AdbHelper.executeRemoteCommand(AdbHelper.java:511)
-    	at com.android.ddmlib.internal.DeviceImpl.executeShellCommand(DeviceImpl.java:759)
-    	at com.android.tools.utp.plugins.deviceprovider.ddmlib.DdmlibAndroidDevice.executeShellCommand(DdmlibAndroidDevice.kt)
-    	at com.android.tools.utp.plugins.deviceprovider.ddmlib.DdmlibAndroidDeviceController$executeAsync$deferred$1.invokeSuspend(DdmlibAndroidDeviceController.kt:165)
-    	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
-    	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:106)
-    	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:571)
-    	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:750)
-    	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:678)
-    	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:665)
-    "Thread-0" #14 prio=5 os_prio=0 cpu=0.90ms elapsed=0.64s tid=0x0000777dec011410 nid=0xd57 waiting on condition  [0x0000777e755fc000]
-       java.lang.Thread.State: WAITING (parking)
-    	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x00000007064edce8> (a java.util.concurrent.CountDownLatch$Sync)
-    	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
-    	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
-    	at java.util.concurrent.CountDownLatch.await(java.base@17.0.21/CountDownLatch.java:230)
-    	at com.google.testing.platform.lib.cancellation.ProcessCancellationContext.cancelAndJoinMain(ProcessCancellationContext.kt:105)
-    	at com.google.testing.platform.lib.cancellation.ProcessCancellationContext.cancelAndJoinMain$default(ProcessCancellationContext.kt:93)
-    	at com.google.testing.platform.main.MainKt$main$3.run(Main.kt:63)
-    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
---- what the emulator still answers
-- is it attached
-    List of devices attached
-    emulator-5554	device
-- has it started, and how long has it run
-    1
-     04:38:11 up 0 min,  0 users,  load average: 0.93, 0.28, 0.10
-- what is in front
-        mResumedActivity: ActivityRecord{49220af u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}
-      mCurrentFocus=Window{bc98a8 u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
-      mFocusedApp=AppWindowToken{7c8c79a token=Token{e876cbc ActivityRecord{49220af u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}}}
-- the app's processes
-    (nothing)
-- what is at work there
-    shell     1301  1     4880   1352  n_tty_read a85c9424 S /system/bin/sh
-    logd      1336  1     5952   1464  __skb_recv 00000000 S /system/bin/logcat
-    root      1585  1     4880   1356  poll_sched 00000000 S sh
-    shell     2718  1329  4880   1352  hrtimer_na a7f0a424 S /system/bin/sh
-    shell     2722  2718  0      0        do_exit 00000000 Z logcat
-    shell     2754  1329  4880   1352  hrtimer_na b1e48424 S /system/bin/sh
-    shell     2863  1329  4880   1352  sigsuspend ac630424 S /system/bin/sh
-    shell     2871  2863  68352  8536           0 aaff86e0 R app_process
-    shell     2893  1329  4880   1352  sigsuspend addcd424 S /system/bin/sh
-- what an app that did not respond left behind
-    total 0
-- the log
-    11-25 04:37:18.894  1664  1664 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=SoftKeyboard.apk --oat-fd=7 --oat-location=/data/app/SoftKeyboard/oat/x86/SoftKeyboard.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9
-    11-25 04:37:18.894  1664  1664 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only
-    11-25 04:37:18.908  1664  1664 I dex2oat : dex2oat took 14.173ms (threads: 2) arena alloc=1752B (1752B) java alloc=177KB (181736B) native alloc=1082KB (1108688B) free=1477KB (1512752B)
-    11-25 04:37:18.911  1596  1596 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/WidgetPreview/WidgetPreview.apk pkg=com.android.widgetpreview isa=x86 vmSafeMode=false debuggable=false target-filter=interpret-only oatDir = /data/app/WidgetPreview/oat sharedLibraries=null
-    11-25 04:37:18.916  1667  1667 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
-    11-25 04:37:18.916  1667  1667 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
-    11-25 04:37:18.916  1667  1667 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=WidgetPreview.apk --oat-fd=7 --oat-location=/data/app/WidgetPreview/oat/x86/WidgetPreview.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9
-    11-25 04:37:18.916  1667  1667 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only
-    11-25 04:37:18.945  1667  1667 I dex2oat : dex2oat took 29.761ms (threads: 2) arena alloc=1016B (1016B) java alloc=68KB (70160B) native alloc=885KB (906384B) free=1162KB (1190768B)
-    11-25 04:37:18.946  1596  1596 W PackageManager: No disk maintenance in 1795581438946; running immediately
-    11-25 04:37:19.868  1596  1624 I ActivityManager: Displayed com.android.settings/.FallbackHome: +203ms (total +275ms)
-    11-25 04:37:20.160  1596  1624 V PackageManager: reconcileAppsData for null u0 0x2
-    11-25 04:37:20.172  1596  1624 V PackageManager: reconcileAppsData finished 79 packages; restoreconNeeded was false
-    11-25 04:37:20.300  1596  1629 I ActivityManager: Killing 2133:com.android.sdksetup/u0a18 (adj 0): change com.android.sdksetup
-    11-25 04:37:20.444  1596  1867 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Scheme: "sms"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.444  1596  2058 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Scheme: "smsto"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.445  1596  1607 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Scheme: "mms"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.445  1596  1596 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Scheme: "mmsto"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.915  1596  1624 I ActivityManager: Displayed com.android.launcher3/.Launcher: +601ms (total +651ms)
-    11-25 04:37:41.982  1596  1629 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl1270424697.tmp/base.apk pkg=com.nchat.app.debug isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl1270424697.tmp/oat sharedLibraries=null
-    11-25 04:37:41.987  2661  2661 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
-    11-25 04:37:41.987  2661  2661 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
-    11-25 04:37:41.987  2661  2661 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl1270424697.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable
-    11-25 04:37:41.987  2661  2661 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
-    11-25 04:37:42.922  2661  2661 I dex2oat : Large app, accepted running with swap.
-    11-25 04:37:43.120  2661  2661 W dex2oat : Before Android 4.1, method android.graphics.PorterDuffColorFilter androidx.vectordrawable.graphics.drawable.VectorDrawableCompat.updateTintFilter(android.graphics.PorterDuffColorFilter, android.content.res.ColorStateList, android.graphics.PorterDuff$Mode) would have incorrectly overridden the package-private method in android.graphics.drawable.Drawable
-    11-25 04:37:43.549  2661  2661 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateMap failed lock verification and will run slower.
-    11-25 04:37:43.549  2661  2661 W dex2oat : Common causes for lock verification issues are non-optimized dex code
-    11-25 04:37:43.549  2661  2661 W dex2oat : and incorrect proguard optimizations.
-    11-25 04:37:43.614  2661  2663 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateList failed lock verification and will run slower.
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method double java.util.concurrent.ThreadLocalRandom.internalNextDouble(double, double) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method int java.util.concurrent.ThreadLocalRandom.internalNextInt(int, int) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method long java.util.concurrent.ThreadLocalRandom.internalNextLong(long, long) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.654  2661  2661 I dex2oat : dex2oat took 2.667s (threads: 2) arena alloc=1311KB (1342568B) java alloc=23MB (24479776B) native alloc=30MB (31672792B) free=3MB (3716648B) swap=16MB (16777216B)
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.BLUETOOTH_CONNECT in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.POST_NOTIFICATIONS in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE_DATA_SYNC in package com.nchat.app.debug
-    11-25 04:37:44.708  1596  1867 I ActivityManager: Killing 1849:com.android.settings:CryptKeeper/1000 (adj 906): empty #17
-    11-25 04:37:44.719  1596  1608 I ActivityManager: Killing 2165:com.android.sdksetup/u0a18 (adj 906): empty #17
-    11-25 04:37:44.922  1596  1629 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl553938890.tmp/base.apk pkg=com.nchat.app.debug.test isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl553938890.tmp/oat sharedLibraries=/system/framework/android.test.runner.jar
-    11-25 04:37:44.928  2703  2703 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
-    11-25 04:37:44.928  2703  2703 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
-    11-25 04:37:44.928  2703  2703 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl553938890.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable --runtime-arg -classpath --runtime-arg /system/framework/android.test.runner.jar
-    11-25 04:37:44.928  2703  2703 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
-    11-25 04:37:45.021  2703  2703 I dex2oat : dex2oat took 93.889ms (threads: 2) arena alloc=16KB (17016B) java alloc=663KB (679456B) native alloc=1442KB (1476736B) free=2MB (2193280B)
-    11-25 04:37:45.035  1596  1629 V BackupManagerService: restoreAtInstall pkg=com.nchat.app.debug.test token=2 restoreSet=0
-    11-25 04:37:45.563  1596  2059 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: start instr
-    11-25 04:37:45.574  1596  2059 I ActivityManager: Start proc 2765:com.nchat.app.debug/u0a62 for added application com.nchat.app.debug
-    11-25 04:37:45.582  2765  2765 W System  : ClassLoader referenced unknown path: /data/app/com.nchat.app.debug.test-1/lib/x86
-    11-25 04:37:45.611  2765  2780 I TestRequestBuilder: Scanning classpath to find tests in paths [/data/app/com.nchat.app.debug.test-1/base.apk]
-    11-25 04:37:48.109  1596  1778 I ActivityManager: START u0 {act=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dat=package:com.nchat.app.debug flg=0x10000000 cmp=com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations} from uid 10062 on display 0
-    11-25 04:37:48.498  1596  1624 I ActivityManager: Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations: +385ms
-    11-25 04:37:51.049  2765  2799 D ProfileInstaller: Installing profile for com.nchat.app.debug
-    11-25 04:37:54.929  1596  1778 I ActivityManager: Killing 2149:com.android.keychain/1000 (adj 906): empty #17
-    11-25 04:38:11.075  1596  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
-    11-25 04:38:11.075  1596  1616 I ActivityManager: Killing 2765:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
-    11-25 04:38:11.076  1596  1616 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
-    11-25 04:38:11.077  1596  2841 I ActivityManager: Failure reporting to instrumentation watcher: comp=ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner} results=Bundle[{shortMsg=Process crashed.}]
-    11-25 04:38:11.077  1596  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
-    11-25 04:38:11.083  1596  1629 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
-    11-25 04:38:11.109  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
-    11-25 04:38:11.126  1596  1629 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
-    11-25 04:38:11.176  2081  2883 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
-- on this machine
-       2670     101 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
-       3054      58 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
-       3058      58 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
-       3155      48 adb -L tcp:5037 fork-server server --reply-fd 4
-       3176      46 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
-       3177      46 bash .github/scripts/on_emulator.sh 24
-       3218      45 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=j
-       3348      31 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java -Djava.awt.headless=true -Djava.util.logging.config.file=/home/runner/.config/.android/utp/logging971
+run 45547855506, attempt 1, Android API 24 — the step with the emulator: failure
+290 tests, 0 failed, 0 skipped on Android API 24
+slowest: E2eeProtocolTest.forgedCountersCostBoundedWork 12.3 s, E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 5.9 s, EndToEndTest.theAppWritesItsBackupsTheSlowWay 5.6 s
 
 ::error title=App start on Android API 24::not judged — no answer within 300 s: adb install -r app/build/outputs/apk/smoke/app-smoke.apk
 App start on Android API 24: not judged — no answer within 300 s: adb install -r app/build/outputs/apk/smoke/app-smoke.apk
@@ -590,110 +16,110 @@ App start on Android API 24: not judged — no answer within 300 s: adb install 
     emulator-5554	device
 - has it started, and how long has it run
     1
-     04:43:11 up 5 min,  0 users,  load average: 0.02, 0.13, 0.08
+     04:43:54 up 6 min,  0 users,  load average: 0.01, 0.13, 0.09
 - what is in front
-        mResumedActivity: ActivityRecord{49220af u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}
-      mCurrentFocus=Window{bc98a8 u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
-      mFocusedApp=AppWindowToken{7c8c79a token=Token{e876cbc ActivityRecord{49220af u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}}}
+        mResumedActivity: ActivityRecord{d2dc913 u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t3}
+      mCurrentFocus=Window{813d87c u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
+      mFocusedApp=AppWindowToken{654464e token=Token{7749750 ActivityRecord{d2dc913 u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t3}}}
 - the app's processes
     (nothing)
 - what is at work there
-    shell     1301  1     4880   1352  n_tty_read a85c9424 S /system/bin/sh
-    logd      1336  1     5952   1464  __skb_recv 00000000 S /system/bin/logcat
+    shell     1301  1     4880   1352  n_tty_read a8352424 S /system/bin/sh
+    logd      1339  1     5952   1464  __skb_recv 00000000 S /system/bin/logcat
     root      1585  1     4880   1356  poll_sched 00000000 S sh
-    shell     2921  1329  4880   1348  hrtimer_na ad3ba424 S /system/bin/sh
-    shell     2923  2921  0      0        do_exit 00000000 Z cmd
-    shell     3080  1329  4880   1352  sigsuspend b5c41424 S /system/bin/sh
+    shell     3014  1332  4880   1348  hrtimer_na a897f424 S /system/bin/sh
+    shell     3016  3014  0      0        do_exit 00000000 Z cmd
+    shell     3042  1332  4880   1352  sigsuspend b2079424 S /system/bin/sh
 - what an app that did not respond left behind
     total 0
 - the log
-    11-25 04:37:20.172  1596  1624 V PackageManager: reconcileAppsData finished 79 packages; restoreconNeeded was false
-    11-25 04:37:20.300  1596  1629 I ActivityManager: Killing 2133:com.android.sdksetup/u0a18 (adj 0): change com.android.sdksetup
-    11-25 04:37:20.444  1596  1867 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   Scheme: "sms"
-    11-25 04:37:20.444  1596  1867 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.444  1596  2058 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   Scheme: "smsto"
-    11-25 04:37:20.444  1596  2058 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.445  1596  1607 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   Scheme: "mms"
-    11-25 04:37:20.445  1596  1607 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.445  1596  1596 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Action: "android.intent.action.SENDTO"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Category: "android.intent.category.DEFAULT"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   Scheme: "mmsto"
-    11-25 04:37:20.445  1596  1596 I PackageManager:   AutoVerify=false
-    11-25 04:37:20.915  1596  1624 I ActivityManager: Displayed com.android.launcher3/.Launcher: +601ms (total +651ms)
-    11-25 04:37:41.982  1596  1629 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl1270424697.tmp/base.apk pkg=com.nchat.app.debug isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl1270424697.tmp/oat sharedLibraries=null
-    11-25 04:37:41.987  2661  2661 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
-    11-25 04:37:41.987  2661  2661 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
-    11-25 04:37:41.987  2661  2661 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl1270424697.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable
-    11-25 04:37:41.987  2661  2661 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
-    11-25 04:37:42.922  2661  2661 I dex2oat : Large app, accepted running with swap.
-    11-25 04:37:43.120  2661  2661 W dex2oat : Before Android 4.1, method android.graphics.PorterDuffColorFilter androidx.vectordrawable.graphics.drawable.VectorDrawableCompat.updateTintFilter(android.graphics.PorterDuffColorFilter, android.content.res.ColorStateList, android.graphics.PorterDuff$Mode) would have incorrectly overridden the package-private method in android.graphics.drawable.Drawable
-    11-25 04:37:43.549  2661  2661 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateMap failed lock verification and will run slower.
-    11-25 04:37:43.549  2661  2661 W dex2oat : Common causes for lock verification issues are non-optimized dex code
-    11-25 04:37:43.549  2661  2661 W dex2oat : and incorrect proguard optimizations.
-    11-25 04:37:43.614  2661  2663 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateList failed lock verification and will run slower.
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method double java.util.concurrent.ThreadLocalRandom.internalNextDouble(double, double) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method int java.util.concurrent.ThreadLocalRandom.internalNextInt(int, int) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.047  2661  2663 W dex2oat : Before Android 4.1, method long java.util.concurrent.ThreadLocalRandom.internalNextLong(long, long) would have incorrectly overridden the package-private method in java.util.Random
-    11-25 04:37:44.654  2661  2661 I dex2oat : dex2oat took 2.667s (threads: 2) arena alloc=1311KB (1342568B) java alloc=23MB (24479776B) native alloc=30MB (31672792B) free=3MB (3716648B) swap=16MB (16777216B)
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.BLUETOOTH_CONNECT in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.POST_NOTIFICATIONS in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE in package com.nchat.app.debug
-    11-25 04:37:44.671  1596  1629 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE_DATA_SYNC in package com.nchat.app.debug
-    11-25 04:37:44.708  1596  1867 I ActivityManager: Killing 1849:com.android.settings:CryptKeeper/1000 (adj 906): empty #17
-    11-25 04:37:44.719  1596  1608 I ActivityManager: Killing 2165:com.android.sdksetup/u0a18 (adj 906): empty #17
-    11-25 04:37:44.922  1596  1629 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl553938890.tmp/base.apk pkg=com.nchat.app.debug.test isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl553938890.tmp/oat sharedLibraries=/system/framework/android.test.runner.jar
-    11-25 04:37:44.928  2703  2703 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
-    11-25 04:37:44.928  2703  2703 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
-    11-25 04:37:44.928  2703  2703 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl553938890.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable --runtime-arg -classpath --runtime-arg /system/framework/android.test.runner.jar
-    11-25 04:37:44.928  2703  2703 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
-    11-25 04:37:45.021  2703  2703 I dex2oat : dex2oat took 93.889ms (threads: 2) arena alloc=16KB (17016B) java alloc=663KB (679456B) native alloc=1442KB (1476736B) free=2MB (2193280B)
-    11-25 04:37:45.035  1596  1629 V BackupManagerService: restoreAtInstall pkg=com.nchat.app.debug.test token=2 restoreSet=0
-    11-25 04:37:45.563  1596  2059 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: start instr
-    11-25 04:37:45.574  1596  2059 I ActivityManager: Start proc 2765:com.nchat.app.debug/u0a62 for added application com.nchat.app.debug
-    11-25 04:37:45.582  2765  2765 W System  : ClassLoader referenced unknown path: /data/app/com.nchat.app.debug.test-1/lib/x86
-    11-25 04:37:45.611  2765  2780 I TestRequestBuilder: Scanning classpath to find tests in paths [/data/app/com.nchat.app.debug.test-1/base.apk]
-    11-25 04:37:48.109  1596  1778 I ActivityManager: START u0 {act=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dat=package:com.nchat.app.debug flg=0x10000000 cmp=com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations} from uid 10062 on display 0
-    11-25 04:37:48.498  1596  1624 I ActivityManager: Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations: +385ms
-    11-25 04:37:51.049  2765  2799 D ProfileInstaller: Installing profile for com.nchat.app.debug
-    11-25 04:37:54.929  1596  1778 I ActivityManager: Killing 2149:com.android.keychain/1000 (adj 906): empty #17
-    11-25 04:38:11.075  1596  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
-    11-25 04:38:11.075  1596  1616 I ActivityManager: Killing 2765:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
-    11-25 04:38:11.076  1596  1616 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
-    11-25 04:38:11.077  1596  2841 I ActivityManager: Failure reporting to instrumentation watcher: comp=ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner} results=Bundle[{shortMsg=Process crashed.}]
-    11-25 04:38:11.077  1596  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
-    11-25 04:38:11.083  1596  1629 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
-    11-25 04:38:11.109  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
-    11-25 04:38:11.126  1596  1629 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
-    11-25 04:38:11.176  2081  2883 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
-    11-25 04:38:11.299  1596  1607 I ActivityManager: Killing 1985:com.android.cellbroadcastreceiver/u0a4 (adj 906): empty #17
-    11-25 04:38:11.299  1596  1607 I ActivityManager: Killing 2221:com.android.carrierconfig/u0a3 (adj 906): empty #18
-    11-25 04:38:11.338  1596  1616 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=-1: deletePackageX
-    11-25 04:38:11.349  1596  2059 I ActivityManager: Killing 2364:com.android.quicksearchbox/u0a52 (adj 906): empty #17
-    11-25 04:38:11.371  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=0: pkg removed
-    11-25 04:38:11.378  1596  1629 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
-    11-25 04:38:11.397  2081  2959 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug.test
-    11-25 04:38:16.136  1596  2117 I ActivityManager: Killing 2458:com.android.camera2/u0a27 (adj 906): empty #17
-    11-25 04:38:16.136  1596  2117 I ActivityManager: Killing 2415:com.android.dialer/u0a8 (adj 906): empty #18
-    11-25 04:43:11.299  1596  1864 W FastPrintWriter: 	at com.android.server.pm.PackageManagerService.onShellCommand(PackageManagerService.java:18181)
-    11-25 04:43:11.299  1596  1864 W FastPrintWriter: 	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:2387)
-    11-25 04:43:11.299  1596  1864 W FastPrintWriter: 	at com.android.server.pm.PackageManagerService.onTransact(PackageManagerService.java:3143)
+    11-25 04:37:22.667  1595  1627 V PackageManager: reconcileAppsData for null u0 0x2
+    11-25 04:37:22.714  1595  1627 V PackageManager: reconcileAppsData finished 79 packages; restoreconNeeded was false
+    11-25 04:37:22.967  1595  1632 I ActivityManager: Killing 2123:com.android.sdksetup/u0a18 (adj 0): change com.android.sdksetup
+    11-25 04:37:23.055  1595  1595 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:23.055  1595  1595 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:23.055  1595  1595 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:23.055  1595  1595 I PackageManager:   Scheme: "sms"
+    11-25 04:37:23.055  1595  1595 I PackageManager:   AutoVerify=false
+    11-25 04:37:23.056  1595  1595 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Scheme: "smsto"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   AutoVerify=false
+    11-25 04:37:23.056  1595  1595 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Scheme: "mms"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   AutoVerify=false
+    11-25 04:37:23.056  1595  1595 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   Scheme: "mmsto"
+    11-25 04:37:23.056  1595  1595 I PackageManager:   AutoVerify=false
+    11-25 04:37:24.020  1595  1627 I ActivityManager: Displayed com.android.launcher3/.Launcher: +1s8ms (total +1s137ms)
+    11-25 04:37:49.092  1595  1632 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl1696633692.tmp/base.apk pkg=com.nchat.app.debug isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl1696633692.tmp/oat sharedLibraries=null
+    11-25 04:37:49.099  2722  2722 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
+    11-25 04:37:49.099  2722  2722 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
+    11-25 04:37:49.099  2722  2722 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl1696633692.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable
+    11-25 04:37:49.099  2722  2722 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
+    11-25 04:37:50.131  2722  2722 I dex2oat : Large app, accepted running with swap.
+    11-25 04:37:50.363  2722  2722 W dex2oat : Before Android 4.1, method android.graphics.PorterDuffColorFilter androidx.vectordrawable.graphics.drawable.VectorDrawableCompat.updateTintFilter(android.graphics.PorterDuffColorFilter, android.content.res.ColorStateList, android.graphics.PorterDuff$Mode) would have incorrectly overridden the package-private method in android.graphics.drawable.Drawable
+    11-25 04:37:50.911  2722  2722 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateMap failed lock verification and will run slower.
+    11-25 04:37:50.911  2722  2722 W dex2oat : Common causes for lock verification issues are non-optimized dex code
+    11-25 04:37:50.911  2722  2722 W dex2oat : and incorrect proguard optimizations.
+    11-25 04:37:50.975  2722  2722 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateList failed lock verification and will run slower.
+    11-25 04:37:51.473  2722  2724 W dex2oat : Before Android 4.1, method double java.util.concurrent.ThreadLocalRandom.internalNextDouble(double, double) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:37:51.473  2722  2724 W dex2oat : Before Android 4.1, method int java.util.concurrent.ThreadLocalRandom.internalNextInt(int, int) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:37:51.473  2722  2724 W dex2oat : Before Android 4.1, method long java.util.concurrent.ThreadLocalRandom.internalNextLong(long, long) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:37:52.173  2722  2722 I dex2oat : dex2oat took 3.074s (threads: 2) arena alloc=1248KB (1278168B) java alloc=23MB (24488496B) native alloc=30MB (31672792B) free=3MB (3192360B) swap=16MB (16777216B)
+    11-25 04:37:52.190  1595  1632 W PackageManager: Unknown permission android.permission.BLUETOOTH_CONNECT in package com.nchat.app.debug
+    11-25 04:37:52.190  1595  1632 W PackageManager: Unknown permission android.permission.POST_NOTIFICATIONS in package com.nchat.app.debug
+    11-25 04:37:52.190  1595  1632 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE in package com.nchat.app.debug
+    11-25 04:37:52.190  1595  1632 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE_DATA_SYNC in package com.nchat.app.debug
+    11-25 04:37:52.240  1595  2165 I ActivityManager: Killing 1851:com.android.settings:CryptKeeper/1000 (adj 906): empty #17
+    11-25 04:37:52.259  1595  1609 I ActivityManager: Killing 2138:com.android.keychain/1000 (adj 906): empty #17
+    11-25 04:37:52.473  1595  1632 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl928464620.tmp/base.apk pkg=com.nchat.app.debug.test isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl928464620.tmp/oat sharedLibraries=/system/framework/android.test.runner.jar
+    11-25 04:37:52.480  2764  2764 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
+    11-25 04:37:52.480  2764  2764 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
+    11-25 04:37:52.480  2764  2764 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl928464620.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable --runtime-arg -classpath --runtime-arg /system/framework/android.test.runner.jar
+    11-25 04:37:52.480  2764  2764 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
+    11-25 04:37:52.572  2764  2764 I dex2oat : dex2oat took 92.404ms (threads: 2) arena alloc=16KB (17016B) java alloc=671KB (687400B) native alloc=1437KB (1471784B) free=1634KB (1673944B)
+    11-25 04:37:52.588  1595  1632 V BackupManagerService: restoreAtInstall pkg=com.nchat.app.debug.test token=2 restoreSet=0
+    11-25 04:37:53.347  1595  2165 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: start instr
+    11-25 04:37:53.350  2826  2826 I chatty  : uid=10062(com.nchat.app.debug) expire 10 lines
+    11-25 04:37:53.357  1595  2165 I ActivityManager: Start proc 2826:com.nchat.app.debug/u0a62 for added application com.nchat.app.debug
+    11-25 04:37:53.382  2826  2841 I chatty  : uid=10062(com.nchat.app.debug) expire 198 lines
+    11-25 04:37:53.955  2826  2831 I chatty  : uid=10062(com.nchat.app.debug) expire 11 lines
+    11-25 04:37:55.903  1595  2166 I ActivityManager: START u0 {act=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dat=package:com.nchat.app.debug flg=0x10000000 cmp=com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations} from uid 10062 on display 0
+    11-25 04:37:56.366  1595  1627 I ActivityManager: Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations: +460ms
+    11-25 04:37:58.735  2826  2861 I chatty  : uid=10062(com.nchat.app.debug) expire 1 line
+    11-25 04:38:10.591  2826  2841 I chatty  : uid=10062(com.nchat.app.debug) expire 9 lines
+    11-25 04:38:22.888  1595  1609 I ActivityManager: Killing 2067:com.android.carrierconfig/u0a3 (adj 906): empty #17
+    11-25 04:38:52.428  1595  2166 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
+    11-25 04:38:52.428  1595  2166 I ActivityManager: Killing 2826:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
+    11-25 04:38:52.868  1595  1613 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
+    11-25 04:38:52.869  1595  1632 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
+    11-25 04:38:52.898  1595  1632 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
+    11-25 04:38:52.918  1595  1632 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
+    11-25 04:38:52.954  2209  2951 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
+    11-25 04:38:53.031  1595  1865 I ActivityManager: Killing 2416:com.android.camera2/u0a27 (adj 906): empty #17
+    11-25 04:38:53.031  1595  1865 I ActivityManager: Killing 2376:com.android.dialer/u0a8 (adj 906): empty #18
+    11-25 04:38:53.031  1595  1865 I ActivityManager: Killing 1994:com.android.cellbroadcastreceiver/u0a4 (adj 906): empty #19
+    11-25 04:38:53.120  1595  1613 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=-1: deletePackageX
+    11-25 04:38:53.143  1595  1632 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=0: pkg removed
+    11-25 04:38:53.152  1595  1632 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
+    11-25 04:38:53.164  2209  3012 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug.test
+    11-25 04:38:57.947  1595  2165 I ActivityManager: Killing 2081:com.android.deskclock/u0a32 (adj 906): empty #17
+    11-25 04:43:54.644  1595  1610 W FastPrintWriter: 	at com.android.server.pm.PackageManagerService.onShellCommand(PackageManagerService.java:18181)
+    11-25 04:43:54.644  1595  1610 W FastPrintWriter: 	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:2387)
+    11-25 04:43:54.644  1595  1610 W FastPrintWriter: 	at com.android.server.pm.PackageManagerService.onTransact(PackageManagerService.java:3143)
 - on this machine
-       2670     401 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
-       3054     359 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
-       3058     359 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
-       3155     349 adb -L tcp:5037 fork-server server --reply-fd 4
-       3176     346 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
-       3177     346 bash .github/scripts/on_emulator.sh 24
+       2903     437 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
+       3290     400 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
+       3294     400 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
+       3406     390 adb -L tcp:5037 fork-server server --reply-fd 4
+       3427     387 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
+       3428     387 bash .github/scripts/on_emulator.sh 24
 --- still running on the build machine when this was written
-   3155     350 adb -L tcp:5037 fork-server server --reply-fd 4
-   3772       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3054 -sleep 20
+   3406     391 adb -L tcp:5037 fork-server server --reply-fd 4
+   3929       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3290 -sleep 20
