@@ -1,9 +1,5 @@
-run 45547896824, attempt 1, Android API 34 — the step with the emulator: failure
-1 tests, 1 failed, 0 skipped on Android API 34
-slowest: ApiLogTest.formattingIsSafeAcrossThreads 0.4 s
-
-FAILED com.nchat.app.network.ApiLogTest.formattingIsSafeAcrossThreads
-
+run 45547855344, attempt 1, Android API 34 — the step with the emulator: failure
+0 tests, 0 failed, 0 skipped on Android API 34
 
 --- device-build.log
 …
@@ -20,18 +16,18 @@ FAILED com.nchat.app.network.ApiLogTest.formattingIsSafeAcrossThreads
 > Task :app:mergeDebugJniLibFolders FROM-CACHE
 > Task :app:checkDebugDuplicateClasses
 > Task :app:mergeDebugNativeLibs
+> Task :app:validateSigningDebug
+> Task :app:mergeDebugJavaResource
 > Task :app:mergeExtDexDebug FROM-CACHE
 > Task :app:mergeLibDexDebug FROM-CACHE
 > Task :app:mergeProjectDexDebug FROM-CACHE
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:preDebugAndroidTestBuild SKIPPED
 
 > Task :app:stripDebugDebugSymbols
 Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
 
-> Task :app:mergeDebugJavaResource
-> Task :app:validateSigningDebug
-> Task :app:writeDebugAppMetadata
-> Task :app:writeDebugSigningConfigVersions
-> Task :app:preDebugAndroidTestBuild SKIPPED
 > Task :app:bundleDebugClassesToCompileJar
 > Task :app:processDebugAndroidTestManifest
 > Task :app:generateDebugAndroidTestBuildConfig FROM-CACHE
@@ -54,14 +50,11 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:mergeDebugAndroidTestGlobalSynthetics FROM-CACHE
 > Task :app:processDebugAndroidTestJavaRes
 > Task :app:checkDebugAndroidTestDuplicateClasses
-> Task :app:mergeDebugAndroidTestJavaResource
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
+> Task :app:mergeDebugAndroidTestJniLibFolders FROM-CACHE
 > Task :app:mergeExtDexDebugAndroidTest FROM-CACHE
 > Task :app:mergeLibDexDebugAndroidTest FROM-CACHE
+> Task :app:mergeDebugAndroidTestJavaResource
 > Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
-> Task :app:mergeDebugAndroidTestJniLibFolders FROM-CACHE
 > Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
 > Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
 > Task :app:validateSigningDebugAndroidTest
@@ -69,9 +62,7 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:buildKotlinToolingMetadata
 > Task :app:preSmokeBuild UP-TO-DATE
 > Task :app:generateSmokeBuildConfig FROM-CACHE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect
-> Task :app:assembleDebugAndroidTest
+> Task :app:generateSmokeResValues FROM-CACHE
 > Task :app:checkSmokeAarMetadata
 > Task :app:generateSmokeResValues FROM-CACHE
 > Task :app:mapSmokeSourceSetPaths
@@ -86,10 +77,16 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:processSmokeManifestForPackage FROM-CACHE
 > Task :app:processSmokeResources FROM-CACHE
 > Task :app:compileSmokeKotlin FROM-CACHE
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
 > Task :app:javaPreCompileSmoke FROM-CACHE
 > Task :app:compileSmokeJavaWithJavac FROM-CACHE
 > Task :app:extractProguardFiles
 > Task :app:generateSmokeLintVitalReportModel
+> Task :app:packageDebugAndroidTest
+> Task :app:createDebugAndroidTestApkListingFileRedirect
+> Task :app:assembleDebugAndroidTest
 > Task :app:lintVitalAnalyzeSmoke FROM-CACHE
 > Task :app:mergeSmokeJniLibFolders FROM-CACHE
 > Task :app:checkSmokeDuplicateClasses
@@ -98,19 +95,19 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:mergeSmokeArtProfile
 > Task :app:mergeSmokeNativeLibs
 > Task :app:expandSmokeArtProfileWildcards FROM-CACHE
-
-> Task :app:stripSmokeDebugSymbols
-Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
-
 > Task :app:mergeSmokeShaders FROM-CACHE
-> Task :app:extractSmokeNativeSymbolTables FROM-CACHE
-> Task :app:mergeSmokeNativeDebugMetadata NO-SOURCE
 > Task :app:compileSmokeShaders NO-SOURCE
 > Task :app:generateSmokeAssets UP-TO-DATE
 > Task :app:mergeSmokeAssets FROM-CACHE
 > Task :app:compressSmokeAssets FROM-CACHE
 > Task :app:optimizeSmokeResources FROM-CACHE
+
+> Task :app:stripSmokeDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
+
 > Task :app:collectSmokeDependencies
+> Task :app:extractSmokeNativeSymbolTables FROM-CACHE
+> Task :app:mergeSmokeNativeDebugMetadata NO-SOURCE
 > Task :app:sdkSmokeDependencyData
 > Task :app:validateSigningSmoke
 > Task :app:writeSmokeAppMetadata
@@ -123,9 +120,9 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:packageSmoke
 > Task :app:createSmokeApkListingFileRedirect
 > Task :app:assembleSmoke
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795581399913.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795581399130.json
 
-BUILD SUCCESSFUL in 22s
+BUILD SUCCESSFUL in 29s
 110 actionable tasks: 47 executed, 63 from cache
 
 --- device-run.log
@@ -261,11 +258,11 @@ Encryption tests on Android API 34: the test run did not end within 45 s and was
 The test run did not end within 45 s and was stopped.
 --- where its Java processes are
 - where Gradle is
-    process 3515
-    "Execution worker Thread 2" #51 prio=5 os_prio=0 cpu=5551.42ms elapsed=30.18s tid=0x00007a140c0124d0 nid=0xe16 waiting on condition  [0x00007a14142f8000]
+    process 3619
+    "Execution worker Thread 3" #52 prio=5 os_prio=0 cpu=4837.47ms elapsed=29.46s tid=0x000077832c013fd0 nid=0xe73 waiting on condition  [0x00007782e0b2f000]
        java.lang.Thread.State: WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x00000007210e9fb0> (a java.util.concurrent.CountDownLatch$Sync)
+    	- parking to wait for  <0x0000000732f885d8> (a java.util.concurrent.CountDownLatch$Sync)
     	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
@@ -273,7 +270,7 @@ The test run did not end within 45 s and was stopped.
     	at org.gradle.internal.work.AbstractConditionalExecution.await(AbstractConditionalExecution.java:45)
     	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:281)
     	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker$$Lambda$1608/0x00007a13c8c5d250.run(Unknown Source)
+    	at org.gradle.internal.work.DefaultAsyncWorkTracker$$Lambda$1606/0x00007782e8c52da8.run(Unknown Source)
     	at org.gradle.internal.Factories$1.create(Factories.java:31)
     	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:321)
     	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:304)
@@ -293,32 +290,10 @@ The test run did not end within 45 s and was stopped.
     	at com.android.build.gradle.internal.testing.BaseTestRunner.runTests(BaseTestRunner.java:196)
     	at com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask.lambda$doTaskAction$2(DeviceProviderInstrumentTestTask.java:334)
     	… 131 more
-    "Monitor" #97 prio=5 os_prio=0 cpu=0.45ms elapsed=20.76s tid=0x00007a14100bf150 nid=0xe47 runnable  [0x00007a13c03fe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
-    	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
-    	- locked <0x000000070fe1a740> (a sun.nio.ch.Util$2)
-    	- locked <0x000000070fe1a6f0> (a sun.nio.ch.EPollSelectorImpl)
-    	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
-    	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
-    "Device List Monitor" #102 prio=5 os_prio=0 cpu=17.36ms elapsed=20.70s tid=0x00007a14100d5c50 nid=0xe4f runnable  [0x00007a13c02fe000]
-       java.lang.Thread.State: RUNNABLE
-    	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
-    	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
-    	at sun.nio.ch.IOUtil.readIntoNativeBuffer(java.base@17.0.21/IOUtil.java:330)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:296)
-    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:259)
-    	at sun.nio.ch.SocketChannelImpl.read(java.base@17.0.21/SocketChannelImpl.java:417)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:37)
-    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:53)
-    	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
-    	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
-    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-    "WorkerExecutor Queue Thread 4" #105 prio=5 os_prio=0 cpu=29.44ms elapsed=14.70s tid=0x00007a1410681730 nid=0xe65 waiting on condition  [0x00007a13c00fd000]
+    "WorkerExecutor Queue Thread 3" #95 prio=5 os_prio=0 cpu=32.13ms elapsed=19.22s tid=0x000077833c065ac0 nid=0xea4 waiting on condition  [0x0000778334dfc000]
        java.lang.Thread.State: WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x0000000720df77d8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+    	- parking to wait for  <0x0000000732aa2470> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
     	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:341)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(java.base@17.0.21/AbstractQueuedSynchronizer.java:506)
     	at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.21/ForkJoinPool.java:3465)
@@ -337,7 +312,7 @@ The test run did not end within 45 s and was stopped.
     	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
     	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
     	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
-    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$$Lambda$1607/0x00007a13c8c653d0.execute(Unknown Source)
+    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$$Lambda$1605/0x00007782e8c5a640.execute(Unknown Source)
     	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
     	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
@@ -346,13 +321,35 @@ The test run did not end within 45 s and was stopped.
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
     	… 24 more
-    "Exec process" #106 prio=5 os_prio=0 cpu=2.13ms elapsed=14.64s tid=0x00007a13bc03f250 nid=0xe66 in Object.wait()  [0x00007a1363ffe000]
+    "Monitor" #96 prio=5 os_prio=0 cpu=0.53ms elapsed=18.86s tid=0x000077833c122770 nid=0xea6 runnable  [0x0000778281efe000]
+       java.lang.Thread.State: RUNNABLE
+    	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
+    	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
+    	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
+    	- locked <0x0000000744105aa8> (a sun.nio.ch.Util$2)
+    	- locked <0x0000000744105940> (a sun.nio.ch.EPollSelectorImpl)
+    	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
+    	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
+    "Device List Monitor" #101 prio=5 os_prio=0 cpu=18.28ms elapsed=18.82s tid=0x000077833c136980 nid=0xead runnable  [0x0000778281cfe000]
+       java.lang.Thread.State: RUNNABLE
+    	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
+    	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
+    	at sun.nio.ch.IOUtil.readIntoNativeBuffer(java.base@17.0.21/IOUtil.java:330)
+    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:296)
+    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:259)
+    	at sun.nio.ch.SocketChannelImpl.read(java.base@17.0.21/SocketChannelImpl.java:417)
+    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:37)
+    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:53)
+    	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
+    	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
+    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
+    "Exec process" #105 prio=5 os_prio=0 cpu=2.34ms elapsed=13.87s tid=0x00007782a0025ce0 nid=0xebb in Object.wait()  [0x0000778281afe000]
        java.lang.Thread.State: WAITING (on object monitor)
     	at java.lang.Object.wait(java.base@17.0.21/Native Method)
     	- waiting on <no object reference available>
     	at java.lang.Object.wait(java.base@17.0.21/Object.java:338)
     	at java.lang.ProcessImpl.waitFor(java.base@17.0.21/ProcessImpl.java:434)
-    	- locked <0x0000000720a45bb8> (a java.lang.ProcessImpl)
+    	- locked <0x0000000732b0af80> (a java.lang.ProcessImpl)
     	at org.gradle.process.internal.ExecHandleRunner.run(ExecHandleRunner.java:82)
     	at org.gradle.internal.operations.CurrentBuildOperationPreservingRunnable.run(CurrentBuildOperationPreservingRunnable.java:42)
     	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
@@ -361,11 +358,11 @@ The test run did not end within 45 s and was stopped.
     	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.21/ThreadPoolExecutor.java:635)
     	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
 - where the test platform is
-    process 3687
-    "main" #1 prio=5 os_prio=0 cpu=1418.22ms elapsed=15.04s tid=0x00007789a802a370 nid=0xe6a waiting on condition  [0x00007789aef1a000]
+    process 3772
+    "main" #1 prio=5 os_prio=0 cpu=1454.27ms elapsed=14.31s tid=0x000074ba0002a370 nid=0xebd waiting on condition  [0x000074ba06d1a000]
        java.lang.Thread.State: TIMED_WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x0000000708fe9c20> (a kotlinx.coroutines.BlockingCoroutine)
+    	- parking to wait for  <0x0000000715d11f90> (a kotlinx.coroutines.BlockingCoroutine)
     	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@17.0.21/LockSupport.java:252)
     	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:88)
     	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:59)
@@ -393,16 +390,16 @@ The test run did not end within 45 s and was stopped.
     	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:303)
     	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:302)
     	… 41 more
-    "Monitor" #19 prio=5 os_prio=0 cpu=30.86ms elapsed=13.22s tid=0x00007789a8e17fd0 nid=0xe86 runnable  [0x00007789884fa000]
+    "Monitor" #20 prio=5 os_prio=0 cpu=33.34ms elapsed=12.29s tid=0x000074ba00e675e0 nid=0xedb runnable  [0x000074b9d1ffe000]
        java.lang.Thread.State: RUNNABLE
     	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
     	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
     	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
-    	- locked <0x0000000707007988> (a sun.nio.ch.Util$2)
-    	- locked <0x0000000707007938> (a sun.nio.ch.EPollSelectorImpl)
+    	- locked <0x00000007070006e0> (a sun.nio.ch.Util$2)
+    	- locked <0x0000000707000690> (a sun.nio.ch.EPollSelectorImpl)
     	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
     	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
-    "Device List Monitor" #25 prio=5 os_prio=0 cpu=27.07ms elapsed=13.14s tid=0x00007789a8e35640 nid=0xe8e runnable  [0x00007789883fa000]
+    "Device List Monitor" #25 prio=5 os_prio=0 cpu=31.58ms elapsed=12.20s tid=0x000074ba00e80f80 nid=0xee3 runnable  [0x000074b9d1efe000]
        java.lang.Thread.State: RUNNABLE
     	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
     	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
@@ -415,7 +412,7 @@ The test run did not end within 45 s and was stopped.
     	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
     	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
     	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-    "DefaultDispatcher-worker-1" #27 daemon prio=5 os_prio=0 cpu=217.67ms elapsed=12.80s tid=0x00007789a8ed4060 nid=0xe92 waiting on condition  [0x00007789881fa000]
+    "DefaultDispatcher-worker-1" #27 daemon prio=5 os_prio=0 cpu=131.67ms elapsed=11.63s tid=0x000074ba00f1c930 nid=0xee7 waiting on condition  [0x000074b9d1dfe000]
        java.lang.Thread.State: TIMED_WAITING (sleeping)
     	at java.lang.Thread.sleep(java.base@17.0.21/Native Method)
     	at com.android.ddmlib.AdbHelper.executeRemoteCommand(AdbHelper.java:733)
@@ -429,10 +426,10 @@ The test run did not end within 45 s and was stopped.
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:750)
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:678)
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:665)
-    "Thread-0" #14 prio=5 os_prio=0 cpu=0.97ms elapsed=0.99s tid=0x00007788f0408480 nid=0xef7 waiting on condition  [0x00007789797fc000]
+    "Thread-0" #14 prio=5 os_prio=0 cpu=1.14ms elapsed=0.96s tid=0x000074b94407fe60 nid=0xf6d waiting on condition  [0x000074b9d16fd000]
        java.lang.Thread.State: WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x00000007064247e0> (a java.util.concurrent.CountDownLatch$Sync)
+    	- parking to wait for  <0x0000000706400450> (a java.util.concurrent.CountDownLatch$Sync)
     	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
@@ -447,111 +444,112 @@ The test run did not end within 45 s and was stopped.
     emulator-5554	device
 - has it started, and how long has it run
     1
-     04:39:02 up 1 min,  0 users,  load average: 25.98, 7.53, 2.59
+     04:39:10 up 1 min,  0 users,  load average: 25.21, 7.20, 2.47
 - what is in front
-          topResumedActivity=ActivityRecord{2265e50 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
-      ResumedActivity: ActivityRecord{2265e50 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
-      mCurrentFocus=Window{761de6 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}
-      mFocusedApp=ActivityRecord{2265e50 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
+          topResumedActivity=ActivityRecord{c1dee5a u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
+      ResumedActivity: ActivityRecord{c1dee5a u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
+      mCurrentFocus=Window{f8d14c3 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}
+      mFocusedApp=ActivityRecord{c1dee5a u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
 - the app's processes
     (nothing)
 - what is at work there
-    shell          144     1   10801744   2372 wait_woken          0 S sh
-    logd           455     1   10845852   3228 0                   0 S logcat
-    shell         4576   409   10785408   3460 __se_sys_nanosleep  0 S sh
-    shell         4867   409   10873472   2964 sigsuspend          0 S sh
+    shell          144     1   10840656   2340 wait_woken          0 S sh
+    logd           452     1   10847900   3076 0                   0 S logcat
+    shell         4461   413   10795648   3396 __se_sys_nanosleep  0 S sh
+    shell         4756   413   10807936   3008 sigsuspend          0 S sh
 - what an app that did not respond left behind
-    total 0
+    total 96
+    -rw------- 1 system system 91820 2026-11-25 04:38 anr_2026-11-25-04-38-46-204
+    head: /data/anr/anr_2026-11-25-04-38-46-204: Permission denied
 - the log
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{e9a19dc com.android.systemui.emulation.pixel_3a_xl/10021} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{7a63ae5 com.android.systemui.emulation.pixel_6_pro/10063} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{9d709ba com.android.systemui.emulation.pixel_7_pro/10054} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{562006b com.android.systemui.emulation.pixel_8_pro/10001} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{49cf7c8 com.google.mainline.telemetry/10151} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{704a061 com.android.carrierconfig.auto_generated_rro_product__/10064} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{1dc0786 com.android.providers.partnerbookmarks/10101} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{c9e3847 com.android.wallpaper.livepicker/10090} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{26dc874 com.android.providers.telephony.auto_generated_rro_product__/10062} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{989e19d com.android.phone.auto_generated_rro_vendor__/10081} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{ee11612 com.google.mainline.adservices/10136} BLOCKED
-    11-25 04:38:59.906   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{e7c11e3 com.android.imsserviceentitlement/10117} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{d8f7e0 com.google.android.healthconnect.controller/10189} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{f27fa99 com.android.internal.emulation.pixel_2_xl/10016} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{db6815e com.android.internal.emulation.pixel_3_xl/10056} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{ed3e93f com.android.internal.emulation.pixel_4_xl/10047} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{705b20c com.android.internal.emulation.pixel_fold/10006} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{af4a755 com.android.bookmarkprovider/10113} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{5e5556a com.google.android.overlay.pixelconfigcommon/10014} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{ca7da5b com.android.systemui.accessibility.accessibilitymenu.auto_generated_rro_product__/10050} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{561e2f8 com.android.systemui.emulation.pixel_3a/10013} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{1a563d1 com.android.systemui.emulation.pixel_4a/10000} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{c7b5e36 com.android.systemui.emulation.pixel_6a/10042} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{affc137 com.android.systemui.emulation.pixel_7a/10017} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{ca5af83 com.google.android.settings.intelligence/10118} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{b98e771 com.google.android.projection.gearhead/10123} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{34e36a4 com.google.android.uwb.resources/10175} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{9052956 com.android.cts.ctsshim/10179} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{3cb6c0d com.google.android.wifi.resources/10184} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{79727c2 com.google.android.wifi.dialog/10185} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{b8539d3 com.google.android.apps.wallpaper/10161} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{b8a1910 com.google.android.odad/10121} BLOCKED
-    11-25 04:38:59.907   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{fcfbc09 com.android.settings.auto_generated_rro_product__/10028} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{eb3fe0e com.android.internal.systemui.navbar.gestural/10051} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{6dfa02f com.google.android.apps.youtube.music/10156} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{35fb63c com.android.bluetoothmidiservice/10108} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{7af0fc5 com.android.storagemanager.auto_generated_rro_product__/10026} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{3b5ed1a com.google.android.cellbroadcastreceiver/10188} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{ed0104b com.android.phone.auto_generated_rro_product__/10061} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{88ffa28 android.auto_generated_rro_product__/10069} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{675e341 com.android.internal.systemui.navbar.gestural_narrow_back/10052} BLOCKED
-    11-25 04:38:59.908   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{b5c0e6 com.google.android.inputmethod.latin/10141} BLOCKED
-    11-25 04:38:59.909   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{60d6627 android.auto_generated_rro_vendor__/10075} BLOCKED
-    11-25 04:38:59.909   518  1908 I AppsFilter: interaction: PackageSetting{ccf1adb com.nchat.app.debug/10192} -> PackageSetting{1fe90d4 com.google.android.apps.restore/10120} BLOCKED
-    11-25 04:39:00.062  4659  4659 I AndroidJUnitRunner: onCreate Bundle[{testTimeoutSeconds=31536000, additionalTestOutputDir=/sdcard/Android/media/com.nchat.app.debug/additional_test_output}]
-    11-25 04:39:00.128   518  1908 W PackageManager: Cannot suspend the platform package: android
-    11-25 04:39:00.128   518  1908 W PackageManager: Cannot suspend package "com.google.android.permissioncontroller": required for permissions management
-    11-25 04:39:00.129   518  1908 W PackageManager: Cannot suspend package "com.google.android.devicelockcontroller": protected package
-    11-25 04:39:00.129   518  1908 W PackageManager: Cannot suspend package "com.google.android.dialer": is the default dialer
-    11-25 04:39:00.129   518  1908 W PackageManager: Cannot suspend package "com.google.android.packageinstaller": required for package installation
-    11-25 04:39:00.129   518  1908 W PackageManager: Cannot suspend package "com.google.android.apps.nexuslauncher": contains the active launcher
-    11-25 04:39:00.263   518  1908 D ConnectivityService: requestNetwork for uid/pid:10192/4659 activeRequest: null callbackRequest: 123 [NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647
-    11-25 04:39:00.266   518   754 D WifiNetworkFactory: got request NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ]
-    11-25 04:39:00.267   518   754 D UntrustedWifiNetworkFactory: got request NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ]
-    11-25 04:39:00.268   518   754 D OemPaidWifiNetworkFactory: got request NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ]
-    11-25 04:39:00.268   518   754 D MultiInternetWifiNetworkFactory: got request NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ]
-    11-25 04:39:00.452  4659  4757 I TestRequestBuilder: Scanning classpath to find tests in paths [/data/app/~~0MrXa3u2-e2Q6DJAb5BPHg==/com.nchat.app.debug.test-pahoupb9Y2PX-hxlK7lKDA==/base.apk]
-    11-25 04:39:01.032   518   545 W PackageManager: Failed registering loading progress callback. Package is fully loaded.
-    11-25 04:39:01.044  1666  1666 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.nchat.app.debug], userId:[0], reason:[package is added.].
-    11-25 04:39:01.051  1666  1666 I AiAiEcho: AppFetcherImpl onPackageChanged com.nchat.app.debug.
-    11-25 04:39:01.083  1666  3914 I AiAiEcho: AppIndexer Package:[com.nchat.app.debug] UserProfile:[0] Enabled:[true].
-    11-25 04:39:01.084  1666  3914 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.nchat.app.debug], userId:[0], reason:[package is updated.].
-    11-25 04:39:01.477  4659  4780 W nchat.app.debug: Long monitor contention with owner pool-2-thread-2 (4776) at java.lang.String com.nchat.app.network.ApiLog.format(com.nchat.app.network.ApiLog$Entry)(ApiLog.kt:57) waiters=4 in java.lang.String com.nchat.app.network.ApiLog.format(com.nchat.app.network.ApiLog$Entry) for 143ms
-    11-25 04:39:01.735  4659  4780 W nchat.app.debug: Long monitor contention with owner pool-2-thread-5 (4779) at java.lang.String com.nchat.app.network.ApiLog.format(com.nchat.app.network.ApiLog$Entry)(ApiLog.kt:57) waiters=1 in java.lang.String com.nchat.app.network.ApiLog.format(com.nchat.app.network.ApiLog$Entry) for 166ms
-    11-25 04:39:02.059  1666  1666 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.nchat.app.debug.test], userId:[0], reason:[package is added.].
-    11-25 04:39:02.065   518   545 W PackageManager: Failed registering loading progress callback. Package is fully loaded.
-    11-25 04:39:02.087   518   546 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=-1: deletePackageX
-    11-25 04:39:02.090   518   546 I ActivityManager: Killing 4659:com.nchat.app.debug/u0a192 (adj 0): stop com.nchat.app.debug due to deletePackageX
-    11-25 04:39:02.097   518   546 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
-    11-25 04:39:02.105   518   546 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=0: finished inst
-    11-25 04:39:02.185   518   761 D ConnectivityService: releasing NetworkRequest [ REQUEST id=124, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10192 RequestorUid: 10192 RequestorPkg: com.nchat.app.debug UnderlyingNetworks: Null] ] (release request)
-    11-25 04:39:02.231   518   571 I PermissionManager: Removing permission com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION that used to be declared by com.nchat.app.debug
-    11-25 04:39:02.232   518  1788 V ActivityManager: Got obituary of 4659:com.nchat.app.debug
-    11-25 04:39:02.299   518   571 D PackageManager: Instant App installer not found with android.intent.action.INSTALL_INSTANT_APP_PACKAGE
-    11-25 04:39:02.301   518   571 D PackageManager: Clear ephemeral installer activity
-    11-25 04:39:02.385   518   571 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=0: pkg removed
-    11-25 04:39:02.517   518   546 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10193 user=-1: deletePackageX
-    11-25 04:39:02.652   518   571 D PackageManager: Instant App installer not found with android.intent.action.INSTALL_INSTANT_APP_PACKAGE
-    11-25 04:39:02.652   518   571 D PackageManager: Clear ephemeral installer activity
-    11-25 04:39:02.682   518   571 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10193 user=0: pkg removed
+    11-25 04:39:10.168   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{4eee251 com.google.android.projection.gearhead/10123} BLOCKED
+    11-25 04:39:10.168   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{febf6f6 com.google.android.uwb.resources/10182} BLOCKED
+    11-25 04:39:10.169   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{e513ab6 com.android.cts.ctsshim/10180} BLOCKED
+    11-25 04:39:10.169   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{4fb4af7 com.google.android.wifi.resources/10189} BLOCKED
+    11-25 04:39:10.170   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{1e05d64 com.google.android.wifi.dialog/10190} BLOCKED
+    11-25 04:39:10.170   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{8546bcd com.google.android.apps.wallpaper/10161} BLOCKED
+    11-25 04:39:10.170   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{2588c82 com.google.android.odad/10121} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{90f9f93 com.android.settings.auto_generated_rro_product__/10028} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{cf7ebd0 com.android.internal.systemui.navbar.gestural/10051} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{248f7c9 com.google.android.apps.youtube.music/10156} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{306eece com.android.bluetoothmidiservice/10108} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{80aa1ef com.android.storagemanager.auto_generated_rro_product__/10026} BLOCKED
+    11-25 04:39:10.171   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{7b7f4fc com.google.android.cellbroadcastreceiver/10183} BLOCKED
+    11-25 04:39:10.172   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{ce04785 com.android.phone.auto_generated_rro_product__/10061} BLOCKED
+    11-25 04:39:10.174   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{72729da android.auto_generated_rro_product__/10069} BLOCKED
+    11-25 04:39:10.174   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{3096e0b com.android.internal.systemui.navbar.gestural_narrow_back/10052} BLOCKED
+    11-25 04:39:10.174   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{20d64e8 com.google.android.inputmethod.latin/10142} BLOCKED
+    11-25 04:39:10.174   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{7e2d701 android.auto_generated_rro_vendor__/10075} BLOCKED
+    11-25 04:39:10.174   521   911 I AppsFilter: interaction: PackageSetting{dd69377 com.nchat.app.debug/10192} -> PackageSetting{5dedfe7 com.google.android.apps.restore/10120} BLOCKED
+    11-25 04:39:10.252  3508  4549 I FontLog : Package com.nchat.app.debug has no metadata [CONTEXT service_id=132 ]
+    11-25 04:39:10.276  1446  3334 I BlockstoreStorage: Clearing Blockstore Data for package com.nchat.app.debug [CONTEXT service_id=258 ]
+    11-25 04:39:10.280   521   550 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=-1: deletePackageX
+    11-25 04:39:10.281   521   550 I ActivityManager: Killing 4536:com.nchat.app.debug/u0a192 (adj 0): stop com.nchat.app.debug due to deletePackageX
+    11-25 04:39:10.285   521   550 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
+    11-25 04:39:10.287   521   550 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=0: finished inst
+    11-25 04:39:10.412   521   574 I PermissionManager: Removing permission com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION that used to be declared by com.nchat.app.debug
+    11-25 04:39:10.533   521  2107 V ActivityManager: Got obituary of 4536:com.nchat.app.debug
+    11-25 04:39:10.537  1446  3334 E Vision  : Failed to find package com.nchat.app.debug
+    11-25 04:39:10.686   521  2542 W system_server: Long monitor contention with owner android.fg (540) at com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean)(PackageManagerService.java:1195) waiters=1 in com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean) for 105ms
+    11-25 04:39:10.686   521   535 W system_server: Long monitor contention with owner android.fg (540) at com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean)(PackageManagerService.java:1195) waiters=2 in com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean) for 102ms
+    11-25 04:39:10.688   521  1859 W system_server: Long monitor contention with owner android.fg (540) at com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean)(PackageManagerService.java:1195) waiters=3 in com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean) for 104ms
+    11-25 04:39:10.693   521   897 W system_server: Long monitor contention with owner android.fg (540) at com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean)(PackageManagerService.java:1195) waiters=9 in com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean) for 103ms
+    11-25 04:39:10.714   521   911 W system_server: Long monitor contention with owner android.fg (540) at com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean)(PackageManagerService.java:1195) waiters=12 in com.android.server.pm.Computer com.android.server.pm.PackageManagerService.snapshotComputer(boolean) for 106ms
+    11-25 04:39:10.721   521   574 D PackageManager: Instant App installer not found with android.intent.action.INSTALL_INSTANT_APP_PACKAGE
+    11-25 04:39:10.730   521   574 D PackageManager: Clear ephemeral installer activity
+    11-25 04:39:10.795   521   574 I ActivityManager: Force stopping com.nchat.app.debug appid=10192 user=0: pkg removed
+    11-25 04:39:10.797  1446  3812 E GmscoreIpa: Could not get app info for com.nchat.app.debug [CONTEXT service_id=255 ]
+    11-25 04:39:10.797  1446  3812 E GmscoreIpa: android.content.pm.PackageManager$NameNotFoundException: com.nchat.app.debug
+    11-25 04:39:10.797  1446  3812 E GmscoreIpa: 	at android.app.ApplicationPackageManager.getApplicationInfoAsUser(ApplicationPackageManager.java:507)
+    11-25 04:39:10.797  1446  3812 E GmscoreIpa: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:490)
+    11-25 04:39:10.797  1446  3812 E GmscoreIpa: 	at android.app.ApplicationPackageManager.getApplicationInfo(ApplicationPackageManager.java:484)
+    11-25 04:39:10.962  1446  3878 E Icing   : Could not get app info for com.nchat.app.debug: android.content.pm.PackageManager$NameNotFoundException: com.nchat.app.debug
+    11-25 04:39:11.081   521   550 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10193 user=-1: deletePackageX
+    11-25 04:39:11.170   521   574 D PackageManager: Instant App installer not found with android.intent.action.INSTALL_INSTANT_APP_PACKAGE
+    11-25 04:39:11.170   521   574 D PackageManager: Clear ephemeral installer activity
+    11-25 04:39:11.197  1446  4590 E Icing   : Package com.nchat.app.debug not found
+    11-25 04:39:11.200  1446  4590 E Icing   : Could not get app info for com.nchat.app.debug: android.content.pm.PackageManager$NameNotFoundException: com.nchat.app.debug
+    11-25 04:39:11.200  1446  4590 I Icing   : doRemovePackageData com.nchat.app.debug
+    11-25 04:39:11.202  1446  4590 E Icing   : Could not get app info for com.nchat.app.debug: android.content.pm.PackageManager$NameNotFoundException: com.nchat.app.debug
+    11-25 04:39:11.307   521   574 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10193 user=0: pkg removed
+    11-25 04:39:11.553  1054  1054 D CarrierSvcBindHelper: onPackageRemoved: com.nchat.app.debug
+    11-25 04:39:11.555   521   631 V StorageManagerService: Package com.nchat.app.debug does not have legacy storage
+    11-25 04:39:11.571   521   606 I RollbackManager: broadcast=ACTION_PACKAGE_FULLY_REMOVED pkg=com.nchat.app.debug
+    11-25 04:39:11.795   521   756 W WifiService: Couldn't get PackageInfo for package:com.nchat.app.debug
+    11-25 04:39:11.795   521   756 D WifiService: Remove settings for package:com.nchat.app.debug
+    11-25 04:39:11.847   521  2542 W PackageManager: Cannot suspend the platform package: android
+    11-25 04:39:11.850   521  2542 W PackageManager: Cannot suspend package "com.google.android.permissioncontroller": required for permissions management
+    11-25 04:39:11.850   521  2542 W PackageManager: Cannot suspend package "com.google.android.devicelockcontroller": protected package
+    11-25 04:39:11.850   521  2542 W PackageManager: Cannot suspend package "com.google.android.dialer": is the default dialer
+    11-25 04:39:11.851   521  2542 W PackageManager: Cannot suspend package "com.google.android.packageinstaller": required for package installation
+    11-25 04:39:11.851   521  2542 W PackageManager: Cannot suspend package "com.google.android.apps.nexuslauncher": contains the active launcher
+    11-25 04:39:11.855   521  2542 W PackageManager: Could not find package setting for package: com.nchat.app.debug
+    11-25 04:39:11.855   521  2542 W PackageManager: Could not find package setting for package: com.nchat.app.debug.test
+    11-25 04:39:11.858   521   756 D WifiConfigManager: Remove all networks for app ApplicationInfo{a42555a com.nchat.app.debug}
+    11-25 04:39:11.860  1054  1054 D CarrierSvcBindHelper: onPackageRemoved: com.nchat.app.debug.test
+    11-25 04:39:12.014   521   521 I Telecom : CarModeTracker: Package com.nchat.app.debug is not tracked.: SSH.oR@AO4🔒
+    11-25 04:39:12.017   521   756 I PasspointManager: No app ops listener found for com.nchat.app.debug
+    11-25 04:39:12.017   521   756 W WifiService: Couldn't get PackageInfo for package:com.nchat.app.debug
+    11-25 04:39:12.018   521   756 D WifiService: Remove settings for package:com.nchat.app.debug
+    11-25 04:39:12.018   521   756 D WifiConfigManager: Remove all networks for app ApplicationInfo{6d1fae com.nchat.app.debug}
+    11-25 04:39:12.072  1446  4622 W zjm     : Couldn't find application info for package com.nchat.app.debug.test
+    11-25 04:39:12.084  1446  4625 E Vision  : Failed to find package com.nchat.app.debug.test
+    11-25 04:39:12.106  1446  4623 I PackageIntentOperation: Calling package not found by PackageManager. Skipping action. [CONTEXT service_id=258 ]
+    11-25 04:39:12.106  1446  4623 I PackageIntentOperation: android.content.pm.PackageManager$NameNotFoundException: com.nchat.app.debug.test
+    11-25 04:39:12.106  1446  4623 I PackageIntentOperation: 	at android.app.ApplicationPackageManager.getPackageInfoAsUser(ApplicationPackageManager.java:256)
+    11-25 04:39:12.106  1446  4623 I PackageIntentOperation: 	at android.app.ApplicationPackageManager.getPackageInfo(ApplicationPackageManager.java:216)
+    11-25 04:39:12.106  1446  4623 I PackageIntentOperation: 	at android.app.ApplicationPackageManager.getPackageInfo(ApplicationPackageManager.java:210)
+    11-25 04:39:12.124   521   756 I PasspointManager: No app ops listener found for com.nchat.app.debug
+    11-25 04:39:12.130   834   834 D PersistedStoragePackageUninstalledReceiver: Received android.intent.action.PACKAGE_FULLY_REMOVED for com.nchat.app.debug for u0
+    11-25 04:39:12.155  1446  3951 E Icing   : Package com.nchat.app.debug.test not found
 - on this machine
-       2896     124 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
-       3280      84 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-
-       3284      84 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
-       3346      84 /usr/local/lib/android/sdk/emulator/netsimd --host-dns=127.0.0.53
-       3383      74 adb -L tcp:5037 fork-server server --reply-fd 4
-       3469      47 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 34
-       3470      47 bash .github/scripts/on_emulator.sh 34
-       3515      46 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=j
+       2989     129 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
+       3368      87 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-
+       3373      86 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
+       3437      86 /usr/local/lib/android/sdk/emulator/netsimd --host-dns=127.0.0.53
+       3472      77 adb -L tcp:5037 fork-server server --reply-fd 4
+       3567      47 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 34
+       3568      47 bash .github/scripts/on_emulator.sh 34
 
 ::notice title=App start on Android API 34::started; the first screen shows 'Welcome Back', 'Sign In'
 App start on Android API 34: started; the first screen shows 'Welcome Back', 'Sign In'
@@ -568,6 +566,5 @@ com.nchat.app.smoke: Don't have an account?
 com.nchat.app.smoke: Sign Up
 
 --- still running on the build machine when this was written
-   3346     109 /usr/local/lib/android/sdk/emulator/netsimd --host-dns=127.0.0.53
-   3383      99 adb -L tcp:5037 fork-server server --reply-fd 4
-   4171       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3280 -sleep 20
+   3437     113 /usr/local/lib/android/sdk/emulator/netsimd --host-dns=127.0.0.53
+   3472     103 adb -L tcp:5037 fork-server server --reply-fd 4
