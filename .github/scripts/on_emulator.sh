@@ -35,7 +35,7 @@ START_LOG="$TMP/app-start.log"
 # the tests do, and so does a fire drill (see the workflow).
 TOTAL_LIMIT="${NCHAT_TOTAL_LIMIT:-1200}"    # everything below together; the workflow's own limits rest on it
 TESTS_LIMIT="${NCHAT_TESTS_LIMIT:-900}"     # the test run
-INSTALL_LIMIT="${NCHAT_INSTALL_LIMIT:-300}" # installing the app; Android 7 compiles it while it installs
+INSTALL_LIMIT="${NCHAT_INSTALL_LIMIT:-120}" # installing the app; Android 7 compiles it while it installs
 LAUNCH_LIMIT="${NCHAT_LAUNCH_LIMIT:-120}"   # `am start -W`, which waits for the first frame
 ANSWER_LIMIT="${NCHAT_ANSWER_LIMIT:-60}"    # any other question to the emulator
 PROBE_LIMIT="${NCHAT_PROBE_LIMIT:-20}"      # a question about an emulator that has gone silent
@@ -261,7 +261,14 @@ fi
 # -------------------------------------------------------------- the app's start
 
 start_app() {
-  if ! ask install "$OUT/install.txt" install -r "$APK"; then
+  # --no-streaming: the file is pushed to the emulator first, and the package manager is then
+  # given its path. `adb install` as it comes sends the file down the connection it afterwards
+  # waits on for the answer, and on the emulator of Android 7 that never returned about one
+  # time in five after a test run (2026-11-25: 4 of 18 jobs, none of 18 on Android 14). Each
+  # time the emulator was attached and idle, the shell adb had started there was asleep beside
+  # a `cmd` that had ended, nothing about an install was in the log, and the package manager's
+  # side of the command was still open when adb was stopped five minutes later.
+  if ! ask install "$OUT/install.txt" install --no-streaming -r "$APK"; then
     if ! unanswered; then
       echo "::error title=App start on Android API $API_LEVEL::the app could not be installed: $(tail -n 1 "$OUT/install.txt")"
       cat "$OUT/install.txt"

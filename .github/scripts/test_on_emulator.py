@@ -29,6 +29,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "android-device-tests.yaml"
 BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "build-apk.yaml"
 
 APK = "app/build/outputs/apk/smoke/app-smoke.apk"
+INSTALL = f"adb install --no-streaming -r {APK}"
 STARTED = "App start on Android API 24: started"
 STILL_ANSWERS = "--- what the emulator still answers"
 
@@ -41,19 +42,19 @@ echo "adb $*" >> "$FAKE/asked"
 if [ -n "${FAKE_ADB_SILENT:-}" ] && [[ "$*" =~ $FAKE_ADB_SILENT ]]; then
   [ -n "${FAKE_DEAF:-}" ] && trap '' TERM
   # The real one says how it installs before it sends the file.
-  case "$*" in "install -r "*) echo "Performing Streamed Install" ;; esac
+  case "$*" in "install "*) echo "Performing Push Install" ;; esac
   exec sleep 600
 fi
 if [ -n "${FAKE_ADB_SLOW:-}" ] && [[ "$*" =~ ${FAKE_ADB_SLOW_AT:-.} ]]; then sleep "$FAKE_ADB_SLOW"; fi
 case "$*" in
   devices) printf 'List of devices attached\nemulator-5554\tdevice\n\n' ;;
-  "install -r "*)
+  "install "*)
     if [ -n "${FAKE_INSTALL_FAILS:-}" ]; then
-      echo "Performing Streamed Install"
+      echo "Performing Push Install"
       echo "adb: failed to install app-smoke.apk: Failure [INSTALL_FAILED_OLDER_SDK]" >&2
       exit 1
     fi
-    printf 'Performing Streamed Install\nSuccess\n' ;;
+    printf 'Performing Push Install\napp-smoke.apk: 1 file pushed, 0 skipped. 93.1 MB/s (23939247 bytes in 0.245s)\n\tpkg: /data/local/tmp/app-smoke.apk\nSuccess\n' ;;
   "shell am start -W -n "*)
     printf 'Starting: Intent { cmp=com.nchat.app.smoke/com.nchat.app.MainActivity }\nStatus: ok\nLaunchState: COLD\nTotalTime: 2345\nComplete\n' ;;
   "shell pidof "*) echo 4321 ;;
@@ -322,13 +323,25 @@ class OnEmulator(unittest.TestCase):
 
         self.assertEqual(run.status, 0, run.output)
         self.assertIn("gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest", run.asked)
-        self.assertIn(f"adb install -r {APK}", run.asked)
+        self.assertIn(f"{INSTALL}", run.asked)
         self.assertIn("BUILD SUCCESSFUL", run.run_log)
         self.assertIn(STARTED, run.start_log)
         self.assertIn("::notice title=App start on Android API 24::started", run.output)
         self.assertNotIn("no answer", run.output)
         self.assertNotIn(STILL_ANSWERS, run.output)
         self.assertLess(run.seconds, 15, "the thirty seconds for the first screen were waited out although it was there")
+
+    def test_the_app_is_installed_by_pushing_the_file_first(self):
+        # `adb install` as it comes sends the file down the same connection it then waits
+        # on for the answer. On the emulator of Android 7 that never returned about one time
+        # in five (2026-11-25: 4 of 18 jobs; the package manager was still waiting when the
+        # command was stopped five minutes later) — which is what cost half an hour on
+        # 2026-11-24. With --no-streaming the file is pushed first and the package manager
+        # is given its path.
+        run = self.run_script()
+
+        installs = [line for line in run.asked if line.startswith("adb install")]
+        self.assertEqual(installs, ["adb install --no-streaming -r app/build/outputs/apk/smoke/app-smoke.apk"])
 
     def test_how_long_the_slowest_command_of_each_kind_took_is_said(self):
         # A limit is a statement about the machine. How near a run that passed came to one is
@@ -387,7 +400,7 @@ class OnEmulator(unittest.TestCase):
         run = self.run_script(FAKE_ADB_SILENT=".", NCHAT_INSTALL_LIMIT=1, NCHAT_PROBE_LIMIT=1)
 
         self.assertNotEqual(run.status, 0)
-        unanswered = f"no answer within 1 s: adb install -r {APK}"
+        unanswered = f"no answer within 1 s: {INSTALL}"
         self.assertIn(f"::error title=App start on Android API 24::not judged — {unanswered}", run.output)
         self.assertIn(unanswered, run.start_log)
         self.assertNotIn(STARTED, run.output)
@@ -396,9 +409,9 @@ class OnEmulator(unittest.TestCase):
         self.assertIn("(no answer within 1 s)", run.start_log)
         self.assertIn("nothing more was asked", run.start_log)
         # How far the command had come is what it had said itself.
-        self.assertIn("--- what it had said until then\nPerforming Streamed Install\n", run.start_log)
+        self.assertIn("--- what it had said until then\nPerforming Push Install\n", run.start_log)
         adb = [line for line in run.asked if line.startswith("adb ")]
-        self.assertEqual(adb[:2], [f"adb install -r {APK}", "adb devices"])
+        self.assertEqual(adb[:2], [f"{INSTALL}", "adb devices"])
         self.assertEqual(len(adb), 3, adb)
         self.assert_nothing_left_running(run)
 
@@ -447,7 +460,7 @@ class OnEmulator(unittest.TestCase):
         run = self.run_script(FAKE_ADB_SILENT=".", FAKE_DEAF=1, NCHAT_INSTALL_LIMIT=1, NCHAT_PROBE_LIMIT=1, NCHAT_KILL_AFTER=1)
 
         self.assertNotEqual(run.status, 0)
-        self.assertIn(f"no answer within 1 s: adb install -r {APK}", run.start_log)
+        self.assertIn(f"no answer within 1 s: {INSTALL}", run.start_log)
         self.assertEqual(run.start_log.count("(no answer within 1 s)"), 2)
         self.assert_nothing_left_running(run)
 
@@ -595,10 +608,10 @@ class OnEmulator(unittest.TestCase):
         self.assertNotEqual(run.status, 0)
         self.assertIn("::error title=Encryption tests on Android API 24::the test run did not end within 2 s and was stopped", run.output)
         self.assertIn(
-            f"::error title=App start on Android API 24::not judged — the 2 s for the whole run were used up before: adb install -r {APK}",
+            f"::error title=App start on Android API 24::not judged — the 2 s for the whole run were used up before: {INSTALL}",
             run.output,
         )
-        self.assertNotIn(f"adb install -r {APK}", run.asked)
+        self.assertNotIn(f"{INSTALL}", run.asked)
 
     def test_a_test_run_and_an_emulator_that_both_go_silent(self):
         # The emulator is gone, so nothing ends: not the test run, not a question about it.
@@ -607,7 +620,7 @@ class OnEmulator(unittest.TestCase):
 
         self.assertNotEqual(run.status, 0)
         self.assertIn("::error title=Encryption tests on Android API 24::the test run did not end within 1 s and was stopped", run.output)
-        self.assertIn(f"::error title=App start on Android API 24::not judged — no answer within 1 s: adb install -r {APK}", run.output)
+        self.assertIn(f"::error title=App start on Android API 24::not judged — no answer within 1 s: {INSTALL}", run.output)
         self.assertEqual(run.start_log.count(STILL_ANSWERS), 2)
         self.assertEqual(run.start_log.count("nothing more was asked"), 2)
         adb = [line for line in run.asked if line.startswith("adb ")]
