@@ -48,7 +48,7 @@ APP_MAIN=(
 )
 APP_TESTS=(
   data/local/LocalStoresTest data/local/MessageStoreTest data/local/OutboxStoreTest
-  data/local/PhoneFilesTest data/repository/RestoreOfferTest
+  data/local/PhoneFilesTest data/repository/RestoreOfferTest data/repository/AccountOnPhoneTest
   feature/chats/EncryptionMarksTest feature/chats/ChatPreviewTest core/util/VideoPlanTest
   feature/chats/ConversationTimelineTest
   feature/settings/BackupTextTest feature/settings/LogOutTextTest
