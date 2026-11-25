@@ -1,8 +1,8 @@
-run 45546298596, attempt 1, Android API 24 — the step with the emulator: failure
-132 tests, 1 failed, 0 skipped on Android API 24
-slowest: E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 6.0 s, E2eeClientTest.aWeekOfUnreadMessagesOpensFromTheNewestPageBackwards 3.0 s, E2eeBackupTest.aFileThatWasChangedAnywhereIsNoticed 1.6 s
+run 45547896824, attempt 1, Android API 24 — the step with the emulator: failure
+48 tests, 1 failed, 0 skipped on Android API 24
+slowest: E2eeBackupTest.theFileSaysHowManyRoundsItsKeyTook 10.2 s, E2eeBackupTest.aFileThatWasCutShortIsNoticed 1.7 s, ApiLogTest.formattingIsSafeAcrossThreads 0.4 s
 
-FAILED com.nchat.app.network.E2eeGroupClientTest.aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne
+FAILED com.nchat.app.network.E2eeBackupTest.whatIsInsideAFileIsNotBelievedJustBecauseThePassphraseFits
 
 
 --- device-build.log
@@ -20,8 +20,8 @@ FAILED com.nchat.app.network.E2eeGroupClientTest.aMemberWhoLostTheirSessionAsksF
 > Task :app:mergeDebugJniLibFolders FROM-CACHE
 > Task :app:checkDebugDuplicateClasses
 > Task :app:mergeDebugNativeLibs
-> Task :app:validateSigningDebug
 > Task :app:mergeDebugJavaResource
+> Task :app:validateSigningDebug
 > Task :app:mergeExtDexDebug FROM-CACHE
 > Task :app:mergeLibDexDebug FROM-CACHE
 > Task :app:mergeProjectDexDebug FROM-CACHE
@@ -59,20 +59,17 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:mergeLibDexDebugAndroidTest FROM-CACHE
 > Task :app:mergeProjectDexDebugAndroidTest FROM-CACHE
 > Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
-> Task :app:mergeDebugAndroidTestJavaResource
 > Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
 > Task :app:validateSigningDebugAndroidTest
 > Task :app:writeDebugAndroidTestSigningConfigVersions
+> Task :app:mergeDebugAndroidTestJavaResource
 > Task :app:buildKotlinToolingMetadata
 > Task :app:preSmokeBuild UP-TO-DATE
 > Task :app:generateSmokeBuildConfig FROM-CACHE
-> Task :app:packageDebugAndroidTest
-> Task :app:createDebugAndroidTestApkListingFileRedirect
-> Task :app:assembleDebugAndroidTest
 > Task :app:generateSmokeResValues FROM-CACHE
+> Task :app:checkSmokeAarMetadata
 > Task :app:mapSmokeSourceSetPaths
 > Task :app:generateSmokeResources UP-TO-DATE
-> Task :app:checkSmokeAarMetadata
 > Task :app:mergeSmokeResources FROM-CACHE
 > Task :app:packageSmokeResources FROM-CACHE
 > Task :app:parseSmokeLocalResources FROM-CACHE
@@ -80,9 +77,6 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:extractDeepLinksSmoke FROM-CACHE
 > Task :app:processSmokeMainManifest FROM-CACHE
 > Task :app:processSmokeManifest FROM-CACHE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
 > Task :app:processSmokeManifestForPackage FROM-CACHE
 > Task :app:processSmokeResources FROM-CACHE
 > Task :app:compileSmokeKotlin FROM-CACHE
@@ -91,12 +85,17 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:extractProguardFiles
 > Task :app:generateSmokeLintVitalReportModel
 > Task :app:lintVitalAnalyzeSmoke FROM-CACHE
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
 > Task :app:mergeSmokeJniLibFolders FROM-CACHE
-> Task :app:mergeSmokeNativeLibs
+> Task :app:packageDebugAndroidTest
+> Task :app:createDebugAndroidTestApkListingFileRedirect
+> Task :app:assembleDebugAndroidTest
 > Task :app:checkSmokeDuplicateClasses
-> Task :app:mergeSmokeArtProfile
+> Task :app:mergeSmokeNativeLibs
 > Task :app:mergeSmokeGeneratedProguardFiles
-> Task :app:expandSmokeArtProfileWildcards FROM-CACHE
+> Task :app:mergeSmokeArtProfile
 
 > Task :app:stripSmokeDebugSymbols
 Unable to strip the following libraries, packaging them as they are: libjingle_peerconnection_so.so.
@@ -104,6 +103,7 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:processSmokeJavaRes
 > Task :app:extractSmokeNativeSymbolTables FROM-CACHE
 > Task :app:mergeSmokeNativeDebugMetadata NO-SOURCE
+> Task :app:expandSmokeArtProfileWildcards FROM-CACHE
 > Task :app:mergeSmokeShaders FROM-CACHE
 > Task :app:compileSmokeShaders NO-SOURCE
 > Task :app:generateSmokeAssets UP-TO-DATE
@@ -123,7 +123,7 @@ Unable to strip the following libraries, packaging them as they are: libjingle_p
 > Task :app:packageSmoke
 > Task :app:createSmokeApkListingFileRedirect
 > Task :app:assembleSmoke
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795580561091.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1795581402082.json
 
 BUILD SUCCESSFUL in 21s
 110 actionable tasks: 47 executed, 63 from cache
@@ -265,11 +265,11 @@ Starting 290 tests on emulator-5554 - 7.0
 The test run did not end within 45 s and was stopped.
 --- where its Java processes are
 - where Gradle is
-    process 3433
-    "Execution worker Thread 2" #51 prio=5 os_prio=0 cpu=3464.08ms elapsed=37.31s tid=0x000073d03c05bd30 nid=0xdaa waiting on condition  [0x000073cff10e8000]
+    process 3444
+    "included builds" #49 prio=5 os_prio=0 cpu=3675.44ms elapsed=36.25s tid=0x0000765a764eee30 nid=0xdb3 waiting on condition  [0x0000765ad2af8000]
        java.lang.Thread.State: WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x00000007289fdd80> (a java.util.concurrent.CountDownLatch$Sync)
+    	- parking to wait for  <0x00000007142001f0> (a java.util.concurrent.CountDownLatch$Sync)
     	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
@@ -277,7 +277,7 @@ The test run did not end within 45 s and was stopped.
     	at org.gradle.internal.work.AbstractConditionalExecution.await(AbstractConditionalExecution.java:45)
     	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:281)
     	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
-    	at org.gradle.internal.work.DefaultAsyncWorkTracker$$Lambda$1606/0x000073cff8c508f8.run(Unknown Source)
+    	at org.gradle.internal.work.DefaultAsyncWorkTracker$$Lambda$1603/0x0000765ad8c686c8.run(Unknown Source)
     	at org.gradle.internal.Factories$1.create(Factories.java:31)
     	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:321)
     	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:304)
@@ -296,102 +296,80 @@ The test run did not end within 45 s and was stopped.
     	at com.android.build.gradle.internal.testing.utp.UtpTestRunner.scheduleTests(UtpTestRunner.kt:124)
     	at com.android.build.gradle.internal.testing.BaseTestRunner.runTests(BaseTestRunner.java:196)
     	at com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask.lambda$doTaskAction$2(DeviceProviderInstrumentTestTask.java:334)
-    	at com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask$$Lambda$1709/0x000073cff8d05fa0.call(Unknown Source)
-    	at com.android.builder.testing.api.DeviceProvider.use(DeviceProvider.java:55)
-    	at com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask.doTaskAction(DeviceProviderInstrumentTestTask.java:322)
-    	at com.android.build.gradle.internal.tasks.NonIncrementalTask$taskAction$$inlined$recordTaskAction$1.invoke(BaseTask.kt:66)
-    	at com.android.build.gradle.internal.tasks.Blocks.recordSpan(Blocks.java:51)
-    	at com.android.build.gradle.internal.tasks.NonIncrementalTask.taskAction(NonIncrementalTask.kt:97)
-    	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(java.base@17.0.21/Native Method)
-    	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke(java.base@17.0.21/NativeMethodAccessorImpl.java:77)
-    	at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(java.base@17.0.21/DelegatingMethodAccessorImpl.java:43)
-    	at java.lang.reflect.Method.invoke(java.base@17.0.21/Method.java:569)
-    	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
-    	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.doExecute(StandardTaskAction.java:58)
-    	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
-    	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
-    	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:248)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:29)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:26)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultBuildOperationRunner.java:47)
-    	at org.gradle.internal.operations.DefaultBuildOperationExecutor.run(DefaultBuildOperationExecutor.java:68)
-    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(TaskExecution.java:233)
-    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(TaskExecution.java:216)
-    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPreviousOutputFiles(TaskExecution.java:199)
-    	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecution.java:166)
-    	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(ExecuteStep.java:105)
-    	at org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
-    	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
-    	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+    	… 164 more
+    "WorkerExecutor Queue" #85 prio=5 os_prio=0 cpu=252.00ms elapsed=33.54s tid=0x0000765b2c0ca3d0 nid=0xdd8 waiting on condition  [0x0000765ad06fd000]
+       java.lang.Thread.State: WAITING (parking)
+    	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
+    	- parking to wait for  <0x00000007142cda48> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+    	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:341)
+    	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(java.base@17.0.21/AbstractQueuedSynchronizer.java:506)
+    	at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.21/ForkJoinPool.java:3465)
+    	at java.util.concurrent.ForkJoinPool.managedBlock(java.base@17.0.21/ForkJoinPool.java:3436)
+    	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(java.base@17.0.21/AbstractQueuedSynchronizer.java:1630)
+    	at org.gradle.process.internal.DefaultExecHandle.waitForFinish(DefaultExecHandle.java:315)
+    	at org.gradle.process.internal.DefaultJavaExecAction.execute(DefaultJavaExecAction.java:50)
+    	at org.gradle.process.internal.DefaultExecActionFactory.javaexec(DefaultExecActionFactory.java:195)
+    	at org.gradle.process.internal.DefaultExecOperations.javaexec(DefaultExecOperations.java:42)
+    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction$execute$javaProcessExecutor$1.apply(RunUtpWorkAction.kt:41)
+    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction$execute$javaProcessExecutor$1.apply(RunUtpWorkAction.kt:40)
+    	at com.android.build.gradle.internal.process.GradleJavaProcessExecutor.execute(GradleJavaProcessExecutor.java:58)
+    	at com.android.build.gradle.internal.testing.utp.worker.RunUtpWorkAction.execute(RunUtpWorkAction.kt:67)
+    	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
+    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
+    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
+    	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
+    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
+    	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$$Lambda$1602/0x0000765ad8c77a00.execute(Unknown Source)
+    	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+    	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:199)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
     	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:157)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
-    	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
-    	at org.gradle.internal.operations.DefaultBuildOperationExecutor.call(DefaultBuildOperationExecutor.java:73)
-    	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
-    	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
-    	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:67)
-    	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:37)
-    	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelExecutionStep.java:41)
-    	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(TimeoutStep.java:74)
-    	at org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
-    	at org.gradle.internal.execution.steps.CreateOutputsStep.execute(CreateOutputsStep.java:50)
-    	at org.gradle.internal.execution.steps.CreateOutputsStep.execute(CreateOutputsStep.java:28)
-    	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.executeDelegateBroadcastingChanges(CaptureStateAfterExecutionStep.java:100)
-    	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.execute(CaptureStateAfterExecutionStep.java:72)
-    	at org.gradle.internal.execution.steps.CaptureStateAfterExecutionStep.execute(CaptureStateAfterExecutionStep.java:50)
-    	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:40)
-    	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:29)
-    	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(BuildCacheStep.java:179)
-    	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(BuildCacheStep.java:70)
-    	at org.gradle.internal.execution.steps.BuildCacheStep$$Lambda$1379/0x000073cff8be25d8.apply(Unknown Source)
-    	at org.gradle.internal.Either$Right.fold(Either.java:175)
-    	at org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:59)
-    	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:68)
-    	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:46)
-    	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:36)
-    	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:25)
-    	at org.gradle.internal.execution.steps.RecordOutputsStep.execute(RecordOutputsStep.java:36)
-    	at org.gradle.internal.execution.steps.RecordOutputsStep.execute(RecordOutputsStep.java:22)
-    	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(SkipUpToDateStep.java:91)
-    	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(SkipUpToDateStep.java:55)
-    	at org.gradle.internal.execution.steps.SkipUpToDateStep$$Lambda$1377/0x000073cff8be2168.get(Unknown Source)
-    	at java.util.Optional.orElseGet(java.base@17.0.21/Optional.java:364)
-    	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:55)
-    	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:37)
-    	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:65)
-    	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:36)
-    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
-    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
-    	at org.gradle.internal.execution.steps.ResolveCachingStateStep.execute(ResolveCachingStateStep.java:77)
-    	at org.gradle.internal.execution.steps.ResolveCachingStateStep.execute(ResolveCachingStateStep.java:38)
-    	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:94)
-    	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:49)
-    	at org.gradle.internal.execution.steps.CaptureStateBeforeExecutionStep.execute(CaptureStateBeforeExecutionStep.java:71)
-    	at org.gradle.internal.execution.steps.CaptureStateBeforeExecutionStep.execute(CaptureStateBeforeExecutionStep.java:45)
-    	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.executeWithNonEmptySources(SkipEmptyWorkStep.java:177)
-    	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.execute(SkipEmptyWorkStep.java:81)
-    	at org.gradle.internal.execution.steps.SkipEmptyWorkStep.execute(SkipEmptyWorkStep.java:53)
-    	at org.gradle.internal.execution.steps.RemoveUntrackedExecutionStateStep.execute(RemoveUntrackedExecutionStateStep.java:32)
-    	at org.gradle.internal.execution.steps.RemoveUntrackedExecutionStateStep.execute(RemoveUntrackedExecutionStateStep.java:21)
-    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStartedStep.execute(MarkSnapshottingInputsStartedStep.java:38)
-    	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:36)
-    	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:23)
-    	at org.gradle.internal.execution.steps.CleanupStaleOutputsStep.execute(CleanupStaleOutputsStep.java:75)
-    	at org.gradle.internal.execution.steps.CleanupStaleOutputsStep.execute(CleanupStaleOutputsStep.java:41)
+    	… 24 more
+    "Monitor" #97 prio=5 os_prio=0 cpu=0.46ms elapsed=30.54s tid=0x0000765b1c0f22e0 nid=0xde6 runnable  [0x0000765a73afe000]
+       java.lang.Thread.State: RUNNABLE
+    	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
+    	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
+    	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
+    	- locked <0x00000007142b5f60> (a sun.nio.ch.Util$2)
+    	- locked <0x00000007142b5f10> (a sun.nio.ch.EPollSelectorImpl)
+    	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
+    	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
+    "Device List Monitor" #102 prio=5 os_prio=0 cpu=14.65ms elapsed=30.50s tid=0x0000765b1c109bd0 nid=0xded runnable  [0x0000765a739fe000]
+       java.lang.Thread.State: RUNNABLE
+    	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
+    	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
+    	at sun.nio.ch.IOUtil.readIntoNativeBuffer(java.base@17.0.21/IOUtil.java:330)
+    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:296)
+    	at sun.nio.ch.IOUtil.read(java.base@17.0.21/IOUtil.java:259)
+    	at sun.nio.ch.SocketChannelImpl.read(java.base@17.0.21/SocketChannelImpl.java:417)
+    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:37)
+    	at com.android.ddmlib.internal.AdbSocketUtils.read(AdbSocketUtils.java:53)
+    	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
+    	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
+    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
+    "Exec process" #106 prio=5 os_prio=0 cpu=1.70ms elapsed=26.27s tid=0x0000765b300d8ea0 nid=0xdf7 in Object.wait()  [0x0000765a736fe000]
+       java.lang.Thread.State: WAITING (on object monitor)
+    	at java.lang.Object.wait(java.base@17.0.21/Native Method)
+    	- waiting on <no object reference available>
+    	at java.lang.Object.wait(java.base@17.0.21/Object.java:338)
+    	at java.lang.ProcessImpl.waitFor(java.base@17.0.21/ProcessImpl.java:434)
+    	- locked <0x00000007142cfed8> (a java.lang.ProcessImpl)
+    	at org.gradle.process.internal.ExecHandleRunner.run(ExecHandleRunner.java:82)
+    	at org.gradle.internal.operations.CurrentBuildOperationPreservingRunnable.run(CurrentBuildOperationPreservingRunnable.java:42)
+    	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+    	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:47)
+    	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@17.0.21/ThreadPoolExecutor.java:1136)
+    	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.21/ThreadPoolExecutor.java:635)
+    	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
 - where the test platform is
-    process 3565
-    "main" #1 prio=5 os_prio=0 cpu=1178.70ms elapsed=28.05s tid=0x000073c55402a370 nid=0xdf0 waiting on condition  [0x000073c558bfb000]
+    process 3576
+    "main" #1 prio=5 os_prio=0 cpu=1083.56ms elapsed=26.63s tid=0x000072c11402a370 nid=0xdfb waiting on condition  [0x000072c119bfb000]
        java.lang.Thread.State: TIMED_WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x0000000715c43540> (a kotlinx.coroutines.BlockingCoroutine)
+    	- parking to wait for  <0x000000070ecad328> (a kotlinx.coroutines.BlockingCoroutine)
     	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@17.0.21/LockSupport.java:252)
     	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:88)
     	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:59)
@@ -418,57 +396,17 @@ The test run did not end within 45 s and was stopped.
     	at com.google.testing.platform.plugin.PluginLifecycle.access$verify(PluginLifecycle.kt:52)
     	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:303)
     	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1$mergedTestSuiteResult$1$1.invoke(PluginLifecycle.kt:302)
-    	at com.google.testing.platform.plugin.PluginLifecycleKt$invokeOrThrow$1.invoke(PluginLifecycle.kt:374)
-    	at com.google.testing.platform.plugin.PluginLifecycleKt$invokeOrThrow$1.invoke(PluginLifecycle.kt:374)
-    	at com.google.testing.platform.core.telemetry.common.noop.NoopDiagnosticsScope.recordEvent(NoopDiagnosticsScope.kt:35)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent(Telemetry.kt:105)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent$default(Telemetry.kt:98)
-    	at com.google.testing.platform.plugin.PluginLifecycleKt.invokeOrThrow(PluginLifecycle.kt:374)
-    	at com.google.testing.platform.plugin.PluginLifecycleKt.invokeOrThrow$default(PluginLifecycle.kt:367)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1.invoke(PluginLifecycle.kt:302)
-    	at com.google.testing.platform.plugin.PluginLifecycle$onAfterAll$1.invoke(PluginLifecycle.kt:292)
-    	at com.google.testing.platform.core.telemetry.common.noop.NoopDiagnosticsScope.recordEvent(NoopDiagnosticsScope.kt:35)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent(Telemetry.kt:105)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent$default(Telemetry.kt:98)
-    	at com.google.testing.platform.plugin.PluginLifecycle.onAfterAll(PluginLifecycle.kt:292)
-    	at com.google.testing.platform.executor.SingleDeviceExecutor$execute$3.invoke(SingleDeviceExecutor.kt:101)
-    	at com.google.testing.platform.executor.SingleDeviceExecutor$execute$3.invoke(SingleDeviceExecutor.kt:100)
-    	at com.google.testing.platform.result.TestResultListenerManager.afterTestSuite(TestResultListenerManager.kt:139)
-    	- locked <0x000000070677a800> (a com.google.testing.platform.result.TestResultListenerManager)
-    	at com.google.testing.platform.executor.SingleDeviceExecutor.execute(SingleDeviceExecutor.kt:115)
-    	at com.google.testing.platform.RunnerImpl.run(RunnerImpl.kt:117)
-    	at com.google.testing.platform.server.strategy.NonInteractiveServerStrategy$run$5.invoke(NonInteractiveServerStrategy.kt:95)
-    	at com.google.testing.platform.server.strategy.NonInteractiveServerStrategy$run$5.invoke(NonInteractiveServerStrategy.kt:94)
-    	at com.google.testing.platform.core.telemetry.common.noop.NoopDiagnosticsScope.recordEvent(NoopDiagnosticsScope.kt:35)
-    	at com.google.testing.platform.core.telemetry.TelemetryKt.recordEvent(Telemetry.kt:66)
-    	at com.google.testing.platform.server.strategy.NonInteractiveServerStrategy.run(NonInteractiveServerStrategy.kt:94)
-    	at com.google.testing.platform.main.MainKt$main$4.invokeSuspend(Main.kt:75)
-    	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
-    	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:106)
-    	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:279)
-    	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:85)
-    	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:59)
-    	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source)
-    	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:38)
-    	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source)
-    	at com.google.testing.platform.main.MainKt.main(Main.kt:73)
-    	at com.google.testing.platform.main.MainKt.main$default(Main.kt:35)
-    	at com.google.testing.platform.main.MainKt.main(Main.kt)
-    	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(java.base@17.0.21/Native Method)
-    	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke(java.base@17.0.21/NativeMethodAccessorImpl.java:77)
-    	at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(java.base@17.0.21/DelegatingMethodAccessorImpl.java:43)
-    	at java.lang.reflect.Method.invoke(java.base@17.0.21/Method.java:569)
-    	at com.google.testing.platform.launcher.Launcher.main(Launcher.java:149)
-    "Monitor" #19 prio=5 os_prio=0 cpu=29.07ms elapsed=26.87s tid=0x000073c554e6add0 nid=0xe0a runnable  [0x000073c4d6ffe000]
+    	… 41 more
+    "Monitor" #19 prio=5 os_prio=0 cpu=30.09ms elapsed=25.60s tid=0x000072c114ec75e0 nid=0xe15 runnable  [0x000072c0e5149000]
        java.lang.Thread.State: RUNNABLE
     	at sun.nio.ch.EPoll.wait(java.base@17.0.21/Native Method)
     	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@17.0.21/EPollSelectorImpl.java:118)
     	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@17.0.21/SelectorImpl.java:129)
-    	- locked <0x0000000707007a60> (a sun.nio.ch.Util$2)
-    	- locked <0x0000000707007a10> (a sun.nio.ch.EPollSelectorImpl)
+    	- locked <0x000000070707e378> (a sun.nio.ch.Util$2)
+    	- locked <0x000000070707e280> (a sun.nio.ch.EPollSelectorImpl)
     	at sun.nio.ch.SelectorImpl.select(java.base@17.0.21/SelectorImpl.java:146)
     	at com.android.ddmlib.internal.MonitorThread.run(MonitorThread.java:174)
-    "Device List Monitor" #25 prio=5 os_prio=0 cpu=27.23ms elapsed=26.82s tid=0x000073c554e840c0 nid=0xe13 runnable  [0x000073c4d6efe000]
+    "Device List Monitor" #25 prio=5 os_prio=0 cpu=26.25ms elapsed=25.54s tid=0x000072c114ee0e70 nid=0xe1e runnable  [0x000072c0e4e49000]
        java.lang.Thread.State: RUNNABLE
     	at sun.nio.ch.SocketDispatcher.read0(java.base@17.0.21/Native Method)
     	at sun.nio.ch.SocketDispatcher.read(java.base@17.0.21/SocketDispatcher.java:47)
@@ -481,7 +419,7 @@ The test run did not end within 45 s and was stopped.
     	at com.android.ddmlib.internal.AdbSocketUtils.readLength(AdbSocketUtils.java:66)
     	at com.android.ddmlib.internal.DeviceListMonitorTask.run(DeviceListMonitorTask.java:136)
     	at java.lang.Thread.run(java.base@17.0.21/Thread.java:840)
-    "DefaultDispatcher-worker-1" #27 daemon prio=5 os_prio=0 cpu=144.37ms elapsed=26.60s tid=0x000073c554f12590 nid=0xe16 waiting on condition  [0x000073c4d6cfe000]
+    "DefaultDispatcher-worker-1" #27 daemon prio=5 os_prio=0 cpu=93.60ms elapsed=25.30s tid=0x000072c114f6ce90 nid=0xe22 waiting on condition  [0x000072c0e4f49000]
        java.lang.Thread.State: TIMED_WAITING (sleeping)
     	at java.lang.Thread.sleep(java.base@17.0.21/Native Method)
     	at com.android.ddmlib.AdbHelper.executeRemoteCommand(AdbHelper.java:733)
@@ -495,10 +433,10 @@ The test run did not end within 45 s and was stopped.
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:750)
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:678)
     	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:665)
-    "Thread-0" #14 prio=5 os_prio=0 cpu=1.05ms elapsed=0.77s tid=0x000073c4a449e480 nid=0xe30 waiting on condition  [0x000073c4d64fc000]
+    "Thread-0" #14 prio=5 os_prio=0 cpu=0.86ms elapsed=0.73s tid=0x000072c058404720 nid=0xe3a waiting on condition  [0x000072c0e4647000]
        java.lang.Thread.State: WAITING (parking)
     	at jdk.internal.misc.Unsafe.park(java.base@17.0.21/Native Method)
-    	- parking to wait for  <0x000000070641dd00> (a java.util.concurrent.CountDownLatch$Sync)
+    	- parking to wait for  <0x00000007064ecce8> (a java.util.concurrent.CountDownLatch$Sync)
     	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.21/LockSupport.java:211)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.21/AbstractQueuedSynchronizer.java:715)
     	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(java.base@17.0.21/AbstractQueuedSynchronizer.java:1047)
@@ -513,215 +451,130 @@ The test run did not end within 45 s and was stopped.
     emulator-5554	device
 - has it started, and how long has it run
     1
-     04:24:32 up 0 min,  0 users,  load average: 0.89, 0.28, 0.10
+     04:38:41 up 0 min,  0 users,  load average: 0.68, 0.17, 0.06
 - what is in front
-        mResumedActivity: ActivityRecord{e15c38c u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}
-      mCurrentFocus=Window{6e58f51 u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
-      mFocusedApp=AppWindowToken{35e39db token=Token{b211ad5 ActivityRecord{e15c38c u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}}}
+        mResumedActivity: ActivityRecord{b55e41d u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}
+      mCurrentFocus=Window{e8719de u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
+      mFocusedApp=AppWindowToken{6cbc60 token=Token{a812692 ActivityRecord{b55e41d u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}}}
 - the app's processes
     (nothing)
+- what is at work there
+    shell     1304  1     4880   1352  n_tty_read b3bbe424 S /system/bin/sh
+    logd      1305  1     5952   1460  __skb_recv 00000000 S /system/bin/logcat
+    root      1558  1     4880   1352  poll_sched 00000000 S sh
+    shell     2784  1338  4880   1352  hrtimer_na b082c424 S /system/bin/sh
+    shell     2788  2784  0      0        do_exit 00000000 Z logcat
+    shell     2820  1338  4880   1352  hrtimer_na b6971424 S /system/bin/sh
+    shell     2923  1338  4880   1348  sigsuspend b6cf2424 S /system/bin/sh
+    shell     2924  2923  1464452 35628 binder_thr af8c5424 S app_process
+    shell     3001  1338  4880   1352  sigsuspend b1ed5424 S /system/bin/sh
 - what an app that did not respond left behind
     total 0
 - the log
-    11-25 04:24:29.326  2824  2839 I TestRunner: finished: whatIsLearntAboutAPeersKeysIsOnStableStorageAtOnce(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.326  2824  2839 I TestRunner: started: writingToAReinstalledPeerRecoversOnceTheServerRefusesTheOldKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.397  2824  2839 I TestRunner: finished: writingToAReinstalledPeerRecoversOnceTheServerRefusesTheOldKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.398  2824  2839 I TestRunner: started: anyMessageOfTheFirstFlightEstablishesTheSession(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.476  2824  2839 I TestRunner: finished: anyMessageOfTheFirstFlightEstablishesTheSession(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.476  2824  2839 I TestRunner: started: theFirstKeysOfAPeerAreTakenOnTrustAndNamed(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.523  2824  2839 I TestRunner: finished: theFirstKeysOfAPeerAreTakenOnTrustAndNamed(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.524  2824  2839 I TestRunner: started: aRecordThatCannotBeReadIsToldAsAChange(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.581  2824  2839 I TestRunner: finished: aRecordThatCannotBeReadIsToldAsAChange(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.582  2824  2839 I TestRunner: started: theSameWhenItIsThePeerWhoWritesFirstAfterTheRecordWasLost(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.645  2824  2839 I TestRunner: finished: theSameWhenItIsThePeerWhoWritesFirstAfterTheRecordWasLost(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.646  2824  2839 I TestRunner: started: noFileIsPreparedForAContactWhoseVerifiedKeysChanged(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.708  2824  2839 I TestRunner: finished: noFileIsPreparedForAContactWhoseVerifiedKeysChanged(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.709  2824  2839 I TestRunner: started: whetherAFileWillBeSealedIsKnownBeforeItIsUploaded(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.745  2824  2839 I TestRunner: finished: whetherAFileWillBeSealedIsKnownBeforeItIsUploaded(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.746  2824  2839 I TestRunner: started: aFileForSomebodyWithoutKeysGoesAsBeforeOnlyWhereNothingWasEverEncrypted(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.786  2824  2839 I TestRunner: finished: aFileForSomebodyWithoutKeysGoesAsBeforeOnlyWhereNothingWasEverEncrypted(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.789  2824  2839 I TestRunner: started: blankIdsAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.798  2824  2839 I TestRunner: finished: blankIdsAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.799  2824  2839 I TestRunner: started: archiveFailureNeverSpendsAMessageKey(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.867  2824  2839 I TestRunner: finished: archiveFailureNeverSpendsAMessageKey(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.868  2824  2839 I TestRunner: started: questionsAboutCodesNeverThrowAndNeverPretend(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.904  2824  2839 I TestRunner: finished: questionsAboutCodesNeverThrowAndNeverPretend(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.905  2824  2839 I TestRunner: started: theSameHoldWhenItIsTheServerThatReportsNewKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.966  2824  2839 I TestRunner: finished: theSameHoldWhenItIsTheServerThatReportsNewKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.967  2824  2839 I TestRunner: started: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.025  2824  2839 I TestRunner: finished: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.026  2824  2839 I TestRunner: started: aBatchSharesOneWritePerPeerAndStillOpensEverything(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.184  2824  2839 I TestRunner: finished: aBatchSharesOneWritePerPeerAndStillOpensEverything(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.185  2824  2839 I TestRunner: started: envelopeMovedToAnotherMessageDoesNotOpen(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.225  2824  2839 I TestRunner: finished: envelopeMovedToAnotherMessageDoesNotOpen(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.226  2824  2839 I TestRunner: started: aWeekOfMessagesOpensNewestPageFirst(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.761  2824  2839 I TestRunner: finished: aWeekOfMessagesOpensNewestPageFirst(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.762  2824  2839 I TestRunner: started: aRosterAndABundleThatDisagreeHandNothingOver(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.824  2824  2839 I TestRunner: finished: aRosterAndABundleThatDisagreeHandNothingOver(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.826  2824  2839 I TestRunner: started: aNewMemberWhoLookedAtTheHistoryFirstStillReadsWhatComesAfter(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.920  2824  2839 I TestRunner: finished: aNewMemberWhoLookedAtTheHistoryFirstStillReadsWhatComesAfter(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.921  2824  2839 I TestRunner: started: aGroupWithAMemberWhoHasNoKeysStaysAsItWasUntilEveryoneHasThem(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.984  2824  2839 I TestRunner: finished: aGroupWithAMemberWhoHasNoKeysStaysAsItWasUntilEveryoneHasThem(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.985  2824  2839 I TestRunner: started: takingInAChainTwiceChangesNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.052  2824  2839 I TestRunner: finished: takingInAChainTwiceChangesNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.053  2824  2839 I TestRunner: started: aChainThatCameAfterAllIsNotAskedAbout(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.109  2824  2839 I TestRunner: finished: aChainThatCameAfterAllIsNotAskedAbout(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.109  2824  2839 I TestRunner: started: aClosedClientNeitherSendsNorReadsNorTakesInChains(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.161  2824  2839 I TestRunner: finished: aClosedClientNeitherSendsNorReadsNorTakesInChains(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.162  2824  2839 I TestRunner: started: aMemberWhoAskedAgainIsHandedAReplacedChainOnANewSessionAsWell(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.264  2824  2839 I TestRunner: finished: aMemberWhoAskedAgainIsHandedAReplacedChainOnANewSessionAsWell(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.266  2824  2839 I TestRunner: started: aChainIsReplacedAfterSoManyMessagesAndAfterAMonth(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.391  2824  2839 I TestRunner: finished: aChainIsReplacedAfterSoManyMessagesAndAfterAMonth(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.392  2824  2839 I TestRunner: started: aMessageIsSealedOnceAndARetrySendsTheSameEnvelope(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.459  2824  2839 I TestRunner: finished: aMessageIsSealedOnceAndARetrySendsTheSameEnvelope(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.460  2824  2839 I TestRunner: started: theChainIsHandedOverOnceAndLaterMessagesCostNothingExtra(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.540  2824  2839 I TestRunner: finished: theChainIsHandedOverOnceAndLaterMessagesCostNothingExtra(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.541  2824  2839 I TestRunner: started: aChainThisPhoneLacksIsAskedForOnceAndNotAgainWhenThereIsNone(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.640  2824  2839 I TestRunner: finished: aChainThisPhoneLacksIsAskedForOnceAndNotAgainWhenThereIsNone(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.642  2824  2839 I TestRunner: started: onceAGroupIsEncryptedOnThisPhoneNothingGoesOutReadable(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.744  2824  2839 I TestRunner: finished: onceAGroupIsEncryptedOnThisPhoneNothingGoesOutReadable(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.745  2824  2839 I TestRunner: started: askingAgainIsOnlyForAnEnvelopeThatWasThereAndDidNotOpen(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.806  2824  2839 I TestRunner: finished: askingAgainIsOnlyForAnEnvelopeThatWasThereAndDidNotOpen(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.807  2824  2839 I TestRunner: started: aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.048  2824  2839 I TestRunner: finished: aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.050  2824  2839 I TestRunner: started: aVerifiedMemberWhoseKeysChangedHoldsTheGroupUntilTheUserHasLooked(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.178  2824  2839 I TestRunner: finished: aVerifiedMemberWhoseKeysChangedHoldsTheGroupUntilTheUserHasLooked(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.179  2824  2839 I TestRunner: started: theEnvelopeThatHandsOverAChainIsNotAMessageAndTheOtherWayRound(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.318  2824  2839 I TestRunner: finished: theEnvelopeThatHandsOverAChainIsNotAMessageAndTheOtherWayRound(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.319  2824  2839 I TestRunner: started: beforeAFileForAGroupIsUploadedItIsKnownWhetherItWillBeSealed(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.428  2824  2839 I TestRunner: finished: beforeAFileForAGroupIsUploadedItIsKnownWhetherItWillBeSealed(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.429  2824  2839 I TestRunner: started: aMemberOnANewPhoneIsHandedANewChainAndTheOldPhoneNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.465  1596  1611 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
-    11-25 04:24:32.465  1596  1611 I ActivityManager: Killing 2824:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
-    11-25 04:24:32.465  1596  1611 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
-    11-25 04:24:32.466  1596  1611 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
-    11-25 04:24:32.468  1596  2898 I ActivityManager: Failure reporting to instrumentation watcher: comp=ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner} results=Bundle[{shortMsg=Process crashed.}]
-    11-25 04:24:32.472  1596  1629 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
-    11-25 04:24:32.518  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
-    11-25 04:24:32.585  2281  2928 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
-    11-25 04:24:32.627  1596  1608 I ActivityManager: Killing 1979:com.android.cellbroadcastreceiver/u0a4 (adj 906): empty #17
-    11-25 04:24:32.627  1596  1608 I ActivityManager: Killing 2181:com.android.carrierconfig/u0a3 (adj 906): empty #18
-    11-25 04:24:32.644  1596  2075 I ActivityManager: Killing 2324:com.android.quicksearchbox/u0a52 (adj 906): empty #17
-    11-25 04:24:32.664  1596  1700 I ActivityManager: Killing 2368:com.android.dialer/u0a8 (adj 906): empty #17
+    11-25 04:37:48.493  1671  1671 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only
+    11-25 04:37:48.522  1671  1671 I dex2oat : dex2oat took 29.113ms (threads: 2) arena alloc=1016B (1016B) java alloc=68KB (70160B) native alloc=885KB (906384B) free=1162KB (1190768B)
+    11-25 04:37:48.523  1602  1602 W PackageManager: No disk maintenance in 1795581468523; running immediately
+    11-25 04:37:49.687  1602  1627 I ActivityManager: Displayed com.android.settings/.FallbackHome: +274ms (total +365ms)
+    11-25 04:37:49.918  1602  1627 V PackageManager: reconcileAppsData for null u0 0x2
+    11-25 04:37:49.931  1602  1627 V PackageManager: reconcileAppsData finished 79 packages; restoreconNeeded was false
+    11-25 04:37:49.961  1602  1614 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:49.961  1602  1614 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:49.961  1602  1614 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:49.961  1602  1614 I PackageManager:   Scheme: "sms"
+    11-25 04:37:49.961  1602  1614 I PackageManager:   AutoVerify=false
+    11-25 04:37:49.961  1602  1602 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:49.961  1602  1602 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Scheme: "smsto"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   AutoVerify=false
+    11-25 04:37:49.962  1602  1602 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Scheme: "mms"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   AutoVerify=false
+    11-25 04:37:49.962  1602  1602 I PackageManager: Replacing preferred activity com.android.messaging/.ui.conversation.LaunchConversationActivity for user 0:
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Action: "android.intent.action.SENDTO"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Category: "android.intent.category.DEFAULT"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   Scheme: "mmsto"
+    11-25 04:37:49.962  1602  1602 I PackageManager:   AutoVerify=false
+    11-25 04:37:50.996  1602  1634 I ActivityManager: Killing 2113:com.android.sdksetup/u0a18 (adj 0): change com.android.sdksetup
+    11-25 04:37:51.897  1602  1627 I ActivityManager: Displayed com.android.launcher3/.Launcher: +912ms (total +1s45ms)
+    11-25 04:38:16.987  1602  1634 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl473536061.tmp/base.apk pkg=com.nchat.app.debug isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl473536061.tmp/oat sharedLibraries=null
+    11-25 04:38:16.993  2726  2726 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
+    11-25 04:38:16.993  2726  2726 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
+    11-25 04:38:16.993  2726  2726 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl473536061.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable
+    11-25 04:38:16.993  2726  2726 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
+    11-25 04:38:18.006  2726  2726 I dex2oat : Large app, accepted running with swap.
+    11-25 04:38:18.155  2726  2728 W dex2oat : Before Android 4.1, method android.graphics.PorterDuffColorFilter androidx.vectordrawable.graphics.drawable.VectorDrawableCompat.updateTintFilter(android.graphics.PorterDuffColorFilter, android.content.res.ColorStateList, android.graphics.PorterDuff$Mode) would have incorrectly overridden the package-private method in android.graphics.drawable.Drawable
+    11-25 04:38:19.299  2726  2726 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateMap failed lock verification and will run slower.
+    11-25 04:38:19.299  2726  2726 W dex2oat : Common causes for lock verification issues are non-optimized dex code
+    11-25 04:38:19.299  2726  2726 W dex2oat : and incorrect proguard optimizations.
+    11-25 04:38:19.541  2726  2726 W dex2oat : Class androidx.compose.runtime.snapshots.SnapshotStateList failed lock verification and will run slower.
+    11-25 04:38:21.080  2726  2728 W dex2oat : Before Android 4.1, method double java.util.concurrent.ThreadLocalRandom.internalNextDouble(double, double) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:38:21.080  2726  2728 W dex2oat : Before Android 4.1, method int java.util.concurrent.ThreadLocalRandom.internalNextInt(int, int) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:38:21.080  2726  2728 W dex2oat : Before Android 4.1, method long java.util.concurrent.ThreadLocalRandom.internalNextLong(long, long) would have incorrectly overridden the package-private method in java.util.Random
+    11-25 04:38:25.405  2726  2726 I dex2oat : dex2oat took 8.411s (threads: 2) arena alloc=919KB (941520B) java alloc=23MB (24488672B) native alloc=30MB (31672904B) free=3MB (3716536B) swap=16MB (16777216B)
+    11-25 04:38:25.425  1602  1634 W PackageManager: Unknown permission android.permission.BLUETOOTH_CONNECT in package com.nchat.app.debug
+    11-25 04:38:25.425  1602  1634 W PackageManager: Unknown permission android.permission.POST_NOTIFICATIONS in package com.nchat.app.debug
+    11-25 04:38:25.425  1602  1634 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE in package com.nchat.app.debug
+    11-25 04:38:25.426  1602  1634 W PackageManager: Unknown permission android.permission.FOREGROUND_SERVICE_DATA_SYNC in package com.nchat.app.debug
+    11-25 04:38:25.487  1602  1613 I ActivityManager: Killing 1852:com.android.settings:CryptKeeper/1000 (adj 906): empty #17
+    11-25 04:38:25.504  1602  1661 I ActivityManager: Killing 2083:com.android.keychain/1000 (adj 906): empty #17
+    11-25 04:38:25.726  1602  1634 I PackageManager.DexOptimizer: Running dexopt (dex2oat) on: /data/app/vmdl1681291804.tmp/base.apk pkg=com.nchat.app.debug.test isa=x86 vmSafeMode=false debuggable=true target-filter=interpret-only oatDir = /data/app/vmdl1681291804.tmp/oat sharedLibraries=/system/framework/android.test.runner.jar
+    11-25 04:38:25.732  2769  2769 W dex2oat : Unexpected CPU variant for X86 using defaults: x86
+    11-25 04:38:25.732  2769  2769 W dex2oat : Mismatch between dex2oat instruction set features (ISA: X86 Feature string: smp,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) and those of dex2oat executable (ISA: X86 Feature string: smp,ssse3,-sse4.1,-sse4.2,-avx,-avx2,-lock_add,-popcnt) for the command line:
+    11-25 04:38:25.732  2769  2769 W dex2oat : /system/bin/dex2oat --zip-fd=6 --zip-location=base.apk --oat-fd=7 --oat-location=/data/app/vmdl1681291804.tmp/oat/x86/base.odex --instruction-set=x86 --instruction-set-variant=x86 --instruction-set-features=default --runtime-arg -Xms64m --runtime-arg -Xmx512m --compiler-filter=interpret-only --swap-fd=9 --debuggable --runtime-arg -classpath --runtime-arg /system/framework/android.test.runner.jar
+    11-25 04:38:25.732  2769  2769 I dex2oat : /system/bin/dex2oat --compiler-filter=interpret-only --debuggable
+    11-25 04:38:26.030  2769  2769 I dex2oat : dex2oat took 297.554ms (threads: 2) arena alloc=16KB (17016B) java alloc=663KB (679888B) native alloc=1438KB (1473424B) free=1633KB (1672304B)
+    11-25 04:38:26.051  1602  1634 V BackupManagerService: restoreAtInstall pkg=com.nchat.app.debug.test token=2 restoreSet=0
+    11-25 04:38:26.066  1602  2127 D PackageInstaller: Ignoring abandon after commit relinquished control
+    11-25 04:38:26.826  1602  2063 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: start instr
+    11-25 04:38:26.837  1602  2063 I ActivityManager: Start proc 2831:com.nchat.app.debug/u0a62 for added application com.nchat.app.debug
+    11-25 04:38:26.848  2831  2831 W System  : ClassLoader referenced unknown path: /data/app/com.nchat.app.debug.test-1/lib/x86
+    11-25 04:38:26.910  2831  2846 I TestRequestBuilder: Scanning classpath to find tests in paths [/data/app/com.nchat.app.debug.test-1/base.apk]
+    11-25 04:38:29.409  1602  2128 I ActivityManager: START u0 {act=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dat=package:com.nchat.app.debug flg=0x10000000 cmp=com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations} from uid 10062 on display 0
+    11-25 04:38:30.284  1602  1627 I ActivityManager: Displayed com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations: +871ms
+    11-25 04:38:32.256  2831  2871 D ProfileInstaller: Installing profile for com.nchat.app.debug
+    11-25 04:38:40.977  1602  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
+    11-25 04:38:40.977  1602  1616 I ActivityManager: Killing 2831:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
+    11-25 04:38:40.977  1602  1616 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
+    11-25 04:38:40.978  1602  1616 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
+    11-25 04:38:40.986  1602  2905 I ActivityManager: Failure reporting to instrumentation watcher: comp=ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner} results=Bundle[{shortMsg=Process crashed.}]
+    11-25 04:38:40.987  1602  1634 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
+    11-25 04:38:41.052  1602  1634 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
+    11-25 04:38:41.065  1602  1634 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
+    11-25 04:38:41.115  2038  2942 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
+    11-25 04:38:41.180  1602  1613 I ActivityManager: Killing 2221:com.android.carrierconfig/u0a3 (adj 906): empty #17
+    11-25 04:38:41.204  1602  1862 I ActivityManager: Killing 2277:com.android.cellbroadcastreceiver/u0a4 (adj 906): empty #17
+    11-25 04:38:41.217  1602  2102 I ActivityManager: Killing 2368:com.android.quicksearchbox/u0a52 (adj 906): empty #17
+    11-25 04:38:41.300  1602  1616 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=-1: deletePackageX
+    11-25 04:38:41.336  1602  1634 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=0: pkg removed
+    11-25 04:38:41.342  1602  1634 E KernelUidCpuTimeReader: 	at com.android.server.pm.PackageManagerService$8.run(PackageManagerService.java:11407)
+    11-25 04:38:41.389  2038  3019 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug.test
 - on this machine
-       2879      93 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
-       3266      59 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
-       3270      59 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
-       3369      49 adb -L tcp:5037 fork-server server --reply-fd 4
-       3391      46 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
-       3392      46 bash .github/scripts/on_emulator.sh 24
-       3433      45 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=j
-       3565      28 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java -Djava.awt.headless=true -Djava.util.logging.config.file=/home/runner/.config/.android/utp/logging339
+       2883     101 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
+       3272      59 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
+       3276      59 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
+       3378      49 adb -L tcp:5037 fork-server server --reply-fd 4
+       3402      46 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
+       3403      46 bash .github/scripts/on_emulator.sh 24
+       3444      46 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=j
+       3576      27 /usr/lib/jvm/temurin-17-jdk-amd64/bin/java -Djava.awt.headless=true -Djava.util.logging.config.file=/home/runner/.config/.android/utp/logging148
 
-::error title=App start on Android API 24::not judged — no answer within 300 s: adb install -r app/build/outputs/apk/smoke/app-smoke.apk
-App start on Android API 24: not judged — no answer within 300 s: adb install -r app/build/outputs/apk/smoke/app-smoke.apk
---- what the launch said
-(it had not been launched)
---- the screen as it was last read
-(it had not been read)
---- what the emulator still answers
-- is it attached
-    List of devices attached
-    emulator-5554	device
-- has it started, and how long has it run
-    1
-     04:29:32 up 5 min,  0 users,  load average: 0.02, 0.13, 0.08
-- what is in front
-        mResumedActivity: ActivityRecord{e15c38c u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}
-      mCurrentFocus=Window{6e58f51 u0 com.android.settings/com.android.settings.fuelgauge.RequestIgnoreBatteryOptimizations}
-      mFocusedApp=AppWindowToken{35e39db token=Token{b211ad5 ActivityRecord{e15c38c u0 com.android.settings/.fuelgauge.RequestIgnoreBatteryOptimizations t4}}}
-- the app's processes
-    (nothing)
-- what an app that did not respond left behind
-    total 0
-- the log
-    11-25 04:24:29.476  2824  2839 I TestRunner: finished: anyMessageOfTheFirstFlightEstablishesTheSession(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.476  2824  2839 I TestRunner: started: theFirstKeysOfAPeerAreTakenOnTrustAndNamed(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.523  2824  2839 I TestRunner: finished: theFirstKeysOfAPeerAreTakenOnTrustAndNamed(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.524  2824  2839 I TestRunner: started: aRecordThatCannotBeReadIsToldAsAChange(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.581  2824  2839 I TestRunner: finished: aRecordThatCannotBeReadIsToldAsAChange(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.582  2824  2839 I TestRunner: started: theSameWhenItIsThePeerWhoWritesFirstAfterTheRecordWasLost(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.645  2824  2839 I TestRunner: finished: theSameWhenItIsThePeerWhoWritesFirstAfterTheRecordWasLost(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.646  2824  2839 I TestRunner: started: noFileIsPreparedForAContactWhoseVerifiedKeysChanged(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.708  2824  2839 I TestRunner: finished: noFileIsPreparedForAContactWhoseVerifiedKeysChanged(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.709  2824  2839 I TestRunner: started: whetherAFileWillBeSealedIsKnownBeforeItIsUploaded(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.745  2824  2839 I TestRunner: finished: whetherAFileWillBeSealedIsKnownBeforeItIsUploaded(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.746  2824  2839 I TestRunner: started: aFileForSomebodyWithoutKeysGoesAsBeforeOnlyWhereNothingWasEverEncrypted(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.786  2824  2839 I TestRunner: finished: aFileForSomebodyWithoutKeysGoesAsBeforeOnlyWhereNothingWasEverEncrypted(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.789  2824  2839 I TestRunner: started: blankIdsAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.798  2824  2839 I TestRunner: finished: blankIdsAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.799  2824  2839 I TestRunner: started: archiveFailureNeverSpendsAMessageKey(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.867  2824  2839 I TestRunner: finished: archiveFailureNeverSpendsAMessageKey(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.868  2824  2839 I TestRunner: started: questionsAboutCodesNeverThrowAndNeverPretend(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.904  2824  2839 I TestRunner: finished: questionsAboutCodesNeverThrowAndNeverPretend(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.905  2824  2839 I TestRunner: started: theSameHoldWhenItIsTheServerThatReportsNewKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.966  2824  2839 I TestRunner: finished: theSameHoldWhenItIsTheServerThatReportsNewKeys(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:29.967  2824  2839 I TestRunner: started: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.025  2824  2839 I TestRunner: finished: replayedEnvelopesAreRefused(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.026  2824  2839 I TestRunner: started: aBatchSharesOneWritePerPeerAndStillOpensEverything(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.184  2824  2839 I TestRunner: finished: aBatchSharesOneWritePerPeerAndStillOpensEverything(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.185  2824  2839 I TestRunner: started: envelopeMovedToAnotherMessageDoesNotOpen(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.225  2824  2839 I TestRunner: finished: envelopeMovedToAnotherMessageDoesNotOpen(com.nchat.app.network.E2eeClientTest)
-    11-25 04:24:30.226  2824  2839 I TestRunner: started: aWeekOfMessagesOpensNewestPageFirst(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.761  2824  2839 I TestRunner: finished: aWeekOfMessagesOpensNewestPageFirst(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.762  2824  2839 I TestRunner: started: aRosterAndABundleThatDisagreeHandNothingOver(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.824  2824  2839 I TestRunner: finished: aRosterAndABundleThatDisagreeHandNothingOver(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.826  2824  2839 I TestRunner: started: aNewMemberWhoLookedAtTheHistoryFirstStillReadsWhatComesAfter(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.920  2824  2839 I TestRunner: finished: aNewMemberWhoLookedAtTheHistoryFirstStillReadsWhatComesAfter(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.921  2824  2839 I TestRunner: started: aGroupWithAMemberWhoHasNoKeysStaysAsItWasUntilEveryoneHasThem(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.984  2824  2839 I TestRunner: finished: aGroupWithAMemberWhoHasNoKeysStaysAsItWasUntilEveryoneHasThem(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:30.985  2824  2839 I TestRunner: started: takingInAChainTwiceChangesNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.052  2824  2839 I TestRunner: finished: takingInAChainTwiceChangesNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.053  2824  2839 I TestRunner: started: aChainThatCameAfterAllIsNotAskedAbout(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.109  2824  2839 I TestRunner: finished: aChainThatCameAfterAllIsNotAskedAbout(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.109  2824  2839 I TestRunner: started: aClosedClientNeitherSendsNorReadsNorTakesInChains(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.161  2824  2839 I TestRunner: finished: aClosedClientNeitherSendsNorReadsNorTakesInChains(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.162  2824  2839 I TestRunner: started: aMemberWhoAskedAgainIsHandedAReplacedChainOnANewSessionAsWell(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.264  2824  2839 I TestRunner: finished: aMemberWhoAskedAgainIsHandedAReplacedChainOnANewSessionAsWell(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.266  2824  2839 I TestRunner: started: aChainIsReplacedAfterSoManyMessagesAndAfterAMonth(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.391  2824  2839 I TestRunner: finished: aChainIsReplacedAfterSoManyMessagesAndAfterAMonth(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.392  2824  2839 I TestRunner: started: aMessageIsSealedOnceAndARetrySendsTheSameEnvelope(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.459  2824  2839 I TestRunner: finished: aMessageIsSealedOnceAndARetrySendsTheSameEnvelope(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.460  2824  2839 I TestRunner: started: theChainIsHandedOverOnceAndLaterMessagesCostNothingExtra(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.540  2824  2839 I TestRunner: finished: theChainIsHandedOverOnceAndLaterMessagesCostNothingExtra(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.541  2824  2839 I TestRunner: started: aChainThisPhoneLacksIsAskedForOnceAndNotAgainWhenThereIsNone(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.640  2824  2839 I TestRunner: finished: aChainThisPhoneLacksIsAskedForOnceAndNotAgainWhenThereIsNone(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.642  2824  2839 I TestRunner: started: onceAGroupIsEncryptedOnThisPhoneNothingGoesOutReadable(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.744  2824  2839 I TestRunner: finished: onceAGroupIsEncryptedOnThisPhoneNothingGoesOutReadable(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.745  2824  2839 I TestRunner: started: askingAgainIsOnlyForAnEnvelopeThatWasThereAndDidNotOpen(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.806  2824  2839 I TestRunner: finished: askingAgainIsOnlyForAnEnvelopeThatWasThereAndDidNotOpen(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:31.807  2824  2839 I TestRunner: started: aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.048  2824  2839 I TestRunner: finished: aMemberWhoLostTheirSessionAsksForTheChainAgainAndIsHandedItOnANewOne(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.050  2824  2839 I TestRunner: started: aVerifiedMemberWhoseKeysChangedHoldsTheGroupUntilTheUserHasLooked(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.178  2824  2839 I TestRunner: finished: aVerifiedMemberWhoseKeysChangedHoldsTheGroupUntilTheUserHasLooked(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.179  2824  2839 I TestRunner: started: theEnvelopeThatHandsOverAChainIsNotAMessageAndTheOtherWayRound(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.318  2824  2839 I TestRunner: finished: theEnvelopeThatHandsOverAChainIsNotAMessageAndTheOtherWayRound(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.319  2824  2839 I TestRunner: started: beforeAFileForAGroupIsUploadedItIsKnownWhetherItWillBeSealed(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.428  2824  2839 I TestRunner: finished: beforeAFileForAGroupIsUploadedItIsKnownWhetherItWillBeSealed(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.429  2824  2839 I TestRunner: started: aMemberOnANewPhoneIsHandedANewChainAndTheOldPhoneNothing(com.nchat.app.network.E2eeGroupClientTest)
-    11-25 04:24:32.465  1596  1611 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=-1: deletePackageX
-    11-25 04:24:32.465  1596  1611 I ActivityManager: Killing 2824:com.nchat.app.debug/u0a62 (adj 0): stop com.nchat.app.debug
-    11-25 04:24:32.465  1596  1611 W ActivityManager: Crash of app com.nchat.app.debug running instrumentation ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner}
-    11-25 04:24:32.466  1596  1611 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: finished inst
-    11-25 04:24:32.468  1596  2898 I ActivityManager: Failure reporting to instrumentation watcher: comp=ComponentInfo{com.nchat.app.debug.test/androidx.test.runner.AndroidJUnitRunner} results=Bundle[{shortMsg=Process crashed.}]
-    11-25 04:24:32.472  1596  1629 I PackageManager: Removing old permission: com.nchat.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from package com.nchat.app.debug
-    11-25 04:24:32.518  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug appid=10062 user=0: pkg removed
-    11-25 04:24:32.585  2281  2928 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug
-    11-25 04:24:32.627  1596  1608 I ActivityManager: Killing 1979:com.android.cellbroadcastreceiver/u0a4 (adj 906): empty #17
-    11-25 04:24:32.627  1596  1608 I ActivityManager: Killing 2181:com.android.carrierconfig/u0a3 (adj 906): empty #18
-    11-25 04:24:32.644  1596  2075 I ActivityManager: Killing 2324:com.android.quicksearchbox/u0a52 (adj 906): empty #17
-    11-25 04:24:32.664  1596  1700 I ActivityManager: Killing 2368:com.android.dialer/u0a8 (adj 906): empty #17
-    11-25 04:24:32.787  1596  1611 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=-1: deletePackageX
-    11-25 04:24:32.835  1596  1629 I ActivityManager: Force stopping com.nchat.app.debug.test appid=10063 user=0: pkg removed
-    11-25 04:24:32.869  2281  3011 D VoicemailCleanupService: Cleaning up data for package: com.nchat.app.debug.test
-    11-25 04:24:37.555  1596  1607 I ActivityManager: Killing 2411:com.android.camera2/u0a27 (adj 906): empty #17
-- on this machine
-       2879     393 /home/runner/actions-runner/cached/2.338.2/externals/node24/bin/node /home/runner/work/_actions/reactivecircus/android-emulator-runner/v2/lib/ma
-       3266     359 /usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-i386-headless -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-sn
-       3270     359 /usr/local/lib/android/sdk/emulator/crashpad_handler --no-rate-limit --database=/tmp/android-runner/emu-crash-37.3.10.db --url=https://clients2.
-       3369     349 adb -L tcp:5037 fork-server server --reply-fd 4
-       3391     346 /usr/bin/sh -c bash .github/scripts/on_emulator.sh 24
-       3392     346 bash .github/scripts/on_emulator.sh 24
+::notice title=App start on Android API 24::started; the first screen shows 'Welcome Back', 'Sign In'
+App start on Android API 24: started; the first screen shows 'Welcome Back', 'Sign In'
+--- on screen
+com.nchat.app.smoke: Welcome Back
+com.nchat.app.smoke: Sign in to continue to NChat
+com.nchat.app.smoke: Email
+com.nchat.app.smoke: Enter your email
+com.nchat.app.smoke: Password
+com.nchat.app.smoke: Enter your password
+com.nchat.app.smoke: Show password
+com.nchat.app.smoke: Sign In
+com.nchat.app.smoke: Don't have an account?
+com.nchat.app.smoke: Sign Up
+
 --- still running on the build machine when this was written
-   3369     350 adb -L tcp:5037 fork-server server --reply-fd 4
-   3873       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3266 -sleep 20
+   3378      72 adb -L tcp:5037 fork-server server --reply-fd 4
+   3841       1 /usr/local/lib/android/sdk/emulator/emulator -kill 3272 -sleep 20
