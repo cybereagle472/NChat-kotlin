@@ -13,14 +13,15 @@ import java.security.SecureRandom
 internal object E2eeText {
     const val SIGNED_OUT = "this account has been signed out"
     const val NOT_READY = "encryption isn't ready on this phone yet; try again in a moment"
-    const val PEER_HAS_NO_KEYS = "this contact can't receive encrypted messages right now (they may have signed out)"
+    const val PEER_HAS_NO_KEYS = "this contact can't receive encrypted messages right now (they may have erased NChat from their phone)"
     const val PEER_KEYS_UNVERIFIED = "this contact's encryption keys could not be checked"
     const val REPLACED = "this account is now in use on another phone"
     const val CODE_CHANGED = "this contact's security code changed. Check the notice at the top of the chat, then send it again"
     const val MEMBER_CODE_CHANGED =
         "the security code of somebody in this group changed. Open your chat with them, check the notice, then send it again"
     const val UNAVAILABLE =
-        "encrypted chats can't be opened on this phone right now. Restart NChat; if that doesn't help, sign out and sign in again"
+        "encrypted chats can't be opened on this phone right now. Restart NChat; if that doesn't help, " +
+            "choose \"Log out and erase\" in Settings and sign in again"
 
     /** In place of a sealed message this phone has no key for (sent to, or from, another installation). */
     const val CANNOT_SHOW = "🔒 This message can't be shown on this phone"
@@ -30,6 +31,22 @@ internal object E2eeText {
 
     /** In place of a sealed file whose address is missing or is not on this app's server. */
     const val FILE_UNAVAILABLE = "🔒 This attachment can't be opened"
+}
+
+/** How the user leaves an account on this phone. */
+enum class LogOut {
+    /**
+     * What this phone keeps of the account stays, and nothing of it is shown
+     * or used until the same account signs in here again.
+     */
+    Keep,
+
+    /**
+     * Everything this phone keeps of the account is erased, and the server
+     * is asked to stop handing its keys out: for a phone that goes to
+     * somebody else.
+     */
+    Erase,
 }
 
 /**
@@ -74,9 +91,11 @@ fun peerBundle(identityKey: String, signedPrekey: String, signature: String, one
  * Another account signing in removes it first, so nobody's keys stay behind
  * on a phone somebody else now uses.
  *
- * **What ends it.** Signing out erases everything, at once and without the
- * network. A session that merely expired erases nothing: the same account
- * signing in again finds its keys and its history where they were.
+ * **What ends it.** Only erasing does — [logOut] with [LogOut.Erase], at
+ * once and without the network — and another account signing in. Logging
+ * out with [LogOut.Keep], and a session that expired, erase nothing: until
+ * somebody signs in nothing is opened and nothing is sealed, and the same
+ * account signing in again finds its keys and its history where they were.
  *
  * **Never absent.** [messaging] always answers. With nobody signed in, or
  * with storage that cannot be opened, the answer is a stand-in that refuses
@@ -97,7 +116,14 @@ class EndToEnd(
     /** How hard a backup's key is to make from its passphrase; see [E2eeBackup.ROUNDS]. */
     private val backupRounds: Int = E2eeBackup.ROUNDS,
 ) {
-    private class Account(val userId: String, val keys: E2eeKeys, val client: E2eeClient, val localSeal: LocalSeal) {
+    private class Account(
+        val userId: String,
+        val keys: E2eeKeys,
+        val client: E2eeClient,
+        val localSeal: LocalSeal,
+        /** Nothing of this account was on the phone when it was opened: its storage key was made then. */
+        val startedAnew: Boolean,
+    ) {
         fun close() {
             client.close()
             keys.close()
@@ -182,13 +208,21 @@ class EndToEnd(
      * The user has just signed in on this phone, which makes it the phone the
      * account lives on: the next [sync] registers its keys in place of any
      * other phone's.
+     *
+     * True when the account starts anew here: the phone held nothing of it —
+     * a new phone, one it was erased from, one another account used since —
+     * so it has new keys, and what was sealed for earlier ones cannot be
+     * opened on it without a backup. False when its keys and its history
+     * were here and are in use again, and also when what is here cannot be
+     * opened right now: that is not a new start, and nothing was replaced.
      */
-    fun signedIn(userId: String) {
-        synchronized(lock) {
-            current = userId.takeIf { it.isNotBlank() }
-            failed = null
-            account()?.keys?.claim()
-        }
+    fun signedIn(userId: String): Boolean = synchronized(lock) {
+        current = userId.takeIf { it.isNotBlank() }
+        failed = null
+        val before = open
+        val account = account() ?: return@synchronized false
+        account.keys.claim()
+        account !== before && account.startedAnew
     }
 
     /** Sealing and opening for the signed-in account. */
@@ -200,8 +234,8 @@ class EndToEnd(
      * Where the opened copies of this account's sealed files are kept (see
      * [SealedMediaStore]); null when nobody is signed in or the account's
      * storage cannot be opened. It lies inside what belongs to the account,
-     * so it is erased with the keys — at sign-out, and when another account
-     * signs in.
+     * so it is erased with the keys — by [LogOut.Erase], and when another
+     * account signs in.
      */
     fun mediaDirectory(): File? = synchronized(lock) {
         val userId = current ?: return@synchronized null
@@ -212,8 +246,9 @@ class EndToEnd(
      * What seals the rest of what this account keeps on this phone — cached
      * conversations, the lists with their previews, messages waiting to be
      * sent, drafts (see [LocalSeal]). It is made from the account's storage
-     * key, so signing out, and another account signing in, leave everything
-     * sealed with it unopenable.
+     * key, so erasing the account, and another account signing in, leave
+     * everything sealed with it unopenable; while the account is only logged
+     * out there is no seal, and the same one again once it is back.
      *
      * Null when nobody is signed in or the account's storage cannot be
      * opened. Then there is nothing to seal with, and whoever asked writes
@@ -242,7 +277,7 @@ class EndToEnd(
      * Takes about a second before the first byte: that is the price of every
      * guess at the passphrase. Throws [IllegalArgumentException], before
      * anything is written, for a passphrase [E2eeBackup.passphraseProblem]
-     * turns down; [IOException] when the account signed out before all of it
+     * turns down; [IOException] when the account logged out before all of it
      * was read — what was written is then not a backup, and does not
      * restore; and whatever [out] throws.
      */
@@ -273,7 +308,7 @@ class EndToEnd(
      * [E2eeBackup.Failure] with what is wrong with the file; it says how
      * many messages were put back before that — everything read before the
      * damage was sealed under the passphrase, and is kept. Throws whatever
-     * [input] throws. Null as well when the account signed out meanwhile:
+     * [input] throws. Null as well when the account logged out meanwhile:
      * nothing is written back for an account that has left.
      */
     fun restore(input: InputStream, passphrase: CharArray): Int? {
@@ -313,25 +348,39 @@ class EndToEnd(
     }
 
     /**
-     * The user signs out: this phone forgets the account's keys and
-     * everything they opened, before this returns and without the network.
+     * The user logs out. Before this returns, and without the network,
+     * nothing of the account is opened or sealed any more — not through
+     * this object, and not through what was handed out before.
      *
-     * The answer is for the server, which should stop handing those keys
-     * out: it names the identity key to withdraw (null when there is none),
-     * once nothing of this account can reach the server any more.
+     * [LogOut.Keep] leaves everything where it is: the storage key, the
+     * keys and the opened history. The same account signing in again finds
+     * them; another account signing in removes them first. Nothing is
+     * withdrawn from the server, so what is sent meanwhile is sealed for
+     * this phone and waits for it.
+     *
+     * [LogOut.Erase] removes all of it for good.
+     *
+     * The answer is for the server: the identity key it should stop handing
+     * out, once nothing of this account can reach the server any more. It is
+     * null when there is none, and always for [LogOut.Keep] — the keys this
+     * phone registered stay the account's.
      */
-    fun signOut(): suspend () -> String? {
-        val leaving = synchronized(lock) {
-            // Opened if need be: the identity to withdraw is in there.
-            val account = account()
+    fun logOut(how: LogOut): suspend () -> String? {
+        val withdrawn = synchronized(lock) {
+            // To erase, opened if need be: the identity to withdraw is in there.
+            val account = if (how == LogOut.Erase) account() else open
             current = null
             failed = null
             open = null
             account?.close()
-            erase()
-            account?.keys
+            if (how == LogOut.Erase) {
+                erase()
+                account?.keys
+            } else {
+                null
+            }
         }
-        return { leaving?.published() }
+        return { withdrawn?.published() }
     }
 
     private fun account(): Account? {
@@ -352,7 +401,8 @@ class EndToEnd(
     private fun open(userId: String): Account {
         val home = File(root, hashedName(userId))
         val stored = keyring.load()
-        val key = if (stored != null && stored.owner == userId && stored.key.size == SealedBox.KEY_BYTES) {
+        val kept = stored != null && stored.owner == userId && stored.key.size == SealedBox.KEY_BYTES
+        val key = if (stored != null && kept) {
             stored.key
         } else {
             // Nothing here belongs to this account: what is left is another account's, or debris.
@@ -377,7 +427,7 @@ class EndToEnd(
             prepare = keys::ensureRegistered,
             onSecurityChanged = onSecurityChanged,
         )
-        return Account(userId, keys, client, LocalSeal(key))
+        return Account(userId, keys, client, LocalSeal(key), startedAnew = !kept)
     }
 
     /** The key first: once it is gone, whatever survives on disk is noise. */

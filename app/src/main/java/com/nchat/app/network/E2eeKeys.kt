@@ -168,7 +168,7 @@ class E2eeKeys(
     fun close() {
         synchronized(gate) {
             if (closed) return
-            // Read while the vault still exists: sign-out needs it after the erasure.
+            // Read while the vault still exists: erasing needs it after the erasure.
             leaving = runCatching { current()?.identityKey }.getOrNull()
             closed = true
         }
@@ -176,7 +176,7 @@ class E2eeKeys(
 
     /**
      * After [close]: the identity key this installation may have registered —
-     * what sign-out asks the server to withdraw. It answers once no request
+     * what erasing the account asks the server to withdraw. It answers once no request
      * of this object is in flight any more, so that withdrawal is the last
      * word and a registration cannot land after it.
      */

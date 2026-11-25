@@ -158,7 +158,7 @@ object SealedMedia {
  * A player or an image view needs a file it can read, so a sealed file is
  * fetched, opened and kept here in the open, inside the storage that belongs
  * to the signed-in account ([directory]; see `EndToEnd.mediaDirectory`) —
- * signing out removes it with the keys. Nothing is kept that did not open
+ * erasing the account removes it with the keys. Nothing is kept that did not open
  * completely: a file is written under a temporary name and takes its real
  * one only once every chunk has been checked.
  *

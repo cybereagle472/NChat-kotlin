@@ -14,12 +14,15 @@
 # Two groups:
 #   MAIN / ALL_TESTS      the encryption core, which must stay free of
 #                         `android.*` imports altogether.
-#   APP_MAIN / APP_TESTS  app code around it — the models and the on-phone
-#                         stores. It is free of Android but for three names
-#                         (a Context that is only asked for its files
-#                         directory, the crash log, Compose's @Immutable);
-#                         stand-ins for those are generated below and exist
-#                         nowhere but in this script's work directory.
+#   APP_MAIN / APP_TESTS  app code around it — the models, the on-phone
+#                         stores, what happens to them when an account
+#                         arrives or leaves, how a conversation is listed and
+#                         what the screens say. It is free of Android but for
+#                         three names (a Context that is only asked for its
+#                         files directory, the crash log, Compose's
+#                         @Immutable); stand-ins for those are generated
+#                         below and exist nowhere but in this script's work
+#                         directory.
 #
 # First run downloads a JRE and a Kotlin compiler from PyPI (about 120 MB)
 # into $NCHAT_JVM_TOOLS (default ~/.local/nchat-jvm-tools).
@@ -41,7 +44,8 @@ APP_MAIN=(
   data/local/LocalFiles.kt data/local/MessageStore.kt data/local/OutboxStore.kt
   data/local/ChatListCache.kt data/local/GroupListCache.kt data/local/FriendGraphCache.kt
   data/local/DraftStore.kt data/local/StarredStore.kt data/local/PinnedMessageStore.kt data/local/ArchivedStore.kt
-  data/local/PhoneFiles.kt data/repository/RestoreOffer.kt
+  data/local/PhoneFiles.kt data/local/LocalState.kt data/repository/RestoreOffer.kt
+  data/repository/AccountOnPhone.kt
   feature/chats/EncryptionMarks.kt feature/chats/ChatPreview.kt core/util/VideoPlan.kt
   feature/chats/ConversationTimeline.kt feature/chats/RestoreText.kt
   feature/settings/BackupText.kt feature/settings/LogOutText.kt

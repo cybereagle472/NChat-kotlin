@@ -42,6 +42,13 @@ sealed interface NcScreen {
     ) : NcScreen
 
     data object Settings : NcScreen
+
+    /**
+     * Settings ▸ Chat backup, opened on its own: from the notice a chat shows in place of
+     * messages this phone has no key for, and from the question asked once after signing in.
+     * Back returns to wherever it was opened from.
+     */
+    data object Backup : NcScreen
 }
 
 @Stable

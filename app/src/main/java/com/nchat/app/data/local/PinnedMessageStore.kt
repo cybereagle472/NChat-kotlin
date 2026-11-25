@@ -60,6 +60,9 @@ class PinnedMessageStore internal constructor(file: File, seal: () -> LocalSeal?
 
     fun clearAll() = state.clear()
 
+    /** Somebody logged out or signed in: lets go of what is held and reads the file for whoever can open it now. */
+    fun reopen() = state.reopen()
+
     private companion object {
         val MAP_SERIALIZER = MapSerializer(String.serializer(), String.serializer())
     }

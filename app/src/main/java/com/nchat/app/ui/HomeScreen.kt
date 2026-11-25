@@ -42,6 +42,7 @@ import com.nchat.app.core.navigation.NcNavigator
 import com.nchat.app.core.navigation.NcScreen
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.network.ApiLog
+import com.nchat.app.network.LogOut
 import kotlinx.coroutines.delay
 import com.nchat.app.data.model.Chat
 import com.nchat.app.data.model.Friend
@@ -119,7 +120,7 @@ fun HomeScreen(
      * request, an expired session and an account with no data all look the same. Once the first
      * load has settled with nothing on screen, say which one it was — the last failing call and
      * its status, or that the server answered fine and simply has nothing for this account — and
-     * offer Retry and Sign out right there.
+     * offer Retry and Log out right there.
      */
     var syncDiag by remember { mutableStateOf<String?>(null) }
     var retryTick by remember { mutableStateOf(0) }
@@ -390,7 +391,9 @@ fun HomeScreen(
                     ServiceLocator.callRepository.refresh()
                     retryTick++
                 },
-                onSignOut = { ServiceLocator.authRepository.signOut() },
+                // Keeps what the phone holds: this is a way back to the sign-in screen for
+                // somebody whose lists do not load, not a way to lose their messages.
+                onLogOut = { ServiceLocator.authRepository.logOut(LogOut.Keep) },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -461,7 +464,7 @@ private data class ProfileTarget(
 private fun HomeSyncBanner(
     text: String,
     onRetry: () -> Unit,
-    onSignOut: () -> Unit,
+    onLogOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -488,7 +491,7 @@ private fun HomeSyncBanner(
             modifier = Modifier.padding(top = 8.dp)
         ) {
             BannerAction(text = "Retry", background = Color(0xFFFED7AA), onClick = onRetry)
-            BannerAction(text = "Sign out", background = Color(0xFFE7E5E4), onClick = onSignOut)
+            BannerAction(text = "Log out", background = Color(0xFFE7E5E4), onClick = onLogOut)
         }
     }
 }

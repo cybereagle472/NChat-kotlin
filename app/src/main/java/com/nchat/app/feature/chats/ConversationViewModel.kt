@@ -225,7 +225,9 @@ class ConversationViewModel(
     }
 
     fun selectAllMessages() {
-        _selection.value = messages.value.filterNot { it.deleted }.map { it.id }.toSet()
+        // What is on the screen as a message. Messages this phone has no key for stand there as
+        // one notice, and a selection that counted them would count what nobody can see.
+        _selection.value = messages.value.filterNot { it.deleted || it.lockedHere }.map { it.id }.toSet()
     }
 
     /** Deletes every ticked message; `forEveryone` also removes them from the other side. */

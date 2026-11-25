@@ -1143,10 +1143,10 @@ private fun WallpaperTile(
 /**
  * Settings ▸ Chat backup.
  *
- * Signing out erases the keys encrypted messages were opened with, and with them everything
- * they opened. This page is how that is kept: one file, sealed under a passphrase, written and
- * read through the system's file picker — so the app asks for no storage permission and never
- * learns where the file went.
+ * A phone that is new to an account, and one the account was erased from, hold none of the keys
+ * its encrypted messages were opened with. This page is how the messages get there all the
+ * same: one file, sealed under a passphrase, written and read through the system's file picker
+ * — so the app asks for no storage permission and never learns where the file went.
  *
  * What was typed lives in this page only, is never saved with it, and is cleared once it has
  * done its work. Leaving the page waits for a backup or a restore that is under way.
@@ -1214,7 +1214,7 @@ fun BackupPane(onBack: () -> Unit) {
 
     SettingsPaneScaffold(
         title = "Chat backup",
-        subtitle = "Keep encrypted messages when you sign in again",
+        subtitle = BackupText.SUBTITLE,
         onBack = { if (busy == null) onBack() }
     ) {
         item(key = "about") {

@@ -17,7 +17,8 @@ import javax.crypto.spec.SecretKeySpec
  *
  * The opened content of a sealed message exists in one place only: the
  * archive of the phone that opened it ([E2eeArchive]), sealed under a key
- * that signing out erases. A backup is that content in one file the user
+ * that erasing the account from the phone destroys, and that no other phone
+ * ever has. A backup is that content in one file the user
  * keeps wherever they like — which means in places this app knows nothing
  * about. So the file is sealed under a passphrase only the user knows, and
  * whoever holds it without the passphrase learns how much was kept, not

@@ -169,7 +169,7 @@ fun encryptionSummary(name: String, security: PeerSecurity?): String = when {
         "$name's security code changed, and you had verified the old one. Nothing is sent to $name until " +
             "you accept the new code or verify it."
     security.changed ->
-        "$name's security code changed. That happens when somebody signs in again or changes phone. " +
+        "$name's security code changed. That happens when somebody changes phone or sets NChat up again. " +
             "If it surprises you, compare the code with $name."
     else ->
         "Messages in this chat are end-to-end encrypted: only your phone and $name's can read them. That " +
@@ -197,7 +197,7 @@ fun securityChangeNotice(name: String, security: PeerSecurity): String = when {
     security.held ->
         "$name's security code changed. You had verified the old one, so messages to $name wait until you have looked."
     else ->
-        "$name's security code changed. This usually means $name signed in again or changed phone."
+        "$name's security code changed. This usually means $name changed phone or set NChat up again."
 }
 
 /** What the button that settles the notice is called; null when there is nothing to accept yet. */

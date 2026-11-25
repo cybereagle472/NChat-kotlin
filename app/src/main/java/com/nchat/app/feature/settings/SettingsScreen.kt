@@ -80,6 +80,7 @@ import com.nchat.app.core.designsystem.rememberPressSource
 import com.nchat.app.data.ServiceLocator
 import com.nchat.app.data.push.BackgroundSyncService
 import com.nchat.app.data.model.UserProfile
+import com.nchat.app.network.LogOut
 import com.nchat.app.feature.profile.ProfileAvatar
 import com.nchat.app.feature.profile.ProfileScreen
 import kotlin.math.roundToInt
@@ -101,6 +102,8 @@ fun SettingsScreen(
     val profile by ServiceLocator.profileRepository.profile.collectAsStateWithLifecycle()
     val avatar by ServiceLocator.profileRepository.avatar.collectAsStateWithLifecycle()
     var section by remember { mutableStateOf(SettingsPane.Main) }
+    // Which way of leaving the user is being asked about; null when no such dialog is open.
+    var leaving by remember { mutableStateOf<LogOut?>(null) }
     // Read once: the repositories are built from this at first use, so a change applies on
     // the next launch (the dialog says so).
     BackHandler(enabled = section != SettingsPane.Main) { section = SettingsPane.Main }
@@ -261,7 +264,7 @@ fun SettingsScreen(
                             tone = MenuTone.Green,
                             icon = Icons.Rounded.Lock,
                             title = "Chat backup",
-                            subtitle = "Keep encrypted messages when you sign in again",
+                            subtitle = BackupText.SUBTITLE,
                             onClick = { section = SettingsPane.Backup }
                         )
                         SettingsMenuItem(MenuTone.Teal, Icons.Rounded.Palette, "Appearance", "Theme, dark mode")
@@ -305,31 +308,65 @@ fun SettingsScreen(
                     }
                 }
 
+                /*
+                 * Two ways of leaving, and neither happens on a single tap.
+                 *
+                 * "Log Out" keeps what the phone holds: the same account signing in again finds
+                 * its messages, with no backup. It used to erase them, at once and without a
+                 * question. Erasing is now a choice of its own, named for what it does, for a
+                 * phone that goes to somebody else. Each opens a dialog that says what follows.
+                 */
                 item(key = "logout") {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = NcSpace.md)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xCCFFFFFF))
-                            .border(1.dp, Color(0x99FECACA), RoundedCornerShape(16.dp))
-                            .clickable { ServiceLocator.authRepository.signOut() }
-                            .padding(vertical = 15.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(top = NcSpace.md),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Logout,
-                            contentDescription = null,
-                            tint = Color(0xFFDC2626),
-                            modifier = Modifier.size(19.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xCCFFFFFF))
+                                .border(1.dp, Color(0x99FECACA), RoundedCornerShape(16.dp))
+                                .clickable { leaving = LogOut.Keep }
+                                .padding(vertical = 15.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Logout,
+                                contentDescription = null,
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(19.dp)
+                            )
+                            Text(
+                                text = LogOutText.KEEP_ROW,
+                                color = Color(0xFFDC2626),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                        Text(
+                            text = LogOutText.ERASE_ROW,
+                            color = Color(0xFFB91C1C),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .padding(top = NcSpace.sm)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { leaving = LogOut.Erase }
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
                         )
                         Text(
-                            text = "Log Out",
-                            color = Color(0xFFDC2626),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(start = 8.dp)
+                            text = LogOutText.ROWS_NOTE,
+                            color = NcTheme.extra.textMuted,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = NcSpace.md)
                         )
                     }
                 }
@@ -460,6 +497,51 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+
+    when (leaving) {
+        LogOut.Keep -> AlertDialog(
+            onDismissRequest = { leaving = null },
+            title = { Text(LogOutText.KEEP_TITLE) },
+            text = { Text(LogOutText.KEEP_BODY) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        leaving = null
+                        ServiceLocator.authRepository.logOut(LogOut.Keep)
+                    }
+                ) { Text(LogOutText.KEEP_CONFIRM) }
+            },
+            dismissButton = { TextButton(onClick = { leaving = null }) { Text(LogOutText.CANCEL) } }
+        )
+
+        LogOut.Erase -> AlertDialog(
+            onDismissRequest = { leaving = null },
+            title = { Text(LogOutText.ERASE_TITLE) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(NcSpace.sm)) {
+                    Text(LogOutText.ERASE_BODY)
+                    // The way to keep the messages, offered where they are about to be lost.
+                    TextButton(
+                        onClick = {
+                            leaving = null
+                            section = SettingsPane.Backup
+                        }
+                    ) { Text(LogOutText.BACK_UP_FIRST) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        leaving = null
+                        ServiceLocator.authRepository.logOut(LogOut.Erase)
+                    }
+                ) { Text(LogOutText.ERASE_CONFIRM, color = Color(0xFFDC2626)) }
+            },
+            dismissButton = { TextButton(onClick = { leaving = null }) { Text(LogOutText.CANCEL) } }
+        )
+
+        null -> Unit
     }
 }
 
