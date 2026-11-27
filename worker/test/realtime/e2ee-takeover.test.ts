@@ -127,29 +127,19 @@ describe('an account moving to another phone', () => {
     const identity = await register(alice);
     const phone = await inbox(alice);
 
-    // What the app sends once a week: a new signed prekey, to be stored only while this
-    // identity key is the account's.
+    // What the app sends once a week: a new signed prekey for the identity key that is registered.
     const prekey = new Uint8Array(await crypto.subtle.exportKey('spki', (await newKeyPair()).publicKey));
     const signature = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, identity.privateKey, prekey));
-    const replaced = await post('/keys/register', alice.token, {
-      identity_public_key: await publicKey(identity),
-      signed_prekey_public: b64(prekey),
-      signed_prekey_signature: b64(signature),
-      only_if_registered: true,
-    });
-    expect(replaced.status).toBe(200);
+    const keys = {
+      identity_public_key: await publicKey(identity), signed_prekey_public: b64(prekey), signed_prekey_signature: b64(signature),
+    };
+    expect((await post('/keys/signed-prekey', alice.token, keys)).status).toBe(200);
 
     // And the same from a phone that has been replaced since: refused, and nobody is told anything.
     await register(alice); // the user signs in on another phone — that is announced, and is not what is looked at here
     await phone.flush();
     phone.events.length = 0;
-    const refused = await post('/keys/register', alice.token, {
-      identity_public_key: await publicKey(identity),
-      signed_prekey_public: b64(prekey),
-      signed_prekey_signature: b64(signature),
-      only_if_registered: true,
-    });
-    expect(refused.status).toBe(409);
+    expect((await post('/keys/signed-prekey', alice.token, keys)).status).toBe(409);
 
     await phone.flush();
     expect(phone.events).toEqual([]);

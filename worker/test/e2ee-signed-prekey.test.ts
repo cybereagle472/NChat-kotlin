@@ -2,18 +2,21 @@ import { applyD1Migrations, env, SELF } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * A phone replaces its signed prekey every week. It asks for that with
- * `only_if_registered: true` on POST /keys/register, and the server then
- * writes nothing unless the identity key in the request is the one the
- * account has registered at that moment.
+ * A phone replaces its signed prekey every week: POST /keys/signed-prekey.
+ * The server writes the new one only where the identity key in the request
+ * is the one the account has registered at that moment, and changes nothing
+ * else.
  *
- * Why the condition. The plain registration makes the sender's keys the
- * account's, whichever phone held it before — that is what a sign-in needs.
- * A phone that only replaces a prekey must never do that: it asked "am I
- * still this account's phone?" some time ago — a moment ago, or before it
- * went to sleep for the night — and the user may have signed in on another
- * phone since. Without the condition its request would take the account
- * back and sign the new phone out.
+ * Why a route of its own, and why the condition. POST /keys/register makes
+ * the sender's keys the account's, whichever phone held it before — that is
+ * what a sign-in needs. A phone that only replaces a prekey must never do
+ * that: it asked "am I still this account's phone?" some time ago — a moment
+ * ago, or before it went to sleep for the night — and the user may have
+ * signed in on another phone since. A registration would take the account
+ * back and sign the new phone out. And because it is a route of its own, a
+ * server that does not have it yet answers "not found" and nothing happens;
+ * an extra field on /keys/register would have been ignored by such a server,
+ * and the request carried out as a registration.
  *
  * The server still handles PUBLIC key material only.
  */
@@ -86,7 +89,7 @@ async function signIn(user: User, phone: Phone): Promise<Keys> {
 
 /** What a phone sends to replace its signed prekey. */
 function replace(user: User, keys: Keys) {
-  return post('/keys/register', user.token, { ...keys, only_if_registered: true });
+  return post('/keys/signed-prekey', user.token, keys);
 }
 
 async function uploadPrekeys(user: User, phone: Phone, count: number) {
@@ -196,7 +199,10 @@ describe('a phone replacing its signed prekey', () => {
     const next = await phone.keys();
     const stranger = await (await newPhone()).keys();
 
-    expect((await post('/keys/register', null, { ...next, only_if_registered: true })).status).toBe(401);
+    expect((await post('/keys/signed-prekey', null, next)).status).toBe(401);
+    expect((await SELF.fetch('https://example.test/keys/signed-prekey', {
+      method: 'POST', headers: headers(alice.token), body: 'not json',
+    })).status).toBe(400);
     for (const body of [
       { ...next, signed_prekey_signature: stranger.signed_prekey_signature },
       { ...next, signed_prekey_public: stranger.signed_prekey_public },
@@ -210,25 +216,17 @@ describe('a phone replacing its signed prekey', () => {
     expect(await bundle(alice)).toMatchObject(first);
   }, 60000);
 
-  it('must say true or false: anything else is refused, never taken for a plain registration', async () => {
-    // The direction that matters: a request that meant "only if I am still the one"
-    // must not be read as "make me the one".
+  it('leaves the registration of a sign-in what it was: it takes the account, whoever had it', async () => {
+    // The other half of the design: only /keys/signed-prekey asks who has the account.
     const alice = await signup('alice');
     const oldPhone = await newPhone();
     await signIn(alice, oldPhone);
+    await uploadPrekeys(alice, oldPhone, 2);
     const newerPhone = await newPhone();
     const theirs = await signIn(alice, newerPhone);
 
-    for (const flag of ['true', 'yes', 1, 0, null, {}, [true]]) {
-      const response = await post('/keys/register', alice.token, { ...(await oldPhone.keys()), only_if_registered: flag });
-      expect(response.status).toBe(400);
-      expect(await bundle(alice)).toMatchObject(theirs);
-    }
-
-    // `false` says the same as saying nothing: the plain registration of a sign-in.
-    const mine = await oldPhone.keys();
-    expect((await post('/keys/register', alice.token, { ...mine, only_if_registered: false })).status).toBe(200);
-    expect(await bundle(alice)).toMatchObject(mine);
+    expect(await status(alice)).toEqual({ remaining: 0, identity_public_key: newerPhone.identity });
+    expect(await bundle(alice)).toMatchObject({ ...theirs, one_time_prekey: null });
   }, 60000);
 
   it('never undoes a sign-in on another phone that arrives at the same moment', async () => {
