@@ -12,7 +12,10 @@ import { broadcastToUser } from '../lib/realtime';
  * E2EE key infrastructure — public keys only.
  *
  * POST /keys/register  upsert identity + signed prekey (signature verified);
- *                      a NEW identity discards the old one-time prekeys
+ *                      a NEW identity discards the old one-time prekeys.
+ *                      With `only_if_registered: true` it replaces the signed
+ *                      prekey of the identity that is registered, and does
+ *                      nothing else: 409 when another identity, or none, is
  * POST /keys/prekeys   refill one-time prekeys (1..100,100-unconsumed cap),
  *                      only under the identity key that is registered
  * GET  /keys/prekeys   the caller's own unconsumed count and registered
@@ -83,17 +86,40 @@ keys.post('/register', requireAuth, limitSend, async (c) => {
   if (!identity || !prekey || !signature) {
     return c.json({ error: 'Key material must be P-256 SPKI (91 bytes) with a 64-byte signature' }, 400);
   }
+  // Said or not said — never guessed. A request that meant "only while I am
+  // still this account's phone" and were read as a plain registration would
+  // do the very thing the condition is there to prevent.
+  const onlyIfRegistered = body.only_if_registered;
+  if (onlyIfRegistered !== undefined && typeof onlyIfRegistered !== 'boolean') {
+    return c.json({ error: 'only_if_registered must be true or false' }, 400);
+  }
   if (!(await signatureMatches(identity, prekey, signature))) {
     return c.json({ error: 'Signed prekey does not verify against the identity key' }, 400);
   }
 
   const userId = c.get('userId');
+  // A phone replacing its signed prekey, which it does every week. It asked
+  // whether it is still the account's phone some time ago — a moment, or the
+  // night it then slept through — and the user may have signed in on another
+  // phone since. So the question is asked again by the statement that
+  // writes: nothing changes unless this identity key is the registered one,
+  // and a sign-in that lands first always wins. Nobody is told anything:
+  // the account has not moved, and its one-time prekeys stay good.
+  if (onlyIfRegistered === true) {
+    const replaced = await c.env.DB.prepare(
+      `UPDATE user_crypto_keys
+          SET signed_prekey_public = ?1, signed_prekey_signature = ?2, updated_at = datetime('now')
+        WHERE user_id = ?3 AND identity_public_key = ?4
+        RETURNING user_id`,
+    ).bind(body.signed_prekey_public, body.signed_prekey_signature, userId, body.identity_public_key).first();
+    return replaced ? c.json({ ok: true }) : c.json(REPLACED, 409);
+  }
   // A different identity key means a different installation: the private
   // halves of the one-time prekeys uploaded before it no longer exist, and a
   // session started against one could never be opened. They go in the same
   // transaction as the new identity (the DELETE still sees the old row).
-  // Rotating only the signed prekey, or registering the same material again,
-  // leaves them alone.
+  // Registering the same identity again — with the same signed prekey or a
+  // new one — leaves them alone.
   const discardStalePrekeys = c.env.DB.prepare(
     `DELETE FROM one_time_prekeys WHERE user_id = ?1
        AND EXISTS (SELECT 1 FROM user_crypto_keys WHERE user_id = ?1 AND identity_public_key <> ?2)`,

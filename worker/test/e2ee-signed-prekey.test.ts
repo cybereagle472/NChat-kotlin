@@ -171,6 +171,24 @@ describe('a phone replacing its signed prekey', () => {
     expect((await get(`/keys/bundle/${alice.id}`, alice.token)).status).toBe(404);
   }, 60000);
 
+  it('never touches another account, not even one that registered the same identity key', async () => {
+    const alice = await signup('alice');
+    const bob = await signup('bob');
+    const phone = await newPhone();
+    const alices = await signIn(alice, phone);
+    const bobs = await signIn(bob, phone); // the same key pair under a second account
+    const other = await signup('carol');
+    const others = await signIn(other, await newPhone());
+
+    const next = await phone.keys();
+    expect((await replace(alice, next)).status).toBe(200);
+
+    expect(await bundle(alice)).toMatchObject(next);
+    expect(await bundle(bob)).toMatchObject(bobs);
+    expect(await bundle(other)).toMatchObject(others);
+    expect(alices.signed_prekey_public).not.toBe(next.signed_prekey_public);
+  }, 60000);
+
   it('is checked like every registration: signed in, well-formed keys, the signature of that identity key', async () => {
     const alice = await signup('alice');
     const phone = await newPhone();
