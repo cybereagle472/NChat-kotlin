@@ -2,6 +2,14 @@ package com.nchat.app.network
 
 import com.nchat.app.network.E2eeKeys.Outcome
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1352,30 +1360,68 @@ class E2eeKeysTest {
 
     @Test
     fun aDamagedListOfSignedPrekeysCostsTheReplacedOnesAndNothingElse() {
+        // The list is taken as it stands on the phone — whole, and in step with the record — and then
+        // damaged in one way at a time. Whichever way: the phone goes by the record alone, which costs
+        // it the replaced keys and the age of the one in use, and nothing else.
+        fun edited(list: String, change: (Map<String, JsonElement>) -> Map<String, JsonElement>): String =
+            JsonObject(change(Json.parseToJsonElement(list).jsonObject)).toString()
+        fun part(list: Map<String, JsonElement>, name: String, change: (Map<String, JsonElement>) -> Map<String, JsonElement>) =
+            list + (name to JsonObject(change(list.getValue(name).jsonObject)))
+        fun firstReplaced(list: Map<String, JsonElement>, change: (Map<String, JsonElement>) -> Map<String, JsonElement>): Map<String, JsonElement> {
+            val replaced = list.getValue("replaced").jsonArray
+            return list + ("replaced" to JsonArray(listOf(JsonObject(change(replaced.first().jsonObject))) + replaced.drop(1)))
+        }
+        val notAKey = JsonPrimitive(encodeBase64(ByteArray(91) { 7 }))
+        val damages = listOf<Pair<String, (String) -> String>>(
+            "empty" to { "" },
+            "an empty object" to { "{}" },
+            "not JSON" to { "not json" },
+            "a JSON list" to { "[]" },
+            "cut off" to { it.dropLast(9) },
+            "of a format this build does not know" to { edited(it) { list -> list + ("v" to JsonPrimitive(99)) } },
+            "without a format" to { edited(it) { list -> list - "v" } },
+            "without the identity key it was written for" to { edited(it) { list -> list - "identity" } },
+            "without the signed prekey in use" to { edited(it) { list -> list - "prekey" } },
+            "the signed prekey in use without its private half" to { edited(it) { list -> part(list, "prekey") { key -> key - "private" } } },
+            "the signed prekey in use with a public half that is no key" to { edited(it) { list -> part(list, "prekey") { key -> key + ("public" to notAKey) } } },
+            "the signed prekey in use without its signature" to { edited(it) { list -> part(list, "prekey") { key -> key - "signature" } } },
+            "without the time the key in use was made" to { edited(it) { list -> list - "since" } },
+            "the time as text" to { edited(it) { list -> list + ("since" to JsonPrimitive(list.getValue("since").jsonPrimitive.content)) } },
+            "a waiting key that is no key" to { edited(it) { list -> list + ("next" to JsonObject(emptyMap())) } },
+            "without the replaced keys" to { edited(it) { list -> list - "replaced" } },
+            "the replaced keys not a list" to { edited(it) { list -> list + ("replaced" to JsonObject(emptyMap())) } },
+            "a replaced key without the time it was replaced" to { edited(it) { list -> firstReplaced(list) { key -> key - "since" } } },
+            "a replaced key with a public half that is no key" to { edited(it) { list -> firstReplaced(list) { key -> key + ("public" to notAKey) } } },
+        )
+
         val directory = Directory()
         val phone = Phone(directory)
         sync(phone.start())
         phone.now += WEEK
         sync(phone.start())
         val identity = directory.identityKey
-        val whole = phone.vault.entries[SIGNED_PREKEYS]!!
 
-        for (damaged in listOf("", "{}", "not json", "[]", whole.dropLast(9), whole.replaceFirst("\"v\":1", "\"v\":99"))) {
-            assertNotEquals(whole, damaged)
+        for ((how, damage) in damages) {
+            val whole = phone.vault.entries[SIGNED_PREKEYS]!!
+            assertTrue("$how: there is a replaced key to lose", Json.parseToJsonElement(whole).jsonObject.getValue("replaced").jsonArray.isNotEmpty())
+            // Whole, it is in step with the record and names a key made just now: nothing is due.
+            val replacements = directory.replacements
+            assertEquals(how, Outcome.Ready, sync(phone.start()))
+            assertEquals(how, replacements, directory.replacements)
+
+            val damaged = damage(whole)
+            assertNotEquals(how, whole, damaged)
             phone.vault.entries[SIGNED_PREKEYS] = damaged
             val keys = phone.start()
-            assertEquals(identity, identityKey(keys))
-            assertTrue("it opens what is sealed for the key the server hands out", opens(keys, firstMessage(directory)))
+            assertEquals(how, identity, identityKey(keys))
+            assertTrue("$how: it opens what is sealed for the key the server hands out", opens(keys, firstMessage(directory)))
             // Nothing says how old that key is any more: it is replaced, and the list is whole again.
-            val replacements = directory.replacements
-            assertEquals(Outcome.Ready, sync(keys))
-            assertEquals(replacements + 1, directory.replacements)
-            assertEquals(identity, directory.identityKey)
-            assertEquals(1, directory.registrations)
-            assertEquals(0, phone.replaced)
-            assertTrue(opens(phone.start(), firstMessage(directory)))
-            assertEquals(Outcome.Ready, sync(phone.start()))
-            assertEquals(replacements + 1, directory.replacements)
+            assertEquals(how, Outcome.Ready, sync(keys))
+            assertEquals(how, replacements + 1, directory.replacements)
+            assertEquals(how, identity, directory.identityKey)
+            assertEquals(how, 1, directory.registrations)
+            assertEquals(how, 0, phone.replaced)
+            assertTrue(how, opens(phone.start(), firstMessage(directory)))
         }
     }
 
