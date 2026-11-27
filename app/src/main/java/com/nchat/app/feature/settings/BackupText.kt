@@ -9,9 +9,13 @@ import com.nchat.app.network.E2eeBackup
  */
 internal object BackupText {
 
+    /** Under the name of the page, and on its row in Settings. */
+    const val SUBTITLE = "For a new phone, or after erasing this one"
+
     const val ABOUT =
-        "Encrypted messages can be read only on the phone that received them. Signing out, or signing in on " +
-            "another phone, leaves them unreadable for good — unless you have a backup.\n\n" +
+        "Encrypted messages can be read only on the phone that received them. A new phone, or this one after " +
+            "\"Log out and erase\", cannot show them — unless you have a backup. Logging out alone keeps them " +
+            "on this phone and needs none.\n\n" +
             "A backup is one file, locked with a passphrase that only you know. Keep it wherever you like. " +
             "NChat never sees the passphrase and cannot recover it."
 

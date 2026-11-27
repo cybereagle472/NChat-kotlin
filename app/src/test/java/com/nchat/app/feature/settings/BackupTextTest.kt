@@ -16,6 +16,23 @@ import org.junit.Test
 class BackupTextTest {
 
     @Test
+    fun thePageSaysWhenABackupIsNeededAndWhenItIsNot() {
+        // Logging out keeps the messages on the phone; what a backup is for is a new phone, and
+        // this one after it was erased. Telling people otherwise would have them fear a button.
+        val about = BackupText.ABOUT
+        assertFalse(about, about.contains("Signing out") || about.contains("signing out"))
+        assertTrue(about, about.contains("new phone"))
+        assertTrue("the button that erases is called what the screen calls it", about.contains("Log out and erase"))
+        assertTrue("and what does not need one is said too", about.contains("Logging out") && about.contains("keeps"))
+        assertTrue(about.contains("passphrase"))
+        assertTrue("nobody can recover it", about.contains("cannot recover"))
+        for (subtitle in listOf(BackupText.SUBTITLE)) {
+            assertFalse(subtitle, subtitle.contains("sign in again"))
+            assertTrue(subtitle, subtitle.contains("new phone"))
+        }
+    }
+
+    @Test
     fun aPassphraseIsAskedForTwiceAndHasToBeOne() {
         assertNull(BackupText.passphraseProblem("correct horse battery", "correct horse battery"))
         // The space a keyboard adds after the last word is not a difference.

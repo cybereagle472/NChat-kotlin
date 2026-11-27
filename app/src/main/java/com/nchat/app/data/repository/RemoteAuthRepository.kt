@@ -3,7 +3,7 @@ package com.nchat.app.data.repository
 import com.nchat.app.network.ApiException
 import com.nchat.app.network.AuthResponse
 import com.nchat.app.data.local.ChatListCache
-import com.nchat.app.network.EndToEnd
+import com.nchat.app.network.LogOut
 import com.nchat.app.network.NChatApi
 import com.nchat.app.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
@@ -25,24 +25,22 @@ class RemoteAuthRepository(
     private val api: NChatApi,
     private val tokens: TokenStore,
     private val scope: CoroutineScope,
-    /** On-device caches that must not survive a sign-out. */
+    /** The lists as the server last sent them. They are fetched again; no session, no copy. */
     private val cache: ChatListCache? = null,
     /**
-     * Everything else that is private to the account and lives on the device — drafts and
-     * starred messages. The next person to sign in on this phone must not find them.
+     * What the phone keeps for an account — its keys and encrypted history, drafts, stars,
+     * pins, the archive. It is told about every sign-in and about every end of a session, and
+     * decides what is opened, what waits and what is erased (see [AccountOnPhone]).
      */
-    private val clearLocalState: () -> Unit = {},
-    /**
-     * End-to-end encryption on this phone. It is told about a sign-in (which makes this the
-     * phone the account's encrypted chats live on) and about a sign-out (which erases its keys
-     * and everything they opened). A session that merely expires is neither.
-     */
-    private val endToEnd: EndToEnd? = null,
+    private val onPhone: AccountOnPhone? = null,
     /** Registers this phone's public keys with the server; started after every sign-in. */
     private val syncKeys: () -> Unit = {}
 ) : AuthRepository {
 
-    private val _session = MutableStateFlow(tokens.email)
+    // No session without its tokens: an e-mail address that outlived them (a session that expired
+    // and an app that was closed before anybody signed in again) opens the sign-in screen, not a
+    // home screen on which nothing can load.
+    private val _session = MutableStateFlow(tokens.email.takeIf { tokens.signedIn.value })
     override val session: StateFlow<String?> = _session.asStateFlow()
 
     private val _profileComplete = MutableStateFlow(tokens.profileComplete)
@@ -57,14 +55,15 @@ class RemoteAuthRepository(
         scope.launch {
             tokens.sessionLost.collect { lost ->
                 if (!lost) return@collect
+                // As when the user logs out: nothing is erased, and nothing is shown or sealed
+                // until somebody signs in. The same account finds everything where it was.
+                onPhone?.left(LogOut.Keep)
                 cache?.clear()
-                clearLocalState()
                 _session.value = null
                 _profileComplete.value = false
             }
         }
     }
-
 
     override suspend fun signIn(email: String, password: String): AuthResult {
         val normalized = email.trim().lowercase()
@@ -111,20 +110,21 @@ class RemoteAuthRepository(
         _profileComplete.value = true
     }
 
-    override fun signOut() {
+    override fun logOut(how: LogOut) {
         val refresh = tokens.refreshToken
-        // Forget the session immediately: signing out must never depend on the network.
+        // Forget the session immediately: logging out must never depend on the network.
         tokens.clear()
-        // The encryption keys and every message they opened leave this phone with the session,
-        // here and now. What comes back names the public key the server should stop handing out.
-        val withdrawnKey = runCatching { endToEnd?.signOut() }.getOrNull()
+        // Here and now nothing of the account is shown, opened or sealed any more. Erasing
+        // removes its keys and every message they opened as well; keeping leaves them for the
+        // same account to find. What comes back names the public key the server should stop
+        // handing out — none unless the keys were erased.
+        val withdrawnKey = onPhone?.left(how)
         cache?.clear()
-        clearLocalState()
         _session.value = null
         _profileComplete.value = false
         if (refresh != null) {
             // Best effort: revoke the refresh token server-side (`DELETE FROM sessions`), and
-            // withdraw this phone's public keys with it.
+            // withdraw this phone's public keys with it when they were erased.
             scope.launch { runCatching { api.logout(refresh, withdrawnKey?.invoke()) } }
         }
     }
@@ -144,11 +144,13 @@ class RemoteAuthRepository(
             // An existing account with a username has already been through onboarding.
             tokens.profileComplete = !user?.username.isNullOrBlank()
         }
-        _session.value = email
-        _profileComplete.value = tokens.profileComplete
         // Signing in is what makes this the account's phone for encrypted chats; the
         // registration itself may fail and is retried (see `ServiceLocator.syncE2eeKeys`).
-        user?.id?.takeIf { it.isNotBlank() }?.let { id -> runCatching { endToEnd?.signedIn(id) } }
+        // What the phone kept of this account is opened, and what it kept of another is erased
+        // — before the screens are told there is a session: they read what follows.
+        onPhone?.arrived(user?.id, existingAccount = profileCompleteByDefault)
+        _session.value = email
+        _profileComplete.value = tokens.profileComplete
         syncKeys()
     }
 

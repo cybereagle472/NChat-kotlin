@@ -21,7 +21,7 @@ internal sealed class Stored {
     /** Sealed, and there is nothing to open it with right now. It may open later: it is left alone. */
     object Locked : Stored()
 
-    /** Sealed with another key — another account's, or this one's before a sign-out. It will never open here. */
+    /** Sealed with another key — another account's, or this one's before it was erased. It will never open here. */
     object Foreign : Stored()
 
     /** Sealed with this account's key and still does not open: damaged, or put in another file's place. */
@@ -208,6 +208,24 @@ internal class SealedState<T>(
             state.value = empty
             loaded = true
             runCatching { file.delete() }
+        }
+    }
+
+    /**
+     * Whoever is signed in has changed — somebody logged out, or somebody
+     * signed in. What was held is let go, together with any change that was
+     * never written, and the file is read anew for whoever can open it now.
+     * The file itself is not touched.
+     *
+     * With nobody signed in there is nothing to open it with: the store is
+     * then empty and has not read the file, exactly as when the app starts
+     * that way, and what is on the phone waits for the account it belongs to.
+     */
+    fun reopen() {
+        synchronized(lock) {
+            state.value = empty
+            loaded = false
+            load()
         }
     }
 

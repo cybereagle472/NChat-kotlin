@@ -93,6 +93,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -175,6 +176,8 @@ fun ConversationScreen(
     autoCallVideo: Boolean? = null,
     /** A message to land on, when this screen was opened from a notification. */
     focusMessageId: String? = null,
+    /** Opens Settings ▸ Chat backup: what the notice for messages this phone has no key for offers. */
+    onOpenBackup: () -> Unit = {},
     viewModel: ConversationViewModel = viewModel(
         key = chatId,
         factory = ConversationViewModel.factory(
@@ -457,7 +460,9 @@ fun ConversationScreen(
         }
     }
     val firstUnreadId by viewModel.firstUnreadId.collectAsStateWithLifecycle()
-    val timeline = remember(messages, firstUnreadId) { buildTimeline(messages, firstUnreadId) }
+    val timeline = remember(messages, firstUnreadId) {
+        buildTimeline(messages, firstUnreadId) { timestamp -> TimeFormat.daySeparator(timestamp) }
+    }
     val typingRow = if (chat?.isTyping == true) 1 else 0
     val scope = rememberCoroutineScope()
     // Calls need the microphone (and camera for video) before the peer connection can open
@@ -481,9 +486,7 @@ fun ConversationScreen(
     LaunchedEffect(focusMessageId, timeline.size) {
         val target = focusMessageId ?: return@LaunchedEffect
         if (didFocus) return@LaunchedEffect
-        val index = timeline.indexOfFirst {
-            it is TimelineItem.Bubble && it.message.id == target
-        }
+        val index = timeline.indexOfMessage(target)
         if (index < 0) return@LaunchedEffect
         didFocus = true
         didInitialScroll = true
@@ -513,6 +516,28 @@ fun ConversationScreen(
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect { index -> if (index <= 3) viewModel.loadOlder() }
+    }
+
+    /*
+     * …and once more when a page has arrived and the top is still in view.
+     *
+     * A page of messages this phone cannot show adds to the one notice that stands for them
+     * (see `TimelineItem.Locked`) and not to the rows. Nothing moves, the first visible row
+     * stays the same, and the loader above — which asks when that row changes — would never
+     * ask again: the notice would stop counting at the first pages, and whatever is older than
+     * those messages could not be reached at all. A phone that is new to an account opens
+     * every chat in exactly that state.
+     *
+     * So the page is first given a frame to take its place. A page that brought rows has by
+     * then moved the top out of view, and nothing is asked. It ends by itself: with such a
+     * page, with the last page, and with a request that fails — none of them changes the
+     * oldest message again.
+     */
+    val oldestId = messages.firstOrNull()?.id
+    LaunchedEffect(chatId, oldestId) {
+        if (oldestId == null || !didInitialScroll) return@LaunchedEffect
+        withFrameNanos { }
+        if (listState.firstVisibleItemIndex <= 3) viewModel.loadOlder()
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -592,9 +617,7 @@ fun ConversationScreen(
                 PinnedBanner(
                     message = pinned,
                     onOpen = {
-                        val index = timeline.indexOfFirst {
-                            it is TimelineItem.Bubble && it.message.id == pinned.id
-                        }
+                        val index = timeline.indexOfMessage(pinned.id)
                         if (index >= 0) {
                             highlightId = pinned.id
                             scope.launch { listState.animateScrollToItem(index) }
@@ -630,12 +653,15 @@ fun ConversationScreen(
                             is TimelineItem.Separator -> 0
                             is TimelineItem.UnreadDivider -> 1
                             is TimelineItem.Bubble -> 2
+                            is TimelineItem.Locked -> 3
                         }
                     }
                 ) { item ->
                     when (item) {
                         is TimelineItem.Separator -> DateSeparatorPill(label = item.label)
                         is TimelineItem.UnreadDivider -> UnreadDivider()
+                        // Messages this phone has no key for, however many: one notice, and the way to a backup.
+                        is TimelineItem.Locked -> LockedNotice(count = item.messages.size, onRestore = onOpenBackup)
                         is TimelineItem.Bubble -> {
                             val message = item.message
                             // Keyed lambdas keep each bubble skippable while the list scrolls.
@@ -1075,9 +1101,7 @@ fun ConversationScreen(
             onDismiss = { starredOpen = false },
             onPick = { starred ->
                 starredOpen = false
-                val index = timeline.indexOfFirst {
-                    it is TimelineItem.Bubble && it.message.id == starred.messageId
-                }
+                val index = timeline.indexOfMessage(starred.messageId)
                 if (index >= 0) {
                     highlightId = starred.messageId
                     scope.launch { listState.animateScrollToItem(index) }
@@ -1103,13 +1127,13 @@ fun ConversationScreen(
 
     if (searching) {
         ChatSearchOverlay(
-            messages = messages,
+            // Not what stands in the place of a message this phone cannot show: a search for
+            // "phone" would otherwise find that sentence once for each of them.
+            messages = remember(messages) { messages.filterNot { it.lockedHere } },
             onDismiss = { searching = false },
             onPick = { picked ->
                 searching = false
-                val index = timeline.indexOfFirst {
-                    it is TimelineItem.Bubble && it.message.id == picked.id
-                }
+                val index = timeline.indexOfMessage(picked.id)
                 if (index >= 0) {
                     highlightId = picked.id
                     scope.launch { listState.animateScrollToItem(index) }
@@ -2017,7 +2041,7 @@ private fun MessageInfoDialog(
                 "Security",
                 when {
                     message.encrypted -> "End-to-end encrypted"
-                    message.unreadable -> "End-to-end encrypted, for another phone"
+                    message.unreadable -> "End-to-end encrypted, can't be opened on this phone"
                     else -> "Not end-to-end encrypted"
                 }
             )
@@ -2821,42 +2845,5 @@ private fun MediaOption(
 /** Which call surface the header buttons open. */
 private enum class CallKind { Audio, Video }
 
-private sealed interface TimelineItem {
-    val key: String
-
-    data class Separator(val label: String) : TimelineItem {
-        override val key: String = "sep-$label"
-    }
-
-    data class Bubble(val message: Message, val showSender: Boolean) : TimelineItem {
-        override val key: String = message.id
-    }
-
-    /** "Resume here" marker inserted before the first message that was unread on open. */
-    data object UnreadDivider : TimelineItem {
-        override val key: String = "unread-divider"
-    }
-}
-
-private fun buildTimeline(messages: List<Message>, firstUnreadId: String? = null): List<TimelineItem> {
-    val timeline = mutableListOf<TimelineItem>()
-    var lastLabel: String? = null
-    var previousAuthor: String? = null
-    var dividerPlaced = false
-    messages.forEach { message ->
-        val label = TimeFormat.daySeparator(message.timestamp)
-        val newDay = label != lastLabel
-        if (newDay) {
-            timeline += TimelineItem.Separator(label)
-            lastLabel = label
-        }
-        if (!dividerPlaced && firstUnreadId != null && message.id == firstUnreadId) {
-            timeline += TimelineItem.UnreadDivider
-            dividerPlaced = true
-        }
-        // Avatar only on the first bubble of a sender run (or after a day separator).
-        timeline += TimelineItem.Bubble(message, showSender = newDay || previousAuthor != message.authorId)
-        previousAuthor = message.authorId
-    }
-    return timeline
-}
+// The rows of a conversation — `TimelineItem`, `buildTimeline` — are in ConversationTimeline.kt,
+// apart from this screen so that they can be tested without a phone.

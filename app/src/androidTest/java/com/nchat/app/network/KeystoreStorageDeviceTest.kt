@@ -199,10 +199,22 @@ class KeystoreStorageDeviceTest {
             }
         }
 
-        // Signing out leaves neither the files nor the key that opened them.
-        runBlocking { aliceAgain.signOut()() }
+        // Logging out keeps both, and shows nothing meanwhile: a later process finds the key in
+        // the Keystore again, and the same account signing in reads what it had.
+        assertNull("nothing is withdrawn from the server", runBlocking { aliceAgain.logOut(LogOut.Keep)() })
+        assertNull(aliceAgain.messaging().reveal("bob", "s-1", "c-1", mine = true, envelope = hello))
+        assertTrue(alicePhone.files().isNotEmpty())
+        assertNotNull(PrefsKeyring(SecurePrefs(context, alicePhone.prefsName)).load())
+        val aliceBack = alicePhone.start()
+        assertFalse("its keys were here: nothing starts anew", aliceBack.signedIn("alice"))
+        assertEquals("hello from the keystore", aliceBack.messaging().reveal("bob", "s-1", "c-1", mine = true, envelope = hello)?.body)
+        assertEquals(emptyList<String>(), alicePhone.reports)
+
+        // Logging out and erasing leaves neither the files nor the key that opened them.
+        runBlocking { aliceBack.logOut(LogOut.Erase)() }
         assertEquals(emptyList<File>(), alicePhone.files())
         assertNull(PrefsKeyring(SecurePrefs(context, alicePhone.prefsName)).load())
-        assertNull(aliceAgain.messaging().reveal("bob", "s-1", "c-1", mine = true, envelope = hello))
+        assertNull(aliceBack.messaging().reveal("bob", "s-1", "c-1", mine = true, envelope = hello))
+        assertTrue("and the next sign-in starts anew", alicePhone.start().signedIn("alice"))
     }
 }

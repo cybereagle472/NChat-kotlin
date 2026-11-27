@@ -146,7 +146,13 @@ class RemoteChatRepository(
      * name any address; only a file under this server's media path is ever fetched. Empty
      * means no sealed file is accepted at all.
      */
-    private val mediaRoot: String = ""
+    private val mediaRoot: String = "",
+    /**
+     * A sealed message of a conversation is being shown as "can't be shown on this phone": this
+     * phone has no key for it. Called for every such message, from whichever thread maps it; the
+     * platform layer decides whether that is worth a question (see [RestoreOffer]).
+     */
+    private val onCannotShow: () -> Unit = {}
 ) : ChatRepository {
 
 
@@ -328,9 +334,15 @@ class RemoteChatRepository(
                 synchronized(mirrorJobs) { mirrorJobs.values.forEach { it.cancel() }; mirrorJobs.clear() }
                 chatListWrite?.cancel()
                 groupListWrite?.cancel()
-                outbox?.clear()
                 // The next account must not open a conversation, a chat list or a group and
-                // find the previous one's.
+                // find the previous one's. These are copies of what the server has and are
+                // fetched again.
+                //
+                // Not the queue of messages that were still waiting to be sent: nobody else has
+                // those. It is sealed for its account and stays where it is — the account that
+                // only logged out finds its messages still waiting, and they go out. Erasing
+                // the account from the phone, and another account signing in, remove it (see
+                // `AccountOnPhone`).
                 messages?.clearAll()
                 cache?.clear()
                 groupCache?.clear()
@@ -3089,11 +3101,14 @@ class RemoteChatRepository(
      */
     private fun MessageDto.unseal(chatId: String): Opened {
         val me = myId
-        val payload = (if (isSealedIn(chatId, me)) {
-            runCatching { revealWith(encryption(), chatId, me) }.getOrNull()
-        } else {
-            null
-        }) ?: return Opened(MessageKind.Text, E2eeText.CANNOT_SHOW, null, readable = false)
+        val belongs = isSealedIn(chatId, me)
+        val payload = if (belongs) runCatching { revealWith(encryption(), chatId, me) }.getOrNull() else null
+        if (payload == null) {
+            // A message of this conversation that this phone has no key for is what a backup
+            // may hold; a row sealed where nothing should be is not.
+            if (belongs) runCatching { onCannotShow() }
+            return Opened(MessageKind.Text, E2eeText.CANNOT_SHOW, null, readable = false)
+        }
         return payload.asOpened()
     }
 

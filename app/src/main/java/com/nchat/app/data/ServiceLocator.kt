@@ -27,6 +27,7 @@ import com.nchat.app.data.local.FriendGraphCache
 import com.nchat.app.data.local.GroupListCache
 import com.nchat.app.data.local.MessageStore
 import com.nchat.app.data.local.OutboxStore
+import com.nchat.app.data.local.LocalState
 import com.nchat.app.data.local.PinnedMessageStore
 import com.nchat.app.data.local.StarredStore
 import com.nchat.app.data.local.VoiceClipStore
@@ -49,6 +50,8 @@ import com.nchat.app.data.repository.RemoteFriendRepository
 import com.nchat.app.data.repository.RemotePreferencesRepository
 import com.nchat.app.data.repository.RemoteProfileRepository
 import com.nchat.app.data.repository.RemoteStatusRepository
+import com.nchat.app.data.repository.AccountOnPhone
+import com.nchat.app.data.repository.RestoreOffer
 import com.nchat.app.data.repository.StatusRepository
 import com.nchat.app.network.ApiClient
 import com.nchat.app.network.ApiKeyDirectory
@@ -119,8 +122,8 @@ object ServiceLocator {
                 rootUrl = serverUrl,
                 accessToken = { tokens.accessToken },
                 renewSession = { apiClient.renewAccessToken() },
-                // The opened files of encrypted chats live with the account's keys, and are
-                // erased with them at sign-out.
+                // The opened files of encrypted chats live with the account's keys: they stay
+                // with them when the account logs out, and are erased with them.
                 sealedDirectory = { endToEnd.mediaDirectory() }
             )
         }
@@ -248,7 +251,7 @@ object ServiceLocator {
      *
      * Called on launch, when the notification switch changes, and when the session ends. The
      * decision lives here rather than in the UI so the answer cannot differ between the settings
-     * screen, a cold start and a sign-out.
+     * screen, a cold start and the end of a session.
      */
     fun applyBackgroundSync() {
         val enabled = runCatching { preferencesRepository.notifications.value.background }
@@ -278,7 +281,7 @@ object ServiceLocator {
      */
     private val localSeal: () -> LocalSeal? = { endToEnd.localSeal() }
 
-    /** Disk cache of the chat list; wiped on sign-out. */
+    /** Disk cache of the chat list; wiped whenever a session ends, and fetched again. */
     private val chatCache by lazy { ChatListCache(requireContext(), localSeal) }
 
     /** Disk cache of the friend graph, so the Friends tab opens with content like Chats does. */
@@ -582,31 +585,52 @@ object ServiceLocator {
         }
     }
 
+    /**
+     * Whether "Restore your messages?" is to be asked: once, of an account that signed in on a
+     * phone which held nothing of it and then met a message it has no key for.
+     */
+    val restoreOffer = RestoreOffer()
+
+    /**
+     * What this phone keeps for an account, and what becomes of it when the account arrives or
+     * leaves (see [AccountOnPhone]): "Log Out" keeps it, "Log out and erase" does not.
+     */
+    private val accountOnPhone: AccountOnPhone by lazy {
+        val context = requireContext()
+        val local = LocalState(drafts, stars, pinned, archived, outboxStore, context.filesDir, context.cacheDir)
+        AccountOnPhone(
+            endToEnd = endToEnd,
+            // Somebody logged out, a session expired, or somebody signed in on the phone that
+            // kept their things: nothing is erased. What is held in memory is let go, and the
+            // sealed files wait for — or are read again by — the account they belong to. So
+            // does a message that was still waiting to be sent: it goes out once its account
+            // is back.
+            reopenLocalState = {
+                local.reopen()
+                notifications.cancelAll()
+            },
+            // "Log out and erase", and a phone that starts anew for an account: nothing of
+            // whoever was here before stays, sealed or in the open.
+            eraseLocalState = {
+                val gone = runCatching { local.erase() }.getOrDefault(false)
+                if (!gone) CrashLog.note("erase", IllegalStateException("not everything of the account could be removed"))
+                notifications.cancelAll()
+            },
+            restoreOffer = restoreOffer
+        )
+    }
+
     val authRepository: AuthRepository by lazy {
         RemoteAuthRepository(
             api = api,
             tokens = tokens,
             scope = appScope,
             cache = chatCache,
-            clearLocalState = {
-                drafts.clearAll()
-                stars.clearAll()
-                archived.clearAll()
-                pinned.clearAll()
-                notifications.cancelAll()
-            },
-            endToEnd = endToEnd,
+            onPhone = accountOnPhone,
             syncKeys = { syncE2eeKeys() }
         )
     }
 
-    /**
-     * End-to-end encryption for the account signed in on this phone: its keys, and the content
-     * of every sealed message it has sent or received (see [EndToEnd]).
-     *
-     * Everything is under `files/e2ee`, sealed with a key that [SecurePrefs] keeps under the
-     * Android Keystore. A sign-out erases both; an expired session erases neither.
-     */
     /**
      * The other person's id, each time what is known about the encryption of the chat with
      * them changes. A buffer rather than a call into the chat repository: the encryption layer
@@ -618,6 +642,14 @@ object ServiceLocator {
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
+    /**
+     * End-to-end encryption for the account signed in on this phone: its keys, and the content
+     * of every sealed message it has sent or received (see [EndToEnd]).
+     *
+     * Everything is under `files/e2ee`, sealed with a key that [SecurePrefs] keeps under the
+     * Android Keystore. "Log out and erase" removes both; logging out and an expired session
+     * remove neither.
+     */
     val endToEnd: EndToEnd by lazy {
         val context = requireContext()
         // Key material in the format of an early build, which was never registered anywhere.
@@ -718,7 +750,8 @@ object ServiceLocator {
             onSecurityChanged = { chat, before, now -> announceSecurityChange(chat, before, now) },
             encryption = { endToEnd.messaging() },
             securityChanges = securityEvents,
-            mediaRoot = serverUrl
+            mediaRoot = serverUrl,
+            onCannotShow = { restoreOffer.cannotShow() }
         )
     }
     /** Settings ▸ Chat backup: the encrypted history as a file under a passphrase. */
@@ -726,7 +759,11 @@ object ServiceLocator {
         ChatBackup(
             context = requireContext(),
             endToEnd = { endToEnd },
-            onRestored = { chatRepository.historyRestored() }
+            onRestored = {
+                // Somebody who restored a backup has answered the question, asked or not.
+                restoreOffer.answered()
+                chatRepository.historyRestored()
+            }
         )
     }
     val friendRepository: FriendRepository by lazy {

@@ -12,6 +12,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,7 +35,9 @@ import com.nchat.app.feature.auth.AuthScreen
 import com.nchat.app.feature.auth.ProfileSetupScreen
 import com.nchat.app.feature.auth.completeProfileSetup
 import com.nchat.app.feature.chats.ConversationScreen
+import com.nchat.app.feature.chats.RestoreText
 import com.nchat.app.feature.update.StartupUpdateGate
+import com.nchat.app.feature.settings.BackupPane
 import com.nchat.app.feature.settings.SettingsScreen
 import com.nchat.app.feature.chats.CallOverlay
 import com.nchat.app.feature.chats.GroupCallInviteDialog
@@ -172,7 +177,9 @@ private fun HomeRoot() {
         AnimatedContent(
             targetState = navigator.current,
             transitionSpec = {
-                if (targetState is NcScreen.Home) {
+                // Going back: to the tab bar, and out of the backup page — which can be opened
+                // from a conversation, and is only ever left backwards.
+                if (targetState is NcScreen.Home || initialState is NcScreen.Backup) {
                     (slideInHorizontally(tween(280)) { -it / 5 } + fadeIn(tween(200))) togetherWith
                         (slideOutHorizontally(tween(280)) { it / 5 } + fadeOut(tween(180)))
                 } else {
@@ -199,14 +206,43 @@ private fun HomeRoot() {
                     onBack = { navigator.pop() },
                     modifier = Modifier.fillMaxSize(),
                     autoCallVideo = screen.autoCallVideo,
-                    focusMessageId = screen.focusMessageId
+                    focusMessageId = screen.focusMessageId,
+                    onOpenBackup = { navigator.push(NcScreen.Backup) }
                 )
 
                 is NcScreen.Settings -> SettingsScreen(
                     onBack = { navigator.pop() },
                     modifier = Modifier.fillMaxSize()
                 )
+
+                is NcScreen.Backup -> BackupPane(onBack = { navigator.pop() })
             }
+        }
+
+        /*
+         * "Restore your messages?" — asked once, of an account that signed in on a phone which
+         * held nothing of it and has now met a message it has no key for (see `RestoreOffer`).
+         * Without it such a user finds a notice in every chat and has to work out alone that a
+         * backup is what brings the messages back. Either answer settles it.
+         */
+        val askRestore by ServiceLocator.restoreOffer.asking.collectAsStateWithLifecycle()
+        if (askRestore) {
+            AlertDialog(
+                onDismissRequest = { ServiceLocator.restoreOffer.answered() },
+                title = { Text(RestoreText.ASK_TITLE) },
+                text = { Text(RestoreText.ASK_BODY) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            ServiceLocator.restoreOffer.answered()
+                            navigator.push(NcScreen.Backup)
+                        }
+                    ) { Text(RestoreText.RESTORE) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { ServiceLocator.restoreOffer.answered() }) { Text(RestoreText.NOT_NOW) }
+                }
+            )
         }
 
         // A new build is announced once, on start-up — Settings used to be the only way to find out.

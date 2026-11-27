@@ -18,6 +18,9 @@ import java.io.IOException
  * text of a message that has not been encrypted for its recipient yet, and the address of a
  * sealed file together with its key. With nothing to seal with, nothing is queued — [add]
  * answers false and the message is shown as not sent, never written down unsealed.
+ *
+ * It outlives a log-out that keeps what the phone holds, and waits for its account; [clear] is
+ * for "Log out and erase" and for a phone that starts anew for an account (see `LocalState`).
  */
 class OutboxStore internal constructor(
     private val file: File,
@@ -106,9 +109,12 @@ class OutboxStore internal constructor(
      * that is damaged, and one that is sealed while there is nothing to open it with.
      *
      * A queue sealed with another key is a different matter: it was another account's, or this
-     * one's before it signed out. It is nobody's to send any more and will never open here, so
-     * it counts as empty and the next write replaces it. Otherwise whoever signs in next
-     * could not queue a message until they signed out again.
+     * one's before it was erased from the phone. It is nobody's to send any more and will never
+     * open here, so it counts as empty and the next write replaces it. Otherwise whoever signs
+     * in next could not queue a message at all.
+     *
+     * The queue of an account that only logged out is neither: it cannot be read while the
+     * account is away, opens again when it is back, and what was waiting is sent then.
      */
     private fun read(): List<OutboxEntry>? = runCatching {
         when (val stored = files.read(file, PLACE)) {

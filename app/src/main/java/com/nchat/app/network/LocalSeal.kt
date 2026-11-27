@@ -6,16 +6,17 @@ package com.nchat.app.network
  * previews, messages waiting to be sent, drafts.
  *
  * It is made from the account's storage key (see [EndToEnd.localSeal]), so
- * it exists exactly as long as that key does: signing out, or another
- * account signing in, leaves whatever was sealed unopenable.
+ * it exists exactly as long as that key does: erasing the account, or
+ * another account signing in, leaves whatever was sealed unopenable. An
+ * account that only logged out finds the same seal when it is back.
  *
  * A sealed file is `mark (4) || version (1) || key id (8) || SealedBox`.
  *  - The mark begins with a zero byte. Every file these stores wrote before
  *    was JSON text, which cannot begin with one — so a file from an earlier
  *    build is never taken for a sealed one, nor the other way round.
  *  - The key id says which key sealed the file and nothing about that key.
- *    It tells "sealed for another account, or before a sign-out" (it will
- *    never open here) from "sealed with this key and still does not open"
+ *    It tells "sealed for another account, or before this one was erased"
+ *    (it will never open here) from "sealed with this key and still does not open"
  *    (damaged, or put in another file's place).
  *  - The place a file was sealed for is authenticated with it: a
  *    conversation copied over another one, or over the outbox, does not open.

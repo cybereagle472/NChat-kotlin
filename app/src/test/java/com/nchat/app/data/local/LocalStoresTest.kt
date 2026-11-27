@@ -387,6 +387,98 @@ class LocalStoresTest {
     }
 
     @Test
+    fun loggingOutLetsGoOfWhatIsHeldAndTheSameAccountFindsItAgain() {
+        // "Log out" keeps what is on the phone. The stores are told when the account leaves and
+        // when one arrives; in between there is no key, and nobody to show anything to.
+        var available: LocalSeal? = seal
+        val current: () -> LocalSeal? = { available }
+        val drafts = DraftStore(folder.root.resolve("drafts.json"), current)
+        val stars = StarredStore(folder.root.resolve("starred.json"), current)
+        val pins = PinnedMessageStore(folder.root.resolve("pinned.json"), current)
+        val archive = ArchivedStore(folder.root.resolve("archived.json"), current)
+        val star = StarredMessage(chatId = "bob", messageId = "m1", authorName = "Bob", preview = secret, at = 9L)
+        drafts.set("bob", secret)
+        stars.toggle(star)
+        pins.pin("bob", "m1")
+        archive.archive("bob")
+        fun onDisk() = everyFile().associate { it.name to it.readBytes().toList() }
+        val kept = onDisk()
+        assertEquals(4, kept.size)
+
+        // The account logs out.
+        available = null
+        drafts.reopen(); stars.reopen(); pins.reopen(); archive.reopen()
+        assertEquals("", drafts.get("bob"))
+        assertFalse(stars.isStarred("bob", "m1"))
+        assertNull(pins.pinnedId("bob"))
+        assertFalse(archive.isArchived("bob"))
+        // …also for a screen that only watches, and asks for nothing.
+        assertEquals(emptyMap<String, String>(), drafts.drafts.value)
+        assertEquals(emptyList<StarredMessage>(), stars.items.value)
+        assertEquals(emptyMap<String, String>(), pins.pins.value)
+        assertEquals(emptySet<String>(), archive.ids.value)
+        assertEquals("nothing on the phone changed", kept, onDisk())
+        // A save that was still on its way when the account left: not written over what is kept.
+        drafts.set("carol", "typed a moment before logging out")
+        stars.unstar("bob", "m1")
+        pins.unpin("bob")
+        archive.unarchive("bob")
+        assertEquals(kept, onDisk())
+
+        // The same account signs in again: everything is there, and what was left in memory is not.
+        available = seal
+        drafts.reopen(); stars.reopen(); pins.reopen(); archive.reopen()
+        assertEquals("the screens are told without having to ask", mapOf("bob" to secret), drafts.drafts.value)
+        assertEquals(listOf(star), stars.items.value)
+        assertEquals(mapOf("bob" to "m1"), pins.pins.value)
+        assertEquals(setOf("bob"), archive.ids.value)
+        assertEquals("", drafts.get("carol"))
+        assertEquals(kept, onDisk())
+        // From here on changes are written again.
+        drafts.set("dave", "later")
+        assertEquals(mapOf("bob" to secret, "dave" to "later"), DraftStore(folder.root.resolve("drafts.json"), mine).drafts.value)
+    }
+
+    @Test
+    fun whatALoggedOutAccountLeftIsNotThereForAnother() {
+        var available: LocalSeal? = seal
+        val current: () -> LocalSeal? = { available }
+        val drafts = DraftStore(folder.root.resolve("drafts.json"), current)
+        val stars = StarredStore(folder.root.resolve("starred.json"), current)
+        val pins = PinnedMessageStore(folder.root.resolve("pinned.json"), current)
+        val archive = ArchivedStore(folder.root.resolve("archived.json"), current)
+        drafts.set("bob", secret)
+        stars.toggle(StarredMessage(chatId = "bob", messageId = "m1", preview = secret))
+        pins.pin("bob", "m1")
+        archive.archive("bob")
+        available = null
+        drafts.reopen(); stars.reopen(); pins.reopen(); archive.reopen()
+        // Left in memory by a save that was still on its way: the next account must not find it either.
+        drafts.set("bob", "typed a moment before logging out")
+        archive.archive("carol")
+
+        // Somebody else signs in. The key that sealed these files is gone, theirs is another.
+        available = LocalSeal(ByteArray(32) { 7 })
+        drafts.reopen(); stars.reopen(); pins.reopen(); archive.reopen()
+        assertEquals(emptyMap<String, String>(), drafts.drafts.value)
+        assertEquals(emptyList<StarredMessage>(), stars.items.value)
+        assertEquals(emptyMap<String, String>(), pins.pins.value)
+        assertEquals(emptySet<String>(), archive.ids.value)
+        assertEquals("", drafts.get("bob"))
+        assertFalse(stars.isStarred("bob", "m1"))
+        assertNull(pins.pinnedId("bob"))
+        assertFalse(archive.isArchived("bob"))
+        assertFalse(archive.isArchived("carol"))
+
+        // The phone starts anew for them, so what the other one left is erased — and their own is kept.
+        drafts.clearAll(); stars.clearAll(); pins.clearAll(); archive.clearAll()
+        assertEquals(emptyList<File>(), everyFile())
+        drafts.set("zoe", "hers")
+        assertEquals("hers", DraftStore(folder.root.resolve("drafts.json"), another).get("zoe"))
+        assertEquals("", DraftStore(folder.root.resolve("drafts.json"), mine).get("zoe"))
+    }
+
+    @Test
     fun aFileFromBeforeSealingThatMakesNoSenseIsNotLeftLyingThere() {
         // Half a draft is still somebody's words. Nothing can be read from the file any more,
         // so it is of no use — and it is not sealed: it goes.

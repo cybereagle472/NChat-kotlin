@@ -20,9 +20,10 @@ import java.io.IOException
 
 /**
  * End-to-end encryption through the life of an installation: signing in,
- * restarting, an expired session, signing out, a phone that changes hands,
- * and storage that stops answering. Real files, real keys; only the server
- * and the Android Keystore are stand-ins.
+ * restarting, an expired session, logging out — keeping what the phone
+ * holds, or erasing it —, a phone that changes hands, and storage that stops
+ * answering. Real files, real keys; only the server and the Android Keystore
+ * are stand-ins.
  */
 class EndToEndTest {
 
@@ -89,7 +90,7 @@ class EndToEndTest {
             return peerBundle(keys.identityKey, keys.signedPrekey, keys.signature, keys.pool.removeFirstOrNull())
         }
 
-        /** What signing out asks of the server. */
+        /** What logging out and erasing asks of the server. */
         fun withdraw(userId: String, identityKey: String?) {
             if (identityKey != null && accounts[userId]?.identityKey == identityKey) accounts.remove(userId)
         }
@@ -105,6 +106,9 @@ class EndToEndTest {
 
         /** The directory answers for whoever is signed in on this phone. */
         var account = ""
+
+        /** What the last sign-in on this phone answered: true when the account started here with new keys. */
+        var startedAnew: Boolean? = null
 
         private val directory = object : KeyDirectory {
             override suspend fun status() = server.directoryFor(account).status()
@@ -139,7 +143,7 @@ class EndToEndTest {
 
         fun signIn(userId: String, app: EndToEnd = start()): EndToEnd {
             account = userId
-            app.signedIn(userId)
+            startedAnew = app.signedIn(userId)
             assertEquals(Outcome.Ready, runBlocking { app.sync() })
             return app
         }
@@ -247,11 +251,11 @@ class EndToEndTest {
         assertEquals(SecurityCode.DIGITS, code!!.length)
         assertEquals("both phones show the same number", code, bob.messaging().securityCode("alice", atBob.key!!))
 
-        // A tick is kept across a restart, and is gone with everything else at sign-out.
+        // A tick is kept across a restart, and is gone with everything else when the account is erased from the phone.
         assertTrue(alice.messaging().setVerified("bob", atAlice.key!!, true))
         val again = alicePhone.start().also { it.resume("alice") }
         assertTrue(again.messaging().security("bob")!!.verified)
-        again.signOut()
+        again.logOut(LogOut.Erase)
         assertNull(again.messaging().security("bob"))
         assertNull(alicePhone.signIn("alice").messaging().security("bob"))
     }
@@ -285,6 +289,31 @@ class EndToEndTest {
         assertNotNull(bob)
     }
 
+    @Test
+    fun withNobodySignedInAnAccountThatIsStillOpenInsideSealsAndShowsNothing() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val received = send(bob, "alice", "for alice")!!
+        assertEquals("for alice", read(alice, "bob", received))
+        assertNotNull(alice.localSeal())
+        assertNotNull(alice.mediaDirectory())
+
+        // Not a log-out: the app's word that no account is signed in, while this one is still open inside.
+        alice.resume(null)
+        assertNull("nothing to seal with for nobody", alice.localSeal())
+        assertNull("nowhere to keep nobody's files", alice.mediaDirectory())
+        refusesToSend(alice, "bob", "nobody is signed in")
+        assertNull(read(alice, "bob", received))
+        assertNull(runBlocking { alice.sync() })
+
+        // Nothing was removed by it: the account is where it was.
+        alice.resume("alice")
+        assertEquals("for alice", read(alice, "bob", received))
+        assertNotNull(alice.localSeal())
+    }
+
     // ---------------------------------------------------------- opened files
 
     @Test
@@ -309,8 +338,8 @@ class EndToEndTest {
         assertNotNull(send(restarted, "bob", "still here"))
         assertTrue(File(media, "opened.jpg").isFile)
 
-        // Signing out takes them with the keys, before any network.
-        restarted.signOut()
+        // Erasing takes them with the keys, before any network.
+        restarted.logOut(LogOut.Erase)
         assertFalse(media.exists())
         assertTrue("files left behind: ${phone.files()}", phone.files().isEmpty())
         assertNull(restarted.mediaDirectory())
@@ -366,10 +395,10 @@ class EndToEndTest {
         idle.forgetInGroup("g", "bob", "s-1", "c-1")
     }
 
-    // ------------------------------------------------------------- sign-out
+    // ---------------------------------------------- logging out and erasing
 
     @Test
-    fun signingOutErasesKeysAndHistoryAtOnceAndNamesTheIdentityToWithdraw() {
+    fun loggingOutAndErasingLeavesNothingAndNamesTheIdentityToWithdraw() {
         val server = Server()
         val alicePhone = Phone(server)
         val bob = Phone(server).signIn("bob")
@@ -381,13 +410,13 @@ class EndToEndTest {
         val before = alice.messaging()
         assertTrue(alicePhone.files().isNotEmpty())
 
-        val withdraw = alice.signOut()
+        val withdraw = alice.logOut(LogOut.Erase)
         // Before any network: nothing left on the phone, and nothing readable through what is still in memory.
         assertTrue("files left behind: ${alicePhone.files()}", alicePhone.files().isEmpty())
         assertNull(alicePhone.keyring.entry)
         assertNull(before.reveal("bob", received.id, received.clientId, mine = false, envelope = received.envelope))
         assertNull(readOwn(alice, "bob", sent))
-        refusesToSend(alice, "bob", "signed out")
+        refusesToSend(alice, "bob", "erased")
         assertNull(runBlocking { alice.sync() })
 
         // The server is told which keys to stop handing out.
@@ -397,6 +426,7 @@ class EndToEndTest {
 
         // Signing in again starts over: new keys, and the old history stays unreadable.
         val again = alicePhone.signIn("alice")
+        assertEquals("and the sign-in says so", true, alicePhone.startedAnew)
         assertNotEquals(identity, server.accounts["alice"]!!.identityKey)
         assertNull(read(again, "bob", received))
         assertNull(readOwn(again, "bob", sent))
@@ -405,40 +435,40 @@ class EndToEndTest {
     }
 
     @Test
-    fun signingOutBeforeAnythingWasOpenedStillErasesAndWithdraws() {
+    fun erasingBeforeAnythingWasOpenedStillErasesAndWithdraws() {
         val server = Server()
         val phone = Phone(server)
         phone.signIn("alice")
         val identity = server.accounts["alice"]!!.identityKey
 
-        // A new process; the user goes straight to "sign out".
+        // A new process; the user goes straight to "Log out and erase".
         val app = phone.start().also { it.resume("alice") }
-        val withdraw = app.signOut()
+        val withdraw = app.logOut(LogOut.Erase)
         assertTrue(phone.files().isEmpty())
         assertNull(phone.keyring.entry)
         assertEquals(identity, runBlocking { withdraw() })
 
         // A phone that never had keys has nothing to withdraw, and nothing appears by asking.
         val unused = Phone(server)
-        val nothing = unused.start().also { it.resume("dave") }.signOut()
+        val nothing = unused.start().also { it.resume("dave") }.logOut(LogOut.Erase)
         assertNull(runBlocking { nothing() })
         assertTrue(unused.files().isEmpty())
         assertNull(unused.keyring.entry)
     }
 
     @Test
-    fun afterSignOutNothingBringsTheAccountBack() {
-        // Work that was under way when the user signed out must not recreate keys.
+    fun afterErasingNothingBringsTheAccountBack() {
+        // Work that was under way when the user erased the account must not recreate keys.
         val server = Server()
         val phone = Phone(server)
         val app = phone.signIn("alice")
         val bob = Phone(server).signIn("bob")
         assertNotNull(send(app, "bob", "hello"))
 
-        val withdraw = app.signOut()
+        val withdraw = app.logOut(LogOut.Erase)
         server.withdraw("alice", runBlocking { withdraw() })
         assertNull(runBlocking { app.sync() })
-        refusesToSend(app, "bob", "signed out")
+        refusesToSend(app, "bob", "erased")
         assertNull(app.messaging().reveal("bob", "s-9", "c-9", mine = false, envelope = "{}"))
         assertTrue(phone.files().isEmpty())
         assertNull(phone.keyring.entry)
@@ -462,17 +492,211 @@ class EndToEndTest {
 
         // Same process…
         alicePhone.signIn("alice", alice)
+        assertEquals("it found its keys: nothing starts anew", false, alicePhone.startedAnew)
         assertEquals("before the session expired", read(alice, "bob", received))
         // …or a new one, started signed out.
         val later = alicePhone.start()
         refusesToSend(later, "bob", "not signed in yet")
         alicePhone.signIn("alice", later)
+        assertEquals(false, alicePhone.startedAnew)
         assertEquals("before the session expired", read(later, "bob", received))
         assertEquals("same keys: contacts notice nothing", identity, server.accounts["alice"]!!.identityKey)
         assertEquals(registrations, server.registrations)
         assertEquals(1, alicePhone.keyring.stores)
         val next = send(bob, "alice", "and after")!!
         assertEquals("and after", read(later, "bob", next))
+    }
+
+    // ------------------------------------------- logging out, and coming back
+
+    @Test
+    fun loggingOutKeepsKeysAndHistoryAndShowsNothingUntilTheAccountIsBack() {
+        val server = Server()
+        val alicePhone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = alicePhone.signIn("alice")
+        assertEquals("a phone that held nothing of the account starts anew", true, alicePhone.startedAnew)
+        val sent = send(alice, "bob", "from alice, before")!!
+        assertEquals("from alice, before", read(bob, "alice", sent))
+        val received = send(bob, "alice", "from bob, before")!!
+        assertEquals("from bob, before", read(alice, "bob", received))
+        val identity = server.accounts["alice"]!!.identityKey
+        val registrations = server.registrations
+        val key = alicePhone.keyring.entry!!.key.copyOf()
+        val files = alicePhone.files().associate { it.path to it.readBytes().toList() }
+        assertTrue(files.isNotEmpty())
+        val held = alice.messaging() // work that was under way when the user logged out
+
+        val withdraw = alice.logOut(LogOut.Keep)
+        // Locked, before any network: nothing is shown and nothing is sent — not through the
+        // app, and not through what it still held.
+        assertNull(read(alice, "bob", received))
+        assertNull(readOwn(alice, "bob", sent))
+        assertNull(held.reveal("bob", received.id, received.clientId, mine = false, envelope = received.envelope))
+        refusesToSend(alice, "bob", "logged out")
+        assertNull("nothing to seal the rest with", alice.localSeal())
+        assertNull("nowhere to open a file into", alice.mediaDirectory())
+        assertNull(runBlocking { alice.sync() })
+        // Kept: the key, and every file as it was.
+        assertEquals("alice", alicePhone.keyring.entry!!.owner)
+        assertArrayEquals(key, alicePhone.keyring.entry!!.key)
+        assertEquals(files, alicePhone.files().associate { it.path to it.readBytes().toList() })
+        // The server is asked to withdraw nothing: the keys it hands out are still this phone's.
+        assertNull(runBlocking { withdraw() })
+        server.withdraw("alice", runBlocking { withdraw() })
+        assertEquals(identity, server.accounts["alice"]!!.identityKey)
+
+        // So what is sent meanwhile is sealed for this phone, and waits for it.
+        val meanwhile = send(bob, "alice", "while alice was logged out")!!
+
+        // The same account signs in again — in the same process, or in a new one.
+        for (app in listOf(alice, alicePhone.start())) {
+            alicePhone.signIn("alice", app)
+            assertEquals("it found its keys: nothing starts anew", false, alicePhone.startedAnew)
+            assertEquals("from bob, before", read(app, "bob", received))
+            assertEquals("from alice, before", readOwn(app, "bob", sent))
+            assertEquals("while alice was logged out", read(app, "bob", meanwhile))
+            val back = send(app, "bob", "back")!!
+            assertEquals("back", read(bob, "alice", back))
+            app.logOut(LogOut.Keep)
+        }
+        assertEquals("same keys: contacts notice nothing", identity, server.accounts["alice"]!!.identityKey)
+        assertEquals("and nothing was registered again", registrations, server.registrations)
+        assertEquals("one storage key, from first to last", 1, alicePhone.keyring.stores)
+        assertEquals(0, alicePhone.replaced)
+    }
+
+    @Test
+    fun loggingOutBeforeAnythingWasOpenedKeepsEverythingToo() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val received = send(bob, "alice", "nobody there yet")
+        assertNull("alice has no keys yet: this one went unsealed", received)
+        phone.signIn("alice")
+        val sealed = send(bob, "alice", "for alice")!!
+        val files = phone.files().associate { it.path to it.readBytes().toList() }
+
+        // A new process; the user goes straight to "Log out".
+        val app = phone.start().also { it.resume("alice") }
+        assertNull(runBlocking { app.logOut(LogOut.Keep)() })
+        assertEquals(files, phone.files().associate { it.path to it.readBytes().toList() })
+        assertEquals("alice", phone.keyring.entry!!.owner)
+        refusesToSend(app, "bob", "logged out")
+
+        // A phone that never had keys has nothing to keep, and nothing appears by logging out of it.
+        val unused = Phone(server)
+        assertNull(runBlocking { unused.start().also { it.resume("dave") }.logOut(LogOut.Keep)() })
+        assertTrue(unused.files().isEmpty())
+        assertNull(unused.keyring.entry)
+
+        phone.signIn("alice", app)
+        assertEquals(false, phone.startedAnew)
+        assertEquals("for alice", read(app, "bob", sealed))
+    }
+
+    @Test
+    fun whatALoggedOutAccountLeftIsRemovedWhenAnotherSignsIn() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val secret = send(bob, "alice", "alice only")!!
+        assertEquals("alice only", read(alice, "bob", secret))
+        val aliceKey = phone.keyring.entry!!.key.copyOf()
+        val aliceFiles = phone.files().map { it.path }.toSet()
+        alice.logOut(LogOut.Keep)
+
+        // Somebody else signs in on the phone Alice only logged out of.
+        val carol = phone.signIn("carol", alice)
+        assertEquals("nothing of carol's was here", true, phone.startedAnew)
+        assertEquals("carol", phone.keyring.entry!!.owner)
+        assertFalse("a new account gets a new storage key", aliceKey.contentEquals(phone.keyring.entry!!.key))
+        assertTrue("alice's files are gone", phone.files().none { it.path in aliceFiles })
+        assertNull(carol.messaging().reveal("bob", secret.id, secret.clientId, mine = false, envelope = secret.envelope))
+
+        // Alice, back on it, starts anew as she would on any other phone: only a backup brings her history back.
+        carol.logOut(LogOut.Keep)
+        val again = phone.signIn("alice", carol)
+        assertEquals(true, phone.startedAnew)
+        assertNull(read(again, "bob", secret))
+        assertNotNull(send(again, "bob", "alice again"))
+    }
+
+    @Test
+    fun loggingOutNeitherRepairsNorOverwritesStorageThatCannotBeRead() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val received = send(bob, "alice", "kept")!!
+        assertEquals("kept", read(alice, "bob", received))
+        val files = phone.files().associate { it.path to it.readBytes().toList() }
+
+        // The keystore does not answer; the user logs out and signs in again.
+        phone.keyring.unreadable = true
+        val broken = phone.start().also { it.resume("alice") }
+        refusesToSend(broken, "bob", "unreadable")
+        assertNull(runBlocking { broken.logOut(LogOut.Keep)() })
+        assertEquals("not a new start: what is here was not replaced", false, broken.signedIn("alice"))
+        refusesToSend(broken, "bob", "still unreadable")
+        assertEquals("nothing was written over the stored state", files, phone.files().associate { it.path to it.readBytes().toList() })
+        assertEquals(1, phone.keyring.stores)
+
+        // Once it answers again, everything is where it was.
+        phone.keyring.unreadable = false
+        val recovered = phone.start()
+        phone.signIn("alice", recovered)
+        assertEquals(false, phone.startedAnew)
+        assertEquals("kept", read(recovered, "bob", received))
+    }
+
+    @Test
+    fun loggingOutCutsABackupAndARestoreShortWithoutCostingWhatThePhoneKeeps() {
+        val server = Server()
+        val phone = Phone(server)
+        val bob = Phone(server).signIn("bob")
+        val alice = phone.signIn("alice")
+        val first = send(bob, "alice", "kept")!!
+        assertEquals("kept", read(alice, "bob", first))
+        val whole = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
+
+        // The user logs out while the file is being written, before anything was read for it.
+        val file = object : ByteArrayOutputStream() {
+            var left = false
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                super.write(bytes, offset, length)
+                if (!left) {
+                    left = true
+                    alice.logOut(LogOut.Keep)
+                }
+            }
+        }
+        try {
+            alice.backUp(file, "correct horse battery".toCharArray())
+            fail("a backup of an account that logged out meanwhile")
+        } catch (expected: IOException) {
+            // intended: what was written is not a backup
+        }
+
+        // …and while a file is being read.
+        phone.signIn("alice", alice)
+        val input = object : ByteArrayInputStream(whole) {
+            var left = false
+            override fun read(target: ByteArray, offset: Int, length: Int): Int {
+                if (!left) {
+                    left = true
+                    alice.logOut(LogOut.Keep)
+                }
+                return super.read(target, offset, length)
+            }
+        }
+        assertNull("there is nobody to restore it for", alice.restore(input, "correct horse battery".toCharArray()))
+
+        // Neither cost anything: the account comes back to what it had.
+        phone.signIn("alice", alice)
+        assertEquals("kept", read(alice, "bob", first))
+        assertEquals("all of it is here already", 0, alice.restore(ByteArrayInputStream(whole), "correct horse battery".toCharArray()))
     }
 
     // ------------------------------------ the rest of what is kept on the phone
@@ -505,11 +729,11 @@ class EndToEndTest {
         assertNull(box.open("outbox", stored.copyOfRange(heading, stored.size)))
         assertNull(later.localSeal()!!.open("outbox", stored.copyOf(heading) + box.seal("outbox", words)))
 
-        // Signing out: nothing to seal with any more, and signing in again does not bring the old key back.
-        runBlocking { later.signOut()() }
+        // Erasing: nothing to seal with any more, and signing in again does not bring the old key back.
+        runBlocking { later.logOut(LogOut.Erase)() }
         assertNull(later.localSeal())
         val again = phone.signIn("alice", later)
-        assertNull("sealed before the sign-out", again.localSeal()!!.open("outbox", stored))
+        assertNull("sealed before it was erased", again.localSeal()!!.open("outbox", stored))
         assertFalse("and it can tell: not sealed with the key it has now", again.localSeal()!!.sealedHere(stored))
 
         // Somebody else on this phone cannot open it either.
@@ -544,7 +768,7 @@ class EndToEndTest {
     private fun holds(bytes: ByteArray, needle: String): Boolean = String(bytes, Charsets.ISO_8859_1).contains(needle)
 
     @Test
-    fun aBackupBringsTheHistoryBackAfterSigningOutAndInAgain() {
+    fun aBackupBringsTheHistoryBackAfterErasingAndSigningInAgain() {
         val server = Server()
         val phone = Phone(server)
         val bob = Phone(server).signIn("bob")
@@ -562,8 +786,8 @@ class EndToEndTest {
         assertEquals(0, written.unreadableChats)
         assertFalse(holds(file.toByteArray(), "before"))
 
-        // Signing out erases everything. Signing in again starts with new keys and nothing kept.
-        alice.signOut()
+        // Logging out and erasing leaves nothing. Signing in again starts with new keys and nothing kept.
+        alice.logOut(LogOut.Erase)
         val again = phone.signIn("alice", alice)
         assertNull(read(again, "bob", received))
         assertNull(readOwn(again, "bob", sent))
@@ -599,7 +823,7 @@ class EndToEndTest {
         val received = send(bob, "alice", "for alice")!!
         assertEquals("for alice", read(alice, "bob", received))
         val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
-        alice.signOut()
+        alice.logOut(LogOut.Erase)
         val again = phone.signIn("alice", alice)
 
         fun problemOf(app: EndToEnd, passphrase: String): E2eeBackup.Problem? = try {
@@ -645,7 +869,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun aBackupCutOffBySigningOutIsNotABackup() {
+    fun aBackupCutOffByLoggingOutIsNotABackup() {
         val server = Server()
         val phone = Phone(server)
         val bob = Phone(server).signIn("bob")
@@ -659,7 +883,7 @@ class EndToEndTest {
                 super.write(bytes, offset, length)
                 if (!left) {
                     left = true
-                    alice.signOut()
+                    alice.logOut(LogOut.Erase)
                 }
             }
         }
@@ -681,7 +905,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun signingOutOnceEverythingWasReadStillLeavesAWholeBackup() {
+    fun loggingOutOnceEverythingWasReadStillLeavesAWholeBackup() {
         // The other way round would be the worst moment to refuse: the backup is what is left.
         val server = Server()
         val phone = Phone(server)
@@ -695,7 +919,7 @@ class EndToEndTest {
             var writes = 0
             override fun write(bytes: ByteArray, offset: Int, length: Int) {
                 super.write(bytes, offset, length)
-                if (++writes == 2) alice.signOut()
+                if (++writes == 2) alice.logOut(LogOut.Erase)
             }
         }
         val written = alice.backUp(file, "correct horse battery".toCharArray())!!
@@ -709,7 +933,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun signingOutBeforeEverythingWasReadLeavesNoBackup() {
+    fun loggingOutBeforeEverythingWasReadLeavesNoBackup() {
         // Two chats, each longer than a piece of the file. The account leaves while the first
         // is being written: the second can no longer be read, and a file that holds one chat
         // out of two must not be handed over as the backup.
@@ -726,7 +950,7 @@ class EndToEndTest {
             var writes = 0
             override fun write(bytes: ByteArray, offset: Int, length: Int) {
                 super.write(bytes, offset, length)
-                if (++writes == 2) alice.signOut()
+                if (++writes == 2) alice.logOut(LogOut.Erase)
             }
         }
         try {
@@ -745,14 +969,14 @@ class EndToEndTest {
     }
 
     @Test
-    fun aRestoreCutOffBySigningOutWritesNothing() {
+    fun aRestoreCutOffByLoggingOutWritesNothing() {
         val server = Server()
         val phone = Phone(server)
         val bob = Phone(server).signIn("bob")
         val alice = phone.signIn("alice")
         assertEquals("kept", read(alice, "bob", send(bob, "alice", "kept")!!))
         val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
-        alice.signOut()
+        alice.logOut(LogOut.Erase)
         val again = phone.signIn("alice", alice)
 
         // The account leaves while the file is being read.
@@ -761,7 +985,7 @@ class EndToEndTest {
             override fun read(target: ByteArray, offset: Int, length: Int): Int {
                 if (!left) {
                     left = true
-                    again.signOut()
+                    again.logOut(LogOut.Erase)
                 }
                 return super.read(target, offset, length)
             }
@@ -828,7 +1052,7 @@ class EndToEndTest {
         wires.forEachIndexed { index, wire -> assertTrue(read(alice, "bob", wire)!!.startsWith("message $index ")) }
         val file = ByteArrayOutputStream().also { alice.backUp(it, "correct horse battery".toCharArray()) }.toByteArray()
         assertTrue(file.size > E2eeBackup.HEADING_BYTES + E2eeBackup.SEALED_PIECE_BYTES)
-        alice.signOut()
+        alice.logOut(LogOut.Erase)
         val again = phone.signIn("alice", alice)
         assertNull("it was tried before the backup was there, and could not be shown", read(again, "bob", wires[0]))
 
@@ -937,7 +1161,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun signingOutIsTheWayOutOfStorageThatStaysUnreadable() {
+    fun erasingIsTheWayOutOfStorageThatStaysUnreadable() {
         val server = Server()
         val phone = Phone(server)
         phone.signIn("alice")
@@ -945,7 +1169,7 @@ class EndToEndTest {
         val broken = phone.start().also { it.resume("alice") }
         refusesToSend(broken, "bob", "unreadable")
 
-        val withdraw = broken.signOut()
+        val withdraw = broken.logOut(LogOut.Erase)
         assertNull("the identity is in storage nobody can read", runBlocking { withdraw() })
         assertTrue(phone.files().isEmpty())
         phone.keyring.unreadable = false

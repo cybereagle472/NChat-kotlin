@@ -1,5 +1,6 @@
 package com.nchat.app.data.repository
 
+import com.nchat.app.network.LogOut
 import kotlinx.coroutines.flow.StateFlow
 
 /** Outcome of a sign-in / sign-up attempt. */
@@ -25,5 +26,13 @@ interface AuthRepository {
     suspend fun signIn(email: String, password: String): AuthResult
     suspend fun signUp(email: String, password: String): AuthResult
     fun completeProfile()
-    fun signOut()
+
+    /**
+     * Ends the session on this phone, at once and without the network.
+     *
+     * [LogOut.Keep] leaves what the phone holds of the account where it is, shown to nobody: the
+     * same account signing in again finds its messages, with no backup. [LogOut.Erase] removes
+     * it for good — for a phone that goes to somebody else.
+     */
+    fun logOut(how: LogOut)
 }
