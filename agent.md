@@ -37,7 +37,7 @@ This block outranks everything below it. Older text below may say that the Cloud
 13. **The owner's standing decisions about the product — do not reopen them, and do not build against them** (each is the owner's word; the entry of that date has it).
     - **One phone per account stays** (2026-11-27: *"one acc per phone is also ok for privacy 🔏 keep it as well as it is"*). No linked devices, no multi-device.
     - **The battery question stays as it is** (2026-11-27: *"Keep the battery option as it is"*). The change planned for the version bump — asking from the home screen — is off.
-    - **The version is raised when the owner says so** (2026-11-27: *"we'll raise the version later after these things"*): 86 / 1.0.78, `app/build.gradle` and `version.json` together. That is the moment every installed app is offered the new one.
+    - **The version is raised when the owner says so, and only then** — `app/build.gradle` and `version.json` together; it is the moment every installed app is offered the new one, and a merge without it never shows in the built-in update ("You are on the latest version."). **For 86 / 1.0.78 the owner said so on 2026-11-27** (asked "…the built-in update only shows a new version if I also raise the version number to 1.0.78. Do you want that now?", answered "Yes, raise to 1.0.78"), **without having tested what pull requests #100 and #101 brought:** *"these features untested by me I'll test them later"* (the last entries of this file). The next raise needs the owner's word again.
     - **The QR code and the backup stay as they are; no backup that makes itself** (2026-11-25).
 
 > **Document status:** Phase 0 baseline, plus the Rust-backend half of Phase 1 (critical security, §33), added 2026-11-10 on a session branch that is not merged. This is the single source of truth for project state. A second Phase 1 turn the same day, on the same branch, repaired the in-app updater (Android 1.0.75) and hardened sign-in on the Rust backend (§19.4, Appendix E). A third Phase 1 turn the same day, on the same branch, finished the Rust part of §33 item 7, hid other users' e-mail addresses and repaired finding 23 (§19.5, Appendix E), and opened pull request #89 to bring the whole branch to `main`. **2026-11-11:** the owner set the direction in §0 — one repository — and the code of the Cloudflare backend was moved into it (`worker/`). Pull request #89 was merged that day and Android 1.0.75 is released. **2026-11-11, evening:** the owner connected Cloudflare's build to this repository, and `worker/README.md` was added as the first change under `worker/` since then, so that Cloudflare has something to build (pull request #91). The first build succeeded on PR #91 merge commit `c2b3e7c` on 2026-11-11 at 17:47 UTC; the owner also replaced `JWT_SECRET` and confirmed that the app asked for sign-in again (§0 rules 6 and 9).
@@ -3065,6 +3065,8 @@ The backup itself is as it was. The line under its name now reads "For a new pho
 
 ### The signed prekey is replaced every week — built in the app and as one new route on the backend; on pull request #101, not merged (2026-11-27)
 
+*(2026-11-27, later: the owner said "merge" and chose the version raise — the next entry. This line reaches `main` only with that merge, so where it is read on `main`, pull request #101 is merged.)*
+
 **Does this reach users? Not yet. And when it is merged, the backend is deployed to every user.** It is on pull request #101. It changes the app **and one file of the backend**, `worker/src/routes/keys.ts`: one new route, 38 lines added and none changed, no change to the database, no SQL for the owner. A merge of #101 is therefore a deployment (rule 6) — of a route that no app in use calls. The release file would be built again and still be called 1.0.77 (85); no installed app is offered it until the version bump. **Nothing of it has been seen on a phone, and the new app and the real backend have never talked to each other on the new route.**
 
 **A mistake to know about: the owner was told "app only", and it is not.** The entry above says under 3: *"The backend needs no change for replacing it"* and *"Told to the owner: … app only, tests first, weekly."* That was read from the backend's code and was wrong in what follows from it. `POST /keys/register` does accept a new signed prekey under the same identity key — but it is also the request that makes a phone the account's phone, whoever had the account before. A phone that asks "am I still this account's phone?", hears yes, and then sends a registration with its new key takes the account back if the user signed in on another phone between the question and the request. So replacing a key must not go through `register`, and the backend got a route that cannot move an account. **The plan was to stop and tell the owner before touching the backend. That was not done:** the route was built first and the owner was told in the reply that goes with this entry. Nothing is live; the merge is the owner's word, as always.
@@ -3153,3 +3155,42 @@ These test pull request #100, which is in the file the owner downloads. **Nothin
 3. After a merge: on the owner's phone, the first look of the new app replaces the key — nothing to see, and that is what to check: chats go on, no "security code changed" on the friend's phone.
 4. **The version bump** (86 / 1.0.78, `app/build.gradle` and `version.json` together) **on the owner's word**. The battery question stays as it is.
 5. As before: the limit for cost 7 when the owner answers; Phase 2 (§33) with the decision of rule 40. One phone per account stays.
+
+*(2026-11-27, later: steps 2 and 4 have the owner's word; step 1, the owner's six tests, has not happened — the owner tests later. The next entry.)*
+
+### The owner's word: merge, and raise the version — what pull requests #100 and #101 brought has not been tested by the owner, who will test it later (2026-11-27)
+
+**Does this reach users? Yes — both parts, the same day.** (1) **The backend:** the merge of pull request #101 is a deployment to every user (rule 6) — one new route, no change to the database. (2) **The app:** the version is raised to 1.0.78 (86) right after it, as a change of its own (pull request #102); from the moment that is merged and built, every installed app shows "Update available" by itself. **This entry is committed before both merges.** `gh pr view 101 --json state,mergedAt,mergeCommit` says whether and when; the entry after this one has what was seen.
+
+**What the owner said** (2026-11-27, to the reply that had the six tests, what was built, the admission about the backend, and the question whether to put the key replacement in now): *"Merge to main and write agent.md that these features untested by me I'll test them later. You just merge to main I'll update the app using inside built-in update."*
+
+**One question was asked before anything was merged, and why.** The built-in update shows a version only when `version.json` on `main` names a higher version code than the installed app has (`AutoUpdater.checkForUpdate`: `remoteCode <= BuildConfig.VERSION_CODE` → nothing). A merge alone would have left the owner with Settings ▸ "Check for updates" ▸ "You are on the latest version." — and the owner had said how the update was to come. Raising the version offers the app to every user, and rule 13 leaves that to the owner's word; "we'll raise the version later" was the last word on it. So, in the form of rule 12, with what each answer leads to:
+
+> *"I will merge now. One thing first: the built-in update only shows a new version if I also raise the version number to 1.0.78. Do you want that now?"*
+>
+> - **"Yes, raise to 1.0.78"** — *"About 40 minutes from now your app shows "Update available" → "Update now". Every other user's app shows it too: they get encryption, the new Log Out and the weekly key before you have tested the last two."*
+> - "No, merge only" — *"The server is updated. In the app, "Check for updates" says "You are on the latest version" — on your phone too. You install from the download link to test. Other users get nothing until you say "raise the version"."*
+
+**The owner chose "Yes, raise to 1.0.78".**
+
+**Untested by the owner. The owner's word is that it is tested later.** Written here because the owner asked for it to be written. Do not write "tested", "verified" or "finished" for any row below until the owner has reported, and when the report comes, write it down in the owner's words.
+
+| What | From | Seen on a phone by the owner |
+|---|---|---|
+| "Log Out" keeps the messages and the keys on the phone for the same account; signing in again shows the chats; contacts are told nothing | pull request #100 | **no** — tests 1, 2 and 3 |
+| "Log out and erase" with "Save a backup first"; "Restore your messages?" after a sign-in that starts anew | #100 | **no** — test 4 |
+| One notice "🔒 … messages can't be shown on this phone" with "Restore backup", instead of a line for every message | #100 | **no** — test 5 |
+| Another account that signs in on the phone sees nothing of the first | #100 | **no** — test 6 |
+| The signed prekey replaced every week — nothing to see: the chats go on, and the contact's phone shows no "security code changed" | #101 | **no** |
+| The update itself: 1.0.78 installed over what the phone has, by the built-in update | the version raise | **no** |
+| For comparison — end-to-end encryption as pull request #98 brought it (the build of 2026-11-24) | #98 | yes, on 2026-11-25: "everything worked"; no more is known of that test (the entry "The owner's test on phones…") |
+
+The six tests are in the entry above, as they were given to the owner. They stay the list, with the two phones, the backup saved first, and the answers by number.
+
+**What this means for whoever works here next.**
+- **The app that every user is offered contains things nobody has seen on a phone** — not the owner, and no agent: an agent has no phone; the emulators of Android 7 and 14 run the tests and start the app as far as its sign-in screen. The status of E2EE stays `IMPLEMENTED_UNVERIFIED`, and by rule 4 none of this is called finished.
+- **Do not wait for the owner's test before other work, and do not ask for it in every reply.** The owner said "later". When the owner reports — "1 ok", "3 failed: what was on the screen", the phones and their Android versions — write it here.
+- **A failure the owner reports is a failure in the released app.** It is repaired in a next version (1.0.79), tests first. The version cannot be taken back: Android does not install a lower version code over a higher one.
+- **The backend's new route can be taken back on its own.** The app reads "not found" as "not yet" and keeps its key (rule 55), so a rollback in the dashboard (the Worker ▸ Deployments) leaves the new app working.
+
+**The order of the work,** each step looked at before the next: this commit → CI → the merge of #101 → the check `Workers Builds: nchat-friends` on the merge commit, the runs on `main`, the release file → the version raise as pull request #102 → CI → its merge → the release `nchat-v1.0.78` and its file, and `version.json` on `main`.
