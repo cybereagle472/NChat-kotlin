@@ -115,6 +115,8 @@ class EndToEnd(
     private val onSecurityChanged: (peerId: String) -> Unit = {},
     /** How hard a backup's key is to make from its passphrase; see [E2eeBackup.ROUNDS]. */
     private val backupRounds: Int = E2eeBackup.ROUNDS,
+    /** This phone's clock, by which a signed prekey comes due for replacement; see [E2eeKeys]. */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private class Account(
         val userId: String,
@@ -416,7 +418,7 @@ class EndToEnd(
 
         val vault = FileSecretVault(File(home, "vault"), key)
         val store = E2eeStore(vault)
-        val keys = E2eeKeys(vault, store, directory, onReplaced)
+        val keys = E2eeKeys(vault, store, directory, onReplaced, clock)
         val client = E2eeClient(
             localId = userId,
             store = store,

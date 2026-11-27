@@ -741,8 +741,11 @@ class E2eeKeysTest {
             assertTrue(opens(app, early))
         }
 
-        // The next look finishes the job with the same key, and then there is nothing left to do.
+        // The next look finishes the job with the same key, and then there is nothing left to do. It
+        // does so even when the clock was put back meanwhile and the old key no longer looks a week old:
+        // what was begun is finished.
         directory.afterReplacement = {}
+        phone.now -= DAY
         val restarted = phone.start()
         assertEquals(Outcome.Ready, sync(restarted))
         assertEquals(second, directory.signedPrekey)
@@ -796,6 +799,11 @@ class E2eeKeysTest {
                 assertTrue("write $cutOff, finished: what the server hands out", opens(app, firstMessage(directory)))
                 assertTrue("write $cutOff, finished: what was sealed before", opens(app, early))
             }
+            assertEquals(
+                "write $cutOff, finished: an older build finds the signed prekey the server hands out",
+                recordOfTheBuildsInUse(restarted.identity()!!, held(restarted, directory.signedPrekey)!!, decodeBase64(directory.signature!!)!!),
+                phone.vault.entries[RECORD],
+            )
             assertEquals(identity, directory.identityKey)
             assertEquals(1, directory.registrations)
             assertEquals(0, phone.replaced)
@@ -915,7 +923,9 @@ class E2eeKeysTest {
         old.now += WEEK
 
         var theirs: String? = null
+        var ready: String? = null
         directory.beforeReplacement = {
+            ready = it
             directory.beforeReplacement = {}
             newKeys.claim()
             sync(newKeys)
@@ -936,10 +946,12 @@ class E2eeKeysTest {
         assertEquals(Outcome.Ready, sync(new.start()))
         assertEquals(0, new.replaced)
 
-        // Signing in on the old phone again is what brings the account back — with the key it had ready.
+        // Signing in on the old phone again is what brings the account back — and then the key it had
+        // ready is the one it has the server hand out.
         val back = old.start().also { it.claim() }
         assertEquals(Outcome.Ready, sync(back))
         assertEquals(identityKey(back), directory.identityKey)
+        assertEquals(ready, directory.signedPrekey)
         assertTrue(opens(back, firstMessage(directory)))
     }
 
@@ -1076,6 +1088,29 @@ class E2eeKeysTest {
         assertEquals(2, directory.replacementRequests)
     }
 
+    @Test
+    fun aReplacementThatWasBegunIsNotSentOnceTheUserHasLoggedOut() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        phone.now += WEEK
+        directory.beforeReplacement = { throw IOException("the connection was lost") }
+        fails("a replacement that did not happen must be reported") { sync(keys) }
+        directory.beforeReplacement = {}
+
+        // The new key is waiting on the phone. The user logs out while the next look is asking the server.
+        val again = phone.start()
+        directory.duringStatus = { again.close() }
+        try {
+            sync(again)
+            fail("a look that outlives the log-out must stop")
+        } catch (expected: IllegalStateException) {
+            // intended
+        }
+        assertEquals("only the request that was lost", 1, directory.replacementRequests)
+    }
+
     // ------------------------------------------- what builds before this left
 
     @Test
@@ -1165,6 +1200,32 @@ class E2eeKeysTest {
         assertEquals(encodeBase64(identity.identityPublic), directory.identityKey)
         assertTrue(opens(keys, firstMessage(directory)))
         assertNotNull("the signed prekey of the record is kept", held(keys, encodeBase64(prekey.public)))
+    }
+
+    @Test
+    fun aSignedPrekeyOnlyTheOldRecordNamesIsKept() {
+        // By this build's own writes the record never names a signed prekey the list does not know. If
+        // it ever does, that key may be the one the server hands out: it is kept, also past the next
+        // replacement.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val listed = directory.signedPrekey
+        val other = E2eeProtocol.generatePrekeyPair()
+        phone.vault.entries[RECORD] = recordOfTheBuildsInUse(keys.identity()!!, other)
+
+        val restarted = phone.start()
+        assertNotNull(held(restarted, encodeBase64(other.public)))
+        assertNotNull(held(restarted, listed))
+        phone.now += WEEK
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(1, directory.replacements)
+        for (app in listOf(restarted, phone.start())) {
+            assertNotNull(held(app, encodeBase64(other.public)))
+            assertNotNull(held(app, listed))
+            assertNotNull(held(app, directory.signedPrekey))
+        }
     }
 
     @Test

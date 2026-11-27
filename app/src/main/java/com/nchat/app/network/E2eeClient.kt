@@ -274,7 +274,14 @@ class E2eeClient(
     private val store: E2eeStore,
     private val archive: E2eeArchive,
     private val identity: () -> E2eeProtocol.IdentityKeyPair?,
-    private val signedPrekey: () -> E2eeProtocol.PrekeyPair?,
+    /**
+     * The signed prekey a first message names by its reference
+     * ([E2eeProtocol.keyReference]), or null when this phone does not hold
+     * it. A phone holds more than one: the one the server hands out is
+     * replaced every week, and the replaced ones are kept for a month for
+     * what was sealed with them and is still on its way (see [E2eeKeys]).
+     */
+    private val signedPrekey: (reference: String) -> E2eeProtocol.PrekeyPair?,
     private val fetchBundle: suspend (peerId: String) -> E2eeProtocol.PeerBundle?,
     /**
      * Called when a session has to be started and [identity] is still empty:
@@ -682,11 +689,11 @@ class E2eeClient(
         val handshakeReference = E2eeProtocol.keyReference(handshake)
         if (handshakeReference in record.seenHandshakes) return null
         val keys = identity() ?: return null
-        val prekey = signedPrekey() ?: return null
-        // Cheapest test first: a handshake built for a prekey we no longer hold
-        // (anything sent to a previous installation) ends here, before the
-        // one-time prekey pool is read from storage.
-        if (envelope.spk != E2eeProtocol.keyReference(prekey.public)) return null
+        // Cheapest test first: a handshake built for a signed prekey this phone
+        // does not hold — anything sent to a previous installation, or for a
+        // key replaced more than a month ago — ends here, before the one-time
+        // prekey pool is read from storage.
+        val prekey = envelope.spk?.let(signedPrekey) ?: return null
         val oneTimeReference = envelope.otk
         val oneTimePrivate = if (oneTimeReference != null) store.oneTimeKey(oneTimeReference) ?: return null else null
         // A handshake that does not authenticate changes nothing — junk cannot spend a one-time prekey.
