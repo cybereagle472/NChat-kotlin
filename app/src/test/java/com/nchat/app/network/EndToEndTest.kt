@@ -1300,7 +1300,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun aFirstMessageMoreThanAMonthOnItsWayDoesNotOpenAndTheChatMendsItselfWhenItsOwnerWrites() {
+    fun aFirstMessageThatArrivesAfterItsKeyWasRemovedDoesNotOpenAndTheChatMendsItselfWhenItsOwnerWrites() {
         // What replacing the key costs. Erin writes to Alice for the first time — and her message does
         // not reach Alice's phone for seven weeks.
         val server = Server()
