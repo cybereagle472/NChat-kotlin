@@ -278,8 +278,9 @@ class E2eeClient(
      * The signed prekey a first message names by its reference
      * ([E2eeProtocol.keyReference]), or null when this phone does not hold
      * it. A phone holds more than one: the one the server hands out is
-     * replaced every week, and the replaced ones are kept for a month for
-     * what was sealed with them and is still on its way (see [E2eeKeys]).
+     * replaced every week, and the replaced ones are kept for a month or
+     * more for what was sealed with them and is still on its way (see
+     * [E2eeKeys]).
      */
     private val signedPrekey: (reference: String) -> E2eeProtocol.PrekeyPair?,
     private val fetchBundle: suspend (peerId: String) -> E2eeProtocol.PeerBundle?,
@@ -691,8 +692,8 @@ class E2eeClient(
         val keys = identity() ?: return null
         // Cheapest test first: a handshake built for a signed prekey this phone
         // does not hold — anything sent to a previous installation, or for a
-        // key replaced more than a month ago — ends here, before the one-time
-        // prekey pool is read from storage.
+        // key replaced so long ago that it has been removed — ends here,
+        // before the one-time prekey pool is read from storage.
         val prekey = envelope.spk?.let(signedPrekey) ?: return null
         val oneTimeReference = envelope.otk
         val oneTimePrivate = if (oneTimeReference != null) store.oneTimeKey(oneTimeReference) ?: return null else null

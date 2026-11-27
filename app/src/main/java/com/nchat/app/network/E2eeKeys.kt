@@ -95,11 +95,14 @@ interface KeyDirectory {
  * prekey must not be able to move an account). The identity key does not
  * change, so contacts notice nothing and no conversation is interrupted.
  *
- * The replaced one is kept for [KEEP_REPLACED_MS] — a first message sealed
- * for it may still be on its way — and removed from the phone with the first
- * replacement after that; [MAX_REPLACED_KEPT] at most are kept. A first
- * message that arrives later than that does not open. A session that has
- * begun does not need the signed prekey any more.
+ * The replaced one is kept, because a first message sealed for it may still
+ * be on its way: for [KEEP_REPLACED_MS] at the least. A replacement removes
+ * from the phone the keys that were replaced that long ago — all but the one
+ * replaced last of them, so that a date written by a clock that was wrong
+ * cannot cost the key that was in use until then. With a replacement every
+ * week that is six weeks; [MAX_REPLACED_KEPT] at most are kept. A first
+ * message that arrives after its key was removed does not open. A session
+ * that has begun does not need the signed prekey any more.
  *
  * At every moment of a replacement the phone opens what is sealed for the
  * key the server hands out and for the one before, whatever is interrupted:
@@ -187,8 +190,8 @@ class E2eeKeys(
     /**
      * The signed prekey a first message names by [reference]
      * ([E2eeProtocol.keyReference]), as far as this phone holds it: the one
-     * the server hands out, the one about to take its place, and the ones
-     * replaced within the last month. Never touches the network.
+     * the server hands out, the one about to take its place, and the
+     * replaced ones that are kept. Never touches the network.
      */
     fun signedPrekey(reference: String): E2eeProtocol.PrekeyPair? = current()?.signedPrekey(reference)
 
@@ -267,8 +270,7 @@ class E2eeKeys(
         when (directory.replaceSignedPrekey(keys.identityKey, encodeBase64(next.pair.public), encodeBase64(next.signature))) {
             KeyDirectory.Replacement.Done -> {
                 val now = clock()
-                val replaced = (listOf(Replaced(keys.prekey.pair, now)) + keys.replaced.filter { now - it.since < KEEP_REPLACED_MS })
-                    .take(MAX_REPLACED_KEPT)
+                val replaced = (listOf(Replaced(keys.prekey.pair, now)) + stillKept(keys.replaced, now)).take(MAX_REPLACED_KEPT)
                 val settled = Material(keys.identity, keys.registered, next, now, null, replaced)
                 // The record older builds read, then the list this build goes by. Stopped between the
                 // two, the list still says "to be handed out", and the next look sends the key again.
@@ -281,12 +283,33 @@ class E2eeKeys(
             KeyDirectory.Replacement.Refused -> {
                 // The registered identity key was not this one at that moment. Another phone's — then
                 // this one stands down, now and not at its next routine look. Nobody's — then the
-                // directory has lost the keys, nobody took the account, and the next look puts them back.
+                // directory has lost the keys, nobody took the account, and the next look puts them
+                // back. This one's after all — then the next look tries again.
                 val registered = directory.status().identityKey
                 if (registered != null && registered != keys.identityKey) return standDown(keys)
                 throw IOException("the key directory changed while the signed prekey was being replaced")
             }
         }
+    }
+
+    /**
+     * Which of the [replaced] keys (newest first) stay on the phone at
+     * [now]: every one replaced less than [KEEP_REPLACED_MS] ago, and of the
+     * others the one replaced last — the first of them in the list, whatever
+     * the dates say. A date is only as good as the phone's clock was when it
+     * was written: after an hour with the clock years behind, the key that
+     * was in use until that hour is dated years back. (Signal's app keeps
+     * "the youngest of those" as well.)
+     */
+    private fun stillKept(replaced: List<Replaced>, now: Long): List<Replaced> {
+        val kept = ArrayList<Replaced>()
+        var oneOfTheOthers = false
+        for (old in replaced) {
+            val lately = now - old.since < KEEP_REPLACED_MS
+            if (lately || !oneOfTheOthers) kept += old
+            if (!lately) oneOfTheOthers = true
+        }
+        return kept
     }
 
     private fun newSignedPrekey(identity: E2eeProtocol.IdentityKeyPair): Signed {
@@ -370,12 +393,21 @@ class E2eeKeys(
             // Keys of a build that never replaced its signed prekey, or a list that is damaged or was
             // written for another identity key: the record is all there is.
             ?: return Material(record.identity, record.registered, record.prekey, since = 0L, next = null, replaced = emptyList())
-        // The record names the signed prekey in use, or the one about to be. Should it ever name one
-        // the list does not know, that one is kept too: it may be the one the server hands out.
         val known = record.prekey.reference
         val listed = known == list.prekey.reference || known == list.next?.reference || list.replaced.any { it.reference == known }
-        val replaced = if (listed) list.replaced else listOf(Replaced(record.prekey.pair, clock())) + list.replaced
-        return Material(record.identity, record.registered, list.prekey, list.since, list.next, replaced)
+        if (listed) return Material(record.identity, record.registered, list.prekey, list.since, list.next, list.replaced)
+        // The record names a signed prekey the list does not know, which no order of this build's writes
+        // leaves behind. Any of them may be the one the server hands out, so nothing either entry holds
+        // is given up, and nothing depends on a write to come: the record's key stays in the record and
+        // the list's stay in the list until the list has been written with all of them. The next look
+        // does that — the record's key counts as the one in use, of an age nobody knows, and nothing
+        // as waiting, so that look makes a new key, and it stores the list before the server hears of
+        // it and before the record is given another key.
+        val now = clock()
+        return Material(
+            record.identity, record.registered, record.prekey, since = 0L, next = null,
+            replaced = listOfNotNull(list.next?.let { Replaced(it.pair, now) }, Replaced(list.prekey.pair, now)) + list.replaced,
+        )
     }
 
     private fun create(): Material {
@@ -507,10 +539,10 @@ class E2eeKeys(
          */
         const val REPLACE_AFTER_MS = 7L * 24L * 60L * 60L * 1000L
 
-        /** How long a replaced one is kept: a first message sealed for it may be that long on its way. */
+        /** How long a replaced one is kept at the least: a first message sealed for it may be that long on its way. */
         const val KEEP_REPLACED_MS = 30L * 24L * 60L * 60L * 1000L
 
-        /** …and how many at most. A week apart, a month holds five; more than this is a clock that jumps. */
+        /** …and how many at most. A week apart there are six; more than this is a clock that jumps. */
         const val MAX_REPLACED_KEPT = 12
 
         /** The server keeps at most 100 per account; half of that leaves room and lasts many new chats. */

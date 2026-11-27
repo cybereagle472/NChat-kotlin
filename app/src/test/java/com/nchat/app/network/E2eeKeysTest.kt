@@ -1250,26 +1250,27 @@ class E2eeKeysTest {
     @Test
     fun aSignedPrekeyOnlyTheOldRecordNamesIsKept() {
         // By this build's own writes the record never names a signed prekey the list does not know. If
-        // it ever does, that key may be the one the server hands out: it is kept, also past the next
-        // replacement.
+        // it ever does, any of them may be the one the server hands out: all are kept, the next look
+        // replaces the key — at once, since nobody knows its age — and all are kept past that too.
         val directory = Directory()
         val phone = Phone(directory)
         val keys = phone.start()
         sync(keys)
+        val replacedBefore = directory.signedPrekey
+        phone.now += WEEK
+        sync(keys)
         val listed = directory.signedPrekey
+        assertNotEquals(replacedBefore, listed)
         val other = E2eeProtocol.generatePrekeyPair()
         phone.vault.entries[RECORD] = recordOfTheBuildsInUse(keys.identity()!!, other)
 
         val restarted = phone.start()
-        assertNotNull(held(restarted, encodeBase64(other.public)))
-        assertNotNull(held(restarted, listed))
-        phone.now += WEEK
+        val all = listOf(encodeBase64(other.public), listed, replacedBefore)
+        for (key in all) assertNotNull(held(restarted, key))
         assertEquals(Outcome.Ready, sync(restarted))
-        assertEquals(1, directory.replacements)
+        assertEquals("replaced at the next look, not a week later", 2, directory.replacements)
         for (app in listOf(restarted, phone.start())) {
-            assertNotNull(held(app, encodeBase64(other.public)))
-            assertNotNull(held(app, listed))
-            assertNotNull(held(app, directory.signedPrekey))
+            for (key in all + directory.signedPrekey) assertNotNull(held(app, key))
         }
     }
 
@@ -1301,6 +1302,52 @@ class E2eeKeysTest {
             assertNotNull(held(app, listed))
             assertTrue(opens(app, firstMessage(directory)))
         }
+    }
+
+    @Test
+    fun aSignedPrekeyOnlyTheOldRecordNamesIsNotLostWhicheverWriteIsCutOffAfterThat() {
+        // The disagreement once more, on a phone whose replacement was begun and never reached the
+        // server. Then each write of the look that follows is cut off in turn. Whatever is left must
+        // hold all four: the record's key, the list's, the one that was waiting, and what the server
+        // hands out by then.
+        var cutOff = 1
+        while (true) {
+            val directory = Directory()
+            val phone = Phone(directory)
+            val keys = phone.start()
+            sync(keys)
+            val listed = directory.signedPrekey
+            phone.now += WEEK
+            var waiting: String? = null
+            directory.beforeReplacement = {
+                waiting = it
+                throw IOException("no connection")
+            }
+            fails("the replacement did not reach the server") { sync(keys) }
+            directory.beforeReplacement = {}
+            val other = E2eeProtocol.generatePrekeyPair()
+            phone.vault.entries[RECORD] = recordOfTheBuildsInUse(keys.identity()!!, other)
+
+            val restarted = phone.start()
+            phone.vault.cutOffWrite = phone.vault.writes + cutOff
+            val interrupted = try {
+                sync(restarted)
+                false
+            } catch (expected: IOException) {
+                true
+            }
+            phone.vault.cutOffWrite = 0
+
+            for (app in listOf(restarted, phone.start())) {
+                assertNotNull("write $cutOff: the record's", held(app, encodeBase64(other.public)))
+                assertNotNull("write $cutOff: the list's", held(app, listed))
+                assertNotNull("write $cutOff: the one that was waiting", held(app, waiting))
+                assertNotNull("write $cutOff: what the server hands out", held(app, directory.signedPrekey))
+            }
+            if (!interrupted) break // the look has fewer writes than that: every one has had its turn
+            cutOff++
+        }
+        assertTrue("that look writes more than once, or this test has tested nothing", cutOff > 2)
     }
 
     @Test
