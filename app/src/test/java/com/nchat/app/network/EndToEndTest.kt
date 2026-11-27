@@ -1302,25 +1302,33 @@ class EndToEndTest {
     @Test
     fun aFirstMessageMoreThanAMonthOnItsWayDoesNotOpenAndTheChatMendsItselfWhenItsOwnerWrites() {
         // What replacing the key costs. Erin writes to Alice for the first time — and her message does
-        // not reach Alice's phone for six weeks.
+        // not reach Alice's phone for seven weeks.
         val server = Server()
         val alicePhone = Phone(server)
         val alice = alicePhone.signIn("alice")
         val bob = Phone(server).signIn("bob")
         val erin = Phone(server).signIn("erin")
+        val frank = Phone(server).signIn("frank")
         val known = send(bob, "alice", "from somebody she is already talking to")!!
         assertEquals("from somebody she is already talking to", read(alice, "bob", known))
-        val late = send(erin, "alice", "six weeks on its way")!!
+        val late = send(erin, "alice", "seven weeks on its way")!!
+        val notAsLate = send(frank, "alice", "six weeks on its way")!!
 
         repeat(6) {
             alicePhone.ahead += WEEK
             assertEquals(Outcome.Ready, runBlocking { alice.sync() })
         }
         assertEquals(6, server.replacements)
+        // Six weeks on, the phone still has the key the two were sealed for: it was replaced five weeks
+        // ago, the one after it four weeks ago, and that one's month is not over.
+        assertEquals("six weeks on its way", read(alice, "frank", notAsLate))
 
-        // The key it was sealed for was replaced five weeks ago and has been removed from the phone.
+        alicePhone.ahead += WEEK
+        assertEquals(Outcome.Ready, runBlocking { alice.sync() })
+        assertEquals(7, server.replacements)
+        // Seven weeks on it has been removed from the phone.
         assertNull(read(alice, "erin", late))
-        // Nobody Alice was already talking to is affected — six weeks later, and from storage.
+        // Nobody Alice was already talking to is affected — seven weeks later, and from storage.
         val again = alicePhone.start().also { it.resume("alice") }
         assertEquals("still talking", read(again, "bob", send(bob, "alice", "still talking")!!))
         assertEquals("from somebody she is already talking to", read(again, "bob", known))

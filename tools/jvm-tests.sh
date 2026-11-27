@@ -279,4 +279,8 @@ if echo "$COMPILE_LOG" | grep -q "error:"; then
   echo "COMPILATION FAILED"
   exit 2
 fi
+# From the repository's root, wherever the script was called from: a test that
+# reads the repository's own files (contract/KeyRoutesTest) finds them by
+# walking up from the working directory, as it does under Gradle.
+cd "$ROOT"
 "$JAVA" -cp "$OUT:$LIBS" runner.RunnerKt "${CLASSES[@]}"

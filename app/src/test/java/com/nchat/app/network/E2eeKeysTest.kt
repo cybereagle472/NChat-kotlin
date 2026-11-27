@@ -22,7 +22,8 @@ import java.io.IOException
 class E2eeKeysTest {
 
     private companion object {
-        const val DAY = 24L * 60L * 60L * 1000L
+        const val HOUR = 60L * 60L * 1000L
+        const val DAY = 24L * HOUR
         const val WEEK = 7L * DAY
         const val MONTH = 30L * DAY
 
@@ -817,9 +818,10 @@ class E2eeKeysTest {
     }
 
     @Test
-    fun aReplacedSignedPrekeyIsKeptForAMonthAndThenRemovedFromThePhone() {
-        // Two phones. Each replaces its first key after a week; the next replacement comes one millisecond
-        // before the month is up on the one, and exactly when it is up on the other.
+    fun aReplacedSignedPrekeyIsRemovedOnceItsMonthIsOverAndThatOfTheOneReplacedAfterIt() {
+        // Two phones. Each replaces its first key after a week and its second a week later. The next
+        // replacement comes one millisecond before the second key's month is up on the one phone, and
+        // exactly when it is up on the other.
         for (beforeTheMonthIsUp in listOf(1L, 0L)) {
             val directory = Directory()
             val phone = Phone(directory)
@@ -834,29 +836,72 @@ class E2eeKeysTest {
             sync(keys)
             val second = directory.signedPrekey
             assertNotEquals(first, second)
-            val replacedAt = phone.now
             assertTrue(stored())
-
-            phone.now = replacedAt + MONTH - beforeTheMonthIsUp
+            phone.now += WEEK
             sync(keys)
             assertEquals(2, directory.replacements)
+            val secondReplacedAt = phone.now
+
+            phone.now = secondReplacedAt + MONTH - beforeTheMonthIsUp
+            sync(keys)
+            assertEquals(3, directory.replacements)
             if (beforeTheMonthIsUp > 0) {
-                for (app in listOf(keys, phone.start())) assertTrue("a moment short of the month it still opens", opens(app, early))
+                // The first key's own month has been over for a week. It is still there: of the keys
+                // replaced that long ago it is the last one, and that one is always kept.
+                for (app in listOf(keys, phone.start())) assertTrue("the key replaced after it is a moment short of its month", opens(app, early))
                 assertTrue(stored())
-                // The replacement after that one finds the month over.
+                // The replacement after that one finds both months over.
                 phone.now += WEEK
                 sync(keys)
-                assertEquals(3, directory.replacements)
+                assertEquals(4, directory.replacements)
             }
             for (app in listOf(keys, phone.start())) {
-                assertNull("the month is over", held(app, first))
+                assertNull("its month is over, and so is that of the key replaced after it", held(app, first))
                 assertFalse(opens(app, early))
             }
             assertFalse("removed from storage, not merely passed over", stored())
-            // Only that one: the key replaced after it has its own month, and what the server hands out opens.
+            // Only that one: the key replaced after it is the one kept now, and what the server hands out opens.
             assertNotNull(held(phone.start(), second))
             assertTrue(opens(phone.start(), firstMessage(directory)))
         }
+    }
+
+    @Test
+    fun aClockThatWasWrongForAnHourDoesNotCostTheSignedPrekeyThatWasInUse() {
+        // A phone that starts with its clock years behind — it happens when the battery ran flat — and
+        // is given the time by the network an hour later. Both looks replace the key: the first because
+        // the key is dated later than "now", the second because the new key looks years old. The key
+        // that was in use until that hour is now dated years back, and must not be removed for that:
+        // a first message sealed for it this morning may still be on its way.
+        val directory = Directory()
+        val phone = Phone(directory)
+        phone.now += 3000 * DAY
+        val keys = phone.start()
+        sync(keys)
+        val inUse = directory.signedPrekey
+        val early = firstMessage(directory)
+        val rightTime = phone.now
+
+        phone.now = rightTime - 2000 * DAY
+        sync(keys)
+        assertEquals(1, directory.replacements)
+        phone.now = rightTime + HOUR
+        sync(keys)
+        assertEquals(2, directory.replacements)
+        for (app in listOf(keys, phone.start())) {
+            assertNotNull(held(app, inUse))
+            assertTrue(opens(app, early))
+        }
+
+        // Nor a week later, at the next replacement. It goes when the key replaced after it has had its month.
+        phone.now += WEEK
+        sync(keys)
+        assertEquals(3, directory.replacements)
+        assertTrue(opens(phone.start(), early))
+        phone.now = rightTime + HOUR + MONTH
+        sync(keys)
+        assertEquals(4, directory.replacements)
+        assertNull(held(phone.start(), inUse))
     }
 
     @Test
@@ -1225,6 +1270,36 @@ class E2eeKeysTest {
             assertNotNull(held(app, encodeBase64(other.public)))
             assertNotNull(held(app, listed))
             assertNotNull(held(app, directory.signedPrekey))
+        }
+    }
+
+    @Test
+    fun aSignedPrekeyOnlyTheOldRecordNamesIsNotLostWhenTheRecordIsWrittenAgain() {
+        // The same disagreement between the two entries, and then the one thing that writes the record
+        // without replacing a key: the phone learns that the account has moved to another phone. Both
+        // keys are on the phone afterwards, after a restart too, and when the account comes back.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val listed = directory.signedPrekey
+        val other = E2eeProtocol.generatePrekeyPair()
+        phone.vault.entries[RECORD] = recordOfTheBuildsInUse(keys.identity()!!, other)
+
+        val elsewhere = Phone(directory).start().also { it.claim() }
+        sync(elsewhere)
+        assertEquals(Outcome.Replaced, sync(phone.start()))
+        for (app in listOf(phone.start(), phone.start().also { it.claim() })) {
+            assertNotNull(held(app, encodeBase64(other.public)))
+            assertNotNull(held(app, listed))
+        }
+
+        val back = phone.start().also { it.claim() }
+        assertEquals(Outcome.Ready, sync(back))
+        for (app in listOf(back, phone.start())) {
+            assertNotNull(held(app, encodeBase64(other.public)))
+            assertNotNull(held(app, listed))
+            assertTrue(opens(app, firstMessage(directory)))
         }
     }
 
