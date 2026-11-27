@@ -1,9 +1,9 @@
 {
-  "versionCode": 85,
-  "versionName": "1.0.77",
-  "releaseTag": "nchat-v1.0.77",
-  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.77/nchat-ui-lab.apk",
+  "versionCode": 86,
+  "versionName": "1.0.78",
+  "releaseTag": "nchat-v1.0.78",
+  "apkUrl": "https://github.com/cybereagle472/NChat-kotlin/releases/download/nchat-v1.0.78/nchat-ui-lab.apk",
   "apkUrls": [],
   "signingCertSha256": "429c0bb9664496faaa275638852d4e6b366bfb203c4e5c6d6b60101106e67912",
-  "releaseNotes": "NChat 1.0.77 makes reactions and live updates more reliable.\n\nA reaction you add can no longer disappear because a request was repeated: the app now tells the server exactly the state you tapped, and the server keeps it — the same for removing one.\n\nBehind the scenes, a live update (a new message, a read tick, a group event) can no longer fail a save that already succeeded. What you see stays in step with what is stored.\n\nNo changes to how messages, photos, voice notes and calls work. Package identity and the verified signing key are unchanged."
+  "releaseNotes": "NChat 1.0.78 brings end-to-end encryption.\n\nWhat you send is sealed on your phone and opened only on the phone of the person, or the members of the group, you send it to: texts, photos, videos, voice messages, documents and locations. The server keeps it without being able to read it. A lock beside a message shows that it was sealed.\n\nA chat is encrypted once both people have this version; a group, once every member has it. From then on, anything in that chat that was not sealed is marked \"Not encrypted\". Statuses, profile pictures, group names and reactions are not encrypted.\n\nSecurity code: in a chat with one person, open the menu at the top right and tap \"Encryption\". The two of you can compare the number, or scan each other's code, to be sure nobody sits in between. If a contact's code changes, the chat tells you.\n\nOne phone per account: signing in on another phone signs the first one out.\n\n\"Log Out\" keeps your messages on this phone for the next time you sign in with the same account. \"Log out and erase\" removes them. Your keys never leave the phone, so before you erase or change phones, save a backup under a passphrase of your own: Settings, then \"Chat backup\". Know your password before you log out: it cannot be reset yet.\n\nBehind the scenes, the key that begins new conversations is replaced every week, and videos and voice messages are made smaller before they are sent. The app itself is about a quarter smaller.\n\nPackage identity and the verified signing key are unchanged."
 }
