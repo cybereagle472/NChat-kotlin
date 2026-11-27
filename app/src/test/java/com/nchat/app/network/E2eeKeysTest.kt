@@ -15,15 +15,32 @@ import java.io.IOException
 
 /**
  * One account, the server's key directory, and one or two phones signed in
- * to it: who registers, who stands down, and what must be on the phone
- * before the server hears about it.
+ * to it: who registers, who stands down, what must be on the phone before
+ * the server hears about it — and the signed prekey being replaced week by
+ * week without any of that changing.
  */
 class E2eeKeysTest {
+
+    private companion object {
+        const val DAY = 24L * 60L * 60L * 1000L
+        const val WEEK = 7L * DAY
+        const val MONTH = 30L * DAY
+
+        /** The id the first messages of these tests are sealed for; which one does not matter. */
+        val MESSAGE = "c-first".toByteArray()
+
+        /** Where the signed prekeys are stored, next to the record older builds know. */
+        const val SIGNED_PREKEYS = "e2ee.spk"
+        const val RECORD = "e2ee.keys"
+    }
 
     private class MemoryVault : SecretVault {
         val entries = LinkedHashMap<String, String>()
         var writes = 0
         var failReads = false
+
+        /** The write with this number, counted from the first one ever, is cut off: it changes nothing and fails. */
+        var cutOffWrite = 0
 
         @Synchronized
         override fun read(key: String): String? {
@@ -38,13 +55,18 @@ class E2eeKeysTest {
         override fun write(key: String, value: String?, durable: Boolean) {
             assertTrue("key material must be on stable storage before it is used", durable)
             writes++
+            if (writes == cutOffWrite) throw IOException("the write was cut off")
             if (value == null) entries.remove(key) else entries[key] = value
         }
     }
 
     private class Refused : Exception("the server said no")
 
-    /** The server: one identity key and one pool of one-time prekeys for the account. */
+    /**
+     * The server: one identity key, one signed prekey and one pool of
+     * one-time prekeys for the account. Like the real one, it takes a signed
+     * prekey only with the signature of the identity key it comes with.
+     */
     private class Directory : KeyDirectory {
         var identityKey: String? = null
         var signedPrekey: String? = null
@@ -55,11 +77,29 @@ class E2eeKeysTest {
         var uploads = 0
         var failure: Exception? = null
 
+        /** Requests to replace the signed prekey, and how many of them the server carried out. */
+        var replacementRequests = 0
+        var replacements = 0
+
+        /** A server from before this app: it has no way to replace a signed prekey. */
+        var cannotReplace = false
+
         /** Runs just before an upload is stored — the moment to check what the phone has saved. */
         var beforeUpload: (List<String>) -> Unit = {}
 
         /** Runs while a status request is in flight. */
         var duringStatus: () -> Unit = {}
+
+        /** Runs when a replacement arrives, before the server has looked at it; it is given the new public key. */
+        var beforeReplacement: (String) -> Unit = {}
+
+        /** Runs when the server has stored a replacement and the phone has not heard yet. */
+        var afterReplacement: () -> Unit = {}
+
+        private fun verified(identityKey: String, signedPrekey: String, signature: String) {
+            val verifies = E2eeProtocol.verifyPrekeySignature(decodeBase64(signedPrekey)!!, decodeBase64(signature)!!, decodeBase64(identityKey)!!)
+            if (!verifies) throw Refused()
+        }
 
         override suspend fun status(): KeyDirectory.Status {
             failure?.let { throw it }
@@ -70,11 +110,27 @@ class E2eeKeysTest {
 
         override suspend fun register(identityKey: String, signedPrekey: String, signature: String) {
             failure?.let { throw it }
+            verified(identityKey, signedPrekey, signature)
             registrations++
             if (identityKey != this.identityKey) pool.clear()
             this.identityKey = identityKey
             this.signedPrekey = signedPrekey
             this.signature = signature
+        }
+
+        override suspend fun replaceSignedPrekey(identityKey: String, signedPrekey: String, signature: String): KeyDirectory.Replacement {
+            failure?.let { throw it }
+            replacementRequests++
+            beforeReplacement(signedPrekey)
+            if (cannotReplace) return KeyDirectory.Replacement.Unavailable
+            verified(identityKey, signedPrekey, signature)
+            // Only for the identity key that is registered: it never moves an account.
+            if (identityKey != this.identityKey) return KeyDirectory.Replacement.Refused
+            this.signedPrekey = signedPrekey
+            this.signature = signature
+            replacements++
+            afterReplacement()
+            return KeyDirectory.Replacement.Done
         }
 
         override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>): Boolean {
@@ -102,6 +158,53 @@ class E2eeKeysTest {
 
     private fun identityKey(keys: E2eeKeys): String? = keys.identity()?.let { encodeBase64(it.identityPublic) }
 
+    /** The signed prekey with this public half (base64), as far as [keys] still holds it. */
+    private fun held(keys: E2eeKeys, publicKey: String?): E2eeProtocol.PrekeyPair? =
+        keys.signedPrekey(E2eeProtocol.keyReference(decodeBase64(publicKey!!)!!))
+
+    /**
+     * A first message from somebody who has just been handed the account's
+     * keys by [directory] — without a one-time prekey, so the signed prekey
+     * is all that stands between the message and whoever recorded it.
+     * Making it fails when the signed prekey does not carry the signature of
+     * the identity key: no app would seal for such keys.
+     */
+    private fun firstMessage(directory: Directory): E2eeProtocol.Envelope {
+        val bundle = E2eeProtocol.PeerBundle(
+            identityPublic = decodeBase64(directory.identityKey!!)!!,
+            signedPrekeyPublic = decodeBase64(directory.signedPrekey!!)!!,
+            signedPrekeySignature = decodeBase64(directory.signature!!)!!,
+            oneTimePrekeyPublic = null,
+        )
+        val session = E2eeProtocol.initiate(E2eeProtocol.generateIdentity(), bundle, "stranger", "me")
+        return E2eeProtocol.seal(session, "hello".toByteArray(), MESSAGE)
+    }
+
+    /** Whether the phone opens [message]: it has to hold the signed prekey the message names, and be the account's phone. */
+    private fun opens(keys: E2eeKeys, message: E2eeProtocol.Envelope): Boolean {
+        val identity = keys.identity() ?: return false
+        val prekey = keys.signedPrekey(message.spk!!) ?: return false
+        return E2eeProtocol.openFirst(identity, prekey, null, message, "me", "stranger", MESSAGE) != null
+    }
+
+    /** The record as the builds in use write it: a flag and five fields, and nothing about when the signed prekey was made. */
+    private fun recordOfTheBuildsInUse(
+        identity: E2eeProtocol.IdentityKeyPair,
+        prekey: E2eeProtocol.PrekeyPair,
+        signature: ByteArray = E2eeProtocol.signPrekey(prekey.public, identity.identityPrivate),
+        registered: Boolean = true,
+    ): String = (if (registered) "1" else "0") +
+        listOf(identity.identityPrivate, identity.identityPublic, prekey.private, prekey.public, signature).joinToString("") { "." + encodeBase64(it) }
+
+    private fun fails(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (expected: IOException) {
+            return
+        }
+        fail(what)
+    }
+
     // ---------------------------------------------------------- first sync
 
     @Test
@@ -125,7 +228,7 @@ class E2eeKeysTest {
         assertEquals(50, checked)
         assertEquals(50, directory.pool.toSet().size)
         assertEquals(directory.identityKey, identityKey(keys))
-        assertEquals(directory.signedPrekey, encodeBase64(keys.signedPrekey()!!.public))
+        assertNotNull("the phone holds the signed prekey the server was given", held(keys, directory.signedPrekey))
 
         // What the directory now serves is a bundle a stranger can start a session with —
         // which proves the signature — and that this phone can answer.
@@ -140,14 +243,14 @@ class E2eeKeysTest {
         val id = "c-1".toByteArray()
         val envelope = E2eeProtocol.seal(session, "hello".toByteArray(), id)
         val opened = E2eeProtocol.openFirst(
-            keys.identity()!!, keys.signedPrekey()!!, phone.store.oneTimeKey(envelope.otk!!), envelope, "me", "stranger", id,
+            keys.identity()!!, keys.signedPrekey(envelope.spk!!)!!, phone.store.oneTimeKey(envelope.otk!!), envelope, "me", "stranger", id,
         )
         assertEquals("hello", opened?.plaintext?.let { String(it) })
 
         // Private keys stay on the phone: nothing the server holds contains them.
         val served = listOfNotNull(directory.identityKey, directory.signedPrekey, directory.signature) + directory.pool
         assertFalse(served.contains(encodeBase64(keys.identity()!!.identityPrivate)))
-        assertFalse(served.contains(encodeBase64(keys.signedPrekey()!!.private)))
+        assertFalse(served.contains(encodeBase64(held(keys, directory.signedPrekey)!!.private)))
     }
 
     @Test
@@ -466,6 +569,7 @@ class E2eeKeysTest {
         directory.pool.clear()
 
         keys.close()
+        phone.now += WEEK // …and its signed prekey has come due meanwhile: that changes nothing either
         val entries = LinkedHashMap(phone.vault.entries)
         val asked = directory.statusRequests
         for (attempt in listOf<() -> Unit>({ sync(keys) }, { keys.claim() })) {
@@ -477,6 +581,7 @@ class E2eeKeysTest {
         }
         assertEquals(entries, phone.vault.entries)
         assertEquals("a closed object does not even ask", asked, directory.statusRequests)
+        assertEquals(0, directory.replacementRequests)
         assertEquals(0, phone.replaced)
         assertTrue(directory.pool.isEmpty())
 
@@ -504,6 +609,591 @@ class E2eeKeysTest {
             // intended
         }
         assertEquals(owner, directory.identityKey)
+    }
+
+    // ------------------------------------------ replacing the signed prekey
+
+    @Test
+    fun theSignedPrekeyIsReplacedOnceItIsAWeekOld() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val identity = directory.identityKey
+        val first = directory.signedPrekey
+        val pool = ArrayList(directory.pool)
+        val early = firstMessage(directory)
+
+        // Not before its time, however often the phone looks.
+        phone.now += WEEK - 1
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(0, directory.replacementRequests)
+        assertEquals(first, directory.signedPrekey)
+
+        phone.now += 1
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(1, directory.replacements)
+        assertNotEquals(first, directory.signedPrekey)
+        // Nothing else moved: the same identity key, the same one-time prekeys — and no registration, which
+        // is the request that takes an account over.
+        assertEquals(identity, directory.identityKey)
+        assertEquals(identity, identityKey(keys))
+        assertEquals(pool, directory.pool)
+        assertEquals(1, directory.registrations)
+        assertEquals(0, phone.replaced)
+
+        // What the server hands out now carries the identity key's signature, and this phone opens what is
+        // sealed with it; what was sealed for the one before opens as well. After a restart too.
+        val late = firstMessage(directory)
+        for (app in listOf(keys, phone.start())) {
+            assertTrue(opens(app, late))
+            assertTrue("the one before is kept for what is still on its way", opens(app, early))
+        }
+        // The private half stays here.
+        val served = listOfNotNull(directory.identityKey, directory.signedPrekey, directory.signature) + directory.pool
+        assertFalse(served.contains(encodeBase64(held(keys, directory.signedPrekey)!!.private)))
+
+        // Once is enough until another week has gone by.
+        val restarted = phone.start()
+        phone.now += WEEK - 1
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(1, directory.replacementRequests)
+        phone.now += 1
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(2, directory.replacements)
+        assertEquals(1, directory.registrations)
+    }
+
+    @Test
+    fun theNewSignedPrekeyIsOnThePhoneBeforeTheServerHearsOfIt() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        phone.now += WEEK
+
+        // From the moment the server has it, senders are handed it. So at the moment the request arrives,
+        // the phone must already open what is sealed with it — this process, and one that starts right now.
+        var checked = 0
+        directory.beforeReplacement = { publicKey ->
+            assertNotNull("in use before the server was told", held(keys, publicKey))
+            assertNotNull("on stable storage before the server was told", held(phone.start(), publicKey))
+            checked++
+        }
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(1, checked)
+    }
+
+    @Test
+    fun aReplacementTheServerNeverHeardOfIsSentAgainNotMadeAgain() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val first = directory.signedPrekey
+        val early = firstMessage(directory)
+        phone.now += WEEK
+
+        var offered: String? = null
+        directory.beforeReplacement = {
+            offered = it
+            throw IOException("the connection was lost on the way")
+        }
+        fails("a replacement that did not happen must be reported") { sync(keys) }
+        assertEquals(first, directory.signedPrekey)
+        assertTrue("nothing was given up for it", opens(keys, firstMessage(directory)))
+
+        // The app is killed. The next start offers that same key: a new one for every attempt would leave
+        // the phone holding keys the server never handed out.
+        var again: String? = null
+        directory.beforeReplacement = { again = it }
+        val restarted = phone.start()
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(offered, again)
+        assertEquals(offered, directory.signedPrekey)
+        assertEquals(1, directory.replacements)
+        assertTrue(opens(restarted, firstMessage(directory)))
+        assertTrue(opens(restarted, early))
+    }
+
+    @Test
+    fun aReplacementWhoseAnswerWasLostIsAlreadyInUse() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val first = directory.signedPrekey
+        val early = firstMessage(directory)
+        phone.now += WEEK
+
+        // The server stores the new key; the phone never hears.
+        directory.afterReplacement = { throw IOException("the answer was lost") }
+        fails("an answer that never came must be reported") { sync(keys) }
+        val second = directory.signedPrekey
+        assertNotEquals(first, second)
+
+        // Senders are handed the new key from that moment. The phone opens what they seal with it, at once
+        // and after a restart, as well as what was sealed for the one before.
+        val sealedForTheNew = firstMessage(directory)
+        for (app in listOf(keys, phone.start())) {
+            assertTrue(opens(app, sealedForTheNew))
+            assertTrue(opens(app, early))
+        }
+
+        // The next look finishes the job with the same key, and then there is nothing left to do.
+        directory.afterReplacement = {}
+        val restarted = phone.start()
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(second, directory.signedPrekey)
+        assertEquals(2, directory.replacementRequests)
+        assertEquals(Outcome.Ready, sync(restarted))
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(2, directory.replacementRequests)
+        assertTrue(opens(restarted, sealedForTheNew))
+        assertTrue(opens(restarted, early))
+    }
+
+    @Test
+    fun whicheverWriteIsCutOffTheReplacementEndsWhole() {
+        // The phone writes several times while it replaces the key. Each write in turn is cut off — the
+        // battery dies, storage is full — and each time what is left must open everything, and the next
+        // look must finish what was begun.
+        var cutOff = 1
+        while (true) {
+            val directory = Directory()
+            val phone = Phone(directory)
+            val keys = phone.start()
+            sync(keys)
+            val identity = directory.identityKey
+            val early = firstMessage(directory)
+            phone.now += WEEK
+            val offered = LinkedHashSet<String>()
+            directory.beforeReplacement = { offered += it }
+
+            phone.vault.cutOffWrite = phone.vault.writes + cutOff
+            val interrupted = try {
+                sync(keys)
+                false
+            } catch (expected: IOException) {
+                true
+            }
+            phone.vault.cutOffWrite = 0
+            if (!interrupted) break // the replacement has fewer writes than that: every one has had its turn
+
+            // The process that was interrupted, and the one that starts after the phone came back.
+            for (app in listOf(keys, phone.start())) {
+                assertEquals("write $cutOff", identity, identityKey(app))
+                assertTrue("write $cutOff: what the server hands out", opens(app, firstMessage(directory)))
+                assertTrue("write $cutOff: what was sealed before", opens(app, early))
+            }
+            val restarted = phone.start()
+            assertEquals(Outcome.Ready, sync(restarted))
+            assertEquals("write $cutOff: one new key reached the server, however often it took", 1, offered.size)
+            assertEquals("write $cutOff", offered.single(), directory.signedPrekey)
+            assertNotEquals("write $cutOff", early.spk, firstMessage(directory).spk)
+            for (app in listOf(restarted, phone.start())) {
+                assertTrue("write $cutOff, finished: what the server hands out", opens(app, firstMessage(directory)))
+                assertTrue("write $cutOff, finished: what was sealed before", opens(app, early))
+            }
+            assertEquals(identity, directory.identityKey)
+            assertEquals(1, directory.registrations)
+            assertEquals(0, phone.replaced)
+            // Settled: looking again asks for nothing.
+            val requests = directory.replacementRequests
+            assertEquals(Outcome.Ready, sync(phone.start()))
+            assertEquals("write $cutOff", requests, directory.replacementRequests)
+            cutOff++
+        }
+        assertTrue("a replacement is more than one write, or this test has tested nothing", cutOff > 2)
+    }
+
+    @Test
+    fun aReplacedSignedPrekeyIsKeptForAMonthAndThenRemovedFromThePhone() {
+        // Two phones. Each replaces its first key after a week; the next replacement comes one millisecond
+        // before the month is up on the one, and exactly when it is up on the other.
+        for (beforeTheMonthIsUp in listOf(1L, 0L)) {
+            val directory = Directory()
+            val phone = Phone(directory)
+            val keys = phone.start()
+            sync(keys)
+            val first = directory.signedPrekey
+            val firstPrivate = encodeBase64(held(keys, first)!!.private)
+            val early = firstMessage(directory)
+            fun stored() = phone.vault.entries.values.any { it.contains(firstPrivate) }
+
+            phone.now += WEEK
+            sync(keys)
+            val second = directory.signedPrekey
+            assertNotEquals(first, second)
+            val replacedAt = phone.now
+            assertTrue(stored())
+
+            phone.now = replacedAt + MONTH - beforeTheMonthIsUp
+            sync(keys)
+            assertEquals(2, directory.replacements)
+            if (beforeTheMonthIsUp > 0) {
+                for (app in listOf(keys, phone.start())) assertTrue("a moment short of the month it still opens", opens(app, early))
+                assertTrue(stored())
+                // The replacement after that one finds the month over.
+                phone.now += WEEK
+                sync(keys)
+                assertEquals(3, directory.replacements)
+            }
+            for (app in listOf(keys, phone.start())) {
+                assertNull("the month is over", held(app, first))
+                assertFalse(opens(app, early))
+            }
+            assertFalse("removed from storage, not merely passed over", stored())
+            // Only that one: the key replaced after it has its own month, and what the server hands out opens.
+            assertNotNull(held(phone.start(), second))
+            assertTrue(opens(phone.start(), firstMessage(directory)))
+        }
+    }
+
+    @Test
+    fun noMoreThanADozenReplacedSignedPrekeysAreKept() {
+        // A clock that keeps being set back makes for a replacement at every look. The phone must not
+        // pile up keys for it: the one in use and the twelve replaced last, and no more.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val served = arrayListOf(directory.signedPrekey!!)
+        val privateHalves = arrayListOf(encodeBase64(held(keys, directory.signedPrekey)!!.private))
+        repeat(20) {
+            phone.now -= 1_000
+            sync(keys)
+            served += directory.signedPrekey!!
+            privateHalves += encodeBase64(held(keys, directory.signedPrekey)!!.private)
+        }
+        assertEquals(21, served.toSet().size)
+        for (app in listOf(keys, phone.start())) {
+            assertEquals(served.takeLast(13), served.filter { held(app, it) != null })
+        }
+        assertEquals(
+            "storage holds no more than those either",
+            privateHalves.takeLast(13),
+            privateHalves.filter { half -> phone.vault.entries.values.any { it.contains(half) } },
+        )
+    }
+
+    @Test
+    fun aClockThatWasPutRightDoesNotPutTheReplacementOff() {
+        // Keys made while the phone's clock was a year ahead would otherwise count as new for a year.
+        val directory = Directory()
+        val phone = Phone(directory)
+        phone.now += 400 * DAY
+        val keys = phone.start()
+        sync(keys)
+        phone.now -= 400 * DAY
+
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(1, directory.replacements)
+        // The new one was made by the clock as it is now: a week from here.
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        phone.now += WEEK - 1
+        sync(keys)
+        assertEquals(1, directory.replacements)
+        phone.now += 1
+        sync(keys)
+        assertEquals(2, directory.replacements)
+    }
+
+    // ----------------------------- …and never taking an account while doing so
+
+    @Test
+    fun replacingTheSignedPrekeyNeverTakesTheAccountBackFromAnotherPhone() {
+        // The old phone asks, hears "the account is yours" — and before its new key arrives, the user has
+        // signed in on another phone.
+        val directory = Directory()
+        val old = Phone(directory)
+        val oldKeys = old.start()
+        sync(oldKeys)
+        val new = Phone(directory)
+        val newKeys = new.start()
+        old.now += WEEK
+
+        var theirs: String? = null
+        directory.beforeReplacement = {
+            directory.beforeReplacement = {}
+            newKeys.claim()
+            sync(newKeys)
+            theirs = directory.signedPrekey
+        }
+        assertEquals(Outcome.Replaced, sync(oldKeys))
+        assertEquals(1, old.replaced)
+        assertNull(oldKeys.identity())
+        assertNull("…and it stays down after a restart, before any network", old.start().identity())
+
+        // The other phone has the account with the keys it registered: nothing of them was touched.
+        assertEquals(identityKey(newKeys), directory.identityKey)
+        assertEquals(theirs, directory.signedPrekey)
+        assertEquals("the old phone registered nothing", 2, directory.registrations)
+        assertEquals(0, directory.replacements)
+        assertEquals(50, directory.pool.size)
+        assertTrue(opens(newKeys, firstMessage(directory)))
+        assertEquals(Outcome.Ready, sync(new.start()))
+        assertEquals(0, new.replaced)
+
+        // Signing in on the old phone again is what brings the account back — with the key it had ready.
+        val back = old.start().also { it.claim() }
+        assertEquals(Outcome.Ready, sync(back))
+        assertEquals(identityKey(back), directory.identityKey)
+        assertTrue(opens(back, firstMessage(directory)))
+    }
+
+    @Test
+    fun aRefusedReplacementIsNotTakenForAnotherPhoneWhenTheDirectoryIsMerelyEmpty() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val identity = directory.identityKey
+        phone.now += WEEK
+
+        // The server lost the account's keys between the phone's question and its request.
+        directory.beforeReplacement = {
+            directory.beforeReplacement = {}
+            directory.identityKey = null
+            directory.pool.clear()
+        }
+        fails("a look that did not end in agreement must be reported, so that it is repeated") { sync(keys) }
+        assertEquals("nobody took the account: this phone is not signed out for it", 0, phone.replaced)
+        assertNull(directory.identityKey)
+
+        // The next look puts the same keys back and finishes the replacement.
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(identity, directory.identityKey)
+        assertEquals(50, directory.pool.size)
+        assertEquals(1, directory.replacements)
+        assertTrue(opens(keys, firstMessage(directory)))
+        assertEquals(0, phone.replaced)
+    }
+
+    @Test
+    fun aPhoneThatLostTheAccountReplacesNothing() {
+        val directory = Directory()
+        val old = Phone(directory)
+        sync(old.start())
+        Phone(directory).start().also { it.claim() }.let(::sync)
+        val served = directory.signedPrekey
+
+        old.now += 2 * WEEK
+        assertEquals(Outcome.Replaced, sync(old.start()))
+        assertEquals(0, directory.replacementRequests)
+        assertEquals(served, directory.signedPrekey)
+    }
+
+    @Test
+    fun aServerThatCannotReplaceSignedPrekeysIsLeftAsItIs() {
+        // An app newer than its server. The one thing it must not do is fall back on a registration.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        val first = directory.signedPrekey
+        directory.cannotReplace = true
+        phone.now += WEEK
+
+        var offered: String? = null
+        directory.beforeReplacement = { offered = it }
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(first, directory.signedPrekey)
+        assertEquals(1, directory.registrations)
+        assertEquals(0, phone.replaced)
+        assertTrue(opens(keys, firstMessage(directory)))
+
+        // It asks again the next time it looks, with the same key, and gets its way once the server knows how.
+        var again: String? = null
+        directory.beforeReplacement = { again = it }
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(2, directory.replacementRequests)
+        assertEquals(offered, again)
+        directory.cannotReplace = false
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(offered, directory.signedPrekey)
+        assertEquals(1, directory.registrations)
+    }
+
+    @Test
+    fun whatTheServersRefusalOfAReplacementMeans() {
+        assertEquals(KeyDirectory.Replacement.Refused, KeyDirectory.Replacement.ofRefusal(409))
+        // "Not found" is the answer of a server that has no such route yet.
+        assertEquals(KeyDirectory.Replacement.Unavailable, KeyDirectory.Replacement.ofRefusal(404))
+        // Everything else stays an error: reported, tried again, and never taken for an answer.
+        for (status in listOf(400, 401, 403, 405, 408, 410, 413, 429, 500, 501, 502, 503)) {
+            assertNull("$status", KeyDirectory.Replacement.ofRefusal(status))
+        }
+    }
+
+    @Test
+    fun aReplacementThatFailsDoesNotHoldUpTheOneTimePrekeys() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        repeat(40) { directory.pool.removeAt(0) }
+        phone.now += WEEK
+
+        directory.beforeReplacement = { throw IOException("the connection was lost") }
+        fails("a replacement that did not happen must be reported") { sync(keys) }
+        assertEquals("the pool was topped up all the same", 50, directory.pool.size)
+    }
+
+    @Test
+    fun aReplacementUnderWayWhenTheUserLogsOutWritesNothingAfterwards() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        phone.now += WEEK
+
+        // The request is at the server when the user logs out.
+        var left: Map<String, String>? = null
+        directory.afterReplacement = {
+            keys.close()
+            left = LinkedHashMap(phone.vault.entries)
+        }
+        try {
+            sync(keys)
+            fail("a look that outlives the log-out must stop")
+        } catch (expected: IllegalStateException) {
+            // intended
+        }
+        assertEquals("nothing was written once the user had logged out", left, phone.vault.entries)
+
+        // Logging out keeps what the phone holds. Signing in again finds the key the server now hands
+        // out, and finishes what was begun.
+        directory.afterReplacement = {}
+        val back = phone.start().also { it.claim() }
+        assertTrue(opens(back, firstMessage(directory)))
+        val served = directory.signedPrekey
+        assertEquals(Outcome.Ready, sync(back))
+        assertEquals(served, directory.signedPrekey)
+        assertEquals(1, directory.registrations)
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(2, directory.replacementRequests)
+    }
+
+    // ------------------------------------------- what builds before this left
+
+    @Test
+    fun keysOfABuildThatNeverReplacedThemAreKeptAndTheSignedPrekeyIsReplacedAtOnce() {
+        // What a phone holds that has run only the builds in use so far: the record, and no word about
+        // when its signed prekey was made.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val identity = E2eeProtocol.generateIdentity()
+        val prekey = E2eeProtocol.generatePrekeyPair()
+        val signature = E2eeProtocol.signPrekey(prekey.public, identity.identityPrivate)
+        phone.vault.entries[RECORD] = recordOfTheBuildsInUse(identity, prekey, signature)
+        directory.identityKey = encodeBase64(identity.identityPublic)
+        directory.signedPrekey = encodeBase64(prekey.public)
+        directory.signature = encodeBase64(signature)
+        repeat(50) { directory.pool += encodeBase64(E2eeProtocol.generateOneTimePrekey().public) }
+        val pool = ArrayList(directory.pool)
+        val early = firstMessage(directory)
+
+        // The update is installed and the app starts: before any network, the keys are there and in use.
+        val keys = phone.start()
+        assertEquals(directory.identityKey, identityKey(keys))
+        assertTrue(opens(keys, early))
+
+        // How old that signed prekey is, nobody wrote down. It is replaced the first time the phone looks.
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(1, directory.replacements)
+        assertNotEquals(encodeBase64(prekey.public), directory.signedPrekey)
+        assertEquals("contacts see the identity key they know", encodeBase64(identity.identityPublic), directory.identityKey)
+        assertEquals(0, directory.registrations)
+        assertEquals(pool, directory.pool)
+        assertEquals(0, phone.replaced)
+        for (app in listOf(keys, phone.start())) {
+            assertTrue(opens(app, firstMessage(directory)))
+            assertTrue("what was sealed for the old one still opens", opens(app, early))
+        }
+
+        // From here on it is a week like any other.
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(1, directory.replacementRequests)
+        phone.now += WEEK
+        assertEquals(Outcome.Ready, sync(phone.start()))
+        assertEquals(2, directory.replacements)
+    }
+
+    @Test
+    fun theRecordOlderBuildsReadIsStillWrittenAndNamesTheSignedPrekeyTheServerHandsOut() {
+        // An older build installed over this one reads that record and nothing else. It has to find the
+        // identity key in it, and the signed prekey senders are handed now.
+        val directory = Directory()
+        val phone = Phone(directory)
+        val keys = phone.start()
+        sync(keys)
+        fun whatAnOlderBuildExpects(): String = recordOfTheBuildsInUse(
+            keys.identity()!!, held(keys, directory.signedPrekey)!!, decodeBase64(directory.signature!!)!!,
+        )
+        assertEquals(whatAnOlderBuildExpects(), phone.vault.entries[RECORD])
+
+        phone.now += WEEK
+        sync(keys)
+        assertEquals(1, directory.replacements)
+        assertEquals(whatAnOlderBuildExpects(), phone.vault.entries[RECORD])
+    }
+
+    @Test
+    fun signedPrekeysStoredForAnotherIdentityKeyAreNotUsed() {
+        // An older build ran in between, found the record damaged and made new keys. What this build had
+        // stored about signed prekeys belongs to the identity key that is gone.
+        val directory = Directory()
+        val phone = Phone(directory)
+        sync(phone.start())
+        phone.now += WEEK
+        sync(phone.start())
+        val stale = phone.vault.entries[SIGNED_PREKEYS]!!
+        val strangers = directory.signedPrekey
+
+        val identity = E2eeProtocol.generateIdentity()
+        val prekey = E2eeProtocol.generatePrekeyPair()
+        phone.vault.entries[RECORD] = recordOfTheBuildsInUse(identity, prekey, registered = false)
+        assertEquals(stale, phone.vault.entries[SIGNED_PREKEYS])
+
+        val keys = phone.start().also { it.claim() }
+        assertNull("a key signed by another identity key is none of this phone's", held(keys, strangers))
+        // The server takes a signed prekey only with the signature of the identity key it comes with: one
+        // left over from the old identity would be refused, and this phone could never register.
+        assertEquals(Outcome.Ready, sync(keys))
+        assertEquals(encodeBase64(identity.identityPublic), directory.identityKey)
+        assertTrue(opens(keys, firstMessage(directory)))
+        assertNotNull("the signed prekey of the record is kept", held(keys, encodeBase64(prekey.public)))
+    }
+
+    @Test
+    fun aDamagedListOfSignedPrekeysCostsTheReplacedOnesAndNothingElse() {
+        val directory = Directory()
+        val phone = Phone(directory)
+        sync(phone.start())
+        phone.now += WEEK
+        sync(phone.start())
+        val identity = directory.identityKey
+        val whole = phone.vault.entries[SIGNED_PREKEYS]!!
+
+        for (damaged in listOf("", "{}", "not json", "[]", whole.dropLast(9), whole.replaceFirst("\"v\":1", "\"v\":99"))) {
+            assertNotEquals(whole, damaged)
+            phone.vault.entries[SIGNED_PREKEYS] = damaged
+            val keys = phone.start()
+            assertEquals(identity, identityKey(keys))
+            assertTrue("it opens what is sealed for the key the server hands out", opens(keys, firstMessage(directory)))
+            // Nothing says how old that key is any more: it is replaced, and the list is whole again.
+            val replacements = directory.replacements
+            assertEquals(Outcome.Ready, sync(keys))
+            assertEquals(replacements + 1, directory.replacements)
+            assertEquals(identity, directory.identityKey)
+            assertEquals(1, directory.registrations)
+            assertEquals(0, phone.replaced)
+            assertTrue(opens(phone.start(), firstMessage(directory)))
+            assertEquals(Outcome.Ready, sync(phone.start()))
+            assertEquals(replacements + 1, directory.replacements)
+        }
     }
 
     // ------------------------------------------------------------- storage
@@ -538,12 +1228,14 @@ class E2eeKeysTest {
         val phone = Phone(directory)
         sync(phone.start())
         val identity = directory.identityKey
+        val served = E2eeProtocol.keyReference(decodeBase64(directory.signedPrekey!!)!!)
+        assertNotNull(phone.start().signedPrekey(served))
 
         for (damaged in listOf("", "1.only.three.fields", "1.!!.!!.!!.!!.!!", "7" + phone.vault.entries["e2ee.keys"]!!.drop(1))) {
             phone.vault.entries["e2ee.keys"] = damaged
             val keys = phone.start()
             assertNull(keys.identity())
-            assertNull(keys.signedPrekey())
+            assertNull("without its identity key a signed prekey opens nothing, and is not handed out", keys.signedPrekey(served))
             // New keys are not the registered ones, and no sign-in backs them: this phone stands down.
             assertEquals(Outcome.Replaced, sync(keys))
             assertEquals(identity, directory.identityKey)

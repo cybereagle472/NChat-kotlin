@@ -634,4 +634,32 @@ class E2eeProtocolTest {
         val hex = okm.joinToString("") { "%02x".format(it.toInt() and 0xff) }
         assertEquals("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865", hex)
     }
+
+    // ------------------------------------- the signed prekey, once it was used
+
+    private fun contains(haystack: ByteArray, needle: ByteArray): Boolean =
+        (0..haystack.size - needle.size).any { at -> needle.indices.all { haystack[at + it] == needle[it] } }
+
+    @Test
+    fun aSessionKeepsNothingOfTheSignedPrekeyItBeganWith() {
+        // A phone replaces its signed prekey every week and deletes the old one a month later. Deleting
+        // it means something only if no session goes on carrying its private half.
+        val alice = Party("alice")
+        val bob = Party("bob")
+        val aliceSession = E2eeProtocol.initiate(alice.identity, bob.bundle(withOneTimeKey = false), alice.id, bob.id)
+        val accepted = E2eeProtocol.openFirst(bob.identity, bob.prekey, null, say(aliceSession, "hello"), bob.id, alice.id, messageId)!!
+        val stored = accepted.session.serialize()
+        assertFalse("the stored session holds the private half of the signed prekey", contains(stored, bob.prekey.private))
+        // The search finds what is there: the ratchet key that took its place.
+        assertTrue(contains(stored, accepted.session.ourRatchetPrivate))
+        assertFalse(accepted.session.ourRatchetPrivate.contentEquals(bob.prekey.private))
+
+        // And the conversation does without it: both directions, and from storage.
+        var bobSession = E2eeProtocol.deserialize(stored)!!
+        assertEquals("more", hear(bobSession, say(aliceSession, "more")))
+        assertEquals("reply", hear(aliceSession, say(bobSession, "reply")))
+        bobSession = E2eeProtocol.deserialize(bobSession.serialize())!!
+        assertEquals("again", hear(bobSession, say(aliceSession, "again")))
+        assertFalse(contains(bobSession.serialize(), bob.prekey.private))
+    }
 }

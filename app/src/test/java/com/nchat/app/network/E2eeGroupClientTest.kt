@@ -88,7 +88,7 @@ class E2eeGroupClientTest {
             store = store,
             archive = E2eeArchive(archiveDirectory, archiveKey),
             identity = { identity },
-            signedPrekey = { prekey },
+            signedPrekey = { reference -> prekey.takeIf { E2eeProtocol.keyReference(it.public) == reference } },
             fetchBundle = { hub.bundle(it) },
             clock = { now },
             maxChainMessages = chainMessages,

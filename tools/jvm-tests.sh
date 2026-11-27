@@ -56,6 +56,7 @@ APP_TESTS=(
   feature/chats/EncryptionMarksTest feature/chats/ChatPreviewTest core/util/VideoPlanTest
   feature/chats/ConversationTimelineTest
   feature/settings/BackupTextTest feature/settings/LogOutTextTest
+  contract/KeyRoutesTest
 )
 
 mkdir -p "$TOOLS"
