@@ -76,6 +76,14 @@ class AccountOnPhoneTest {
                 }
             }
 
+            override suspend fun replaceSignedPrekey(identityKey: String, signedPrekey: String, signature: String): KeyDirectory.Replacement {
+                val known = accounts[userId()]
+                if (known == null || known.identityKey != identityKey) return KeyDirectory.Replacement.Refused
+                known.signedPrekey = signedPrekey
+                known.signature = signature
+                return KeyDirectory.Replacement.Done
+            }
+
             override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>): Boolean {
                 val known = accounts[userId()] ?: return false
                 if (known.identityKey != identityKey) return false

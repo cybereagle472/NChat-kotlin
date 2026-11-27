@@ -13,6 +13,9 @@ import { broadcastToUser } from '../lib/realtime';
  *
  * POST /keys/register  upsert identity + signed prekey (signature verified);
  *                      a NEW identity discards the old one-time prekeys
+ * POST /keys/signed-prekey  a new signed prekey (signature verified) for the
+ *                      identity that is registered — refused (409) when
+ *                      another one, or none, is: it never moves an account
  * POST /keys/prekeys   refill one-time prekeys (1..100,100-unconsumed cap),
  *                      only under the identity key that is registered
  * GET  /keys/prekeys   the caller's own unconsumed count and registered
@@ -118,6 +121,41 @@ keys.post('/register', requireAuth, limitSend, async (c) => {
     await broadcastToUser(c.env, userId, { type: 'keys:changed' });
   }
   return c.json({ ok: true });
+});
+
+// POST /keys/signed-prekey — a phone replaces its signed prekey, which the
+// app does every week, and nothing else changes.
+//
+// It is not a registration, and must never act as one. /keys/register makes
+// the sender's keys the account's, whoever held it before: right for a
+// sign-in, wrong here. The phone asked whether it is still the account's
+// phone some time ago — a moment, or the night it then slept through — and
+// the user may have signed in on another phone since. So the question is
+// asked again by the statement that writes: there is nothing to update
+// unless this identity key is the registered one, and a sign-in that lands
+// first always wins. Nobody is told anything, because nothing moved, and
+// the one-time prekeys stay as good as they were.
+keys.post('/signed-prekey', requireAuth, limitSend, async (c) => {
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+
+  const identity = decodeExact(body.identity_public_key, SPKI_BYTES);
+  const prekey = decodeExact(body.signed_prekey_public, SPKI_BYTES);
+  const signature = decodeExact(body.signed_prekey_signature, SIGNATURE_BYTES);
+  if (!identity || !prekey || !signature) {
+    return c.json({ error: 'Key material must be P-256 SPKI (91 bytes) with a 64-byte signature' }, 400);
+  }
+  if (!(await signatureMatches(identity, prekey, signature))) {
+    return c.json({ error: 'Signed prekey does not verify against the identity key' }, 400);
+  }
+
+  const replaced = await c.env.DB.prepare(
+    `UPDATE user_crypto_keys
+        SET signed_prekey_public = ?1, signed_prekey_signature = ?2, updated_at = datetime('now')
+      WHERE user_id = ?3 AND identity_public_key = ?4
+      RETURNING user_id`,
+  ).bind(body.signed_prekey_public, body.signed_prekey_signature, c.get('userId'), body.identity_public_key).first();
+  return replaced ? c.json({ ok: true }) : c.json(REPLACED, 409);
 });
 
 // POST /keys/prekeys — refill one-time prekeys; the unconsumed pool is capped

@@ -81,6 +81,33 @@ class NChatApi(private val client: ApiClient) {
     }
 
     /**
+     * Has the server hand out a new signed prekey for [identityPublicKey],
+     * which it does only while that is the account's registered identity key
+     * — unlike [registerKeys], this never makes a phone the account's.
+     * [KeyDirectory.Replacement.Refused] when another identity key, or none,
+     * is registered (409); [KeyDirectory.Replacement.Unavailable] from a
+     * server that does not have the route yet (404). Nothing changed in
+     * either case. Any other failure propagates.
+     */
+    suspend fun replaceSignedPrekey(
+        identityPublicKey: String,
+        signedPrekeyPublic: String,
+        signedPrekeySignature: String,
+    ): KeyDirectory.Replacement = try {
+        client.post(
+            "/keys/signed-prekey",
+            body {
+                put("identity_public_key", identityPublicKey)
+                put("signed_prekey_public", signedPrekeyPublic)
+                put("signed_prekey_signature", signedPrekeySignature)
+            }
+        )
+        KeyDirectory.Replacement.Done
+    } catch (error: ApiException) {
+        KeyDirectory.Replacement.ofRefusal(error.status) ?: throw error
+    }
+
+    /**
      * What it takes to start a sealed conversation with [userId]. A 404 means
      * that account has no keys (an older app), a 501 that the server has no
      * key directory at all; both read as null. Any other failure propagates:

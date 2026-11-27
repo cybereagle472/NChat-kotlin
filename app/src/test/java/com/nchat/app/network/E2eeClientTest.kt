@@ -70,7 +70,18 @@ class E2eeClientTest {
         val archiveDirectory: File = folder.root.resolve("archive-$id-$installation")
         private val archiveKey = ByteArray(32) { (id.hashCode() + it).toByte() }
         var identity: E2eeProtocol.IdentityKeyPair? = E2eeProtocol.generateIdentity()
-        val prekey: E2eeProtocol.PrekeyPair = E2eeProtocol.generatePrekeyPair()
+
+        /** The signed prekey the server hands out for this device. */
+        var prekey: E2eeProtocol.PrekeyPair = E2eeProtocol.generatePrekeyPair()
+
+        /** Every signed prekey the device holds: that one, and replaced ones it has not removed yet. */
+        val prekeys = arrayListOf(prekey)
+
+        /** The device replaces its signed prekey, and keeps the one before. */
+        fun replacePrekey() {
+            prekey = E2eeProtocol.generatePrekeyPair()
+            prekeys += prekey
+        }
 
         /** Public one-time prekeys the server still holds for this device. */
         val published = ArrayDeque<ByteArray>()
@@ -110,7 +121,7 @@ class E2eeClientTest {
                 identityLookups.incrementAndGet()
                 identity
             },
-            signedPrekey = { prekey },
+            signedPrekey = { reference -> prekeys.firstOrNull { E2eeProtocol.keyReference(it.public) == reference } },
             fetchBundle = { server.bundle(it) },
             prepare = prepare,
             clock = clock,
@@ -1295,6 +1306,57 @@ class E2eeClientTest {
         assertEquals("are you there?", a.reveal("bob", "s-fresh", "c-retry", mine = true, envelope = fresh.envelope)?.body)
         assertEquals("first", readOwn(alice.client(server), first))
         a.retireSessions("nobody-we-know")
+    }
+
+    // ------------------------------------------- a signed prekey is replaced
+
+    @Test
+    fun aFirstMessageForAReplacedSignedPrekeyOpensForAsLongAsThatKeyIsKept() {
+        val server = Server()
+        val alice = server.install("alice")
+        val bob = server.install("bob", oneTimeKeys = 9)
+        val a = alice.client(server)
+        val b = bob.client(server)
+        val c = server.install("carol").client(server)
+        val d = server.install("dave").client(server)
+        val e = server.install("erin").client(server)
+
+        // Three people write to bob for the first time, each handed the signed prekey he has now.
+        // Alice's message is read at once; Dave's and Erin's are slow to arrive.
+        assertEquals("read at once", read(b, send(a, "alice", "bob", "read at once")))
+        val fromDave = send(d, "dave", "bob", "read after the replacement")
+        val fromErin = send(e, "erin", "bob", "read too late")
+        val first = bob.prekey
+
+        // Bob's phone replaces its signed prekey and keeps the one before.
+        bob.replacePrekey()
+        assertEquals("carol is handed the new one", "after", read(b, send(c, "carol", "bob", "after")))
+        // Dave's message names the one before, and opens; the conversation goes on from there.
+        assertEquals("read after the replacement", read(b, fromDave))
+        assertEquals("more", read(b, send(d, "dave", "bob", "more")))
+        assertEquals("reply", read(d, send(b, "bob", "dave", "reply")))
+
+        // The month for keeping it is over: the phone removes it.
+        assertTrue(bob.prekeys.remove(first))
+        // Conversations that began with it do not need it any more — not from storage either.
+        val restarted = bob.client(server)
+        assertEquals("still here", read(restarted, send(a, "alice", "bob", "still here")))
+        assertEquals("and you", read(a, send(restarted, "bob", "alice", "and you")))
+        assertEquals("still here too", read(restarted, send(d, "dave", "bob", "still here too")))
+        assertEquals("read after the replacement", read(restarted, fromDave))
+
+        // Only a first message for it that turns up now comes too late. It is dismissed before the
+        // one-time prekeys are read, and costs none of them.
+        val oneTimeKeys = bob.store.oneTimeKeyCount()
+        val poolReads = bob.vault.poolReads
+        assertNull(read(restarted, fromErin))
+        assertEquals(poolReads, bob.vault.poolReads)
+        assertEquals(oneTimeKeys, bob.store.oneTimeKeyCount())
+
+        // It mends itself as soon as bob writes to her: she takes up the session he started.
+        assertEquals("hello erin", read(e, send(restarted, "bob", "erin", "hello erin")))
+        assertEquals("hello bob", read(restarted, send(e, "erin", "bob", "hello bob")))
+        assertNull("what she wrote before that stays closed", read(restarted, fromErin))
     }
 
     // --------------------------------------------------------------- batching

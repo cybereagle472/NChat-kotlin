@@ -46,6 +46,9 @@ class ApiKeyDirectory(private val api: NChatApi) : KeyDirectory {
         api.registerKeys(identityKey, signedPrekey, signature)
     }
 
+    override suspend fun replaceSignedPrekey(identityKey: String, signedPrekey: String, signature: String): KeyDirectory.Replacement =
+        reaching { api.replaceSignedPrekey(identityKey, signedPrekey, signature) }
+
     override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>): Boolean = reaching {
         api.uploadPrekeys(identityKey, oneTimePrekeys)
     }

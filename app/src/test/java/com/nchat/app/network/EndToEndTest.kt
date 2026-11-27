@@ -27,6 +27,10 @@ import java.io.IOException
  */
 class EndToEndTest {
 
+    private companion object {
+        const val WEEK = 7L * 24L * 60L * 60L * 1000L
+    }
+
     @get:Rule val folder = TemporaryFolder()
 
     private class Keyring : StorageKeyring {
@@ -55,6 +59,9 @@ class EndToEndTest {
 
         val accounts = HashMap<String, Keys>()
         var registrations = 0
+
+        /** Signed prekeys replaced without a registration — which is how a phone replaces its own, week by week. */
+        var replacements = 0
         var offline = false
 
         fun directoryFor(userId: String) = object : KeyDirectory {
@@ -73,6 +80,17 @@ class EndToEndTest {
                     known.signedPrekey = signedPrekey
                     known.signature = signature
                 }
+            }
+
+            override suspend fun replaceSignedPrekey(identityKey: String, signedPrekey: String, signature: String): KeyDirectory.Replacement {
+                if (offline) throw IOException("offline")
+                val known = accounts[userId]
+                // Only for the identity key that is registered: it never moves an account.
+                if (known == null || known.identityKey != identityKey) return KeyDirectory.Replacement.Refused
+                known.signedPrekey = signedPrekey
+                known.signature = signature
+                replacements++
+                return KeyDirectory.Replacement.Done
             }
 
             override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>): Boolean {
@@ -110,10 +128,15 @@ class EndToEndTest {
         /** What the last sign-in on this phone answered: true when the account started here with new keys. */
         var startedAnew: Boolean? = null
 
+        /** How far this phone's clock has been moved on: time passes here when a test says so. */
+        var ahead = 0L
+
         private val directory = object : KeyDirectory {
             override suspend fun status() = server.directoryFor(account).status()
             override suspend fun register(identityKey: String, signedPrekey: String, signature: String) =
                 server.directoryFor(account).register(identityKey, signedPrekey, signature)
+            override suspend fun replaceSignedPrekey(identityKey: String, signedPrekey: String, signature: String) =
+                server.directoryFor(account).replaceSignedPrekey(identityKey, signedPrekey, signature)
             override suspend fun upload(identityKey: String, oneTimePrekeys: List<String>) =
                 server.directoryFor(account).upload(identityKey, oneTimePrekeys)
         }
@@ -128,6 +151,7 @@ class EndToEndTest {
             report = { what, _ -> reports += what },
             onSecurityChanged = { securityChanges += it },
             backupRounds = 200,
+            clock = { System.currentTimeMillis() + ahead },
         )
 
         /** The same, told nothing about backups — as the app starts it. */
@@ -1214,6 +1238,104 @@ class EndToEndTest {
         // Being replaced erases nothing: what the old phone had opened, it can still show.
         assertEquals("to the old phone", read(old, "bob", toOld))
         assertNull("…and the new phone cannot: history does not move", read(new, "bob", toOld))
+    }
+
+    // ----------------------------------------- the signed prekey is replaced
+
+    @Test
+    fun replacingTheSignedPrekeyIsNoticedByNobodyAndCostsNoMessage() {
+        val server = Server()
+        val alicePhone = Phone(server)
+        val bobPhone = Phone(server)
+        val alice = alicePhone.signIn("alice")
+        val bob = bobPhone.signIn("bob")
+        val dave = Phone(server).signIn("dave")
+
+        // Alice and Bob are talking.
+        assertEquals("hello alice", read(alice, "bob", send(bob, "alice", "hello alice")!!))
+        assertEquals("hello bob", read(bob, "alice", send(alice, "bob", "hello bob")!!))
+        val code = bob.messaging().securityCode("alice", bob.messaging().security("alice")!!.key!!)
+        val told = bobPhone.securityChanges.size
+        // Dave writes to her for the first time, and his message is slow to arrive.
+        val slow = send(dave, "alice", "written before")!!
+        val identity = server.accounts["alice"]!!.identityKey
+        val served = server.accounts["alice"]!!.signedPrekey
+        val registrations = server.registrations
+
+        // A week on, Alice's phone looks at the server, as it does every few hours.
+        assertEquals(Outcome.Ready, runBlocking { alice.sync() })
+        assertEquals("not before the week is up", 0, server.replacements)
+        alicePhone.ahead += WEEK
+        assertEquals(Outcome.Ready, runBlocking { alice.sync() })
+        assertEquals(1, server.replacements)
+        assertNotEquals("senders are handed a new signed prekey", served, server.accounts["alice"]!!.signedPrekey)
+        assertEquals("under the identity key her contacts know", identity, server.accounts["alice"]!!.identityKey)
+        assertEquals("and without a registration, which is what moves an account", registrations, server.registrations)
+        assertEquals(0, alicePhone.replaced)
+
+        // Bob notices nothing: the conversation goes on both ways, and he is told of no change of keys.
+        assertEquals("still here", read(alice, "bob", send(bob, "alice", "still here")!!))
+        assertEquals("so am I", read(bob, "alice", send(alice, "bob", "so am I")!!))
+        val aliceAtBob = bob.messaging().security("alice")!!
+        assertEquals(identity, aliceAtBob.key)
+        assertFalse(aliceAtBob.changed)
+        assertEquals("the same security code", code, bob.messaging().securityCode("alice", aliceAtBob.key!!))
+        assertEquals(told, bobPhone.securityChanges.size)
+
+        // Dave's message arrives now. It was sealed for the key before, and opens.
+        assertEquals("written before", read(alice, "dave", slow))
+        // Carol writes for the first time, and is handed the new one.
+        val fresh = send(Phone(server).signIn("carol"), "alice", "written after")!!
+        assertEquals("written after", read(alice, "carol", fresh))
+
+        // All of it through a restart of Alice's phone, where looking again replaces nothing more.
+        val again = alicePhone.start().also { it.resume("alice") }
+        assertEquals("written before", read(again, "dave", slow))
+        assertEquals("written after", read(again, "carol", fresh))
+        assertEquals("once more", read(again, "dave", send(dave, "alice", "once more")!!))
+        assertEquals("and back", read(dave, "alice", send(again, "dave", "and back")!!))
+        assertEquals(Outcome.Ready, runBlocking { again.sync() })
+        assertEquals(1, server.replacements)
+        assertEquals(registrations + 1, server.registrations) // carol's
+    }
+
+    @Test
+    fun aFirstMessageThatArrivesAfterItsKeyWasRemovedDoesNotOpenAndTheChatMendsItselfWhenItsOwnerWrites() {
+        // What replacing the key costs. Erin writes to Alice for the first time — and her message does
+        // not reach Alice's phone for seven weeks.
+        val server = Server()
+        val alicePhone = Phone(server)
+        val alice = alicePhone.signIn("alice")
+        val bob = Phone(server).signIn("bob")
+        val erin = Phone(server).signIn("erin")
+        val frank = Phone(server).signIn("frank")
+        val known = send(bob, "alice", "from somebody she is already talking to")!!
+        assertEquals("from somebody she is already talking to", read(alice, "bob", known))
+        val late = send(erin, "alice", "seven weeks on its way")!!
+        val notAsLate = send(frank, "alice", "six weeks on its way")!!
+
+        repeat(6) {
+            alicePhone.ahead += WEEK
+            assertEquals(Outcome.Ready, runBlocking { alice.sync() })
+        }
+        assertEquals(6, server.replacements)
+        // Six weeks on, the phone still has the key the two were sealed for: it was replaced five weeks
+        // ago, the one after it four weeks ago, and that one's month is not over.
+        assertEquals("six weeks on its way", read(alice, "frank", notAsLate))
+
+        alicePhone.ahead += WEEK
+        assertEquals(Outcome.Ready, runBlocking { alice.sync() })
+        assertEquals(7, server.replacements)
+        // Seven weeks on it has been removed from the phone.
+        assertNull(read(alice, "erin", late))
+        // Nobody Alice was already talking to is affected — seven weeks later, and from storage.
+        val again = alicePhone.start().also { it.resume("alice") }
+        assertEquals("still talking", read(again, "bob", send(bob, "alice", "still talking")!!))
+        assertEquals("from somebody she is already talking to", read(again, "bob", known))
+        // And with Erin it mends itself as soon as Alice writes to her.
+        assertEquals("hello erin", read(erin, "alice", send(again, "erin", "hello erin")!!))
+        assertEquals("hello alice", read(again, "erin", send(erin, "alice", "hello alice")!!))
+        assertNull("what she wrote before stays closed", read(again, "erin", late))
     }
 
     // ------------------------------------------------------------- bundles
