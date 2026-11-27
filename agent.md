@@ -3250,3 +3250,37 @@ The six tests are in the entry above, as they were given to the owner. They stay
 1. **The owner updates through the app** and says what happened. That is the first run of the built-in update to 1.0.78 and of everything above.
 2. **The owner's six tests, later** — they are in the entry "The signed prekey is replaced every week…" — and the answers by number.
 3. As before: the limit for cost 7 of "Log Out keeps the messages…" when the owner answers; Phase 2 (§33) with the decision of rule 40. One phone per account stays; the battery question stays.
+
+### Version 1.0.78 (86) is published: pull request #102 merged — what the release shows, and what the owner was told (2026-11-27)
+
+**Does this reach users? Yes: since 16:24:52 UTC every installed app can update to 1.0.78 from inside the app.** This entry itself is notes. It is on pull request #103, which changes this file only and is left open: merging it would change nothing for users, and would make the build on `main` replace the file of release `nchat-v1.0.78` with another build of the same code while phones may be downloading it. It goes in with the next piece of work.
+
+**What was done.** `gh pr merge 102 --merge`, on the owner's word ("Yes, raise to 1.0.78"): merged 2026-11-27 16:18:34 UTC, merge commit `cbaf5005f202cc51d1aa6406a7d33418c5182995`, two commits (`9bfed15` the version, `e3d97e5` this file). Before it, on the head `e3d97e5`: `Build NChat APK` `46030804202` green — the release APK built there was 86 / 1.0.78 and passed the check against `version.json`; `Encryption tests on Android` `46030803981` green, 324 tests and 0 failed on Android 7 and on Android 14.
+
+| Check, on `cbaf500` | Result |
+|---|---|
+| `Build NChat APK`, run `46032505649` | green: the backend's address is in the build; the unit tests; **the APK's version (86 / 1.0.78) and its signer verified against `version.json`**; 22.8 MB, 11,782 classes; published |
+| `Encryption tests on Android`, run `46032505539` | green on Android 7 and on Android 14: **324 tests, 0 failed** on each; the app starts and shows "Welcome Back" / "Sign In" |
+| `Workers Builds: nchat-friends` | **there is none: this merge did not deploy the backend** — as intended; nothing under `worker/`, three commits in the push |
+| `version.json` on `main` | 86, 1.0.78, `nchat-v1.0.78`, the address of that release's file (read through GitHub's API) |
+| Release `nchat-v1.0.78` | published 16:24:52 UTC; it is the one GitHub calls "latest". `nchat-ui-lab.apk`: 23,959,727 bytes, sha256 `da3f0267bd1321998e08888d8041efda5a8991c2d74b9bdc6573f8bf285dcfa7` (the digest GitHub gives) |
+| The address in `apkUrl`, asked as the app asks it | answers 302, a redirect to GitHub's file host: the file is there. **The file itself was not downloaded** — the sandbox does not reach that host, nor the one that holds a run's artifacts |
+
+**From 16:18:34 to 16:24:52 UTC** the manifest named 86 and the file was not there: six minutes, with the message quoted in the entry above for a phone that tried.
+
+**Release `nchat-v1.0.77` stays** on the release page with its last file — the build with pull request #101 under the old number, 16:01:50 UTC. No app is pointed at it any more.
+
+**The day in three lines** (2026-11-27, UTC): 09:50 pull request #100 merged, no deployment · 15:54 pull request #101 merged, the backend deployed at 15:55:17 · 16:18 pull request #102 merged, 1.0.78 published at 16:24:52.
+
+**What the owner was told,** in the form of rule 12 — what to do first, no question:
+1. Open NChat; the page "Update available" comes by itself; "Update now". If it does not come: Settings ▸ "Check for updates". If Android asks: "Allow from this source", then back.
+2. The friend's phone needs 1.0.78 as well: a chat is encrypted only when both have it.
+3. What was done: the merge, the backend updated (Cloudflare's check), the version raised and published, and that it is written here that the owner has not tested these features and tests them later.
+4. What to know: every other user's app shows the same update, and they get encryption, the new "Log Out" and the weekly key at once; nobody has run this version on a phone, the owner's update is the first; a version cannot be taken back on a phone, a repair is 1.0.79.
+
+**Not checked** — as in the entry above: no phone; the published file not downloaded; the new route not called on the live backend.
+
+**Next.**
+1. **The owner's update through the app, and what the owner says about it.** If the owner reports that no update is offered: `version.json` on `main` (86), the release and its file (above) are in place — then ask what Settings ▸ "Check for updates" says, word for word.
+2. **The owner's six tests, later** — in the entry "The signed prekey is replaced every week…" — and the answers by number. Untested by the owner until then (the entry "The owner's word: merge, and raise the version…").
+3. As before: the limit for cost 7 of "Log Out keeps the messages…" when the owner answers; Phase 2 (§33) with the decision of rule 40. One phone per account stays; the battery question stays.
